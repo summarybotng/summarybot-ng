@@ -5,13 +5,15 @@ FastAPI webhook server for Summary Bot NG.
 import asyncio
 import logging
 import os
+from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from ..config.settings import BotConfig
@@ -103,6 +105,7 @@ class WebhookServer:
         lovable_domains = [
             "https://summarybot.lovable.app",
             "https://lovable.dev",
+            "http://localhost:8080",
         ]
         for domain in lovable_domains:
             if domain not in cors_origins:
@@ -137,6 +140,10 @@ class WebhookServer:
         # Get build info from environment
         build_number = os.environ.get("BUILD_NUMBER", os.environ.get("GIT_COMMIT", "dev"))
         build_date = os.environ.get("BUILD_DATE", "")
+
+        # Check if frontend dist exists (used for root route and SPA serving)
+        frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+        has_frontend = frontend_dist.is_dir()
 
         # Health check endpoint
         @self.app.get("/health", tags=["Health"])
@@ -184,18 +191,19 @@ class WebhookServer:
                     }
                 )
 
-        # Root endpoint
-        @self.app.get("/", tags=["Info"])
-        async def root():
-            """API information."""
-            return {
-                "name": "Summary Bot NG API",
-                "version": "2.0.0",
-                "build": build_number,
-                "build_date": build_date,
-                "docs": "/docs",
-                "health": "/health"
-            }
+        # Root endpoint (only JSON info when no frontend is bundled)
+        if not has_frontend:
+            @self.app.get("/", tags=["Info"])
+            async def root():
+                """API information."""
+                return {
+                    "name": "Summary Bot NG API",
+                    "version": "2.0.0",
+                    "build": build_number,
+                    "build_date": build_date,
+                    "docs": "/docs",
+                    "health": "/health"
+                }
 
         # Include summary endpoints
         summary_router = create_summary_router(
@@ -220,6 +228,36 @@ class WebhookServer:
                 logger.warning(f"Dashboard module not available: {e}")
             except Exception as e:
                 logger.error(f"Failed to initialize dashboard API: {e}")
+
+        # Serve frontend static files in production (if dist/ exists)
+        if has_frontend:
+            assets_dir = frontend_dist / "assets"
+            if assets_dir.is_dir():
+                self.app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="frontend-assets")
+
+            index_html = frontend_dist / "index.html"
+
+            @self.app.get("/", include_in_schema=False)
+            async def serve_spa_root():
+                return FileResponse(str(index_html))
+
+            @self.app.get("/{path:path}", include_in_schema=False)
+            async def serve_spa(request: Request, path: str):
+                """Serve frontend SPA -- skip API and known backend paths."""
+                if path.startswith(("api/", "health", "docs", "redoc", "openapi.json")):
+                    return JSONResponse(status_code=404, content={"error": "NOT_FOUND"})
+
+                # Serve actual static files from dist/ (e.g. favicon.ico, robots.txt)
+                static_file = frontend_dist / path
+                if path and static_file.is_file():
+                    return FileResponse(str(static_file))
+
+                # Everything else gets index.html for SPA client-side routing
+                return FileResponse(str(index_html))
+
+            logger.info(f"Frontend SPA serving enabled from {frontend_dist}")
+        else:
+            logger.info("Frontend dist/ not found, SPA serving disabled")
 
     def _setup_error_handlers(self) -> None:
         """Configure global error handlers."""

@@ -1,0 +1,137 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* SummaryBot Dashboard Design System
+   Discord-inspired dark theme with blurple accents
+   All colors in HSL format
+*/
+
+@layer base {
+  :root {
+    /* Light mode - minimal, rarely used */
+    --background: 0 0% 100%;
+    --foreground: 228 6% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 228 6% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 228 6% 15%;
+
+    --primary: 235 86% 65%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 228 14% 93%;
+    --secondary-foreground: 228 6% 15%;
+
+    --muted: 228 14% 93%;
+    --muted-foreground: 228 6% 44%;
+
+    --accent: 235 86% 65%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 228 14% 89%;
+    --input: 228 14% 89%;
+    --ring: 235 86% 65%;
+
+    --radius: 0.5rem;
+
+    /* Custom tokens */
+    --discord-blurple: 235 86% 65%;
+    --discord-green: 139 66% 45%;
+    --discord-yellow: 45 100% 55%;
+    --discord-red: 0 84% 60%;
+    
+    --success: 139 66% 45%;
+    --warning: 45 100% 55%;
+    --info: 200 80% 55%;
+    
+    --gradient-primary: linear-gradient(135deg, hsl(235 86% 65%) 0%, hsl(255 70% 60%) 100%);
+    --gradient-dark: linear-gradient(180deg, hsl(228 6% 10%) 0%, hsl(228 8% 6%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(228 8% 14%) 0%, hsl(228 8% 11%) 100%);
+    
+    --shadow-glow: 0 0 40px -10px hsl(235 86% 65% / 0.5);
+    --shadow-card: 0 4px 20px -2px hsl(0 0% 0% / 0.1);
+
+    --sidebar-background: 228 8% 8%;
+    --sidebar-foreground: 228 6% 80%;
+    --sidebar-primary: 235 86% 65%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 228 8% 15%;
+    --sidebar-accent-foreground: 228 6% 95%;
+    --sidebar-border: 228 8% 18%;
+    --sidebar-ring: 235 86% 65%;
+  }
+
+  .dark {
+    --background: 228 8% 6%;
+    --foreground: 228 6% 95%;
+
+    --card: 228 8% 10%;
+    --card-foreground: 228 6% 95%;
+
+    --popover: 228 8% 10%;
+    --popover-foreground: 228 6% 95%;
+
+    --primary: 235 86% 65%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 228 8% 16%;
+    --secondary-foreground: 228 6% 95%;
+
+    --muted: 228 8% 16%;
+    --muted-foreground: 228 6% 55%;
+
+    --accent: 235 86% 65%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 228 8% 18%;
+    --input: 228 8% 16%;
+    --ring: 235 86% 65%;
+
+    --sidebar-background: 228 8% 8%;
+    --sidebar-foreground: 228 6% 70%;
+    --sidebar-primary: 235 86% 65%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 228 8% 15%;
+    --sidebar-accent-foreground: 228 6% 95%;
+    --sidebar-border: 228 8% 18%;
+    --sidebar-ring: 235 86% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+  
+  .glass {
+    backdrop-filter: blur(12px);
+    background: hsl(228 8% 10% / 0.8);
+  }
+}

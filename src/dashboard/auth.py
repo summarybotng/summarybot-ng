@@ -337,6 +337,68 @@ class DashboardAuth:
         )
         return self.create_jwt(user, payload["guilds"])
 
+    async def refresh_jwt_with_guilds(
+        self, token: str, bot_guild_ids: set[str]
+    ) -> Tuple[str, List[str]]:
+        """Refresh JWT token with a fresh guild list from Discord.
+
+        Looks up the session, refreshes the Discord access token if needed,
+        re-fetches guilds from the Discord API, and filters to manageable
+        guilds that the bot is also in.
+
+        Args:
+            token: Current JWT token
+            bot_guild_ids: Set of guild IDs the bot is currently in
+
+        Returns:
+            Tuple of (new_jwt_token, updated_guild_ids)
+        """
+        payload = self.verify_jwt(token)
+
+        user = DashboardUser(
+            id=payload["sub"],
+            username=payload["username"],
+            discriminator=None,
+            avatar=payload.get("avatar"),
+        )
+
+        # Try to get the session so we can call Discord for fresh guilds
+        session = await self.get_session(token)
+        if session is None:
+            # No session -- fall back to old behaviour (reuse JWT guild list)
+            logger.warning("No session found for token refresh, reusing existing guild list")
+            new_token = self.create_jwt(user, payload["guilds"])
+            return new_token, payload["guilds"]
+
+        # Get a valid Discord access token (auto-refreshes if expired)
+        discord_token = await self.get_discord_token(session)
+
+        # Fetch fresh guild list from Discord
+        all_guilds = await self.get_user_guilds(discord_token)
+
+        # Filter to guilds the user can manage AND the bot is in
+        manageable_guilds = [
+            g for g in all_guilds
+            if g.can_manage() and g.id in bot_guild_ids
+        ]
+        guild_ids = [g.id for g in manageable_guilds]
+
+        # Update session with new guild list
+        session.manageable_guild_ids = guild_ids
+
+        # Invalidate old JWT hash and create new token
+        old_hash = self._hash_token(token)
+        new_token = self.create_jwt(user, guild_ids)
+        new_hash = self._hash_token(new_token)
+
+        # Move session to new hash
+        if old_hash in self._sessions:
+            del self._sessions[old_hash]
+        session.jwt_token_hash = new_hash
+        self._sessions[new_hash] = session
+
+        return new_token, guild_ids
+
     # =========================================================================
     # Session Management
     # =========================================================================

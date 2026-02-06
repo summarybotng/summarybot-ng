@@ -118,7 +118,7 @@ async def callback(request: Request, body: AuthCallbackRequest):
     "/refresh",
     response_model=AuthRefreshResponse,
     summary="Refresh JWT token",
-    description="Get a new JWT token using the current valid token.",
+    description="Get a new JWT token with a fresh guild list from Discord.",
     responses={
         401: {"model": ErrorResponse, "description": "Invalid or expired token"},
     },
@@ -126,7 +126,7 @@ async def callback(request: Request, body: AuthCallbackRequest):
 async def refresh(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
-    """Refresh JWT token."""
+    """Refresh JWT token with fresh guild list."""
     if credentials is None:
         raise HTTPException(
             status_code=401,
@@ -134,8 +134,17 @@ async def refresh(
         )
 
     auth = get_auth()
-    new_token = auth.refresh_jwt(credentials.credentials)
-    return AuthRefreshResponse(token=new_token)
+
+    # Get current bot guild IDs (same pattern as /callback)
+    bot = get_discord_bot()
+    bot_guild_ids = set()
+    if bot and bot.client:
+        bot_guild_ids = {str(g.id) for g in bot.client.guilds}
+
+    new_token, guild_ids = await auth.refresh_jwt_with_guilds(
+        credentials.credentials, bot_guild_ids
+    )
+    return AuthRefreshResponse(token=new_token, guilds=guild_ids)
 
 
 @router.post(

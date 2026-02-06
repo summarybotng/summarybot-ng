@@ -3,7 +3,10 @@ Claude API client for AI summarization.
 """
 
 import asyncio
+import logging
 import time
+
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
@@ -118,6 +121,11 @@ class ClaudeClient:
 
         # Detect if using OpenRouter
         self.is_openrouter = base_url and 'openrouter' in base_url.lower()
+
+        # Log key being used (masked)
+        if api_key and len(api_key) > 10:
+            masked_key = f"{api_key[:10]}...{api_key[-4:]}"
+            logger.info(f"ClaudeClient initialized with API key: {masked_key}, base_url: {base_url}")
 
         # Initialize async client
         client_kwargs = {"api_key": api_key, "timeout": default_timeout}

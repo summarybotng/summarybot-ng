@@ -20,7 +20,7 @@ kill_timeout = "30s"
   LOG_LEVEL = "INFO"
   DATABASE_URL = "sqlite:///data/summarybot.db"
   # Dashboard API configuration - multiple origins for CORS
-  WEBHOOK_CORS_ORIGINS = "https://summarybot.lovable.app,https://lovable.dev,http://localhost:5173,http://localhost:3000"
+  WEBHOOK_CORS_ORIGINS = "https://summarybot.lovable.app,https://lovable.dev,http://localhost:5173,http://localhost:3000,http://localhost:8080"
   DISCORD_REDIRECT_URI = "https://summarybot.lovable.app/callback"
 
 # HTTP service (Webhook API)

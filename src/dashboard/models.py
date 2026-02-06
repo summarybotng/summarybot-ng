@@ -131,6 +131,7 @@ class AuthCallbackResponse(BaseModel):
 class AuthRefreshResponse(BaseModel):
     """Response for token refresh."""
     token: str
+    guilds: Optional[List[str]] = None
 
 
 # --- Guilds ---

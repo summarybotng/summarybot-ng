@@ -13,6 +13,9 @@
     "lint:fix": "poetry run ruff check --fix src/ tests/",
     "typecheck": "poetry run mypy src/",
     "format": "poetry run black src/ tests/",
-    "format:check": "poetry run black --check src/ tests/"
+    "format:check": "poetry run black --check src/ tests/",
+    "frontend:install": "cd src/frontend && npm install",
+    "frontend:dev": "cd src/frontend && npm run dev",
+    "frontend:build": "cd src/frontend && npm run build"
   }
 }

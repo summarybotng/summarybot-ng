@@ -1,7 +1,18 @@
 # Summary Bot NG - Production Dockerfile
 # Multi-stage build for optimized image size
 
-# Stage 1: Builder
+# Stage 1: Frontend builder
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /frontend
+
+COPY src/frontend/package.json src/frontend/package-lock.json ./
+RUN npm ci
+
+COPY src/frontend/ ./
+RUN npm run build
+
+# Stage 2: Python dependency builder
 FROM python:3.11-slim as builder
 
 # Install system dependencies for building Python packages
@@ -27,7 +38,7 @@ RUN poetry config virtualenvs.create false
 # Install dependencies only (no dev dependencies, no root project)
 RUN poetry install --only main --no-root --no-interaction --no-ansi
 
-# Stage 2: Runtime
+# Stage 3: Runtime
 FROM python:3.11-slim
 
 # Build arguments for versioning
@@ -53,6 +64,9 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application code
 COPY --chown=botuser:botuser src/ ./src/
 COPY --chown=botuser:botuser pyproject.toml poetry.lock ./
+
+# Copy frontend build output
+COPY --from=frontend-builder --chown=botuser:botuser /frontend/dist ./src/frontend/dist/
 
 # Create necessary directories with correct permissions
 RUN mkdir -p /app/data /app/logs && \

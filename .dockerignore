@@ -75,6 +75,9 @@ examples/
 *.md
 !README.md
 
+# Frontend build artifacts (host node_modules should not be in Docker context)
+src/frontend/node_modules/
+
 # Misc
 .coverage
 .mypy_cache/

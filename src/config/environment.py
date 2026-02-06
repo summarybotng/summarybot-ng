@@ -18,8 +18,8 @@ class EnvironmentLoader:
     @staticmethod
     def load_config() -> BotConfig:
         """Load configuration from environment variables."""
-        # Load .env file if it exists
-        load_dotenv()
+        # Load .env file if it exists (override=True to prefer .env over shell env)
+        load_dotenv(override=True)
         
         # Required environment variables
         discord_token = EnvironmentLoader._get_required_env('DISCORD_TOKEN')

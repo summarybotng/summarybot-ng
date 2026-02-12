@@ -1,0 +1,75 @@
+{
+  "guild_configs": {
+    "1420188750394167447": {
+      "guild_id": "1420188750394167447",
+      "enabled_channels": [
+        "1422362519137292359",
+        "1439381942641360966",
+        "1460827866056097842",
+        "1421936261870129232",
+        "1421926237152219156",
+        "1421926369499156662",
+        "1421928154120851537",
+        "1421928291027386459",
+        "1447787130846838844",
+        "1442677353204547635",
+        "1443736955006484582",
+        "1423057748886556806",
+        "1459725119533351088",
+        "1459726611334303984",
+        "1462958907910783067",
+        "1420188751384285297",
+        "1423764124697104465",
+        "1442234727183683824",
+        "1467945121264697469",
+        "1461397016272699454",
+        "1461397126738084005",
+        "1461397487645495389"
+      ],
+      "excluded_channels": [],
+      "default_summary_options": {
+        "summary_length": "detailed",
+        "include_bots": false,
+        "include_attachments": true,
+        "excluded_users": [],
+        "min_messages": 5,
+        "summarization_model": "anthropic/claude-3-haiku",
+        "claude_model": "anthropic/claude-3-haiku",
+        "temperature": 0.3,
+        "max_tokens": 4000,
+        "extract_action_items": true,
+        "extract_technical_terms": true
+      },
+      "permission_settings": {
+        "allowed_roles": [],
+        "allowed_users": [],
+        "admin_roles": [],
+        "require_permissions": true
+      },
+      "webhook_enabled": false,
+      "webhook_secret": null,
+      "cross_channel_summary_role_name": null
+    }
+  },
+  "webhook_config": {
+    "host": "0.0.0.0",
+    "port": 5000,
+    "enabled": true,
+    "cors_origins": [
+      "http://localhost:8080",
+      "http://localhost:3000",
+      "https://automatic-happiness-jjrx4wxq3p7r-5000.app.github.dev",
+      "https://summarybot.lovable.app",
+      "https://lovable.dev"
+    ],
+    "rate_limit": 100
+  },
+  "cache_config": {
+    "backend": "memory",
+    "default_ttl": 3600,
+    "max_size": 1000
+  },
+  "log_level": "INFO",
+  "max_message_batch": 10000,
+  "cache_ttl": 3600
+}

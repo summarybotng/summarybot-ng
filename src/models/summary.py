@@ -177,24 +177,46 @@ class SummaryResult(BaseModel):
             "fields": []
         }
         
-        # Add key points field
+        # Add key points field - fit as many as possible within 1024 char limit
         if self.key_points:
-            key_points_text = "\n".join([f"• {point}" for point in self.key_points[:5]])
-            if len(key_points_text) > 1024:
-                key_points_text = key_points_text[:1020] + "..."
+            key_points_lines = []
+            total_len = 0
+            included_count = 0
+            for point in self.key_points:
+                line = f"• {point}"
+                if total_len + len(line) + 1 < 950:  # Leave room for "and X more"
+                    key_points_lines.append(line)
+                    total_len += len(line) + 1
+                    included_count += 1
+                else:
+                    break
+            key_points_text = "\n".join(key_points_lines)
+            if included_count < len(self.key_points):
+                key_points_text += f"\n*...and {len(self.key_points) - included_count} more*"
             embed["fields"].append({
-                "name": "🎯 Key Points",
+                "name": f"🎯 Key Points ({len(self.key_points)})",
                 "value": key_points_text,
                 "inline": False
             })
-        
-        # Add action items field
+
+        # Add action items field - fit as many as possible within 1024 char limit
         if self.action_items:
-            action_text = "\n".join([item.to_markdown() for item in self.action_items[:3]])
-            if len(action_text) > 1024:
-                action_text = action_text[:1020] + "..."
+            action_lines = []
+            total_len = 0
+            included_count = 0
+            for item in self.action_items:
+                line = item.to_markdown()
+                if total_len + len(line) + 1 < 950:  # Leave room for "and X more"
+                    action_lines.append(line)
+                    total_len += len(line) + 1
+                    included_count += 1
+                else:
+                    break
+            action_text = "\n".join(action_lines)
+            if included_count < len(self.action_items):
+                action_text += f"\n*...and {len(self.action_items) - included_count} more*"
             embed["fields"].append({
-                "name": "📝 Action Items",
+                "name": f"📝 Action Items ({len(self.action_items)})",
                 "value": action_text,
                 "inline": False
             })

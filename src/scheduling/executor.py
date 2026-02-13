@@ -14,11 +14,13 @@ from .tasks import SummaryTask, CleanupTask
 from ..models.task import TaskResult, DestinationType, ScheduledTask, Destination
 from ..models.summary import SummaryResult, SummarizationContext
 from ..models.stored_summary import StoredSummary
+from ..models.error_log import ErrorType, ErrorSeverity
 from ..exceptions import (
     SummaryBotException, InsufficientContentError,
     MessageFetchError, create_error_context
 )
 from ..logging import CommandLogger, log_command, CommandType
+from ..logging.error_tracker import get_error_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -325,6 +327,14 @@ class TaskExecutor:
             logger.warning(f"Insufficient content for task {task.scheduled_task.id}: {e}")
             task.mark_failed(f"Not enough messages to summarize: {e.message}")
 
+            # Track error in error log
+            await self._track_schedule_error(
+                task=task.scheduled_task,
+                error=e,
+                error_type=ErrorType.SCHEDULE_ERROR,
+                error_message=e.user_message,
+            )
+
             execution_time = (datetime.utcnow() - start_time).total_seconds()
 
             return TaskExecutionResult(
@@ -338,6 +348,14 @@ class TaskExecutor:
         except Exception as e:
             logger.exception(f"Failed to execute summary task: {e}")
             task.mark_failed(str(e))
+
+            # Track error in error log
+            await self._track_schedule_error(
+                task=task.scheduled_task,
+                error=e,
+                error_type=ErrorType.SUMMARIZATION_ERROR,
+                error_message=str(e),
+            )
 
             execution_time = (datetime.utcnow() - start_time).total_seconds()
 
@@ -404,6 +422,42 @@ class TaskExecutor:
                 execution_time_seconds=execution_time
             )
 
+    async def _track_schedule_error(
+        self,
+        task: ScheduledTask,
+        error: Exception,
+        error_type: ErrorType,
+        error_message: str,
+    ) -> None:
+        """Track a schedule execution error in the error log.
+
+        Args:
+            task: The scheduled task that failed
+            error: The exception that was raised
+            error_type: Type of error for categorization
+            error_message: Human-readable error message
+        """
+        try:
+            tracker = get_error_tracker()
+            await tracker.capture_error(
+                error=error,
+                error_type=error_type,
+                severity=ErrorSeverity.ERROR,
+                guild_id=task.guild_id,
+                channel_id=task.channel_id,
+                operation=f"scheduled_task:{task.name or task.id}",
+                details={
+                    "task_id": task.id,
+                    "task_name": task.name,
+                    "schedule_type": task.schedule_type.value if task.schedule_type else None,
+                    "failure_count": task.failure_count,
+                    "error_message": error_message,
+                },
+            )
+            logger.debug(f"Tracked schedule error for task {task.id}")
+        except Exception as e:
+            logger.warning(f"Failed to track schedule error: {e}")
+
     async def handle_task_failure(self, task: ScheduledTask, error: Exception) -> None:
         """Handle task failure with notifications and recovery.
 
@@ -424,6 +478,14 @@ class TaskExecutor:
         }
 
         logger.error(f"Task failure details: {error_details}")
+
+        # Track error in error log
+        await self._track_schedule_error(
+            task=task,
+            error=error,
+            error_type=ErrorType.SCHEDULE_ERROR,
+            error_message=str(error),
+        )
 
         # Send notification to Discord if available and task has destinations
         if self.discord_client and task.destinations:
@@ -491,6 +553,25 @@ class TaskExecutor:
                     "success": False,
                     "error": str(e)
                 })
+                # Track delivery error
+                try:
+                    tracker = get_error_tracker()
+                    await tracker.capture_error(
+                        error=e,
+                        error_type=ErrorType.SCHEDULE_ERROR,
+                        severity=ErrorSeverity.WARNING,
+                        guild_id=task.guild_id,
+                        channel_id=destination.target if destination.type == DestinationType.DISCORD_CHANNEL else None,
+                        operation=f"delivery:{destination.type.value}",
+                        details={
+                            "task_id": task.scheduled_task.id,
+                            "destination_type": destination.type.value,
+                            "target": destination.target,
+                            "error_message": str(e),
+                        },
+                    )
+                except Exception as track_err:
+                    logger.warning(f"Failed to track delivery error: {track_err}")
 
         return delivery_results
 

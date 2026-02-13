@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { GuildLayout } from "@/components/layout/GuildLayout";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { TimezoneProvider } from "@/contexts/TimezoneContext";
 import { Landing } from "@/pages/Landing";
 import { Callback } from "@/pages/Callback";
 import { Guilds } from "@/pages/Guilds";
@@ -23,6 +24,7 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <TimezoneProvider>
     <TooltipProvider>
       <Toaster />
       <Sonner />
@@ -59,6 +61,7 @@ const App = () => (
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
+    </TimezoneProvider>
   </QueryClientProvider>
 );
 

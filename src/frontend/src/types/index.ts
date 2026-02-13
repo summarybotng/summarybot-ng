@@ -81,6 +81,14 @@ export interface Summary {
   has_prompt_data?: boolean;
 }
 
+export interface SummaryReference {
+  id: number;
+  author: string;
+  timestamp: string;
+  content: string;
+  message_id?: string;
+}
+
 export interface SummaryDetail extends Omit<Summary, 'preview' | 'summary_length'> {
   summary_text: string;
   key_points: string[];
@@ -89,6 +97,8 @@ export interface SummaryDetail extends Omit<Summary, 'preview' | 'summary_length
   participants: Participant[];
   metadata: SummaryMetadata;
   has_prompt_data?: boolean;
+  // ADR-004: Grounded summary references
+  references?: SummaryReference[];
 }
 
 export interface SummaryPromptData {

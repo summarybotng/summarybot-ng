@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSummaries, useSummary, useGenerateSummary, useTaskStatus, usePushSummary } from "@/hooks/useSummaries";
 import { useGuild } from "@/hooks/useGuilds";
+import { useTimezone } from "@/contexts/TimezoneContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +39,7 @@ import {
 } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, FileText, Calendar, MessageSquare, Clock, Users, Loader2, AlertCircle, RefreshCw, Hash, FolderOpen, Server, Eye, Search, Send, Archive } from "lucide-react";
+import { Sparkles, FileText, Calendar, MessageSquare, Clock, Users, Loader2, AlertCircle, RefreshCw, Hash, FolderOpen, Server, Eye, Search, Send, Archive, Link } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { SummaryPromptDialog } from "@/components/summaries/SummaryPromptDialog";
 import { StoredSummariesTab } from "@/components/summaries/StoredSummariesTab";
@@ -456,13 +457,15 @@ export function Summaries() {
 }
 
 function SummaryCard({ summary, index, onClick }: { summary: Summary; index: number; onClick: () => void }) {
+  const { formatDate } = useTimezone();
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
     >
-      <Card 
+      <Card
         className="cursor-pointer border-border/50 transition-all hover:border-primary/50 hover:shadow-lg"
         onClick={onClick}
       >
@@ -479,19 +482,19 @@ function SummaryCard({ summary, index, onClick }: { summary: Summary; index: num
               )}
             </div>
             <span className="text-sm text-muted-foreground">
-              {new Date(summary.created_at).toLocaleDateString()}
+              {formatDate(summary.created_at)}
             </span>
           </div>
-          
+
           <p className="mb-4 line-clamp-2 text-muted-foreground">
             {summary.preview}
           </p>
-          
+
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-1.5">
               <Calendar className="h-4 w-4" />
               <span>
-                {new Date(summary.start_time).toLocaleDateString()} - {new Date(summary.end_time).toLocaleDateString()}
+                {formatDate(summary.start_time)} - {formatDate(summary.end_time)}
               </span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -523,6 +526,7 @@ function SummaryDetailSheet({
   const [pushModalOpen, setPushModalOpen] = useState(false);
   const pushSummary = usePushSummary(guildId);
   const { toast } = useToast();
+  const { formatDateTime, formatTime } = useTimezone();
 
   const handlePush = async (request: PushToChannelRequest) => {
     if (!summaryId) return;
@@ -565,7 +569,7 @@ function SummaryDetailSheet({
   return (
     <>
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-2xl lg:max-w-3xl">
+      <SheetContent className="w-full overflow-y-auto sm:max-w-[50vw] lg:max-w-[70vw]">
         {isLoading ? (
           <div className="space-y-4">
             <Skeleton className="h-8 w-48" />
@@ -578,7 +582,7 @@ function SummaryDetailSheet({
             <SheetHeader>
               <SheetTitle>#{summary.channel_name} Summary</SheetTitle>
               <SheetDescription>
-                {new Date(summary.start_time).toLocaleString()} - {new Date(summary.end_time).toLocaleString()}
+                {formatDateTime(summary.start_time)} - {formatDateTime(summary.end_time)}
               </SheetDescription>
             </SheetHeader>
             
@@ -677,6 +681,43 @@ function SummaryDetailSheet({
                 </Card>
               )}
 
+              {/* References (ADR-004) */}
+              {summary.references && summary.references.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Link className="h-4 w-4" />
+                      References
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b text-left text-muted-foreground">
+                            <th className="pb-2 pr-4 font-medium">#</th>
+                            <th className="pb-2 pr-4 font-medium">Who</th>
+                            <th className="pb-2 pr-4 font-medium">When</th>
+                            <th className="pb-2 font-medium">Said</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {summary.references.map((ref) => (
+                            <tr key={ref.id} className="border-b border-border/50 last:border-0">
+                              <td className="py-2 pr-4 text-muted-foreground">[{ref.id}]</td>
+                              <td className="py-2 pr-4 font-medium">{ref.author}</td>
+                              <td className="py-2 pr-4 text-muted-foreground whitespace-nowrap">
+                                {formatTime(ref.timestamp)}
+                              </td>
+                              <td className="py-2 text-muted-foreground">{ref.content}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Metadata */}
               {summary.metadata && (

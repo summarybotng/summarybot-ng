@@ -293,6 +293,15 @@ class SummaryMetadataResponse(BaseModel):
     prompt_source: Optional[PromptSourceResponse] = None  # Prompt resolution info
 
 
+class SummaryReferenceResponse(BaseModel):
+    """A source reference from the original conversation (ADR-004)."""
+    id: int
+    author: str
+    timestamp: datetime
+    content: str
+    message_id: Optional[str] = None
+
+
 class SummaryDetailResponse(BaseModel):
     """Full summary details."""
     id: str
@@ -309,6 +318,7 @@ class SummaryDetailResponse(BaseModel):
     metadata: SummaryMetadataResponse
     created_at: datetime
     has_prompt_data: bool = False  # Whether prompt/source content is available
+    references: List[SummaryReferenceResponse] = Field(default_factory=list)  # ADR-004 source references
 
 
 class SummaryPromptResponse(BaseModel):

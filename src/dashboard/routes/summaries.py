@@ -273,6 +273,19 @@ async def get_summary(
     # Check if prompt data is available
     has_prompt_data = bool(summary.prompt_system or summary.prompt_user or summary.source_content)
 
+    # Convert references if available (ADR-004)
+    from ..models import SummaryReferenceResponse
+    references = []
+    if hasattr(summary, 'reference_index') and summary.reference_index:
+        for ref in summary.reference_index:
+            references.append(SummaryReferenceResponse(
+                id=ref.id if hasattr(ref, 'id') else ref.get('id', 0),
+                author=ref.author if hasattr(ref, 'author') else ref.get('author', 'Unknown'),
+                timestamp=ref.timestamp if hasattr(ref, 'timestamp') else ref.get('timestamp'),
+                content=ref.content if hasattr(ref, 'content') else ref.get('content', ''),
+                message_id=ref.message_id if hasattr(ref, 'message_id') else ref.get('message_id'),
+            ))
+
     return SummaryDetailResponse(
         id=summary.id,
         channel_id=summary.channel_id,
@@ -288,6 +301,7 @@ async def get_summary(
         metadata=metadata,
         created_at=summary.created_at,
         has_prompt_data=has_prompt_data,
+        references=references,
     )
 
 

@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { useGuild, useUpdateConfig } from "@/hooks/useGuilds";
 import { useHealth } from "@/hooks/useHealth";
+import { useTimezone, TIMEZONE_OPTIONS } from "@/contexts/TimezoneContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -11,12 +12,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Save, Loader2, Server } from "lucide-react";
+import { Save, Loader2, Server, Globe } from "lucide-react";
 import type { SummaryOptions } from "@/types";
 
 export function Settings() {
@@ -25,6 +28,7 @@ export function Settings() {
   const { data: health } = useHealth();
   const updateConfig = useUpdateConfig(id || "");
   const { toast } = useToast();
+  const { timezone, setTimezone } = useTimezone();
 
   const [options, setOptions] = useState<SummaryOptions>({
     summary_length: "detailed",
@@ -185,6 +189,50 @@ export function Settings() {
                   onCheckedChange={(v) => updateOption("include_technical_terms", v)}
                 />
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Timezone Card */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15 }}
+      >
+        <Card className="border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="h-5 w-5" />
+              Timezone
+            </CardTitle>
+            <CardDescription>
+              All dates and times in the dashboard will be displayed in this timezone
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Your Timezone</label>
+              <Select value={timezone} onValueChange={setTimezone}>
+                <SelectTrigger className="w-full sm:w-80">
+                  <SelectValue placeholder="Select timezone" />
+                </SelectTrigger>
+                <SelectContent>
+                  {["Americas", "Europe", "Asia", "Oceania", "UTC"].map((group) => (
+                    <SelectGroup key={group}>
+                      <SelectLabel>{group}</SelectLabel>
+                      {TIMEZONE_OPTIONS.filter((tz) => tz.group === group).map((tz) => (
+                        <SelectItem key={tz.value} value={tz.value}>
+                          {tz.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Current time: {new Date().toLocaleString(undefined, { timeZone: timezone })}
+              </p>
             </div>
           </CardContent>
         </Card>

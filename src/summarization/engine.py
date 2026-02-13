@@ -36,16 +36,16 @@ class CostEstimate:
 
 class SummarizationEngine:
     """Main engine for AI-powered summarization."""
-    
+
     def __init__(self,
-                 claude_client: ClaudeClient,
+                 claude_client: Optional[ClaudeClient] = None,
                  cache: Optional[SummaryCache] = None,
                  max_prompt_tokens: int = 100000,
                  prompt_resolver=None):
         """Initialize summarization engine.
 
         Args:
-            claude_client: Claude API client
+            claude_client: Claude API client (None if LLM not configured)
             cache: Optional summary cache
             max_prompt_tokens: Maximum tokens allowed in prompt
             prompt_resolver: Optional PromptTemplateResolver for custom prompts
@@ -57,6 +57,10 @@ class SummarizationEngine:
 
         self.prompt_builder = PromptBuilder()
         self.response_parser = ResponseParser()
+
+    def is_available(self) -> bool:
+        """Check if summarization is available (LLM client configured)."""
+        return self.claude_client is not None
     
     async def summarize_messages(self,
                                messages: List[ProcessedMessage],
@@ -65,21 +69,33 @@ class SummarizationEngine:
                                channel_id: str = "",
                                guild_id: str = "") -> SummaryResult:
         """Summarize a list of messages.
-        
+
         Args:
             messages: List of processed messages
             options: Summarization options
             context: Context information
             channel_id: Discord channel ID
             guild_id: Discord guild ID
-            
+
         Returns:
             Complete summary result
-            
+
         Raises:
             InsufficientContentError: Not enough content to summarize
             SummarizationError: Summarization process failed
         """
+        # Check if LLM is configured
+        if not self.is_available():
+            raise SummarizationError(
+                message="Summarization is unavailable - no LLM provider configured. "
+                        "Please set OPENROUTER_API_KEY environment variable.",
+                context=create_error_context(
+                    channel_id=channel_id,
+                    guild_id=guild_id,
+                    operation="summarize_messages"
+                )
+            )
+
         # Validate input
         if len(messages) < options.min_messages:
             raise InsufficientContentError(
@@ -422,6 +438,27 @@ class SummarizationEngine:
         """
         import inspect
 
+        # Handle case where no LLM client is configured
+        if not self.is_available():
+            health_info = {
+                "status": "degraded",
+                "claude_api": None,
+                "cache": False,
+                "components": {
+                    "prompt_builder": True,
+                    "response_parser": True
+                },
+                "usage_stats": None,
+                "message": "No LLM provider configured - summarization unavailable"
+            }
+            # Check cache
+            if self.cache:
+                try:
+                    health_info["cache"] = await self.cache.health_check()
+                except Exception:
+                    health_info["cache"] = False
+            return health_info
+
         # Get usage stats (handle both sync and async for testing flexibility)
         usage_stats_result = self.claude_client.get_usage_stats()
         if inspect.iscoroutine(usage_stats_result):
@@ -439,7 +476,7 @@ class SummarizationEngine:
             },
             "usage_stats": usage_stats.to_dict()
         }
-        
+
         # Check Claude API
         try:
             health_info["claude_api"] = await self.claude_client.health_check()

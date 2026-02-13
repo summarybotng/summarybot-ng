@@ -20,9 +20,10 @@ class EnvironmentLoader:
         """Load configuration from environment variables."""
         # Load .env file if it exists (override=True to prefer .env over shell env)
         load_dotenv(override=True)
-        
-        # Required environment variables
-        discord_token = EnvironmentLoader._get_required_env('DISCORD_TOKEN')
+
+        # Discord token - optional for webhook-only mode
+        # When not set, bot runs in webhook-only mode (dashboard still works)
+        discord_token = os.getenv('DISCORD_TOKEN', '')
         # Claude API key not needed - bot always uses OpenRouter
         
         # Database configuration

@@ -59,6 +59,7 @@ class SummaryBotApp:
         self.prompt_resolver = None  # Prompt template resolver
         self.guild_config_store = None  # Guild config store
         self.running = False
+        self.webhook_only_mode = False  # True when DISCORD_TOKEN not set
 
         # Setup logging
         logging.basicConfig(
@@ -89,17 +90,26 @@ class SummaryBotApp:
             logging.getLogger().setLevel(self.config.log_level.value)
             self.logger.info("Configuration loaded successfully")
 
+            # Check if running in webhook-only mode (no Discord token)
+            self.webhook_only_mode = not self.config.discord_token
+            if self.webhook_only_mode:
+                self.logger.warning("=" * 60)
+                self.logger.warning("WEBHOOK-ONLY MODE: DISCORD_TOKEN not set")
+                self.logger.warning("Discord bot features disabled, dashboard API available")
+                self.logger.warning("=" * 60)
+
             # Initialize database
             await self._initialize_database(db_path)
 
             # Initialize core components
             await self._initialize_core_components()
 
-            # Initialize Discord bot
-            await self._initialize_discord_bot()
+            # Initialize Discord bot (skip in webhook-only mode)
+            if not self.webhook_only_mode:
+                await self._initialize_discord_bot()
 
-            # Initialize task scheduler
-            await self._initialize_scheduler()
+                # Initialize task scheduler (requires Discord bot)
+                await self._initialize_scheduler()
 
             # Initialize webhook server (if enabled)
             if self.config.webhook_config.enabled:
@@ -160,7 +170,7 @@ class SummaryBotApp:
             self.logger.warning("Bot will continue without command logging")
             self.command_logger = None
 
-    def _select_llm_provider(self) -> Tuple[str, str, Optional[str], str]:
+    def _select_llm_provider(self) -> Tuple[str, Optional[str], Optional[str], Optional[str]]:
         """
         Select LLM provider based on environment.
 
@@ -169,6 +179,7 @@ class SummaryBotApp:
 
         Returns:
             tuple: (provider_name, api_key, base_url, model)
+                   Returns (None, None, None, None) if no API key is configured
         """
         llm_route = os.getenv('LLM_ROUTE', '').lower()
 
@@ -176,10 +187,11 @@ class SummaryBotApp:
         if llm_route == 'openrouter':
             openrouter_key = os.getenv('OPENROUTER_API_KEY')
             if not openrouter_key:
-                raise ValueError(
+                self.logger.warning(
                     "LLM_ROUTE is set to 'openrouter' but OPENROUTER_API_KEY is not configured. "
-                    "Please set OPENROUTER_API_KEY in your .env file."
+                    "Summarization features will be unavailable."
                 )
+                return (None, None, None, None)
             return (
                 'openrouter',
                 openrouter_key,
@@ -187,13 +199,14 @@ class SummaryBotApp:
                 None  # Model selection handled by SummaryOptions
             )
 
-        # If not explicitly set, always use OpenRouter (no Claude fallback)
+        # If not explicitly set, try OpenRouter
         openrouter_key = os.getenv('OPENROUTER_API_KEY')
         if not openrouter_key:
-            raise ValueError(
-                "OPENROUTER_API_KEY is required. Bot always uses OpenRouter for LLM requests. "
-                "Please set OPENROUTER_API_KEY in your .env file."
+            self.logger.warning(
+                "OPENROUTER_API_KEY is not set. Summarization features will be unavailable. "
+                "Dashboard and health endpoints will still work."
             )
+            return (None, None, None, None)
 
         return (
             'openrouter',
@@ -226,23 +239,27 @@ class SummaryBotApp:
         # Select LLM provider based on environment
         provider_name, api_key, base_url, model = self._select_llm_provider()
 
-        self.logger.info(
-            f"LLM Provider: {provider_name} | Model: {model} | "
-            f"Environment: {'production' if self._is_production_environment() else 'development'}"
-        )
+        claude_client = None
+        if provider_name and api_key:
+            self.logger.info(
+                f"LLM Provider: {provider_name} | Model: {model} | "
+                f"Environment: {'production' if self._is_production_environment() else 'development'}"
+            )
 
-        # Initialize Claude client with selected provider
-        if base_url:
-            claude_client = ClaudeClient(
-                api_key=api_key,
-                base_url=base_url,
-                max_retries=3
-            )
+            # Initialize Claude client with selected provider
+            if base_url:
+                claude_client = ClaudeClient(
+                    api_key=api_key,
+                    base_url=base_url,
+                    max_retries=3
+                )
+            else:
+                claude_client = ClaudeClient(
+                    api_key=api_key,
+                    max_retries=3
+                )
         else:
-            claude_client = ClaudeClient(
-                api_key=api_key,
-                max_retries=3
-            )
+            self.logger.warning("No LLM provider configured - summarization will be unavailable")
 
         # Initialize cache
         cache_backend = MemoryCache(
@@ -428,7 +445,11 @@ class SummaryBotApp:
 
     async def start(self):
         """Start the application and all services."""
-        if not self.config or not self.discord_bot:
+        if not self.config:
+            raise RuntimeError("Application not initialized. Call initialize() first.")
+
+        # In webhook-only mode, we don't need a Discord bot
+        if not self.webhook_only_mode and not self.discord_bot:
             raise RuntimeError("Application not initialized. Call initialize() first.")
 
         self.running = True
@@ -442,10 +463,14 @@ class SummaryBotApp:
 
         try:
             # Log startup status
-            self.logger.info(f"Discord Bot: Ready")
-            self.logger.info(f"Permission Manager: Active")
+            if self.webhook_only_mode:
+                self.logger.info("Mode: Webhook-Only (Dashboard API)")
+            else:
+                self.logger.info(f"Discord Bot: Ready")
+                self.logger.info(f"Permission Manager: Active")
+                self.logger.info(f"Task Scheduler: Running")
+
             self.logger.info(f"Summarization Engine: Ready")
-            self.logger.info(f"Task Scheduler: Running")
             if self.webhook_server:
                 self.logger.info(
                     f"Webhook API: http://{self.config.webhook_config.host}:"
@@ -456,8 +481,15 @@ class SummaryBotApp:
             self.logger.info("Summary Bot NG is now online!")
             self.logger.info("=" * 60)
 
-            # Start Discord client (this blocks until shutdown)
-            await self.discord_bot.start()
+            if self.webhook_only_mode:
+                # In webhook-only mode, keep running until shutdown signal
+                # The webhook server is already running in the background
+                self.logger.info("Running in webhook-only mode. Press Ctrl+C to stop.")
+                while self.running:
+                    await asyncio.sleep(1)
+            else:
+                # Start Discord client (this blocks until shutdown)
+                await self.discord_bot.start()
 
         except Exception as e:
             error = handle_unexpected_error(e)
@@ -481,7 +513,7 @@ class SummaryBotApp:
             self.logger.info("Stopping task scheduler...")
             await self.task_scheduler.stop()
 
-        if self.discord_bot:
+        if self.discord_bot and not self.webhook_only_mode:
             self.logger.info("Stopping Discord bot...")
             await self.discord_bot.stop()
 

@@ -50,8 +50,8 @@ kill_timeout = "30s"
 
   [[services.http_checks]]
     interval = "30s"
-    timeout = "10s"
-    grace_period = "30s"
+    timeout = "15s"
+    grace_period = "60s"
     method = "GET"
     path = "/health"
     protocol = "http"

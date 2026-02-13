@@ -13,7 +13,9 @@ import discord
 
 from ..models.stored_summary import StoredSummary
 from ..models.summary import SummaryResult
+from ..models.error_log import ErrorType, ErrorSeverity
 from ..data.repositories import get_stored_summary_repository, get_summary_repository
+from ..logging.error_tracker import get_error_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +138,15 @@ class SummaryPushService:
 
             if result.success:
                 successful_count += 1
+            else:
+                # Track error in error log
+                await self._track_push_error(
+                    guild_id=stored_summary.guild_id,
+                    channel_id=channel_id,
+                    summary_id=summary_id,
+                    error_message=result.error or "Unknown error",
+                    user_id=user_id,
+                )
 
         # Update stored summary with delivery info
         await stored_summary_repo.update(stored_summary)
@@ -367,6 +378,14 @@ class SummaryPushService:
                 successful_count += 1
             else:
                 logger.warning(f"Failed to push to channel {channel_id}: {result.error}")
+                # Track error in error log
+                await self._track_push_error(
+                    guild_id=summary.guild_id,
+                    channel_id=channel_id,
+                    summary_id=summary_id,
+                    error_message=result.error or "Unknown error",
+                    user_id=user_id,
+                )
 
         logger.info(
             f"Pushed summary {summary_id} to {successful_count}/{len(channel_ids)} channels"
@@ -506,3 +525,49 @@ class SummaryPushService:
         except Exception as e:
             logger.warning(f"Failed to verify channel permission: {e}")
             return False
+
+    async def _track_push_error(
+        self,
+        guild_id: str,
+        channel_id: str,
+        summary_id: str,
+        error_message: str,
+        user_id: Optional[str] = None,
+    ) -> None:
+        """Track a push failure in the error log.
+
+        Args:
+            guild_id: Discord guild ID
+            channel_id: Discord channel ID
+            summary_id: Summary ID that failed to push
+            error_message: Error message
+            user_id: User who initiated the push
+        """
+        try:
+            tracker = get_error_tracker()
+            if not tracker:
+                return
+
+            # Determine error type based on message
+            if "permission" in error_message.lower():
+                error_type = ErrorType.DISCORD_PERMISSION
+            elif "not found" in error_message.lower():
+                error_type = ErrorType.DISCORD_NOT_FOUND
+            else:
+                error_type = ErrorType.UNKNOWN
+
+            await tracker.capture_error(
+                error=Exception(error_message),
+                error_type=error_type,
+                severity=ErrorSeverity.WARNING,
+                guild_id=guild_id,
+                channel_id=channel_id,
+                operation="push_summary_to_channel",
+                user_id=user_id,
+                details={
+                    "summary_id": summary_id,
+                    "error_message": error_message,
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to track push error: {e}")

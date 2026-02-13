@@ -408,6 +408,12 @@ class SummaryOptions(BaseModel):
     extract_technical_terms: bool = True
     extract_key_points: bool = True
     include_participant_analysis: bool = True
+    # ADR-002: Multi-source support
+    source_type: str = "discord"  # 'discord', 'whatsapp', etc.
+    # WhatsApp-specific options (ADR-002)
+    include_voice_transcripts: bool = True  # Include voice note transcriptions
+    include_forwarded: bool = True  # Include forwarded messages
+    reconstruct_threads: bool = True  # Reconstruct conversation threads from reply chains
     
     def get_max_tokens_for_length(self) -> int:
         """Get appropriate max tokens based on summary length."""

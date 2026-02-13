@@ -12,7 +12,11 @@ from .summary import (
 )
 from .message import (
     ProcessedMessage, MessageReference, AttachmentInfo, ThreadInfo,
-    CodeBlock, MessageMention
+    CodeBlock, MessageMention, SourceType, MessageType
+)
+from .ingest import (
+    IngestDocument, IngestMessage, IngestParticipant, IngestAttachment,
+    IngestResponse, IngestBatch, ChannelType, ParticipantRole
 )
 from .reference import (
     SummaryReference, ReferencedClaim, PositionIndex,
@@ -45,6 +49,18 @@ __all__ = [
     'ThreadInfo',
     'CodeBlock',
     'MessageMention',
+    'SourceType',
+    'MessageType',
+
+    # Ingest models (ADR-002)
+    'IngestDocument',
+    'IngestMessage',
+    'IngestParticipant',
+    'IngestAttachment',
+    'IngestResponse',
+    'IngestBatch',
+    'ChannelType',
+    'ParticipantRole',
 
     # Reference models (ADR-004)
     'SummaryReference',

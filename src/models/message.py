@@ -1,5 +1,7 @@
 """
-Message processing models for Discord messages.
+Message processing models for Discord and WhatsApp messages.
+
+Supports multi-source message handling per ADR-002/003.
 """
 
 from dataclasses import dataclass, field
@@ -11,8 +13,17 @@ import re
 from .base import BaseModel
 
 
+class SourceType(str, Enum):
+    """Data source types for messages (ADR-002)."""
+    DISCORD = "discord"
+    WHATSAPP = "whatsapp"
+    SLACK = "slack"  # Future
+    TELEGRAM = "telegram"  # Future
+
+
 class MessageType(Enum):
-    """Discord message types."""
+    """Message types (Discord numeric + WhatsApp string types)."""
+    # Discord types (numeric)
     DEFAULT = 0
     RECIPIENT_ADD = 1
     RECIPIENT_REMOVE = 2
@@ -24,6 +35,14 @@ class MessageType(Enum):
     REPLY = 19
     SLASH_COMMAND = 20
     THREAD_STARTER_MESSAGE = 21
+    # WhatsApp types (ADR-002) - use high numbers to avoid collision
+    WHATSAPP_TEXT = 100
+    WHATSAPP_MEDIA = 101
+    WHATSAPP_VOICE = 102
+    WHATSAPP_FORWARDED = 103
+    WHATSAPP_LOCATION = 104
+    WHATSAPP_CONTACT = 105
+    WHATSAPP_POLL = 106
 
 
 class AttachmentType(Enum):
@@ -151,7 +170,10 @@ class ThreadInfo(BaseModel):
 
 @dataclass
 class ProcessedMessage(BaseModel):
-    """Processed Discord message with cleaned and extracted content."""
+    """Processed message with cleaned and extracted content.
+
+    Supports both Discord and WhatsApp sources per ADR-002.
+    """
     id: str
     author_name: str
     author_id: str
@@ -170,25 +192,61 @@ class ProcessedMessage(BaseModel):
     # Channel context for multi-channel summaries
     channel_id: Optional[str] = None
     channel_name: Optional[str] = None
+    # ADR-002: Multi-source support
+    source_type: SourceType = SourceType.DISCORD
+    # WhatsApp-specific fields (ADR-002)
+    is_forwarded: bool = False
+    is_deleted: bool = False
+    reply_to_id: Optional[str] = None
+    phone_number: Optional[str] = None  # WhatsApp sender phone (anonymized in prompts)
     
     def clean_content(self) -> str:
-        """Get cleaned content without mentions, formatting, etc."""
+        """Get cleaned content without mentions, formatting, etc.
+
+        Source-aware cleaning per ADR-002.
+        """
         if not self.content:
             return ""
-        
+
+        if self.source_type == SourceType.WHATSAPP:
+            return self._clean_whatsapp_content()
+        return self._clean_discord_content()
+
+    def _clean_discord_content(self) -> str:
+        """Clean Discord-specific formatting."""
         content = self.content
-        
+
         # Remove Discord mentions (keep the name part)
         content = re.sub(r'<@!?(\d+)>', r'@user', content)
         content = re.sub(r'<@&(\d+)>', r'@role', content)
         content = re.sub(r'<#(\d+)>', r'#channel', content)
-        
+
         # Remove custom emojis but keep the name
         content = re.sub(r'<a?:[a-zA-Z0-9_]+:(\d+)>', r':emoji:', content)
-        
+
         # Clean up extra whitespace
         content = re.sub(r'\s+', ' ', content).strip()
-        
+
+        return content
+
+    def _clean_whatsapp_content(self) -> str:
+        """Clean WhatsApp-specific formatting (ADR-002)."""
+        content = self.content
+
+        # Remove WhatsApp bold markers (*text* -> text) but preserve content
+        content = re.sub(r'\*([^*]+)\*', r'\1', content)
+        # Remove WhatsApp italic markers (_text_ -> text)
+        content = re.sub(r'_([^_]+)_', r'\1', content)
+        # Remove WhatsApp strikethrough (~text~ -> text)
+        content = re.sub(r'~([^~]+)~', r'\1', content)
+
+        # Remove zero-width characters common in WhatsApp
+        content = content.replace('\u200e', '').replace('\u200f', '')
+        content = content.replace('\u200b', '')  # Zero-width space
+
+        # Clean up extra whitespace
+        content = re.sub(r'\s+', ' ', content).strip()
+
         return content
     
     def extract_code_blocks(self) -> List[CodeBlock]:

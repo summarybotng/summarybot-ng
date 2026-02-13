@@ -6,7 +6,7 @@ throughout the application.
 """
 
 from typing import Optional
-from ..base import SummaryRepository, ConfigRepository, TaskRepository, FeedRepository, WebhookRepository, ErrorRepository, StoredSummaryRepository
+from ..base import SummaryRepository, ConfigRepository, TaskRepository, FeedRepository, WebhookRepository, ErrorRepository, StoredSummaryRepository, IngestRepository
 from ..sqlite import (
     SQLiteConnection,
     SQLiteSummaryRepository,
@@ -15,7 +15,8 @@ from ..sqlite import (
     SQLiteFeedRepository,
     SQLiteWebhookRepository,
     SQLiteErrorRepository,
-    SQLiteStoredSummaryRepository
+    SQLiteStoredSummaryRepository,
+    SQLiteIngestRepository
 )
 
 
@@ -126,6 +127,17 @@ class RepositoryFactory:
         else:
             raise ValueError(f"Unsupported backend: {self.backend}")
 
+    async def get_ingest_repository(self) -> IngestRepository:
+        """Create and return an ingest repository instance (ADR-002)."""
+        connection = await self.get_connection()
+
+        if self.backend == "sqlite":
+            return SQLiteIngestRepository(connection)
+        elif self.backend == "postgresql":
+            raise NotImplementedError("PostgreSQL support is not yet implemented")
+        else:
+            raise ValueError(f"Unsupported backend: {self.backend}")
+
     async def close(self) -> None:
         """Close database connections."""
         if self._connection:
@@ -210,3 +222,9 @@ async def get_stored_summary_repository() -> StoredSummaryRepository:
     """Get the default stored summary repository instance (ADR-005)."""
     factory = get_repository_factory()
     return await factory.get_stored_summary_repository()
+
+
+async def get_ingest_repository() -> IngestRepository:
+    """Get the default ingest repository instance (ADR-002)."""
+    factory = get_repository_factory()
+    return await factory.get_ingest_repository()

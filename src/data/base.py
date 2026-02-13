@@ -14,6 +14,8 @@ from ..models.task import ScheduledTask, TaskResult
 from ..models.feed import FeedConfig
 from ..models.error_log import ErrorLog, ErrorType, ErrorSeverity
 from ..models.stored_summary import StoredSummary
+from ..models.ingest import IngestDocument, IngestBatch
+from ..models.message import ProcessedMessage
 from ..config.settings import GuildConfig
 
 
@@ -29,7 +31,9 @@ class SearchCriteria:
         limit: int = 100,
         offset: int = 0,
         order_by: str = "created_at",
-        order_direction: str = "DESC"
+        order_direction: str = "DESC",
+        # ADR-002: Multi-source support
+        source_type: Optional[str] = None,  # 'discord', 'whatsapp', etc.
     ):
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -39,6 +43,7 @@ class SearchCriteria:
         self.offset = offset
         self.order_by = order_by
         self.order_direction = order_direction
+        self.source_type = source_type
 
 
 class SummaryRepository(ABC):
@@ -566,6 +571,133 @@ class ErrorRepository(ABC):
 
         Returns:
             Number of errors resolved
+        """
+        pass
+
+
+class IngestRepository(ABC):
+    """Abstract repository for ingested message batch operations (ADR-002)."""
+
+    @abstractmethod
+    async def store_batch(
+        self,
+        batch_id: str,
+        document: IngestDocument,
+        processed_messages: List[ProcessedMessage],
+    ) -> str:
+        """
+        Store an ingest batch with its processed messages.
+
+        Args:
+            batch_id: Unique identifier for the batch
+            document: Original ingest document
+            processed_messages: Converted ProcessedMessage objects
+
+        Returns:
+            The batch ID
+        """
+        pass
+
+    @abstractmethod
+    async def get_batch(self, batch_id: str) -> Optional[IngestBatch]:
+        """
+        Retrieve an ingest batch by ID.
+
+        Args:
+            batch_id: The batch identifier
+
+        Returns:
+            The batch if found, None otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def get_messages(
+        self,
+        source_type: str,
+        channel_id: str,
+        time_from: Optional[datetime] = None,
+        time_to: Optional[datetime] = None,
+        limit: int = 1000,
+        offset: int = 0,
+    ) -> List[ProcessedMessage]:
+        """
+        Get processed messages for a channel.
+
+        Args:
+            source_type: Source type ('whatsapp', 'discord', etc.)
+            channel_id: Channel/chat identifier
+            time_from: Optional start time filter
+            time_to: Optional end time filter
+            limit: Maximum messages to return
+            offset: Number of messages to skip
+
+        Returns:
+            List of ProcessedMessage objects
+        """
+        pass
+
+    @abstractmethod
+    async def list_channels(
+        self,
+        source_type: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """
+        List channels with ingested messages.
+
+        Args:
+            source_type: Source type to filter by
+            limit: Maximum channels to return
+            offset: Number of channels to skip
+
+        Returns:
+            List of channel info dictionaries
+        """
+        pass
+
+    @abstractmethod
+    async def count_channels(self, source_type: str) -> int:
+        """
+        Count channels with ingested messages.
+
+        Args:
+            source_type: Source type to filter by
+
+        Returns:
+            Number of channels
+        """
+        pass
+
+    @abstractmethod
+    async def get_channel_stats(
+        self,
+        source_type: str,
+        channel_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get statistics for a specific channel.
+
+        Args:
+            source_type: Source type
+            channel_id: Channel identifier
+
+        Returns:
+            Channel statistics dictionary or None
+        """
+        pass
+
+    @abstractmethod
+    async def delete_batch(self, batch_id: str) -> bool:
+        """
+        Delete an ingest batch and its messages.
+
+        Args:
+            batch_id: The batch identifier
+
+        Returns:
+            True if deleted, False if not found
         """
         pass
 

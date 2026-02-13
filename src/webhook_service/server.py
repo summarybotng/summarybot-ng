@@ -229,6 +229,17 @@ class WebhookServer:
             except Exception as e:
                 logger.error(f"Failed to initialize dashboard API: {e}")
 
+        # ADR-002: Include WhatsApp ingest and summarization routes
+        try:
+            from ..feeds import ingest_router, whatsapp_router
+            self.app.include_router(ingest_router, tags=["Ingest"])
+            self.app.include_router(whatsapp_router, tags=["WhatsApp"])
+            logger.info("WhatsApp/Ingest API routes enabled (ADR-002)")
+        except ImportError as e:
+            logger.warning(f"WhatsApp/Ingest module not available: {e}")
+        except Exception as e:
+            logger.error(f"Failed to initialize WhatsApp/Ingest API: {e}")
+
         # Serve frontend static files in production (if dist/ exists)
         if has_frontend:
             assets_dir = frontend_dist / "assets"

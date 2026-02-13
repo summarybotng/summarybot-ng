@@ -1,8 +1,8 @@
 """
-Message processing module for Discord message handling.
+Message processing module for Discord and WhatsApp message handling.
 
-This module provides Discord message fetching, filtering, and preprocessing
-for summarization.
+This module provides message fetching, filtering, and preprocessing
+for summarization across multiple data sources (ADR-002).
 """
 
 from .fetcher import MessageFetcher
@@ -11,6 +11,7 @@ from .cleaner import MessageCleaner
 from .extractor import MessageExtractor
 from .validator import MessageValidator
 from .processor import MessageProcessor
+from .whatsapp_processor import WhatsAppMessageProcessor, ThreadReconstructor
 
 __all__ = [
     'MessageFetcher',
@@ -18,5 +19,8 @@ __all__ = [
     'MessageCleaner',
     'MessageExtractor',
     'MessageValidator',
-    'MessageProcessor'
+    'MessageProcessor',
+    # ADR-002: WhatsApp support
+    'WhatsAppMessageProcessor',
+    'ThreadReconstructor',
 ]

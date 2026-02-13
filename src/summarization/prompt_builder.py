@@ -76,10 +76,16 @@ Confidence is 0.0-1.0 indicating how well the cited messages support the claim.
             enable_citations: Whether to include citation instructions (ADR-004)
         """
         self.enable_citations = enable_citations
+        # ADR-002: Source-keyed prompt lookup (source_type, SummaryLength) -> prompt
         self.system_prompts = {
-            SummaryLength.BRIEF: self._build_brief_system_prompt(),
-            SummaryLength.DETAILED: self._build_detailed_system_prompt(),
-            SummaryLength.COMPREHENSIVE: self._build_comprehensive_system_prompt()
+            # Discord prompts (existing)
+            ("discord", SummaryLength.BRIEF): self._build_brief_system_prompt(),
+            ("discord", SummaryLength.DETAILED): self._build_detailed_system_prompt(),
+            ("discord", SummaryLength.COMPREHENSIVE): self._build_comprehensive_system_prompt(),
+            # WhatsApp prompts (ADR-002)
+            ("whatsapp", SummaryLength.BRIEF): self._build_whatsapp_brief_prompt(),
+            ("whatsapp", SummaryLength.DETAILED): self._build_whatsapp_detailed_prompt(),
+            ("whatsapp", SummaryLength.COMPREHENSIVE): self._build_whatsapp_comprehensive_prompt(),
         }
     
     def build_summarization_prompt(self,
@@ -147,7 +153,15 @@ Confidence is 0.0-1.0 indicating how well the cited messages support the claim.
             options: Summarization options
             use_citations: Whether to include citation instructions (ADR-004)
         """
-        base_prompt = self.system_prompts[options.summary_length]
+        # ADR-002: Source-aware prompt selection
+        source = getattr(options, 'source_type', 'discord')
+        prompt_key = (source, options.summary_length)
+
+        # Fall back to Discord prompts for unknown sources
+        if prompt_key not in self.system_prompts:
+            prompt_key = ("discord", options.summary_length)
+
+        base_prompt = self.system_prompts[prompt_key]
 
         # Add option-specific modifications
         additions = options.get_system_prompt_additions()
@@ -456,15 +470,119 @@ Key requirements:
         """Calculate time span of messages."""
         if not messages:
             return "Unknown"
-        
+
         start_time = min(msg.timestamp for msg in messages)
         end_time = max(msg.timestamp for msg in messages)
-        
+
         duration = end_time - start_time
-        
+
         if duration.total_seconds() < 3600:
             return f"{int(duration.total_seconds() / 60)} minutes"
         elif duration.total_seconds() < 86400:
             return f"{duration.total_seconds() / 3600:.1f} hours"
         else:
             return f"{duration.days} days, {duration.seconds // 3600} hours"
+
+    # ADR-002: WhatsApp-specific prompt templates
+
+    def _build_whatsapp_brief_prompt(self) -> str:
+        """Build system prompt for brief WhatsApp summaries."""
+        return """You are an expert at creating concise, actionable summaries of WhatsApp conversations.
+
+WhatsApp conversations differ from formal channels:
+- Messages are often short, informal, and use abbreviations/slang
+- Conversations may rapidly switch topics
+- Voice note transcripts may contain filler words
+- Group chats may have multiple simultaneous sub-conversations
+
+For BRIEF summaries:
+- Focus on the 3-5 most important points
+- Extract only the most critical action items
+- Use participant display names, NEVER phone numbers
+- Omit greetings, acknowledgments, and social filler
+- Distinguish forwarded content from original discussion
+
+Response Format:
+Return a JSON object with this structure:
+```json
+{
+  "summary_text": "2-3 sentence overview of the main discussion",
+  "key_points": ["point 1", "point 2", "point 3"],
+  "action_items": [{"description": "task", "assignee": "user", "priority": "high|medium|low"}],
+  "technical_terms": [{"term": "concept", "definition": "brief explanation"}],
+  "participants": [{"name": "username", "key_contribution": "their main point"}]
+}
+```
+
+Keep the summary focused, practical, and under 200 words total."""
+
+    def _build_whatsapp_detailed_prompt(self) -> str:
+        """Build system prompt for detailed WhatsApp summaries."""
+        return """You are an expert at creating comprehensive summaries of WhatsApp conversations.
+
+WhatsApp-specific guidance:
+- Group messages by topic, not chronologically
+- Reconstruct threads from reply-to chains (marked with [replying to X])
+- Distinguish forwarded content (marked [forwarded]) from original discussion
+- Treat voice note transcripts as first-class content
+- Note when media was shared even if you can't see the content
+- Use participant display names, NEVER phone numbers
+- Handle informal language, abbreviations, and emoji naturally
+
+For DETAILED summaries:
+- Include all major discussion points and conclusions
+- Extract actionable items with context
+- Explain technical concepts clearly
+- Show how different topics connect
+- Highlight key participant contributions
+
+Response Format:
+Return a JSON object with this structure:
+```json
+{
+  "summary_text": "Comprehensive overview covering all major aspects of the discussion",
+  "key_points": ["detailed point 1", "detailed point 2", "..."],
+  "action_items": [{"description": "detailed task", "assignee": "user", "priority": "high|medium|low", "context": "why this matters"}],
+  "technical_terms": [{"term": "concept", "definition": "thorough explanation", "context": "how it was used"}],
+  "participants": [{"name": "username", "key_contribution": "their main contributions", "message_count": number}]
+}
+```
+
+Balance thoroughness with readability. Aim for 300-600 words total."""
+
+    def _build_whatsapp_comprehensive_prompt(self) -> str:
+        """Build system prompt for comprehensive WhatsApp summaries."""
+        return """You are an expert at creating exhaustive summaries of WhatsApp conversations.
+
+WhatsApp-specific handling:
+- Reconstruct conversation threads from reply chains
+- Separate forwarded/shared content from original discussion
+- Include media descriptions and voice note transcripts
+- Track who committed to what (action items with owners)
+- Note sentiment shifts and areas of disagreement
+- Handle multilingual messages (some chats switch languages)
+- Preserve links and document references
+- Use participant display names, NEVER phone numbers
+- Omit only pure greetings and single-emoji acknowledgments
+
+For COMPREHENSIVE summaries:
+- Document all discussion threads and their outcomes
+- Include background context and reasoning
+- Extract all actionable items, even minor ones
+- Provide detailed technical explanations
+- Show conversation evolution and decision-making process
+- Highlight all meaningful participant contributions
+
+Response Format:
+Return a JSON object with this structure:
+```json
+{
+  "summary_text": "Exhaustive overview covering all aspects, context, and implications",
+  "key_points": ["comprehensive point 1", "comprehensive point 2", "..."],
+  "action_items": [{"description": "detailed task with full context", "assignee": "user", "priority": "high|medium|low", "deadline": "if mentioned", "context": "full background"}],
+  "technical_terms": [{"term": "concept", "definition": "complete explanation", "context": "usage context", "related_concepts": ["other terms"]}],
+  "participants": [{"name": "username", "key_contribution": "all their contributions", "message_count": number, "expertise_shown": "domain knowledge displayed"}]
+}
+```
+
+Leave nothing important out. Aim for 600-1000+ words as needed."""

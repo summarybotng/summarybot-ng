@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSummaries, useSummary, useGenerateSummary, useTaskStatus } from "@/hooks/useSummaries";
+import { useSummaries, useSummary, useGenerateSummary, useTaskStatus, usePushSummary } from "@/hooks/useSummaries";
 import { useGuild } from "@/hooks/useGuilds";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,7 +42,8 @@ import { Sparkles, FileText, Calendar, MessageSquare, Clock, Users, Loader2, Ale
 import { Input } from "@/components/ui/input";
 import { SummaryPromptDialog } from "@/components/summaries/SummaryPromptDialog";
 import { StoredSummariesTab } from "@/components/summaries/StoredSummariesTab";
-import type { Summary, SummaryOptions, GenerateRequest } from "@/types";
+import { PushToChannelModal } from "@/components/summaries/PushToChannelModal";
+import type { Summary, SummaryOptions, GenerateRequest, Channel, PushToChannelRequest } from "@/types";
 
 export function Summaries() {
   const { id } = useParams<{ id: string }>();
@@ -448,6 +449,7 @@ export function Summaries() {
         summaryId={selectedSummary}
         open={!!selectedSummary}
         onOpenChange={(open) => !open && setSelectedSummary(null)}
+        channels={guild?.channels || []}
       />
     </div>
   );
@@ -503,19 +505,56 @@ function SummaryCard({ summary, index, onClick }: { summary: Summary; index: num
   );
 }
 
-function SummaryDetailSheet({ 
-  guildId, 
-  summaryId, 
-  open, 
-  onOpenChange 
-}: { 
-  guildId: string; 
+function SummaryDetailSheet({
+  guildId,
+  summaryId,
+  open,
+  onOpenChange,
+  channels,
+}: {
+  guildId: string;
   summaryId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  channels: Channel[];
 }) {
   const { data: summary, isLoading } = useSummary(guildId, summaryId || "");
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
+  const [pushModalOpen, setPushModalOpen] = useState(false);
+  const pushSummary = usePushSummary(guildId);
+  const { toast } = useToast();
+
+  const handlePush = async (request: PushToChannelRequest) => {
+    if (!summaryId) return;
+
+    try {
+      const result = await pushSummary.mutateAsync({
+        summaryId,
+        request,
+      });
+
+      setPushModalOpen(false);
+
+      if (result.success) {
+        toast({
+          title: "Summary pushed!",
+          description: `Successfully sent to ${result.successful_channels} of ${result.total_channels} channel(s).`,
+        });
+      } else {
+        toast({
+          title: "Push failed",
+          description: "Failed to send summary to any channels.",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({
+        title: "Error",
+        description: "Failed to push summary to channels.",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <>
@@ -538,22 +577,32 @@ function SummaryDetailSheet({
             </SheetHeader>
             
             <div className="mt-6 space-y-6">
-              {/* Stats & View Details Button */}
-              <div className="flex items-center justify-between">
-                <div className="flex gap-4">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <MessageSquare className="h-4 w-4" />
-                    <span>{summary.message_count} messages</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Users className="h-4 w-4" />
-                    <span>{summary.participants.length} participants</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                    <span>{summary.metadata.processing_time_ms}ms</span>
-                  </div>
+              {/* Stats */}
+              <div className="flex flex-wrap gap-4">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <MessageSquare className="h-4 w-4" />
+                  <span>{summary.message_count} messages</span>
                 </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Users className="h-4 w-4" />
+                  <span>{summary.participants.length} participants</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Clock className="h-4 w-4" />
+                  <span>{summary.metadata.processing_time_ms}ms</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => setPushModalOpen(true)}
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  Push to Channel
+                </Button>
                 {summary.has_prompt_data && (
                   <Button
                     variant="outline"
@@ -654,6 +703,17 @@ function SummaryDetailSheet({
         summaryId={summaryId}
         open={promptDialogOpen}
         onOpenChange={setPromptDialogOpen}
+      />
+    )}
+
+    {summaryId && summary && (
+      <PushToChannelModal
+        open={pushModalOpen}
+        onOpenChange={setPushModalOpen}
+        channels={channels}
+        summaryTitle={`#${summary.channel_name} Summary`}
+        isPending={pushSummary.isPending}
+        onSubmit={handlePush}
       />
     )}
     </>

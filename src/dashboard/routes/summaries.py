@@ -955,3 +955,79 @@ async def push_to_channel(
             status_code=404,
             detail={"code": "NOT_FOUND", "message": str(e)},
         )
+
+
+@router.post(
+    "/guilds/{guild_id}/summaries/{summary_id}/push",
+    response_model=PushToChannelResponse,
+    summary="Push summary to channel",
+    description="Push a summary from history to Discord channel(s).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Summary not found"},
+    },
+)
+async def push_summary_to_channel(
+    body: PushToChannelRequest,
+    guild_id: str = Path(..., description="Discord guild ID"),
+    summary_id: str = Path(..., description="Summary ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Push a summary to Discord channels."""
+    _check_guild_access(guild_id, user)
+    guild = _get_guild_or_404(guild_id)
+    bot = get_discord_bot()
+
+    if not bot or not bot.client:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "BOT_UNAVAILABLE", "message": "Discord bot not available"},
+        )
+
+    # Validate channels belong to guild
+    guild_channels = {str(c.id) for c in guild.text_channels}
+    invalid_channels = set(body.channel_ids) - guild_channels
+    if invalid_channels:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_CHANNELS",
+                "message": f"Invalid channel IDs: {', '.join(invalid_channels)}",
+            },
+        )
+
+    # Use push service
+    from ...services.summary_push import SummaryPushService
+
+    push_service = SummaryPushService(discord_client=bot.client)
+
+    try:
+        result = await push_service.push_summary_to_channels(
+            summary_id=summary_id,
+            channel_ids=body.channel_ids,
+            format=body.format,
+            include_references=body.include_references,
+            custom_message=body.custom_message,
+            user_id=user.get("id"),
+        )
+
+        return PushToChannelResponse(
+            success=result.success,
+            total_channels=result.total_channels,
+            successful_channels=result.successful_channels,
+            deliveries=[
+                PushDeliveryResult(
+                    channel_id=d.channel_id,
+                    success=d.success,
+                    message_id=d.message_id,
+                    error=d.error,
+                )
+                for d in result.deliveries
+            ],
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": str(e)},
+        )

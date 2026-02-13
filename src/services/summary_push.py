@@ -12,7 +12,8 @@ from typing import List, Optional, Dict, Any
 import discord
 
 from ..models.stored_summary import StoredSummary
-from ..data.repositories import get_stored_summary_repository
+from ..models.summary import SummaryResult
+from ..data.repositories import get_stored_summary_repository, get_summary_repository
 
 logger = logging.getLogger(__name__)
 
@@ -310,6 +311,155 @@ class SummaryPushService:
 
         message = await channel.send(text)
         return str(message.id)
+
+    async def push_summary_to_channels(
+        self,
+        summary_id: str,
+        channel_ids: List[str],
+        format: str = "embed",
+        include_references: bool = True,
+        custom_message: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> PushToChannelsResult:
+        """Push a regular summary (from History) to one or more Discord channels.
+
+        This is for manual/on-demand summaries, not stored summaries.
+
+        Args:
+            summary_id: ID of the summary to push
+            channel_ids: List of Discord channel IDs to push to
+            format: Output format ("embed", "markdown", "plain")
+            include_references: Include ADR-004 source references
+            custom_message: Optional custom intro message
+            user_id: ID of user performing the push (for audit)
+
+        Returns:
+            Result of the push operation
+
+        Raises:
+            ValueError: If summary not found
+        """
+        # Load summary from regular repository
+        summary_repo = await get_summary_repository()
+        summary = await summary_repo.get_summary(summary_id)
+
+        if not summary:
+            raise ValueError(f"Summary {summary_id} not found")
+
+        if not summary.result:
+            raise ValueError(f"Summary {summary_id} has no summary content")
+
+        # Push to each channel
+        deliveries = []
+        successful_count = 0
+
+        for channel_id in channel_ids:
+            result = await self._push_result_to_channel(
+                summary_result=summary.result,
+                channel_id=channel_id,
+                format=format,
+                include_references=include_references,
+                custom_message=custom_message
+            )
+            deliveries.append(result)
+
+            if result.success:
+                successful_count += 1
+
+        logger.info(
+            f"Pushed summary {summary_id} to {successful_count}/{len(channel_ids)} channels"
+            f" by user {user_id}"
+        )
+
+        return PushToChannelsResult(
+            summary_id=summary_id,
+            success=successful_count > 0,
+            total_channels=len(channel_ids),
+            successful_channels=successful_count,
+            deliveries=deliveries
+        )
+
+    async def _push_result_to_channel(
+        self,
+        summary_result: SummaryResult,
+        channel_id: str,
+        format: str,
+        include_references: bool,
+        custom_message: Optional[str]
+    ) -> PushResult:
+        """Push a SummaryResult to a single channel.
+
+        Args:
+            summary_result: SummaryResult to push
+            channel_id: Discord channel ID
+            format: Output format
+            include_references: Include source references
+            custom_message: Optional intro message
+
+        Returns:
+            Push result
+        """
+        if not self.discord_client:
+            return PushResult(
+                channel_id=channel_id,
+                success=False,
+                error="Discord client not available"
+            )
+
+        try:
+            # Get channel
+            channel = self.discord_client.get_channel(int(channel_id))
+            if not channel:
+                try:
+                    channel = await self.discord_client.fetch_channel(int(channel_id))
+                except discord.NotFound:
+                    return PushResult(
+                        channel_id=channel_id,
+                        success=False,
+                        error="Channel not found"
+                    )
+
+            # Check if we can send messages
+            if not hasattr(channel, 'send'):
+                return PushResult(
+                    channel_id=channel_id,
+                    success=False,
+                    error="Cannot send messages to this channel type"
+                )
+
+            message_id = None
+
+            # Send custom intro message if provided
+            if custom_message:
+                await channel.send(custom_message)
+
+            # Send summary in requested format
+            if format == "embed":
+                message_id = await self._send_embed(channel, summary_result)
+            elif format == "markdown":
+                message_id = await self._send_markdown(channel, summary_result, include_references)
+            else:  # plain
+                message_id = await self._send_plain(channel, summary_result)
+
+            return PushResult(
+                channel_id=channel_id,
+                success=True,
+                message_id=message_id
+            )
+
+        except discord.Forbidden:
+            return PushResult(
+                channel_id=channel_id,
+                success=False,
+                error="Missing permission to send messages"
+            )
+        except Exception as e:
+            logger.exception(f"Failed to push to channel {channel_id}: {e}")
+            return PushResult(
+                channel_id=channel_id,
+                success=False,
+                error=str(e)
+            )
 
     async def verify_channel_permission(
         self,

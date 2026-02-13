@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/api/client";
-import type { Summary, SummaryDetail, SummaryPromptData, GenerateRequest, TaskStatus } from "@/types";
+import type { Summary, SummaryDetail, SummaryPromptData, GenerateRequest, TaskStatus, PushToChannelRequest, PushToChannelResponse } from "@/types";
 
 interface SummariesResponse {
   summaries: Summary[];
@@ -78,5 +78,21 @@ export function useTaskStatus(guildId: string, taskId: string | null) {
       if (query.state.data?.status === "processing") return 2000;
       return false;
     },
+  });
+}
+
+export function usePushSummary(guildId: string) {
+  return useMutation({
+    mutationFn: ({
+      summaryId,
+      request,
+    }: {
+      summaryId: string;
+      request: PushToChannelRequest;
+    }) =>
+      api.post<PushToChannelResponse>(
+        `/guilds/${guildId}/summaries/${summaryId}/push`,
+        request
+      ),
   });
 }

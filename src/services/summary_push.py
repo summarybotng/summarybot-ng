@@ -346,7 +346,7 @@ class SummaryPushService:
         if not summary:
             raise ValueError(f"Summary {summary_id} not found")
 
-        if not summary.result:
+        if not summary.summary_text:
             raise ValueError(f"Summary {summary_id} has no summary content")
 
         # Push to each channel
@@ -355,7 +355,7 @@ class SummaryPushService:
 
         for channel_id in channel_ids:
             result = await self._push_result_to_channel(
-                summary_result=summary.result,
+                summary_result=summary,
                 channel_id=channel_id,
                 format=format,
                 include_references=include_references,

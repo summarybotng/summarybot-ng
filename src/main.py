@@ -9,25 +9,32 @@ This module orchestrates all components of the bot including:
 - Webhook API server
 - Database persistence
 """
+# Early debug output - before any imports that might fail
+import sys
+print("=== Summary Bot NG module loading ===", flush=True, file=sys.stderr)
 
 import asyncio
 import logging
 import os
 import signal
-import sys
 from typing import Optional, Tuple
 from pathlib import Path
 
+print("Standard library imports OK", flush=True, file=sys.stderr)
+
 from .config import ConfigManager, BotConfig
 from .exceptions import handle_unexpected_error
+print("Config imports OK", flush=True, file=sys.stderr)
 
 # Core components
 from .summarization import SummarizationEngine, ClaudeClient
 from .summarization.cache import SummaryCache, MemoryCache
 from .message_processing import MessageProcessor
+print("Core component imports OK", flush=True, file=sys.stderr)
 
 # New modules
 from .discord_bot import SummaryBot, EventHandler
+print("Discord bot imports OK", flush=True, file=sys.stderr)
 from .permissions import PermissionManager
 from .command_handlers import (
     SummarizeCommandHandler,
@@ -41,6 +48,7 @@ from .webhook_service import WebhookServer
 from .data import initialize_repositories, run_migrations
 from .logging import CommandLogger, CommandLogRepository, LoggingConfig
 import aiosqlite
+print("All imports completed OK", flush=True, file=sys.stderr)
 
 
 class SummaryBotApp:

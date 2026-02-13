@@ -62,8 +62,16 @@ Your response MUST be valid JSON with this structure:
   ],
   "technical_terms": [
     {"term": "concept", "definition": "explanation", "context": "usage"}
+  ],
+  "sources": [
+    {"position": 2, "author": "username", "time": "14:32", "snippet": "First 60 chars of the message..."},
+    {"position": 4, "author": "other_user", "time": "14:35", "snippet": "Another relevant quote..."}
   ]
 }
+
+IMPORTANT: The "sources" array MUST include an entry for EVERY position number
+referenced anywhere in the summary. Each entry maps the [N] citation to the
+actual message details so readers can trace claims back to the conversation.
 
 The "references" arrays contain message position numbers [N] that support each claim.
 Confidence is 0.0-1.0 indicating how well the cited messages support the claim.

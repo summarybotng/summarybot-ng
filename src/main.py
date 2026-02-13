@@ -583,6 +583,45 @@ async def main():
         sys.exit(1)
 
 
+async def emergency_server():
+    """Start a minimal server when main app fails to initialize.
+
+    This ensures health checks pass and we can diagnose issues.
+    """
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+    import uvicorn
+
+    app = FastAPI(title="Summary Bot NG - Emergency Mode")
+
+    @app.get("/health")
+    async def health():
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "emergency",
+                "message": "Main application failed to start. Check logs for details.",
+                "version": "2.0.0"
+            }
+        )
+
+    @app.get("/")
+    async def root():
+        return {"status": "emergency", "message": "Application in emergency mode"}
+
+    config = uvicorn.Config(app, host="0.0.0.0", port=5000, log_level="info")
+    server = uvicorn.Server(config)
+    await server.serve()
+
+
 if __name__ == "__main__":
-    # Run the application
-    asyncio.run(main())
+    print("=== Starting Summary Bot NG ===", flush=True, file=sys.stderr)
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        # If main() fails, start emergency server for debugging
+        print(f"MAIN FAILED: {e}", flush=True, file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        print("Starting emergency server for diagnostics...", flush=True, file=sys.stderr)
+        asyncio.run(emergency_server())

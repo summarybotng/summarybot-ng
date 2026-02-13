@@ -541,9 +541,15 @@ function SummaryDetailSheet({
           description: `Successfully sent to ${result.successful_channels} of ${result.total_channels} channel(s).`,
         });
       } else {
+        // Get error messages from failed deliveries
+        const errors = result.deliveries
+          ?.filter((d: { success: boolean; error?: string }) => !d.success && d.error)
+          .map((d: { error?: string }) => d.error)
+          .filter((e: string | undefined, i: number, arr: (string | undefined)[]) => arr.indexOf(e) === i); // unique
+
         toast({
           title: "Push failed",
-          description: "Failed to send summary to any channels.",
+          description: errors?.length ? errors.join(", ") : "Failed to send summary to any channels.",
           variant: "destructive",
         });
       }

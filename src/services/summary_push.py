@@ -365,6 +365,8 @@ class SummaryPushService:
 
             if result.success:
                 successful_count += 1
+            else:
+                logger.warning(f"Failed to push to channel {channel_id}: {result.error}")
 
         logger.info(
             f"Pushed summary {summary_id} to {successful_count}/{len(channel_ids)} channels"

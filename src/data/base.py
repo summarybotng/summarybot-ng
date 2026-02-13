@@ -13,6 +13,7 @@ from ..models.summary import SummaryResult
 from ..models.task import ScheduledTask, TaskResult
 from ..models.feed import FeedConfig
 from ..models.error_log import ErrorLog, ErrorType, ErrorSeverity
+from ..models.stored_summary import StoredSummary
 from ..config.settings import GuildConfig
 
 
@@ -565,6 +566,124 @@ class ErrorRepository(ABC):
 
         Returns:
             Number of errors resolved
+        """
+        pass
+
+
+class StoredSummaryRepository(ABC):
+    """Abstract repository for stored summary operations (ADR-005)."""
+
+    @abstractmethod
+    async def save(self, summary: StoredSummary) -> str:
+        """
+        Save a stored summary to the database.
+
+        Args:
+            summary: The stored summary to save
+
+        Returns:
+            The ID of the saved summary
+        """
+        pass
+
+    @abstractmethod
+    async def get(self, summary_id: str) -> Optional[StoredSummary]:
+        """
+        Retrieve a stored summary by its ID.
+
+        Args:
+            summary_id: The unique identifier of the summary
+
+        Returns:
+            The stored summary if found, None otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def find_by_guild(
+        self,
+        guild_id: str,
+        limit: int = 20,
+        offset: int = 0,
+        pinned_only: bool = False,
+        include_archived: bool = False,
+        tags: Optional[List[str]] = None,
+    ) -> List[StoredSummary]:
+        """
+        Find stored summaries for a guild.
+
+        Args:
+            guild_id: The guild ID to search for
+            limit: Maximum number of summaries to return
+            offset: Number of summaries to skip
+            pinned_only: Only return pinned summaries
+            include_archived: Include archived summaries
+            tags: Filter by tags (any match)
+
+        Returns:
+            List of matching stored summaries
+        """
+        pass
+
+    @abstractmethod
+    async def count_by_guild(
+        self,
+        guild_id: str,
+        include_archived: bool = False,
+    ) -> int:
+        """
+        Count stored summaries for a guild.
+
+        Args:
+            guild_id: The guild ID to count for
+            include_archived: Include archived summaries
+
+        Returns:
+            Number of matching summaries
+        """
+        pass
+
+    @abstractmethod
+    async def update(self, summary: StoredSummary) -> bool:
+        """
+        Update a stored summary.
+
+        Args:
+            summary: The stored summary with updated fields
+
+        Returns:
+            True if updated, False if not found
+        """
+        pass
+
+    @abstractmethod
+    async def delete(self, summary_id: str) -> bool:
+        """
+        Delete a stored summary.
+
+        Args:
+            summary_id: The unique identifier of the summary
+
+        Returns:
+            True if deleted, False if not found
+        """
+        pass
+
+    @abstractmethod
+    async def find_by_schedule(
+        self,
+        schedule_id: str,
+        limit: int = 10,
+    ) -> List[StoredSummary]:
+        """
+        Find stored summaries created by a specific schedule.
+
+        Args:
+            schedule_id: The schedule task ID
+            limit: Maximum number of summaries to return
+
+        Returns:
+            List of stored summaries from the schedule
         """
         pass
 

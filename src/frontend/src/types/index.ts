@@ -158,9 +158,12 @@ export interface Schedule {
 }
 
 export interface Destination {
-  type: "discord_channel" | "webhook";
+  type: "discord_channel" | "webhook" | "dashboard";
   target: string;
   format: "embed" | "markdown" | "json";
+  // ADR-005: Dashboard-specific options
+  auto_archive_days?: number;
+  notify_on_delivery?: boolean;
 }
 
 // Webhook types
@@ -241,4 +244,69 @@ export interface GenerateRequest {
     end?: string;
   };
   options?: Partial<SummaryOptions>;
+}
+
+// ADR-005: Stored Summary types
+export interface StoredSummary {
+  id: string;
+  title: string;
+  source_channel_ids: string[];
+  schedule_id?: string;
+  created_at: string;
+  viewed_at?: string;
+  pushed_at?: string;
+  pushed_to_channels: string[];
+  is_pinned: boolean;
+  is_archived: boolean;
+  tags: string[];
+  key_points_count: number;
+  action_items_count: number;
+  message_count: number;
+  has_references: boolean;
+}
+
+export interface StoredSummaryDetail extends StoredSummary {
+  guild_id: string;
+  summary_text: string;
+  key_points: string[];
+  action_items: ActionItem[];
+  participants: Participant[];
+  start_time?: string;
+  end_time?: string;
+  metadata?: SummaryMetadata;
+  push_deliveries: PushDelivery[];
+}
+
+export interface PushDelivery {
+  channel_id: string;
+  pushed_at: string;
+  message_id?: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface PushToChannelRequest {
+  channel_ids: string[];
+  format: "embed" | "markdown" | "plain";
+  include_references: boolean;
+  custom_message?: string;
+}
+
+export interface PushToChannelResponse {
+  success: boolean;
+  total_channels: number;
+  successful_channels: number;
+  deliveries: {
+    channel_id: string;
+    success: boolean;
+    message_id?: string;
+    error?: string;
+  }[];
+}
+
+export interface StoredSummaryUpdateRequest {
+  title?: string;
+  is_pinned?: boolean;
+  is_archived?: boolean;
+  tags?: string[];
 }

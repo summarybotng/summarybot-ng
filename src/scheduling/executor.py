@@ -11,8 +11,9 @@ from typing import Optional, List, Dict, Any
 import discord
 
 from .tasks import SummaryTask, CleanupTask
-from ..models.task import TaskResult, DestinationType, ScheduledTask
+from ..models.task import TaskResult, DestinationType, ScheduledTask, Destination
 from ..models.summary import SummaryResult, SummarizationContext
+from ..models.stored_summary import StoredSummary
 from ..exceptions import (
     SummaryBotException, InsufficientContentError,
     MessageFetchError, create_error_context
@@ -471,6 +472,15 @@ class TaskExecutor:
                     )
                     delivery_results.append(result)
 
+                elif destination.type == DestinationType.DASHBOARD:
+                    # ADR-005: Store summary in dashboard for viewing
+                    result = await self._deliver_to_dashboard(
+                        summary=summary,
+                        destination=destination,
+                        task=task
+                    )
+                    delivery_results.append(result)
+
                 # Other destination types would be implemented here
 
             except Exception as e:
@@ -568,6 +578,80 @@ class TaskExecutor:
             "success": True,
             "message": "Webhook delivery not yet implemented"
         }
+
+    async def _deliver_to_dashboard(self,
+                                   summary: SummaryResult,
+                                   destination: Destination,
+                                   task: SummaryTask) -> Dict[str, Any]:
+        """Deliver summary to dashboard for viewing (ADR-005).
+
+        Stores the summary in the database for viewing in the dashboard UI.
+        Users can later push this summary to Discord channels on demand.
+
+        Args:
+            summary: Summary result to store
+            destination: Dashboard destination configuration
+            task: Original summary task
+
+        Returns:
+            Delivery result with stored summary ID
+        """
+        try:
+            from ..data.repositories import get_stored_summary_repository
+
+            # Generate a descriptive title from channels
+            channel_names = []
+            channel_ids = task.get_all_channel_ids()
+
+            if self.discord_client:
+                for channel_id in channel_ids:
+                    try:
+                        channel = self.discord_client.get_channel(int(channel_id))
+                        if channel:
+                            channel_names.append(f"#{channel.name}")
+                        else:
+                            channel_names.append(f"Channel {channel_id}")
+                    except Exception:
+                        channel_names.append(f"Channel {channel_id}")
+            else:
+                channel_names = [f"Channel {cid}" for cid in channel_ids]
+
+            title = f"{', '.join(channel_names)} — {datetime.utcnow().strftime('%b %d, %H:%M')}"
+
+            # Create stored summary
+            stored_summary = StoredSummary(
+                guild_id=task.guild_id,
+                source_channel_ids=channel_ids,
+                schedule_id=task.scheduled_task.id,
+                summary_result=summary,
+                title=title,
+            )
+
+            # Persist to database
+            stored_summary_repo = await get_stored_summary_repository()
+            await stored_summary_repo.save(stored_summary)
+
+            logger.info(f"Stored summary {stored_summary.id} in dashboard for guild {task.guild_id}")
+
+            return {
+                "destination_type": "dashboard",
+                "target": "dashboard",
+                "success": True,
+                "message": "Stored in dashboard",
+                "details": {
+                    "summary_id": stored_summary.id,
+                    "title": title
+                }
+            }
+
+        except Exception as e:
+            logger.exception(f"Failed to store summary in dashboard: {e}")
+            return {
+                "destination_type": "dashboard",
+                "target": "dashboard",
+                "success": False,
+                "error": str(e)
+            }
 
     async def _send_failure_notification(self,
                                         task: ScheduledTask,

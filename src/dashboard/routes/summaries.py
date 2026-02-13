@@ -23,6 +23,14 @@ from ..models import (
     GenerateSummaryResponse,
     TaskStatusResponse,
     ErrorResponse,
+    # ADR-005: Stored summaries
+    StoredSummaryListItem,
+    StoredSummaryListResponse,
+    StoredSummaryDetailResponse,
+    StoredSummaryUpdateRequest,
+    PushToChannelRequest,
+    PushToChannelResponse,
+    PushDeliveryResult,
 )
 from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_config_manager
 from ...data.base import SearchCriteria
@@ -633,3 +641,317 @@ async def get_task_status(
         summary_id=task.get("summary_id"),
         error=task.get("error"),
     )
+
+
+# ============================================================================
+# Stored Summaries (ADR-005)
+# ============================================================================
+
+
+async def _get_stored_summary_repository():
+    """Get the stored summary repository."""
+    from ...data.repositories import get_stored_summary_repository
+    return await get_stored_summary_repository()
+
+
+@router.get(
+    "/guilds/{guild_id}/stored-summaries",
+    response_model=StoredSummaryListResponse,
+    summary="List stored summaries",
+    description="Get paginated list of stored summaries for a guild (ADR-005).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Guild not found"},
+    },
+)
+async def list_stored_summaries(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(20, ge=1, le=100, description="Items per page"),
+    pinned: Optional[bool] = Query(None, description="Filter by pinned status"),
+    archived: bool = Query(False, description="Include archived summaries"),
+    tags: Optional[str] = Query(None, description="Filter by tags (comma-separated)"),
+    user: dict = Depends(get_current_user),
+):
+    """List stored summaries for a guild."""
+    _check_guild_access(guild_id, user)
+    _get_guild_or_404(guild_id)
+
+    stored_repo = await _get_stored_summary_repository()
+    offset = (page - 1) * limit
+
+    # Parse tags if provided
+    tag_list = None
+    if tags:
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    # Fetch stored summaries
+    summaries = await stored_repo.find_by_guild(
+        guild_id=guild_id,
+        limit=limit,
+        offset=offset,
+        pinned_only=pinned is True,
+        include_archived=archived,
+        tags=tag_list,
+    )
+
+    total = await stored_repo.count_by_guild(
+        guild_id=guild_id,
+        include_archived=archived,
+    )
+
+    # Convert to response items
+    items = [
+        StoredSummaryListItem(**s.to_list_item_dict())
+        for s in summaries
+    ]
+
+    return StoredSummaryListResponse(
+        items=items,
+        total=total,
+        page=page,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/guilds/{guild_id}/stored-summaries/{summary_id}",
+    response_model=StoredSummaryDetailResponse,
+    summary="Get stored summary details",
+    description="Get full details of a stored summary (ADR-005).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Summary not found"},
+    },
+)
+async def get_stored_summary(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    summary_id: str = Path(..., description="Stored summary ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Get stored summary details."""
+    _check_guild_access(guild_id, user)
+
+    stored_repo = await _get_stored_summary_repository()
+    stored = await stored_repo.get(summary_id)
+
+    if not stored or stored.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Stored summary not found"},
+        )
+
+    # Mark as viewed
+    if not stored.viewed_at:
+        stored.mark_viewed()
+        await stored_repo.update(stored)
+
+    # Build response
+    summary_result = stored.summary_result
+    action_items = []
+    participants = []
+    metadata = None
+
+    if summary_result:
+        action_items = [
+            ActionItemResponse(
+                text=item.description,
+                assignee=item.assignee,
+                priority=item.priority.value if hasattr(item.priority, 'value') else item.priority,
+            )
+            for item in summary_result.action_items
+        ]
+
+        participants = [
+            ParticipantResponse(
+                user_id=p.user_id,
+                display_name=p.display_name,
+                message_count=p.message_count,
+                key_contributions=p.key_contributions,
+            )
+            for p in summary_result.participants
+        ]
+
+        metadata = SummaryMetadataResponse(
+            summary_length=summary_result.metadata.get("summary_length", "detailed"),
+            perspective=summary_result.metadata.get("perspective", "general"),
+            model_used=summary_result.metadata.get("claude_model"),
+            model_requested=summary_result.metadata.get("requested_model"),
+            tokens_used=summary_result.metadata.get("total_tokens"),
+            generation_time_seconds=summary_result.metadata.get("processing_time"),
+        )
+
+    return StoredSummaryDetailResponse(
+        id=stored.id,
+        title=stored.title,
+        guild_id=stored.guild_id,
+        source_channel_ids=stored.source_channel_ids,
+        schedule_id=stored.schedule_id,
+        created_at=stored.created_at,
+        viewed_at=stored.viewed_at,
+        pushed_at=stored.pushed_at,
+        is_pinned=stored.is_pinned,
+        is_archived=stored.is_archived,
+        tags=stored.tags,
+        summary_text=summary_result.summary_text if summary_result else "",
+        key_points=summary_result.key_points if summary_result else [],
+        action_items=action_items,
+        participants=participants,
+        message_count=stored.get_message_count(),
+        start_time=summary_result.start_time if summary_result else None,
+        end_time=summary_result.end_time if summary_result else None,
+        metadata=metadata,
+        push_deliveries=[d.to_dict() for d in stored.push_deliveries],
+        has_references=stored.has_references(),
+    )
+
+
+@router.patch(
+    "/guilds/{guild_id}/stored-summaries/{summary_id}",
+    response_model=StoredSummaryDetailResponse,
+    summary="Update stored summary",
+    description="Update stored summary metadata (title, tags, pin, archive) (ADR-005).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Summary not found"},
+    },
+)
+async def update_stored_summary(
+    body: StoredSummaryUpdateRequest,
+    guild_id: str = Path(..., description="Discord guild ID"),
+    summary_id: str = Path(..., description="Stored summary ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Update stored summary metadata."""
+    _check_guild_access(guild_id, user)
+
+    stored_repo = await _get_stored_summary_repository()
+    stored = await stored_repo.get(summary_id)
+
+    if not stored or stored.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Stored summary not found"},
+        )
+
+    # Apply updates
+    if body.title is not None:
+        stored.title = body.title
+    if body.is_pinned is not None:
+        stored.is_pinned = body.is_pinned
+    if body.is_archived is not None:
+        stored.is_archived = body.is_archived
+    if body.tags is not None:
+        stored.tags = body.tags
+
+    await stored_repo.update(stored)
+
+    # Return updated summary
+    return await get_stored_summary(guild_id, summary_id, user)
+
+
+@router.delete(
+    "/guilds/{guild_id}/stored-summaries/{summary_id}",
+    summary="Delete stored summary",
+    description="Delete a stored summary (ADR-005).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Summary not found"},
+    },
+)
+async def delete_stored_summary(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    summary_id: str = Path(..., description="Stored summary ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Delete a stored summary."""
+    _check_guild_access(guild_id, user)
+
+    stored_repo = await _get_stored_summary_repository()
+    stored = await stored_repo.get(summary_id)
+
+    if not stored or stored.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Stored summary not found"},
+        )
+
+    await stored_repo.delete(summary_id)
+
+    return {"success": True, "message": f"Deleted stored summary {summary_id}"}
+
+
+@router.post(
+    "/guilds/{guild_id}/stored-summaries/{summary_id}/push",
+    response_model=PushToChannelResponse,
+    summary="Push to channel",
+    description="Push a stored summary to Discord channel(s) (ADR-005).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Summary not found"},
+    },
+)
+async def push_to_channel(
+    body: PushToChannelRequest,
+    guild_id: str = Path(..., description="Discord guild ID"),
+    summary_id: str = Path(..., description="Stored summary ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Push a stored summary to Discord channels."""
+    _check_guild_access(guild_id, user)
+    guild = _get_guild_or_404(guild_id)
+    bot = get_discord_bot()
+
+    if not bot or not bot.client:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "BOT_UNAVAILABLE", "message": "Discord bot not available"},
+        )
+
+    # Validate channel IDs belong to guild
+    guild_channel_ids = {str(c.id) for c in guild.text_channels}
+    invalid_channels = set(body.channel_ids) - guild_channel_ids
+    if invalid_channels:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_CHANNELS",
+                "message": f"Invalid channel IDs: {', '.join(invalid_channels)}",
+            },
+        )
+
+    # Use push service
+    from ...services.summary_push import SummaryPushService
+
+    push_service = SummaryPushService(discord_client=bot.client)
+
+    try:
+        result = await push_service.push_to_channels(
+            summary_id=summary_id,
+            channel_ids=body.channel_ids,
+            format=body.format,
+            include_references=body.include_references,
+            custom_message=body.custom_message,
+            user_id=user.get("id"),
+        )
+
+        return PushToChannelResponse(
+            success=result.success,
+            total_channels=result.total_channels,
+            successful_channels=result.successful_channels,
+            deliveries=[
+                PushDeliveryResult(
+                    channel_id=d.channel_id,
+                    success=d.success,
+                    message_id=d.message_id,
+                    error=d.error,
+                )
+                for d in result.deliveries
+            ],
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": str(e)},
+        )

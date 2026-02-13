@@ -653,3 +653,93 @@ class ErrorExportResponse(BaseModel):
     format: str
     count: int
     data: str  # CSV string or JSON string
+
+
+# ============================================================================
+# Stored Summaries (ADR-005)
+# ============================================================================
+
+class StoredSummaryListItem(BaseModel):
+    """Stored summary item in list."""
+    id: str
+    title: str
+    source_channel_ids: List[str]
+    schedule_id: Optional[str] = None
+    created_at: datetime
+    viewed_at: Optional[datetime] = None
+    pushed_at: Optional[datetime] = None
+    pushed_to_channels: List[str] = []
+    is_pinned: bool = False
+    is_archived: bool = False
+    tags: List[str] = []
+    key_points_count: int = 0
+    action_items_count: int = 0
+    message_count: int = 0
+    has_references: bool = False
+
+
+class StoredSummaryListResponse(BaseModel):
+    """Response for stored summary list."""
+    items: List[StoredSummaryListItem]
+    total: int
+    page: int
+    limit: int
+
+
+class StoredSummaryDetailResponse(BaseModel):
+    """Full stored summary details."""
+    id: str
+    title: str
+    guild_id: str
+    source_channel_ids: List[str]
+    schedule_id: Optional[str] = None
+    created_at: datetime
+    viewed_at: Optional[datetime] = None
+    pushed_at: Optional[datetime] = None
+    is_pinned: bool = False
+    is_archived: bool = False
+    tags: List[str] = []
+    # Full summary content
+    summary_text: str
+    key_points: List[str] = []
+    action_items: List[ActionItemResponse] = []
+    participants: List[ParticipantResponse] = []
+    message_count: int = 0
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    metadata: Optional[SummaryMetadataResponse] = None
+    # Push history
+    push_deliveries: List[Dict[str, Any]] = []
+    has_references: bool = False
+
+
+class StoredSummaryUpdateRequest(BaseModel):
+    """Request to update stored summary metadata."""
+    title: Optional[str] = None
+    is_pinned: Optional[bool] = None
+    is_archived: Optional[bool] = None
+    tags: Optional[List[str]] = None
+
+
+class PushToChannelRequest(BaseModel):
+    """Request to push a stored summary to channels."""
+    channel_ids: List[str] = Field(..., min_length=1, description="Channel IDs to push to")
+    format: str = Field("embed", description="Format: embed, markdown, or plain")
+    include_references: bool = Field(True, description="Include ADR-004 source references")
+    custom_message: Optional[str] = Field(None, description="Optional intro message")
+
+
+class PushDeliveryResult(BaseModel):
+    """Result of pushing to a single channel."""
+    channel_id: str
+    success: bool
+    message_id: Optional[str] = None
+    error: Optional[str] = None
+
+
+class PushToChannelResponse(BaseModel):
+    """Response for push to channel operation."""
+    success: bool
+    total_channels: int
+    successful_channels: int
+    deliveries: List[PushDeliveryResult]

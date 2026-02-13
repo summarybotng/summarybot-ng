@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -7,7 +8,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Schedule, SummaryOptions } from "@/types";
+import { Archive, Hash, Globe } from "lucide-react";
+import type { Schedule, SummaryOptions, Destination, Channel } from "@/types";
 
 const TIMEZONES = [
   "America/New_York",
@@ -31,14 +33,25 @@ export interface ScheduleFormData {
   timezone: string;
   summary_length: SummaryOptions["summary_length"];
   perspective: SummaryOptions["perspective"];
+  // ADR-005: Delivery destinations
+  destinations: {
+    dashboard: boolean;
+    discord_channel: boolean;
+    discord_channel_id: string;
+    webhook: boolean;
+    webhook_url: string;
+  };
 }
 
 interface ScheduleFormProps {
   formData: ScheduleFormData;
   onChange: (data: ScheduleFormData) => void;
+  channels?: Channel[];
 }
 
-export function ScheduleForm({ formData, onChange }: ScheduleFormProps) {
+export function ScheduleForm({ formData, onChange, channels = [] }: ScheduleFormProps) {
+  const textChannels = channels.filter((c) => c.type === "text");
+
   return (
     <div className="space-y-4 py-4">
       <div className="space-y-2">
@@ -161,6 +174,122 @@ export function ScheduleForm({ formData, onChange }: ScheduleFormProps) {
           </SelectContent>
         </Select>
       </div>
+
+      {/* ADR-005: Delivery Destinations */}
+      <div className="space-y-3">
+        <label className="text-sm font-medium">Delivery Destinations</label>
+        <p className="text-xs text-muted-foreground">
+          Choose where summaries should be delivered
+        </p>
+
+        {/* Dashboard Option */}
+        <div className="flex items-start space-x-3 rounded-md border p-3">
+          <Checkbox
+            id="dest-dashboard"
+            checked={formData.destinations.dashboard}
+            onCheckedChange={(checked) =>
+              onChange({
+                ...formData,
+                destinations: { ...formData.destinations, dashboard: checked as boolean },
+              })
+            }
+          />
+          <div className="space-y-1">
+            <label htmlFor="dest-dashboard" className="text-sm font-medium cursor-pointer flex items-center gap-2">
+              <Archive className="h-4 w-4" />
+              Dashboard (Recommended)
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Store in Summaries tab for review and manual push
+            </p>
+          </div>
+        </div>
+
+        {/* Discord Channel Option */}
+        <div className="space-y-2 rounded-md border p-3">
+          <div className="flex items-start space-x-3">
+            <Checkbox
+              id="dest-discord"
+              checked={formData.destinations.discord_channel}
+              onCheckedChange={(checked) =>
+                onChange({
+                  ...formData,
+                  destinations: { ...formData.destinations, discord_channel: checked as boolean },
+                })
+              }
+            />
+            <div className="space-y-1 flex-1">
+              <label htmlFor="dest-discord" className="text-sm font-medium cursor-pointer flex items-center gap-2">
+                <Hash className="h-4 w-4" />
+                Discord Channel
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Post directly to a channel
+              </p>
+            </div>
+          </div>
+          {formData.destinations.discord_channel && (
+            <Select
+              value={formData.destinations.discord_channel_id}
+              onValueChange={(v) =>
+                onChange({
+                  ...formData,
+                  destinations: { ...formData.destinations, discord_channel_id: v },
+                })
+              }
+            >
+              <SelectTrigger className="mt-2">
+                <SelectValue placeholder="Select channel" />
+              </SelectTrigger>
+              <SelectContent>
+                {textChannels.map((channel) => (
+                  <SelectItem key={channel.id} value={channel.id}>
+                    #{channel.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+
+        {/* Webhook Option */}
+        <div className="space-y-2 rounded-md border p-3">
+          <div className="flex items-start space-x-3">
+            <Checkbox
+              id="dest-webhook"
+              checked={formData.destinations.webhook}
+              onCheckedChange={(checked) =>
+                onChange({
+                  ...formData,
+                  destinations: { ...formData.destinations, webhook: checked as boolean },
+                })
+              }
+            />
+            <div className="space-y-1 flex-1">
+              <label htmlFor="dest-webhook" className="text-sm font-medium cursor-pointer flex items-center gap-2">
+                <Globe className="h-4 w-4" />
+                Webhook
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Send to external service
+              </p>
+            </div>
+          </div>
+          {formData.destinations.webhook && (
+            <Input
+              className="mt-2"
+              placeholder="https://..."
+              value={formData.destinations.webhook_url}
+              onChange={(e) =>
+                onChange({
+                  ...formData,
+                  destinations: { ...formData.destinations, webhook_url: e.target.value },
+                })
+              }
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -173,9 +302,21 @@ export const initialFormData: ScheduleFormData = {
   timezone: "UTC",
   summary_length: "detailed",
   perspective: "general",
+  destinations: {
+    dashboard: true, // Default to dashboard
+    discord_channel: false,
+    discord_channel_id: "",
+    webhook: false,
+    webhook_url: "",
+  },
 };
 
 export function scheduleToFormData(schedule: Schedule): ScheduleFormData {
+  // Extract destinations from schedule
+  const dashboardDest = schedule.destinations.find((d) => d.type === "dashboard");
+  const discordDest = schedule.destinations.find((d) => d.type === "discord_channel");
+  const webhookDest = schedule.destinations.find((d) => d.type === "webhook");
+
   return {
     name: schedule.name,
     schedule_type: schedule.schedule_type,
@@ -184,5 +325,43 @@ export function scheduleToFormData(schedule: Schedule): ScheduleFormData {
     timezone: schedule.timezone,
     summary_length: schedule.summary_options.summary_length,
     perspective: schedule.summary_options.perspective,
+    destinations: {
+      dashboard: !!dashboardDest,
+      discord_channel: !!discordDest,
+      discord_channel_id: discordDest?.target || "",
+      webhook: !!webhookDest,
+      webhook_url: webhookDest?.target || "",
+    },
   };
+}
+
+// Helper to convert form destinations to API format
+export function formDataToDestinations(formData: ScheduleFormData): Destination[] {
+  const destinations: Destination[] = [];
+
+  if (formData.destinations.dashboard) {
+    destinations.push({
+      type: "dashboard",
+      target: "default",
+      format: "embed",
+    });
+  }
+
+  if (formData.destinations.discord_channel && formData.destinations.discord_channel_id) {
+    destinations.push({
+      type: "discord_channel",
+      target: formData.destinations.discord_channel_id,
+      format: "embed",
+    });
+  }
+
+  if (formData.destinations.webhook && formData.destinations.webhook_url) {
+    destinations.push({
+      type: "webhook",
+      target: formData.destinations.webhook_url,
+      format: "json",
+    });
+  }
+
+  return destinations;
 }

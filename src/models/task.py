@@ -45,27 +45,35 @@ class DestinationType(Enum):
     WEBHOOK = "webhook"
     EMAIL = "email"
     FILE = "file"
+    DASHBOARD = "dashboard"  # ADR-005: Store in dashboard for viewing/manual push
 
 
 @dataclass
 class Destination(BaseModel):
     """Delivery destination for scheduled summaries."""
     type: DestinationType
-    target: str  # Channel ID, webhook URL, email address, or file path
+    target: str  # Channel ID, webhook URL, email address, file path, or "default" for dashboard
     format: str = "embed"  # embed, markdown, json
     enabled: bool = True
-    
+    # ADR-005: Dashboard-specific options
+    auto_archive_days: Optional[int] = None  # Auto-archive after N days
+    notify_on_delivery: bool = False  # Send notification when summary is ready
+
     def to_display_string(self) -> str:
         """Get human-readable destination string."""
         type_names = {
             DestinationType.DISCORD_CHANNEL: "Discord Channel",
             DestinationType.WEBHOOK: "Webhook",
             DestinationType.EMAIL: "Email",
-            DestinationType.FILE: "File"
+            DestinationType.FILE: "File",
+            DestinationType.DASHBOARD: "Dashboard"
         }
-        
+
         status = "✅" if self.enabled else "❌"
-        return f"{status} {type_names[self.type]}: {self.target} ({self.format})"
+        type_name = type_names.get(self.type, self.type.value)
+        if self.type == DestinationType.DASHBOARD:
+            return f"{status} {type_name} ({self.format})"
+        return f"{status} {type_name}: {self.target} ({self.format})"
 
 
 @dataclass

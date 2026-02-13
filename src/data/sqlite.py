@@ -20,6 +20,7 @@ from .base import (
     FeedRepository,
     WebhookRepository,
     ErrorRepository,
+    StoredSummaryRepository,
     DatabaseConnection,
     Transaction,
     SearchCriteria
@@ -45,6 +46,7 @@ from ..models.task import (
 )
 from ..models.feed import FeedConfig, FeedType
 from ..models.error_log import ErrorLog, ErrorType, ErrorSeverity
+from ..models.stored_summary import StoredSummary, PushDelivery
 from ..config.settings import GuildConfig, PermissionSettings
 
 
@@ -952,4 +954,232 @@ class SQLiteErrorRepository(ErrorRepository):
             created_at=datetime.fromisoformat(row['created_at']),
             resolved_at=datetime.fromisoformat(row['resolved_at']) if row['resolved_at'] else None,
             resolution_notes=row['resolution_notes'],
+        )
+
+
+class SQLiteStoredSummaryRepository(StoredSummaryRepository):
+    """SQLite implementation of stored summary repository (ADR-005)."""
+
+    def __init__(self, connection: SQLiteConnection):
+        self.connection = connection
+
+    async def save(self, summary: StoredSummary) -> str:
+        """Save a stored summary to the database."""
+        query = """
+        INSERT OR REPLACE INTO stored_summaries (
+            id, guild_id, source_channel_ids, schedule_id,
+            summary_json, created_at, viewed_at, pushed_at,
+            push_deliveries, title, is_pinned, is_archived, tags
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+
+        params = (
+            summary.id,
+            summary.guild_id,
+            json.dumps(summary.source_channel_ids),
+            summary.schedule_id,
+            json.dumps(summary.summary_result.to_dict() if summary.summary_result else {}),
+            summary.created_at.isoformat(),
+            summary.viewed_at.isoformat() if summary.viewed_at else None,
+            summary.pushed_at.isoformat() if summary.pushed_at else None,
+            json.dumps([d.to_dict() for d in summary.push_deliveries]),
+            summary.title,
+            summary.is_pinned,
+            summary.is_archived,
+            json.dumps(summary.tags),
+        )
+
+        await self.connection.execute(query, params)
+        return summary.id
+
+    async def get(self, summary_id: str) -> Optional[StoredSummary]:
+        """Retrieve a stored summary by its ID."""
+        query = "SELECT * FROM stored_summaries WHERE id = ?"
+        row = await self.connection.fetch_one(query, (summary_id,))
+
+        if not row:
+            return None
+
+        return self._row_to_stored_summary(row)
+
+    async def find_by_guild(
+        self,
+        guild_id: str,
+        limit: int = 20,
+        offset: int = 0,
+        pinned_only: bool = False,
+        include_archived: bool = False,
+        tags: Optional[List[str]] = None,
+    ) -> List[StoredSummary]:
+        """Find stored summaries for a guild."""
+        conditions = ["guild_id = ?"]
+        params: List[Any] = [guild_id]
+
+        if pinned_only:
+            conditions.append("is_pinned = 1")
+
+        if not include_archived:
+            conditions.append("is_archived = 0")
+
+        where_clause = " AND ".join(conditions)
+
+        query = f"""
+        SELECT * FROM stored_summaries
+        WHERE {where_clause}
+        ORDER BY is_pinned DESC, created_at DESC
+        LIMIT ? OFFSET ?
+        """
+
+        params.extend([limit, offset])
+
+        rows = await self.connection.fetch_all(query, tuple(params))
+        summaries = [self._row_to_stored_summary(row) for row in rows]
+
+        # Filter by tags in Python (SQLite JSON support is limited)
+        if tags:
+            summaries = [
+                s for s in summaries
+                if any(tag in s.tags for tag in tags)
+            ]
+
+        return summaries
+
+    async def count_by_guild(
+        self,
+        guild_id: str,
+        include_archived: bool = False,
+    ) -> int:
+        """Count stored summaries for a guild."""
+        conditions = ["guild_id = ?"]
+        params: List[Any] = [guild_id]
+
+        if not include_archived:
+            conditions.append("is_archived = 0")
+
+        where_clause = " AND ".join(conditions)
+
+        query = f"SELECT COUNT(*) as count FROM stored_summaries WHERE {where_clause}"
+
+        row = await self.connection.fetch_one(query, tuple(params))
+        return row['count'] if row else 0
+
+    async def update(self, summary: StoredSummary) -> bool:
+        """Update a stored summary."""
+        query = """
+        UPDATE stored_summaries SET
+            viewed_at = ?,
+            pushed_at = ?,
+            push_deliveries = ?,
+            title = ?,
+            is_pinned = ?,
+            is_archived = ?,
+            tags = ?
+        WHERE id = ?
+        """
+
+        params = (
+            summary.viewed_at.isoformat() if summary.viewed_at else None,
+            summary.pushed_at.isoformat() if summary.pushed_at else None,
+            json.dumps([d.to_dict() for d in summary.push_deliveries]),
+            summary.title,
+            summary.is_pinned,
+            summary.is_archived,
+            json.dumps(summary.tags),
+            summary.id,
+        )
+
+        cursor = await self.connection.execute(query, params)
+        return cursor.rowcount > 0
+
+    async def delete(self, summary_id: str) -> bool:
+        """Delete a stored summary."""
+        query = "DELETE FROM stored_summaries WHERE id = ?"
+        cursor = await self.connection.execute(query, (summary_id,))
+        return cursor.rowcount > 0
+
+    async def find_by_schedule(
+        self,
+        schedule_id: str,
+        limit: int = 10,
+    ) -> List[StoredSummary]:
+        """Find stored summaries created by a specific schedule."""
+        query = """
+        SELECT * FROM stored_summaries
+        WHERE schedule_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+        """
+
+        rows = await self.connection.fetch_all(query, (schedule_id, limit))
+        return [self._row_to_stored_summary(row) for row in rows]
+
+    def _row_to_stored_summary(self, row: Dict[str, Any]) -> StoredSummary:
+        """Convert database row to StoredSummary object."""
+        # Parse summary_result JSON back to SummaryResult
+        summary_data = json.loads(row['summary_json'])
+        summary_result = None
+        if summary_data:
+            # Reconstruct SummaryResult from dict
+            summary_result = self._dict_to_summary_result(summary_data)
+
+        # Parse push deliveries
+        push_deliveries_data = json.loads(row.get('push_deliveries') or '[]')
+        push_deliveries = [PushDelivery.from_dict(d) for d in push_deliveries_data]
+
+        return StoredSummary(
+            id=row['id'],
+            guild_id=row['guild_id'],
+            source_channel_ids=json.loads(row['source_channel_ids']),
+            schedule_id=row['schedule_id'],
+            summary_result=summary_result,
+            created_at=datetime.fromisoformat(row['created_at']),
+            viewed_at=datetime.fromisoformat(row['viewed_at']) if row['viewed_at'] else None,
+            pushed_at=datetime.fromisoformat(row['pushed_at']) if row['pushed_at'] else None,
+            push_deliveries=push_deliveries,
+            title=row['title'],
+            is_pinned=bool(row['is_pinned']),
+            is_archived=bool(row['is_archived']),
+            tags=json.loads(row.get('tags') or '[]'),
+        )
+
+    def _dict_to_summary_result(self, data: Dict[str, Any]) -> SummaryResult:
+        """Convert dictionary to SummaryResult object."""
+        # Handle nested objects
+        action_items = [ActionItem(**item) for item in data.get('action_items', [])]
+        technical_terms = [TechnicalTerm(**term) for term in data.get('technical_terms', [])]
+        participants = [Participant(**p) for p in data.get('participants', [])]
+
+        context = None
+        if data.get('context'):
+            context = SummarizationContext(**data['context'])
+
+        # Parse warnings
+        warnings = []
+        if data.get('warnings'):
+            warnings = [SummaryWarning(**w) for w in data['warnings']]
+
+        return SummaryResult(
+            id=data.get('id', ''),
+            channel_id=data.get('channel_id', ''),
+            guild_id=data.get('guild_id', ''),
+            start_time=datetime.fromisoformat(data['start_time']) if data.get('start_time') else datetime.utcnow(),
+            end_time=datetime.fromisoformat(data['end_time']) if data.get('end_time') else datetime.utcnow(),
+            message_count=data.get('message_count', 0),
+            key_points=data.get('key_points', []),
+            action_items=action_items,
+            technical_terms=technical_terms,
+            participants=participants,
+            summary_text=data.get('summary_text', ''),
+            metadata=data.get('metadata', {}),
+            created_at=datetime.fromisoformat(data['created_at']) if data.get('created_at') else datetime.utcnow(),
+            context=context,
+            prompt_system=data.get('prompt_system'),
+            prompt_user=data.get('prompt_user'),
+            prompt_template_id=data.get('prompt_template_id'),
+            source_content=data.get('source_content'),
+            warnings=warnings,
+            referenced_key_points=data.get('referenced_key_points', []),
+            referenced_action_items=data.get('referenced_action_items', []),
+            referenced_decisions=data.get('referenced_decisions', []),
+            reference_index=data.get('reference_index', []),
         )

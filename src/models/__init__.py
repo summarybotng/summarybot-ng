@@ -19,7 +19,8 @@ from .reference import (
     build_deduped_reference_index
 )
 from .user import User, UserPermissions
-from .task import ScheduledTask, TaskResult, TaskStatus
+from .task import ScheduledTask, TaskResult, TaskStatus, Destination, DestinationType
+from .stored_summary import StoredSummary, PushDelivery
 from .webhook import WebhookRequest, WebhookResponse, WebhookDelivery
 from .feed import FeedConfig, FeedType
 from .error_log import ErrorLog, ErrorType, ErrorSeverity
@@ -59,6 +60,12 @@ __all__ = [
     'ScheduledTask',
     'TaskResult',
     'TaskStatus',
+    'Destination',
+    'DestinationType',
+
+    # Stored summary models (ADR-005)
+    'StoredSummary',
+    'PushDelivery',
     
     # Webhook models
     'WebhookRequest',

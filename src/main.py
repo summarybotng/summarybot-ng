@@ -61,14 +61,21 @@ class SummaryBotApp:
         self.running = False
         self.webhook_only_mode = False  # True when DISCORD_TOKEN not set
 
-        # Setup logging
+        # Setup logging - file handler is optional (may fail if not writable)
+        log_handlers = [logging.StreamHandler(sys.stdout)]
+        try:
+            # Try to create log file in data directory for persistence
+            log_path = Path("data/summarybot.log")
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_handlers.append(logging.FileHandler(str(log_path)))
+        except (OSError, PermissionError):
+            # File logging not available, use stdout only
+            pass
+
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.StreamHandler(sys.stdout),
-                logging.FileHandler('summarybot.log')
-            ]
+            handlers=log_handlers
         )
         self.logger = logging.getLogger(__name__)
 
@@ -539,14 +546,21 @@ async def main():
     - REST API webhook server
     - SQLite database persistence
     """
+    # Early startup message for debugging
+    print("Summary Bot NG starting...", flush=True)
+
     app = SummaryBotApp()
 
     try:
-        # Initialize with default database path and config file
+        print("Initializing application...", flush=True)
+
+        # Initialize with default database path (config_path may not exist, that's OK)
         await app.initialize(
-            config_path="data/config.json",
+            config_path=None,  # Use environment variables only
             db_path="data/summarybot.db"
         )
+
+        print("Application initialized, starting services...", flush=True)
 
         # Start all services
         await app.start()
@@ -554,7 +568,10 @@ async def main():
     except KeyboardInterrupt:
         await app.stop()
     except Exception as e:
+        print(f"FATAL ERROR: {e}", flush=True)
         logging.error(f"Fatal error: {e}", exc_info=True)
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 

@@ -43,9 +43,9 @@ class ConfigValidator:
     def _validate_required_fields(config: BotConfig) -> List[str]:
         """Validate required configuration fields."""
         errors = []
-        
-        if not config.discord_token:
-            errors.append("Discord token is required")
+
+        # Discord token is optional - app can run in webhook-only mode
+        # When not set, bot features are disabled but dashboard API still works
 
         # Claude API key not needed - bot always uses OpenRouter
 

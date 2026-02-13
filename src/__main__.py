@@ -1,24 +1,23 @@
 """
 Package entry point for Summary Bot NG.
 
-This module provides a resilient entry point that catches import errors
-and starts an emergency server for diagnostics when the main app fails.
+Ultra-resilient entry point that GUARANTEES a web server starts,
+even if all other imports fail. This is critical for Fly.io health checks.
 """
 import sys
-import asyncio
-print("=== Summary Bot NG package starting ===", flush=True, file=sys.stderr)
+import os
+
+# Immediately print to stderr for debugging
+print("=== Summary Bot NG package loading ===", flush=True, file=sys.stderr)
+
+# Store any startup errors for the health endpoint
+_startup_error = None
 
 
-async def emergency_server(error_message: str = "Unknown error"):
-    """Start a minimal server when main app fails to load.
-
-    This ensures health checks pass and we can diagnose issues.
-    """
-    # Use minimal imports that are unlikely to fail
+def create_emergency_app(error_message: str):
+    """Create a minimal FastAPI app for emergency mode."""
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
-    import uvicorn
-    import os
 
     app = FastAPI(title="Summary Bot NG - Emergency Mode")
 
@@ -29,39 +28,64 @@ async def emergency_server(error_message: str = "Unknown error"):
             content={
                 "status": "emergency",
                 "error": error_message,
-                "message": "Main application failed to start. Check logs for details.",
-                "version": "2.0.0"
+                "message": "Main application failed to start. Check container logs.",
+                "version": "2.0.0",
+                "env": {
+                    "DISCORD_TOKEN_SET": bool(os.environ.get("DISCORD_TOKEN")),
+                    "OPENROUTER_API_KEY_SET": bool(os.environ.get("OPENROUTER_API_KEY")),
+                    "FLY_APP_NAME": os.environ.get("FLY_APP_NAME", "not-set"),
+                }
             }
         )
 
     @app.get("/")
     async def root():
-        return {"status": "emergency", "error": error_message}
+        return {
+            "status": "emergency",
+            "error": error_message,
+            "docs": "/docs"
+        }
+
+    return app
+
+
+def run_emergency_server(error_message: str):
+    """Start emergency server synchronously."""
+    import uvicorn
 
     host = os.environ.get("WEBHOOK_HOST", "0.0.0.0")
     port = int(os.environ.get("WEBHOOK_PORT", "5000"))
 
-    print(f"Starting emergency server on {host}:{port}", flush=True, file=sys.stderr)
-    config = uvicorn.Config(app, host=host, port=port, log_level="info")
-    server = uvicorn.Server(config)
-    await server.serve()
+    print(f"EMERGENCY: Starting fallback server on {host}:{port}", flush=True, file=sys.stderr)
+    print(f"EMERGENCY: Error was: {error_message}", flush=True, file=sys.stderr)
+
+    app = create_emergency_app(error_message)
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 def run_main():
     """Try to run the main application, fallback to emergency server on failure."""
+    global _startup_error
+
     try:
-        print("Loading main module...", flush=True, file=sys.stderr)
+        print("Step 1: Importing main module...", flush=True, file=sys.stderr)
         from .main import main
-        print("Main module loaded, starting application...", flush=True, file=sys.stderr)
+        print("Step 2: Main module imported OK", flush=True, file=sys.stderr)
+
+        import asyncio
+        print("Step 3: Starting async main()...", flush=True, file=sys.stderr)
         asyncio.run(main())
+
     except Exception as e:
-        error_msg = f"{type(e).__name__}: {e}"
-        print(f"FATAL: Failed to start application: {error_msg}", flush=True, file=sys.stderr)
         import traceback
-        traceback.print_exc()
-        print("Starting emergency server for diagnostics...", flush=True, file=sys.stderr)
-        asyncio.run(emergency_server(error_msg))
+        _startup_error = f"{type(e).__name__}: {e}"
+        print(f"FATAL: {_startup_error}", flush=True, file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+
+        # Start emergency server
+        run_emergency_server(_startup_error)
 
 
 if __name__ == "__main__":
+    print("=== Entry point reached ===", flush=True, file=sys.stderr)
     run_main()

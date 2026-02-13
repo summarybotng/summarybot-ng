@@ -1,14 +1,17 @@
 """
 Dynamic prompt generation for Claude API summarization.
+
+Includes ADR-004 support for message numbering and citation instructions.
 """
 
-from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from dataclasses import dataclass, field
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
 from ..models.summary import SummaryOptions, SummaryLength
 from ..models.message import ProcessedMessage
 from ..models.base import BaseModel
+from ..models.reference import PositionIndex
 
 
 @dataclass
@@ -18,18 +21,64 @@ class SummarizationPrompt(BaseModel):
     user_prompt: str
     estimated_tokens: int
     metadata: Dict[str, Any]
+    # ADR-004: Position index for reference resolution
+    position_index: Optional[PositionIndex] = None
 
 
 class PromptBuilder:
     """Builds optimized prompts for Claude API summarization."""
-    
+
     # Token estimation (rough approximation: 1 token ≈ 4 characters)
     CHARS_PER_TOKEN = 4
-    
-    def __init__(self):
+
+    # ADR-004: Citation instructions to append to system prompts
+    CITATION_INSTRUCTIONS = """
+
+When writing the summary, you MUST cite the specific messages that support
+each claim. Use the message position numbers shown in square brackets.
+
+For each key point, action item, decision, or participant contribution:
+- Include one or more citation numbers in the format [N] or [N,M,P]
+- Choose the most specific message(s) — prefer direct quotes over inferences
+- If a claim is synthesized from a general theme across many messages,
+  cite 2-3 representative messages and note it as "[N,M,...+K more]"
+
+Your response MUST be valid JSON with this structure:
+{
+  "summary_text": "Overview of the discussion",
+  "key_points": [
+    {"text": "The key point text", "references": [2, 4], "confidence": 0.95}
+  ],
+  "action_items": [
+    {"text": "Action item description", "references": [6], "assignee": "username", "priority": "high|medium|low"}
+  ],
+  "decisions": [
+    {"text": "Decision that was made", "references": [2, 5, 6], "confidence": 0.95}
+  ],
+  "participants": [
+    {"name": "username", "message_count": 5, "key_contributions": [
+      {"text": "Their main contribution", "references": [3]}
+    ]}
+  ],
+  "technical_terms": [
+    {"term": "concept", "definition": "explanation", "context": "usage"}
+  ]
+}
+
+The "references" arrays contain message position numbers [N] that support each claim.
+Confidence is 0.0-1.0 indicating how well the cited messages support the claim.
+"""
+
+    def __init__(self, enable_citations: bool = True):
+        """Initialize prompt builder.
+
+        Args:
+            enable_citations: Whether to include citation instructions (ADR-004)
+        """
+        self.enable_citations = enable_citations
         self.system_prompts = {
             SummaryLength.BRIEF: self._build_brief_system_prompt(),
-            SummaryLength.DETAILED: self._build_detailed_system_prompt(), 
+            SummaryLength.DETAILED: self._build_detailed_system_prompt(),
             SummaryLength.COMPREHENSIVE: self._build_comprehensive_system_prompt()
         }
     
@@ -37,7 +86,8 @@ class PromptBuilder:
                                  messages: List[ProcessedMessage],
                                  options: SummaryOptions,
                                  context: Optional[Dict[str, Any]] = None,
-                                 custom_system_prompt: Optional[str] = None) -> SummarizationPrompt:
+                                 custom_system_prompt: Optional[str] = None,
+                                 enable_citations: Optional[bool] = None) -> SummarizationPrompt:
         """Build a complete summarization prompt.
 
         Args:
@@ -45,24 +95,32 @@ class PromptBuilder:
             options: Summarization options
             context: Additional context information
             custom_system_prompt: Optional custom system prompt (overrides default)
+            enable_citations: Override instance setting for citations (ADR-004)
 
         Returns:
-            Complete prompt ready for Claude API
+            Complete prompt ready for Claude API, including PositionIndex for citation resolution
         """
         context = context or {}
+        use_citations = enable_citations if enable_citations is not None else self.enable_citations
 
         # Build system prompt (use custom if provided, otherwise default)
         if custom_system_prompt:
             system_prompt = custom_system_prompt
+            # Append citation instructions to custom prompts too if enabled
+            if use_citations:
+                system_prompt += self.CITATION_INSTRUCTIONS
         else:
-            system_prompt = self.build_system_prompt(options)
-        
-        # Build user prompt with messages
-        user_prompt = self.build_user_prompt(messages, context, options)
-        
+            system_prompt = self.build_system_prompt(options, use_citations)
+
+        # ADR-004: Build position index for citation resolution
+        position_index = PositionIndex(messages) if use_citations else None
+
+        # Build user prompt with messages (with position numbers if citations enabled)
+        user_prompt = self.build_user_prompt(messages, context, options, use_citations)
+
         # Estimate token count
         estimated_tokens = self.estimate_token_count(system_prompt + user_prompt)
-        
+
         # Build metadata
         metadata = {
             "message_count": len(messages),
@@ -70,47 +128,66 @@ class PromptBuilder:
             "summary_length": options.summary_length.value,
             "include_actions": options.extract_action_items,
             "include_technical": options.extract_technical_terms,
-            "estimated_tokens": estimated_tokens
+            "estimated_tokens": estimated_tokens,
+            "citations_enabled": use_citations  # ADR-004
         }
-        
+
         return SummarizationPrompt(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             estimated_tokens=estimated_tokens,
-            metadata=metadata
+            metadata=metadata,
+            position_index=position_index
         )
     
-    def build_system_prompt(self, options: SummaryOptions) -> str:
-        """Build system prompt based on options."""
+    def build_system_prompt(self, options: SummaryOptions, use_citations: bool = True) -> str:
+        """Build system prompt based on options.
+
+        Args:
+            options: Summarization options
+            use_citations: Whether to include citation instructions (ADR-004)
+        """
         base_prompt = self.system_prompts[options.summary_length]
-        
+
         # Add option-specific modifications
         additions = options.get_system_prompt_additions()
         if additions:
             base_prompt += "\n\nAdditional instructions:\n" + "\n".join(f"- {addition}" for addition in additions)
-        
+
+        # ADR-004: Add citation instructions
+        if use_citations:
+            base_prompt += self.CITATION_INSTRUCTIONS
+
         return base_prompt
     
-    def build_user_prompt(self, 
+    def build_user_prompt(self,
                          messages: List[ProcessedMessage],
                          context: Dict[str, Any],
-                         options: SummaryOptions) -> str:
-        """Build user prompt with message content."""
+                         options: SummaryOptions,
+                         use_citations: bool = True) -> str:
+        """Build user prompt with message content.
+
+        Args:
+            messages: List of processed messages
+            context: Context information
+            options: Summarization options
+            use_citations: Whether to include [N] position numbers (ADR-004)
+        """
         prompt_parts = []
-        
+
         # Add context information
         if context:
             prompt_parts.append(self._build_context_section(context))
-        
+
         # Add message formatting instructions
         prompt_parts.append(self._build_format_instructions(options))
-        
-        # Add messages content
-        prompt_parts.append(self._build_messages_section(messages, options))
-        
+
+        # Add messages content (with position numbers if citations enabled)
+        prompt_parts.append(self._build_messages_section(messages, options, use_citations))
+
         # Add final instruction
-        prompt_parts.append(self._build_final_instruction(options))
-        
+        prompt_parts.append(self._build_final_instruction(options, use_citations))
+
         return "\n\n".join(prompt_parts)
     
     def optimize_prompt_length(self, 
@@ -279,51 +356,92 @@ Leave nothing important out. Aim for 600-1000+ words as needed."""
         return "\n".join(instructions)
     
     def _build_messages_section(self, messages: List[ProcessedMessage],
-                               options: SummaryOptions) -> str:
-        """Build messages section with formatted content."""
-        parts = ["## Messages to Summarize:"]
+                               options: SummaryOptions,
+                               use_citations: bool = True) -> str:
+        """Build messages section with formatted content.
+
+        Args:
+            messages: List of processed messages
+            options: Summarization options
+            use_citations: Whether to include [N] position numbers (ADR-004)
+        """
+        if use_citations:
+            parts = ["## Messages to Summarize:", "--- CONVERSATION START ---"]
+        else:
+            parts = ["## Messages to Summarize:"]
 
         for i, message in enumerate(messages, 1):
             # Skip empty messages unless they have attachments
             if not message.has_substantial_content():
                 continue
 
-            # Include channel name for multi-channel context
-            if message.channel_name:
-                message_parts = [f"**{message.author_name}** in #{message.channel_name} ({message.timestamp.strftime('%H:%M')})"]
+            # ADR-004: Include position number [N] for citation references
+            if use_citations:
+                # Format: [N] Author (YYYY-MM-DD HH:MM): content
+                if message.channel_name:
+                    header = f"[{i}] {message.author_name} in #{message.channel_name} ({message.timestamp.strftime('%Y-%m-%d %H:%M')})"
+                else:
+                    header = f"[{i}] {message.author_name} ({message.timestamp.strftime('%Y-%m-%d %H:%M')})"
+                message_parts = [header]
             else:
-                message_parts = [f"**{message.author_name}** ({message.timestamp.strftime('%H:%M')})"]
-            
+                # Original format without position numbers
+                if message.channel_name:
+                    message_parts = [f"**{message.author_name}** in #{message.channel_name} ({message.timestamp.strftime('%H:%M')})"]
+                else:
+                    message_parts = [f"**{message.author_name}** ({message.timestamp.strftime('%H:%M')})"]
+
             # Add message content
             if message.content:
                 clean_content = message.clean_content()
                 message_parts.append(clean_content)
-            
+
             # Add attachment info
             if message.attachments and options.include_attachments:
                 attachment_summaries = [att.get_summary_text() for att in message.attachments]
                 message_parts.append(f"[Attachments: {', '.join(attachment_summaries)}]")
-            
+
             # Add code blocks
             if message.code_blocks:
                 for block in message.code_blocks:
                     lang = f" ({block.language})" if block.language else ""
                     message_parts.append(f"[Code Block{lang}: {len(block.code)} chars]")
-            
+
             # Add thread info
             if message.thread_info:
                 message_parts.append(f"[Thread: {message.thread_info.thread_name}]")
-            
+
             parts.append("\n".join(message_parts))
             parts.append("")  # Empty line between messages
-        
+
+        if use_citations:
+            parts.append("--- CONVERSATION END ---")
+
         return "\n".join(parts)
     
-    def _build_final_instruction(self, options: SummaryOptions) -> str:
-        """Build final instruction section."""
-        instruction = f"""## Final Instructions
+    def _build_final_instruction(self, options: SummaryOptions, use_citations: bool = True) -> str:
+        """Build final instruction section.
 
-Analyze the above messages and create a {options.summary_length.value} summary following the specified JSON format. 
+        Args:
+            options: Summarization options
+            use_citations: Whether citations are enabled (ADR-004)
+        """
+        if use_citations:
+            instruction = f"""## Final Instructions
+
+Analyze the above messages and create a {options.summary_length.value} summary following the specified JSON format.
+
+Key requirements:
+- Be accurate and objective
+- Preserve important context
+- Use clear, professional language
+- Structure information logically
+- Return valid JSON only
+- IMPORTANT: Include message position numbers [N] as references for every claim
+- Every key_point, action_item, and decision MUST have a "references" array with at least one position number"""
+        else:
+            instruction = f"""## Final Instructions
+
+Analyze the above messages and create a {options.summary_length.value} summary following the specified JSON format.
 
 Key requirements:
 - Be accurate and objective
@@ -331,7 +449,7 @@ Key requirements:
 - Use clear, professional language
 - Structure information logically
 - Return valid JSON only"""
-        
+
         return instruction
     
     def _calculate_time_span(self, messages: List[ProcessedMessage]) -> str:

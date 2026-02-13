@@ -12,6 +12,11 @@ from enum import Enum
 from .base import BaseModel, generate_id, utc_now
 from ..config.constants import DEFAULT_SUMMARIZATION_MODEL, DEFAULT_BRIEF_MODEL, DEFAULT_COMPREHENSIVE_MODEL
 
+# Import reference models (lazy to avoid circular imports)
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .reference import ReferencedClaim, SummaryReference
+
 logger = logging.getLogger(__name__)
 
 
@@ -85,10 +90,22 @@ class Participant(BaseModel):
     key_contributions: List[str] = field(default_factory=list)
     first_message_time: Optional[datetime] = None
     last_message_time: Optional[datetime] = None
-    
-    def to_markdown(self) -> str:
-        """Convert to markdown format."""
-        contributions = "\n".join([f"  - {contrib}" for contrib in self.key_contributions])
+    # ADR-004: Referenced contributions (optional, for grounded summaries)
+    referenced_contributions: List[Any] = field(default_factory=list)  # List[ReferencedClaim]
+
+    def to_markdown(self, include_citations: bool = False) -> str:
+        """Convert to markdown format.
+
+        Args:
+            include_citations: Whether to include [N] citation markers (ADR-004)
+        """
+        if include_citations and self.referenced_contributions:
+            contributions = "\n".join([
+                f"  - {contrib.to_markdown(include_citations=True)}"
+                for contrib in self.referenced_contributions
+            ])
+        else:
+            contributions = "\n".join([f"  - {contrib}" for contrib in self.key_contributions])
         return f"**{self.display_name}** ({self.message_count} messages)\n{contributions}"
 
 
@@ -128,6 +145,13 @@ class SummaryResult(BaseModel):
     source_content: Optional[str] = None  # Original messages in readable format
     # Warnings generated during summary creation
     warnings: List[SummaryWarning] = field(default_factory=list)
+
+    # ADR-004: Grounded summary references (optional, for cited summaries)
+    referenced_key_points: List[Any] = field(default_factory=list)  # List[ReferencedClaim]
+    referenced_action_items: List[Any] = field(default_factory=list)  # List[ReferencedClaim]
+    referenced_decisions: List[Any] = field(default_factory=list)  # List[ReferencedClaim]
+    referenced_topics: List[Any] = field(default_factory=list)  # List[ReferencedClaim]
+    reference_index: List[Any] = field(default_factory=list)  # List[SummaryReference] - deduped index
 
     def add_warning(self, code: str, message: str, details: Dict[str, Any] = None):
         """Add a warning to the summary."""
@@ -228,56 +252,95 @@ class SummaryResult(BaseModel):
 
         return embed
     
-    def to_markdown(self) -> str:
-        """Convert to markdown format."""
+    def to_markdown(self, include_citations: bool = False) -> str:
+        """Convert to markdown format.
+
+        Args:
+            include_citations: Whether to include [N] citation markers and sources table (ADR-004)
+        """
         md = f"# 📋 Summary: #{self.context.channel_name if self.context else 'Unknown Channel'}\n\n"
         md += f"**Time Period:** {self.start_time.strftime('%Y-%m-%d %H:%M')} - {self.end_time.strftime('%Y-%m-%d %H:%M')}\n"
         md += f"**Messages:** {self.message_count} | **Participants:** {len(self.participants)}\n\n"
-        
+
         # Main summary
         md += f"## 📖 Summary\n\n{self.summary_text}\n\n"
-        
-        # Key points
-        if self.key_points:
+
+        # Key points (use referenced if available and citations requested)
+        if include_citations and self.referenced_key_points:
+            md += "## 🎯 Key Points\n\n"
+            for claim in self.referenced_key_points:
+                md += f"- {claim.to_markdown(include_citations=True)}\n"
+            md += "\n"
+        elif self.key_points:
             md += "## 🎯 Key Points\n\n"
             for point in self.key_points:
                 md += f"- {point}\n"
             md += "\n"
-        
-        # Action items
-        if self.action_items:
+
+        # Decisions (new in ADR-004)
+        if include_citations and self.referenced_decisions:
+            md += "## ✅ Decisions\n\n"
+            for claim in self.referenced_decisions:
+                md += f"- {claim.to_markdown(include_citations=True)}\n"
+            md += "\n"
+
+        # Action items (use referenced if available)
+        if include_citations and self.referenced_action_items:
+            md += "## 📝 Action Items\n\n"
+            for claim in self.referenced_action_items:
+                md += f"- [ ] {claim.to_markdown(include_citations=True)}\n"
+            md += "\n"
+        elif self.action_items:
             md += "## 📝 Action Items\n\n"
             for item in self.action_items:
                 md += f"- {item.to_markdown()}\n"
             md += "\n"
-        
+
         # Technical terms
         if self.technical_terms:
             md += "## 🔧 Technical Terms\n\n"
             for term in self.technical_terms:
                 md += f"- {term.to_markdown()}\n"
             md += "\n"
-        
+
         # Participants
         if self.participants:
             md += "## 👥 Participants\n\n"
             sorted_participants = sorted(self.participants, key=lambda p: p.message_count, reverse=True)
             for participant in sorted_participants:
                 md += f"### {participant.display_name} ({participant.message_count} messages)\n"
-                if participant.key_contributions:
+                if include_citations and participant.referenced_contributions:
+                    md += "Key contributions:\n"
+                    for contrib in participant.referenced_contributions:
+                        md += f"- {contrib.to_markdown(include_citations=True)}\n"
+                elif participant.key_contributions:
                     md += "Key contributions:\n"
                     for contribution in participant.key_contributions:
                         md += f"- {contribution}\n"
                 md += "\n"
-        
+
+        # Sources table (ADR-004)
+        if include_citations and self.reference_index:
+            md += "---\n\n### Sources\n\n"
+            md += "| # | Who | When | Said |\n"
+            md += "|---|-----|------|------|\n"
+            for ref in self.reference_index:
+                time_str = ref.timestamp.strftime("%H:%M")
+                # Escape pipe characters in snippet
+                snippet = ref.snippet.replace("|", "\\|")
+                if len(snippet) > 60:
+                    snippet = snippet[:57] + "..."
+                md += f"| [{ref.position}] | {ref.sender} | {time_str} | \"{snippet}\" |\n"
+            md += "\n"
+
         # Metadata
         md += f"---\n*Summary generated on {self.created_at.strftime('%Y-%m-%d at %H:%M UTC')} | ID: {self.id}*\n"
-        
+
         return md
     
     def get_summary_stats(self) -> Dict[str, Any]:
         """Get summary statistics."""
-        return {
+        stats = {
             "id": self.id,
             "message_count": self.message_count,
             "participant_count": len(self.participants),
@@ -290,6 +353,19 @@ class SummaryResult(BaseModel):
             "channel_id": self.channel_id,
             "guild_id": self.guild_id
         }
+        # ADR-004: Add reference stats if grounded
+        if self.reference_index:
+            stats["grounded"] = True
+            stats["reference_count"] = len(self.reference_index)
+            stats["referenced_key_points_count"] = len(self.referenced_key_points)
+            stats["referenced_decisions_count"] = len(self.referenced_decisions)
+        else:
+            stats["grounded"] = False
+        return stats
+
+    def has_references(self) -> bool:
+        """Check if this summary has grounded references (ADR-004)."""
+        return bool(self.reference_index)
 
 
 def _get_default_model() -> str:

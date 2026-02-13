@@ -2,6 +2,7 @@
 Summarization engine module for Summary Bot NG.
 
 This module provides core AI-powered summarization logic with Claude API integration.
+Includes ADR-004 support for grounded summary references.
 """
 
 from .engine import SummarizationEngine
@@ -11,15 +12,22 @@ from .response_parser import ResponseParser, ParsedSummary
 from .cache import SummaryCache
 from .optimization import SummaryOptimizer
 
+# Re-export reference models for convenience
+from ..models.reference import PositionIndex, SummaryReference, ReferencedClaim
+
 __all__ = [
     'SummarizationEngine',
     'ClaudeClient',
-    'ClaudeResponse', 
+    'ClaudeResponse',
     'ClaudeOptions',
     'PromptBuilder',
     'SummarizationPrompt',
     'ResponseParser',
     'ParsedSummary',
     'SummaryCache',
-    'SummaryOptimizer'
+    'SummaryOptimizer',
+    # ADR-004 reference models
+    'PositionIndex',
+    'SummaryReference',
+    'ReferencedClaim'
 ]

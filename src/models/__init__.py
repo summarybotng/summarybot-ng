@@ -14,6 +14,10 @@ from .message import (
     ProcessedMessage, MessageReference, AttachmentInfo, ThreadInfo,
     CodeBlock, MessageMention
 )
+from .reference import (
+    SummaryReference, ReferencedClaim, PositionIndex,
+    build_deduped_reference_index
+)
 from .user import User, UserPermissions
 from .task import ScheduledTask, TaskResult, TaskStatus
 from .webhook import WebhookRequest, WebhookResponse, WebhookDelivery
@@ -40,6 +44,12 @@ __all__ = [
     'ThreadInfo',
     'CodeBlock',
     'MessageMention',
+
+    # Reference models (ADR-004)
+    'SummaryReference',
+    'ReferencedClaim',
+    'PositionIndex',
+    'build_deduped_reference_index',
     
     # User models
     'User',

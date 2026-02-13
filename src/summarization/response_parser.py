@@ -1,11 +1,13 @@
 """
 Claude response parsing and processing.
+
+Includes ADR-004 support for parsing message-level citations.
 """
 
 import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
@@ -15,6 +17,10 @@ from ..models.summary import (
 )
 from ..models.message import ProcessedMessage
 from ..models.base import BaseModel, generate_id
+from ..models.reference import (
+    SummaryReference, ReferencedClaim, PositionIndex,
+    build_deduped_reference_index
+)
 from ..exceptions import SummarizationError
 
 logger = logging.getLogger(__name__)
@@ -30,6 +36,12 @@ class ParsedSummary(BaseModel):
     participants: List[Participant]
     raw_response: str
     parsing_metadata: Dict[str, Any]
+    # ADR-004: Referenced claims (populated when citations are parsed)
+    referenced_key_points: List[ReferencedClaim] = field(default_factory=list)
+    referenced_action_items: List[ReferencedClaim] = field(default_factory=list)
+    referenced_decisions: List[ReferencedClaim] = field(default_factory=list)
+    referenced_topics: List[ReferencedClaim] = field(default_factory=list)
+    reference_index: List[SummaryReference] = field(default_factory=list)
 
 
 class ResponseParser:
@@ -45,17 +57,19 @@ class ResponseParser:
     def parse_summary_response(self,
                              response_content: str,
                              original_messages: List[ProcessedMessage],
-                             context: Optional[SummarizationContext] = None) -> ParsedSummary:
+                             context: Optional[SummarizationContext] = None,
+                             position_index: Optional[PositionIndex] = None) -> ParsedSummary:
         """Parse Claude response into structured summary.
-        
+
         Args:
             response_content: Raw response from Claude
             original_messages: Original messages that were summarized
             context: Additional context information
-            
+            position_index: Optional PositionIndex for resolving citations (ADR-004)
+
         Returns:
             Parsed and structured summary
-            
+
         Raises:
             SummarizationError: If parsing fails completely
         """
@@ -63,7 +77,8 @@ class ResponseParser:
             "response_length": len(response_content),
             "parsing_method": None,
             "extraction_stats": {},
-            "warnings": []
+            "warnings": [],
+            "citations_enabled": position_index is not None  # ADR-004
         }
 
         # Log response preview for debugging
@@ -74,7 +89,11 @@ class ResponseParser:
         for parser_method in self.fallback_parsers:
             try:
                 logger.debug(f"Trying parser: {parser_method.__name__}")
-                parsed = parser_method(response_content, parsing_metadata)
+                # ADR-004: Pass position_index to JSON parser for citation resolution
+                if parser_method == self._parse_json_response and position_index:
+                    parsed = parser_method(response_content, parsing_metadata, position_index)
+                else:
+                    parsed = parser_method(response_content, parsing_metadata)
                 if parsed:
                     logger.debug(f"Parser {parser_method.__name__} succeeded")
                     # Enhance with message analysis
@@ -131,11 +150,23 @@ class ResponseParser:
             summary_text=parsed.summary_text,
             metadata=parsed.parsing_metadata,
             created_at=datetime.utcnow(),
-            context=context
+            context=context,
+            # ADR-004: Include referenced claims
+            referenced_key_points=parsed.referenced_key_points,
+            referenced_action_items=parsed.referenced_action_items,
+            referenced_decisions=parsed.referenced_decisions,
+            reference_index=parsed.reference_index
         )
     
-    def _parse_json_response(self, content: str, metadata: Dict[str, Any]) -> Optional[ParsedSummary]:
-        """Parse JSON-formatted response."""
+    def _parse_json_response(self, content: str, metadata: Dict[str, Any],
+                            position_index: Optional[PositionIndex] = None) -> Optional[ParsedSummary]:
+        """Parse JSON-formatted response.
+
+        Args:
+            content: Raw response content
+            metadata: Parsing metadata dict to update
+            position_index: Optional PositionIndex for resolving citations (ADR-004)
+        """
         metadata["parsing_method"] = "json"
 
         # Extract JSON from response (handle code blocks)
@@ -165,6 +196,11 @@ class ResponseParser:
                 data.get("Overview", "")
             )
 
+            # ADR-004: Track referenced claims
+            referenced_key_points: List[ReferencedClaim] = []
+            referenced_action_items: List[ReferencedClaim] = []
+            referenced_decisions: List[ReferencedClaim] = []
+
             # Extract key points from various formats
             key_points_raw = (
                 data.get("key_points", []) or
@@ -179,8 +215,18 @@ class ResponseParser:
             if isinstance(key_points_raw, list):
                 for item in key_points_raw:
                     if isinstance(item, dict):
+                        # ADR-004: Handle referenced format {"text": "...", "references": [1,2]}
+                        if "text" in item and "references" in item and position_index:
+                            refs = position_index.resolve_many(item.get("references", []))
+                            confidence = item.get("confidence", 1.0)
+                            referenced_key_points.append(ReferencedClaim(
+                                text=item["text"],
+                                references=refs,
+                                confidence=confidence
+                            ))
+                            key_points.append(item["text"])  # Also add flat version
                         # Handle nested topic/points format: {"topic": "...", "points": [...]}
-                        if "topic" in item and "points" in item:
+                        elif "topic" in item and "points" in item:
                             # Extract all points from this topic
                             if isinstance(item["points"], list):
                                 key_points.extend(item["points"])
@@ -193,7 +239,19 @@ class ResponseParser:
                         key_points.append(item)
             elif isinstance(key_points_raw, str):
                 key_points = [key_points_raw]
-            
+
+            # ADR-004: Parse decisions (new field)
+            decisions_raw = data.get("decisions", [])
+            for item in decisions_raw:
+                if isinstance(item, dict) and "text" in item and position_index:
+                    refs = position_index.resolve_many(item.get("references", []))
+                    confidence = item.get("confidence", 1.0)
+                    referenced_decisions.append(ReferencedClaim(
+                        text=item["text"],
+                        references=refs,
+                        confidence=confidence
+                    ))
+
             # Parse action items - support custom emoji format
             action_items_raw = (
                 data.get("action_items", []) or
@@ -210,15 +268,26 @@ class ResponseParser:
                             priority = Priority(item_data["priority"].lower())
                         except ValueError:
                             pass
-                    
+
+                    # ADR-004: Handle referenced action items
+                    description = item_data.get("description", "") or item_data.get("text", "")
                     action_items.append(ActionItem(
-                        description=item_data.get("description", ""),
+                        description=description,
                         assignee=item_data.get("assignee"),
                         priority=priority
                     ))
+
+                    # Create referenced version if references present
+                    if "references" in item_data and position_index:
+                        refs = position_index.resolve_many(item_data.get("references", []))
+                        referenced_action_items.append(ReferencedClaim(
+                            text=description,
+                            references=refs,
+                            confidence=item_data.get("confidence", 1.0)
+                        ))
                 elif isinstance(item_data, str):
                     action_items.append(ActionItem(description=item_data))
-            
+
             # Parse technical terms
             technical_terms = []
             for term_data in data.get("technical_terms", []):
@@ -229,25 +298,63 @@ class ResponseParser:
                         context=term_data.get("context", ""),
                         source_message_id=""  # Will be filled later if possible
                     ))
-            
-            # Parse participants
+
+            # Parse participants (with ADR-004 support for referenced contributions)
             participants = []
             for participant_data in data.get("participants", []):
                 if isinstance(participant_data, dict):
+                    # Handle referenced contributions
+                    referenced_contributions = []
+                    key_contributions_raw = participant_data.get("key_contributions", [])
+
+                    flat_contributions = []
+                    if isinstance(key_contributions_raw, list):
+                        for contrib in key_contributions_raw:
+                            if isinstance(contrib, dict) and "text" in contrib and position_index:
+                                # Referenced contribution
+                                refs = position_index.resolve_many(contrib.get("references", []))
+                                referenced_contributions.append(ReferencedClaim(
+                                    text=contrib["text"],
+                                    references=refs,
+                                    confidence=contrib.get("confidence", 1.0)
+                                ))
+                                flat_contributions.append(contrib["text"])
+                            elif isinstance(contrib, str):
+                                flat_contributions.append(contrib)
+                    elif isinstance(key_contributions_raw, str):
+                        flat_contributions = [key_contributions_raw]
+
+                    # Also check old format field
+                    if not flat_contributions:
+                        flat_contributions = self._ensure_list(participant_data.get("key_contribution", []))
+
                     participants.append(Participant(
                         user_id="",  # Will be filled from message analysis
                         display_name=participant_data.get("name", ""),
                         message_count=participant_data.get("message_count", 0),
-                        key_contributions=self._ensure_list(participant_data.get("key_contribution", []))
+                        key_contributions=flat_contributions,
+                        referenced_contributions=referenced_contributions
                     ))
-            
+
+            # ADR-004: Build deduped reference index
+            reference_index = []
+            if position_index:
+                reference_index = build_deduped_reference_index(
+                    referenced_key_points,
+                    referenced_action_items,
+                    referenced_decisions
+                )
+
             metadata["extraction_stats"] = {
                 "key_points": len(key_points),
                 "action_items": len(action_items),
                 "technical_terms": len(technical_terms),
-                "participants": len(participants)
+                "participants": len(participants),
+                "referenced_key_points": len(referenced_key_points),
+                "referenced_decisions": len(referenced_decisions),
+                "reference_count": len(reference_index)
             }
-            
+
             return ParsedSummary(
                 summary_text=summary_text,
                 key_points=key_points,
@@ -255,9 +362,13 @@ class ResponseParser:
                 technical_terms=technical_terms,
                 participants=participants,
                 raw_response=content,
-                parsing_metadata=metadata.copy()
+                parsing_metadata=metadata.copy(),
+                referenced_key_points=referenced_key_points,
+                referenced_action_items=referenced_action_items,
+                referenced_decisions=referenced_decisions,
+                reference_index=reference_index
             )
-            
+
         except json.JSONDecodeError as e:
             logger.error(f"JSON parse error: {str(e)}")
             logger.error(f"Failed JSON string (first 500 chars): {json_str[:500]}")

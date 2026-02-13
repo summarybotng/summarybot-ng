@@ -190,11 +190,12 @@ class SummarizationEngine:
 
             logger.info(f"Claude API response: input_tokens={response.input_tokens}, output_tokens={response.output_tokens}, content_length={len(response.content)}")
 
-            # Parse response
+            # Parse response (ADR-004: pass position_index for citation resolution)
             parsed_summary = self.response_parser.parse_summary_response(
                 response_content=response.content,
                 original_messages=messages,
-                context=context
+                context=context,
+                position_index=prompt_data.position_index
             )
             
             # Create final summary result
@@ -221,7 +222,10 @@ class SummarizationEngine:
                 "api_response_id": response.response_id,
                 "processing_time": (datetime.utcnow() - summary_result.created_at).total_seconds(),
                 "summary_length": options.summary_length.value,
-                "perspective": options.perspective
+                "perspective": options.perspective,
+                # ADR-004: Citation metadata
+                "citations_enabled": prompt_data.position_index is not None,
+                "grounded": summary_result.has_references()
             })
 
             # Add prompt source info for transparency

@@ -20,8 +20,9 @@ kill_timeout = "30s"
   LOG_LEVEL = "INFO"
   DATABASE_URL = "sqlite:///data/summarybot.db"
   # Dashboard API configuration - multiple origins for CORS
-  WEBHOOK_CORS_ORIGINS = "https://summarybot.lovable.app,https://lovable.dev,http://localhost:5173,http://localhost:3000,http://localhost:8080"
-  DISCORD_REDIRECT_URI = "https://summarybot.lovable.app/callback"
+  WEBHOOK_CORS_ORIGINS = "https://summarybot-ng.fly.dev,https://summarybot.lovable.app,https://lovable.dev,http://localhost:5173,http://localhost:3000,http://localhost:8080"
+  # OAuth redirect should point to the actual deployed app
+  DISCORD_REDIRECT_URI = "https://summarybot-ng.fly.dev/callback"
 
 # HTTP service (Webhook API)
 [[services]]

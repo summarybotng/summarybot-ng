@@ -30,11 +30,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, FileText, Calendar, MessageSquare, Clock, Users, Loader2, AlertCircle, RefreshCw, Hash, FolderOpen, Server, Eye, Search } from "lucide-react";
+import { Sparkles, FileText, Calendar, MessageSquare, Clock, Users, Loader2, AlertCircle, RefreshCw, Hash, FolderOpen, Server, Eye, Search, Send, Archive } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { SummaryPromptDialog } from "@/components/summaries/SummaryPromptDialog";
+import { StoredSummariesTab } from "@/components/summaries/StoredSummariesTab";
 import type { Summary, SummaryOptions, GenerateRequest } from "@/types";
 
 export function Summaries() {
@@ -339,29 +346,6 @@ export function Summaries() {
         </Dialog>
       </motion.div>
 
-      {/* Error State */}
-      {isError && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <Card className="border-destructive/50 bg-destructive/5">
-            <CardContent className="flex items-center justify-between p-4">
-              <div className="flex items-center gap-3">
-                <AlertCircle className="h-5 w-5 text-destructive" />
-                <div>
-                  <p className="font-medium text-destructive">Failed to load summaries</p>
-                  <p className="text-sm text-muted-foreground">
-                    {error instanceof Error ? error.message : "An error occurred"}
-                  </p>
-                </div>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => refetch()}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Retry
-              </Button>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
-
       {/* Generation Progress */}
       {activeTaskId && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -377,36 +361,87 @@ export function Summaries() {
         </motion.div>
       )}
 
-      {isLoading ? (
-        <SummariesSkeleton />
-      ) : summariesData?.summaries.length === 0 ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex flex-col items-center justify-center py-20"
-        >
-          <FileText className="mb-4 h-16 w-16 text-muted-foreground/30" />
-          <h2 className="mb-2 text-xl font-semibold">No summaries yet</h2>
-          <p className="mb-6 text-center text-muted-foreground">
-            Generate your first summary to get started
-          </p>
-          <Button onClick={() => setGenerateOpen(true)}>
-            <Sparkles className="mr-2 h-4 w-4" />
-            Generate Summary
-          </Button>
-        </motion.div>
-      ) : (
-        <div className="grid gap-4">
-          {summariesData?.summaries.map((summary, index) => (
-            <SummaryCard
-              key={summary.id}
-              summary={summary}
-              index={index}
-              onClick={() => setSelectedSummary(summary.id)}
-            />
-          ))}
-        </div>
-      )}
+      {/* Tabs for History vs Stored */}
+      <Tabs defaultValue="history" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="history" className="gap-2">
+            <FileText className="h-4 w-4" />
+            History
+          </TabsTrigger>
+          <TabsTrigger value="stored" className="gap-2">
+            <Send className="h-4 w-4" />
+            Stored & Share
+          </TabsTrigger>
+        </TabsList>
+
+        {/* History Tab - Generated summaries */}
+        <TabsContent value="history" className="space-y-4">
+          {/* Error State */}
+          {isError && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <Card className="border-destructive/50 bg-destructive/5">
+                <CardContent className="flex items-center justify-between p-4">
+                  <div className="flex items-center gap-3">
+                    <AlertCircle className="h-5 w-5 text-destructive" />
+                    <div>
+                      <p className="font-medium text-destructive">Failed to load summaries</p>
+                      <p className="text-sm text-muted-foreground">
+                        {error instanceof Error ? error.message : "An error occurred"}
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => refetch()}>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Retry
+                  </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          {isLoading ? (
+            <SummariesSkeleton />
+          ) : summariesData?.summaries.length === 0 ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-col items-center justify-center py-20"
+            >
+              <FileText className="mb-4 h-16 w-16 text-muted-foreground/30" />
+              <h2 className="mb-2 text-xl font-semibold">No summaries yet</h2>
+              <p className="mb-6 text-center text-muted-foreground">
+                Generate your first summary to get started
+              </p>
+              <Button onClick={() => setGenerateOpen(true)}>
+                <Sparkles className="mr-2 h-4 w-4" />
+                Generate Summary
+              </Button>
+            </motion.div>
+          ) : (
+            <div className="grid gap-4">
+              {summariesData?.summaries.map((summary, index) => (
+                <SummaryCard
+                  key={summary.id}
+                  summary={summary}
+                  index={index}
+                  onClick={() => setSelectedSummary(summary.id)}
+                />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Stored Tab - Summaries with Push to Channel */}
+        <TabsContent value="stored">
+          <div className="mb-4 rounded-md border border-primary/20 bg-primary/5 p-3">
+            <p className="text-sm text-muted-foreground">
+              <Send className="inline-block mr-1.5 h-4 w-4" />
+              Stored summaries can be <strong>pushed to Discord channels</strong>. Create a schedule with "Dashboard" destination to store summaries here.
+            </p>
+          </div>
+          <StoredSummariesTab guildId={id || ""} />
+        </TabsContent>
+      </Tabs>
 
       <SummaryDetailSheet
         guildId={id || ""}

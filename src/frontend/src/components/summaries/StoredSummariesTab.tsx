@@ -320,7 +320,7 @@ function StoredSummaryDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+      <SheetContent className="w-full overflow-y-auto sm:max-w-2xl lg:max-w-3xl">
         {isLoading ? (
           <div className="space-y-4">
             <Skeleton className="h-8 w-48" />

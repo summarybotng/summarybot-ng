@@ -56,15 +56,21 @@ class ActionItem(BaseModel):
         """Convert to markdown format."""
         priority_emoji = {
             Priority.HIGH: "🔴",
-            Priority.MEDIUM: "🟡", 
-            Priority.LOW: "🟢"
+            Priority.MEDIUM: "🟡",
+            Priority.LOW: "🟢",
+            # Also support string keys for data loaded from DB
+            "high": "🔴",
+            "medium": "🟡",
+            "low": "🟢",
         }
-        
+
         status = "✅" if self.completed else "⭕"
         assignee_text = f" (@{self.assignee})" if self.assignee else ""
         deadline_text = f" - Due: {self.deadline.strftime('%Y-%m-%d')}" if self.deadline else ""
-        
-        return f"{status} {priority_emoji[self.priority]} {self.description}{assignee_text}{deadline_text}"
+
+        # Handle both enum and string priority values
+        emoji = priority_emoji.get(self.priority, "🟡")
+        return f"{status} {emoji} {self.description}{assignee_text}{deadline_text}"
 
 
 @dataclass

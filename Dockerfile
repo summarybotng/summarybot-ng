@@ -89,5 +89,5 @@ ENV PYTHONUNBUFFERED=1 \
     BUILD_NUMBER=${BUILD_NUMBER} \
     BUILD_DATE=${BUILD_DATE}
 
-# Run the application
-CMD ["python", "-m", "src.main"]
+# Run the application (uses src/__main__.py for resilient startup)
+CMD ["python", "-m", "src"]

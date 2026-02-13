@@ -48,6 +48,11 @@ export function PushToChannelModal({
   const [includeReferences, setIncludeReferences] = useState(true);
   const [customMessage, setCustomMessage] = useState("");
   const [channelSearch, setChannelSearch] = useState("");
+  // Section toggles
+  const [includeKeyPoints, setIncludeKeyPoints] = useState(true);
+  const [includeActionItems, setIncludeActionItems] = useState(true);
+  const [includeParticipants, setIncludeParticipants] = useState(true);
+  const [includeTechnicalTerms, setIncludeTechnicalTerms] = useState(true);
 
   const textChannels = channels.filter((c) => c.type === "text");
   const filteredChannels = textChannels.filter((c) =>
@@ -62,6 +67,10 @@ export function PushToChannelModal({
       format,
       include_references: includeReferences,
       custom_message: customMessage || undefined,
+      include_key_points: includeKeyPoints,
+      include_action_items: includeActionItems,
+      include_participants: includeParticipants,
+      include_technical_terms: includeTechnicalTerms,
     });
   };
 
@@ -73,6 +82,10 @@ export function PushToChannelModal({
       setIncludeReferences(true);
       setCustomMessage("");
       setChannelSearch("");
+      setIncludeKeyPoints(true);
+      setIncludeActionItems(true);
+      setIncludeParticipants(true);
+      setIncludeTechnicalTerms(true);
     }
     onOpenChange(isOpen);
   };
@@ -165,6 +178,61 @@ export function PushToChannelModal({
             <label htmlFor="include-refs" className="text-sm cursor-pointer">
               Include source references
             </label>
+          </div>
+
+          {/* Section Toggles */}
+          <div className="space-y-2">
+            <Label>Sections to Include</Label>
+            <div className="rounded-md border p-3 space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="include-key-points"
+                  checked={includeKeyPoints}
+                  onCheckedChange={(checked) =>
+                    setIncludeKeyPoints(checked as boolean)
+                  }
+                />
+                <label htmlFor="include-key-points" className="text-sm cursor-pointer">
+                  Key Points
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="include-action-items"
+                  checked={includeActionItems}
+                  onCheckedChange={(checked) =>
+                    setIncludeActionItems(checked as boolean)
+                  }
+                />
+                <label htmlFor="include-action-items" className="text-sm cursor-pointer">
+                  Action Items
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="include-participants"
+                  checked={includeParticipants}
+                  onCheckedChange={(checked) =>
+                    setIncludeParticipants(checked as boolean)
+                  }
+                />
+                <label htmlFor="include-participants" className="text-sm cursor-pointer">
+                  Participants
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="include-technical-terms"
+                  checked={includeTechnicalTerms}
+                  onCheckedChange={(checked) =>
+                    setIncludeTechnicalTerms(checked as boolean)
+                  }
+                />
+                <label htmlFor="include-technical-terms" className="text-sm cursor-pointer">
+                  Technical Terms
+                </label>
+              </div>
+            </div>
           </div>
 
           {/* Custom Message */}

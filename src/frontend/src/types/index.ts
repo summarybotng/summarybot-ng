@@ -290,6 +290,11 @@ export interface PushToChannelRequest {
   format: "embed" | "markdown" | "plain";
   include_references: boolean;
   custom_message?: string;
+  // Section toggles - which parts to include in the push
+  include_key_points?: boolean;
+  include_action_items?: boolean;
+  include_participants?: boolean;
+  include_technical_terms?: boolean;
 }
 
 export interface PushToChannelResponse {

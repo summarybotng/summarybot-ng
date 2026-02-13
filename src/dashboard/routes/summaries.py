@@ -933,6 +933,10 @@ async def push_to_channel(
             include_references=body.include_references,
             custom_message=body.custom_message,
             user_id=user.get("id"),
+            include_key_points=body.include_key_points,
+            include_action_items=body.include_action_items,
+            include_participants=body.include_participants,
+            include_technical_terms=body.include_technical_terms,
         )
 
         return PushToChannelResponse(
@@ -1009,6 +1013,10 @@ async def push_summary_to_channel(
             include_references=body.include_references,
             custom_message=body.custom_message,
             user_id=user.get("id"),
+            include_key_points=body.include_key_points,
+            include_action_items=body.include_action_items,
+            include_participants=body.include_participants,
+            include_technical_terms=body.include_technical_terms,
         )
 
         return PushToChannelResponse(

@@ -727,6 +727,11 @@ class PushToChannelRequest(BaseModel):
     format: str = Field("embed", description="Format: embed, markdown, or plain")
     include_references: bool = Field(True, description="Include ADR-004 source references")
     custom_message: Optional[str] = Field(None, description="Optional intro message")
+    # Section toggles - which parts to include in the push
+    include_key_points: bool = Field(True, description="Include key points section")
+    include_action_items: bool = Field(True, description="Include action items section")
+    include_participants: bool = Field(True, description="Include participants section")
+    include_technical_terms: bool = Field(True, description="Include technical terms section")
 
 
 class PushDeliveryResult(BaseModel):

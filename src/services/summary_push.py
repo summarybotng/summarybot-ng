@@ -87,6 +87,10 @@ class SummaryPushService:
         include_references: bool = True,
         custom_message: Optional[str] = None,
         user_id: Optional[str] = None,
+        include_key_points: bool = True,
+        include_action_items: bool = True,
+        include_participants: bool = True,
+        include_technical_terms: bool = True,
     ) -> PushToChannelsResult:
         """Push a stored summary to one or more Discord channels.
 
@@ -97,6 +101,10 @@ class SummaryPushService:
             include_references: Include ADR-004 source references
             custom_message: Optional custom intro message
             user_id: ID of user performing the push (for audit)
+            include_key_points: Include key points section
+            include_action_items: Include action items section
+            include_participants: Include participants section
+            include_technical_terms: Include technical terms section
 
         Returns:
             Result of the push operation
@@ -114,6 +122,14 @@ class SummaryPushService:
         if not stored_summary.summary_result:
             raise ValueError(f"Stored summary {summary_id} has no summary content")
 
+        # Build section options dict
+        section_options = {
+            "include_key_points": include_key_points,
+            "include_action_items": include_action_items,
+            "include_participants": include_participants,
+            "include_technical_terms": include_technical_terms,
+        }
+
         # Push to each channel
         deliveries = []
         successful_count = 0
@@ -124,7 +140,8 @@ class SummaryPushService:
                 channel_id=channel_id,
                 format=format,
                 include_references=include_references,
-                custom_message=custom_message
+                custom_message=custom_message,
+                section_options=section_options,
             )
             deliveries.append(result)
 
@@ -170,7 +187,8 @@ class SummaryPushService:
         channel_id: str,
         format: str,
         include_references: bool,
-        custom_message: Optional[str]
+        custom_message: Optional[str],
+        section_options: Optional[Dict[str, bool]] = None,
     ) -> PushResult:
         """Push summary to a single channel.
 
@@ -180,6 +198,7 @@ class SummaryPushService:
             format: Output format
             include_references: Include source references
             custom_message: Optional intro message
+            section_options: Dict of section toggles (include_key_points, etc.)
 
         Returns:
             Push result
@@ -190,6 +209,15 @@ class SummaryPushService:
                 success=False,
                 error="Discord client not available"
             )
+
+        # Default section options if not provided
+        if section_options is None:
+            section_options = {
+                "include_key_points": True,
+                "include_action_items": True,
+                "include_participants": True,
+                "include_technical_terms": True,
+            }
 
         try:
             # Get channel
@@ -221,9 +249,9 @@ class SummaryPushService:
 
             # Send summary in requested format
             if format == "embed":
-                message_id = await self._send_embed(channel, summary)
+                message_id = await self._send_embed(channel, summary, section_options)
             elif format == "markdown":
-                message_id = await self._send_markdown(channel, summary, include_references)
+                message_id = await self._send_markdown(channel, summary, include_references, section_options)
             else:  # plain
                 message_id = await self._send_plain(channel, summary)
 
@@ -247,17 +275,41 @@ class SummaryPushService:
                 error=str(e)
             )
 
-    async def _send_embed(self, channel, summary) -> Optional[str]:
+    async def _send_embed(
+        self,
+        channel,
+        summary,
+        section_options: Optional[Dict[str, bool]] = None,
+    ) -> Optional[str]:
         """Send summary as Discord embed.
 
         Args:
             channel: Discord channel
             summary: SummaryResult
+            section_options: Dict of section toggles
 
         Returns:
             Message ID if successful
         """
         embed_dict = summary.to_embed_dict()
+
+        # Filter fields based on section_options
+        if section_options:
+            filtered_fields = []
+            for field in embed_dict.get("fields", []):
+                name = field.get("name", "").lower()
+                # Map field names to section options
+                if "key point" in name and not section_options.get("include_key_points", True):
+                    continue
+                if "action" in name and not section_options.get("include_action_items", True):
+                    continue
+                if "participant" in name and not section_options.get("include_participants", True):
+                    continue
+                if "technical" in name and not section_options.get("include_technical_terms", True):
+                    continue
+                filtered_fields.append(field)
+            embed_dict["fields"] = filtered_fields
+
         embed = discord.Embed.from_dict(embed_dict)
         message = await channel.send(embed=embed)
         return str(message.id)
@@ -266,7 +318,8 @@ class SummaryPushService:
         self,
         channel,
         summary,
-        include_references: bool
+        include_references: bool,
+        section_options: Optional[Dict[str, bool]] = None,
     ) -> Optional[str]:
         """Send summary as markdown.
 
@@ -274,11 +327,42 @@ class SummaryPushService:
             channel: Discord channel
             summary: SummaryResult
             include_references: Include source references
+            section_options: Dict of section toggles
 
         Returns:
             Message ID of first message
         """
         markdown = summary.to_markdown(include_citations=include_references)
+
+        # Filter sections based on section_options
+        if section_options:
+            lines = markdown.split('\n')
+            filtered_lines = []
+            skip_section = False
+            skip_headers = []
+
+            if not section_options.get("include_key_points", True):
+                skip_headers.append("## 🎯 key point")
+            if not section_options.get("include_action_items", True):
+                skip_headers.append("## ✅ action")
+            if not section_options.get("include_participants", True):
+                skip_headers.append("## 👥 participant")
+            if not section_options.get("include_technical_terms", True):
+                skip_headers.append("## 📚 technical")
+
+            for line in lines:
+                line_lower = line.lower()
+                # Check if this is a section header we should skip
+                if line.startswith("## "):
+                    skip_section = any(skip in line_lower for skip in skip_headers)
+                    if skip_section:
+                        continue
+                # Skip lines in a section we're filtering out
+                if skip_section and not line.startswith("## "):
+                    continue
+                filtered_lines.append(line)
+
+            markdown = '\n'.join(filtered_lines)
 
         # Discord has 2000 char limit, split if needed
         if len(markdown) > 2000:
@@ -331,6 +415,10 @@ class SummaryPushService:
         include_references: bool = True,
         custom_message: Optional[str] = None,
         user_id: Optional[str] = None,
+        include_key_points: bool = True,
+        include_action_items: bool = True,
+        include_participants: bool = True,
+        include_technical_terms: bool = True,
     ) -> PushToChannelsResult:
         """Push a regular summary (from History) to one or more Discord channels.
 
@@ -343,6 +431,10 @@ class SummaryPushService:
             include_references: Include ADR-004 source references
             custom_message: Optional custom intro message
             user_id: ID of user performing the push (for audit)
+            include_key_points: Include key points section
+            include_action_items: Include action items section
+            include_participants: Include participants section
+            include_technical_terms: Include technical terms section
 
         Returns:
             Result of the push operation
@@ -360,6 +452,14 @@ class SummaryPushService:
         if not summary.summary_text:
             raise ValueError(f"Summary {summary_id} has no summary content")
 
+        # Build section options dict
+        section_options = {
+            "include_key_points": include_key_points,
+            "include_action_items": include_action_items,
+            "include_participants": include_participants,
+            "include_technical_terms": include_technical_terms,
+        }
+
         # Push to each channel
         deliveries = []
         successful_count = 0
@@ -370,7 +470,8 @@ class SummaryPushService:
                 channel_id=channel_id,
                 format=format,
                 include_references=include_references,
-                custom_message=custom_message
+                custom_message=custom_message,
+                section_options=section_options,
             )
             deliveries.append(result)
 
@@ -406,7 +507,8 @@ class SummaryPushService:
         channel_id: str,
         format: str,
         include_references: bool,
-        custom_message: Optional[str]
+        custom_message: Optional[str],
+        section_options: Optional[Dict[str, bool]] = None,
     ) -> PushResult:
         """Push a SummaryResult to a single channel.
 
@@ -416,6 +518,7 @@ class SummaryPushService:
             format: Output format
             include_references: Include source references
             custom_message: Optional intro message
+            section_options: Dict of section toggles (include_key_points, etc.)
 
         Returns:
             Push result
@@ -426,6 +529,15 @@ class SummaryPushService:
                 success=False,
                 error="Discord client not available"
             )
+
+        # Default section options if not provided
+        if section_options is None:
+            section_options = {
+                "include_key_points": True,
+                "include_action_items": True,
+                "include_participants": True,
+                "include_technical_terms": True,
+            }
 
         try:
             # Get channel
@@ -456,9 +568,9 @@ class SummaryPushService:
 
             # Send summary in requested format
             if format == "embed":
-                message_id = await self._send_embed(channel, summary_result)
+                message_id = await self._send_embed(channel, summary_result, section_options)
             elif format == "markdown":
-                message_id = await self._send_markdown(channel, summary_result, include_references)
+                message_id = await self._send_markdown(channel, summary_result, include_references, section_options)
             else:  # plain
                 message_id = await self._send_plain(channel, summary_result)
 

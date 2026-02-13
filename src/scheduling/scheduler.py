@@ -61,13 +61,14 @@ class TaskScheduler:
         logger.info("Starting task scheduler...")
 
         try:
-            # Load persisted tasks if available
+            # Start the scheduler first so schedule_task() works
+            self.scheduler.start()
+            self._running = True
+
+            # Load persisted tasks after scheduler is running
             if self.persistence:
                 await self._load_persisted_tasks()
 
-            # Start the scheduler
-            self.scheduler.start()
-            self._running = True
             self._startup_complete = True
 
             logger.info(f"Task scheduler started with {len(self.active_tasks)} tasks")

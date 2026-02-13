@@ -81,6 +81,4 @@ CREATE TABLE IF NOT EXISTS channel_stats (
     PRIMARY KEY (source_type, channel_id)
 );
 
--- Record schema version
-INSERT INTO schema_versions (version, description, applied_at)
-VALUES (10, 'Add WhatsApp and multi-source ingest support (ADR-002)', datetime('now'));
+-- Note: schema version is automatically tracked by the migration runner

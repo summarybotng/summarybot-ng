@@ -74,7 +74,7 @@ def _task_to_response(task) -> ScheduleListItem:
         schedule_type=task.schedule_type.value,
         schedule_time=task.schedule_time or "00:00",
         schedule_days=task.schedule_days if task.schedule_days else None,
-        timezone="UTC",
+        timezone=getattr(task, 'timezone', 'UTC'),
         is_active=task.is_active,
         destinations=destinations,
         summary_options=SummaryOptionsResponse(
@@ -188,6 +188,7 @@ async def create_schedule(
         schedule_type=schedule_type,
         schedule_time=body.schedule_time,
         schedule_days=body.schedule_days or [],
+        timezone=body.timezone or "UTC",
         destinations=destinations,
         summary_options=summary_opts,
         is_active=True,
@@ -297,6 +298,9 @@ async def update_schedule(
 
     if body.schedule_days is not None:
         task.schedule_days = body.schedule_days
+
+    if body.timezone is not None:
+        task.timezone = body.timezone
 
     if body.is_active is not None:
         task.is_active = body.is_active

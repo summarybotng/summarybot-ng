@@ -101,6 +101,9 @@ class ScheduledTask(BaseModel):
     max_failures: int = 3
     retry_delay_minutes: int = 5
 
+    # Timezone support
+    timezone: str = "UTC"  # Timezone for schedule times (e.g., "America/New_York")
+
     # Category support
     category_id: Optional[str] = None  # Discord category ID for category-based summaries
     excluded_channel_ids: List[str] = field(default_factory=list)  # Channels to exclude from category

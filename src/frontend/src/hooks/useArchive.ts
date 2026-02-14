@@ -78,15 +78,24 @@ export interface GenerationJob {
   error?: string;
 }
 
-export interface CostReport {
+export interface SourceCostInfo {
+  source_key: string;
+  server_name: string;
   total_cost_usd: number;
-  total_tokens: number;
-  by_source: Record<string, {
+  summary_count: number;
+  current_month: {
     cost_usd: number;
-    tokens: number;
     summaries: number;
-  }>;
-  by_month: Record<string, number>;
+    tokens_input: number;
+    tokens_output: number;
+  };
+}
+
+export interface CostReport {
+  period: string;
+  total_cost_usd: number;
+  total_summaries: number;
+  sources: SourceCostInfo[];
 }
 
 // Hooks

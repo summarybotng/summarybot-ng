@@ -732,6 +732,7 @@ function CostsView({ report }: { report?: ReturnType<typeof useCostReport>["data
             <DollarSign className="h-5 w-5" />
             Total Costs
           </CardTitle>
+          <CardDescription>Period: {report.period}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-6">
@@ -740,36 +741,36 @@ function CostsView({ report }: { report?: ReturnType<typeof useCostReport>["data
               <p className="text-sm text-muted-foreground">Total spent</p>
             </div>
             <div>
-              <p className="text-3xl font-bold">{report.total_tokens.toLocaleString()}</p>
-              <p className="text-sm text-muted-foreground">Total tokens</p>
+              <p className="text-3xl font-bold">{report.total_summaries.toLocaleString()}</p>
+              <p className="text-sm text-muted-foreground">Total summaries</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* By Source */}
-      {Object.keys(report.by_source).length > 0 && (
+      {report.sources.length > 0 && (
         <Card className="border-border/50">
           <CardHeader>
             <CardTitle>By Source</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {Object.entries(report.by_source).map(([source, data]) => (
+              {report.sources.map((source) => (
                 <div
-                  key={source}
+                  key={source.source_key}
                   className="flex items-center justify-between py-2 border-b last:border-0"
                 >
                   <div>
-                    <p className="font-medium">{source}</p>
+                    <p className="font-medium">{source.server_name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {data.summaries} summaries
+                      {source.summary_count} summaries
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold">${data.cost_usd.toFixed(4)}</p>
+                    <p className="font-semibold">${source.total_cost_usd.toFixed(4)}</p>
                     <p className="text-sm text-muted-foreground">
-                      {data.tokens.toLocaleString()} tokens
+                      This month: ${source.current_month.cost_usd.toFixed(4)}
                     </p>
                   </div>
                 </div>

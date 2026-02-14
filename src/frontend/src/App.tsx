@@ -18,6 +18,7 @@ import { Webhooks } from "@/pages/Webhooks";
 import { Feeds } from "@/pages/Feeds";
 import { Errors } from "@/pages/Errors";
 import { Settings } from "@/pages/Settings";
+import { Archive } from "@/pages/Archive";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -54,6 +55,7 @@ const App = () => (
               <Route path="feeds" element={<Feeds />} />
               <Route path="errors" element={<Errors />} />
               <Route path="settings" element={<Settings />} />
+              <Route path="archive" element={<Archive />} />
             </Route>
           </Route>
 

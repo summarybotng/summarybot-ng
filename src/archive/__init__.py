@@ -27,6 +27,12 @@ from .cost_tracker import CostTracker, PricingTable, CostEstimate
 from .locking import LockManager
 from .writer import SummaryWriter, get_summary_path, summary_exists
 from .api_keys import ApiKeyResolver, ResolvedKey, KeyStatus
+from .scanner import ArchiveScanner, ScanResult, GapInfo
+from .backfill import BackfillManager, BackfillJob, BackfillReport
+from .retention import RetentionManager, RetentionConfig
+from .generator import RetrospectiveGenerator, GenerationJob
+from .importers.whatsapp import WhatsAppImporter, WhatsAppImportResult
+from .sync import SyncProvider, GoogleDriveSync, GoogleDriveConfig
 
 __all__ = [
     # Models
@@ -59,4 +65,25 @@ __all__ = [
     "ApiKeyResolver",
     "ResolvedKey",
     "KeyStatus",
+    # Scanner
+    "ArchiveScanner",
+    "ScanResult",
+    "GapInfo",
+    # Backfill
+    "BackfillManager",
+    "BackfillJob",
+    "BackfillReport",
+    # Retention
+    "RetentionManager",
+    "RetentionConfig",
+    # Generator
+    "RetrospectiveGenerator",
+    "GenerationJob",
+    # Importers
+    "WhatsAppImporter",
+    "WhatsAppImportResult",
+    # Sync
+    "SyncProvider",
+    "GoogleDriveSync",
+    "GoogleDriveConfig",
 ]

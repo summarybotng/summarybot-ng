@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -18,8 +19,25 @@ import { Webhooks } from "@/pages/Webhooks";
 import { Feeds } from "@/pages/Feeds";
 import { Errors } from "@/pages/Errors";
 import { Settings } from "@/pages/Settings";
-import { Archive } from "@/pages/Archive";
 import NotFound from "./pages/NotFound";
+import { Skeleton } from "@/components/ui/skeleton";
+
+// Lazy-loaded pages for code splitting
+const Archive = lazy(() => import("@/pages/Archive").then(m => ({ default: m.Archive })));
+
+// Loading fallback for lazy-loaded pages
+function PageLoader() {
+  return (
+    <div className="space-y-6 p-6">
+      <Skeleton className="h-8 w-48" />
+      <Skeleton className="h-4 w-64" />
+      <div className="grid gap-4">
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    </div>
+  );
+}
 
 const queryClient = new QueryClient();
 
@@ -55,7 +73,7 @@ const App = () => (
               <Route path="feeds" element={<Feeds />} />
               <Route path="errors" element={<Errors />} />
               <Route path="settings" element={<Settings />} />
-              <Route path="archive" element={<Archive />} />
+              <Route path="archive" element={<Suspense fallback={<PageLoader />}><Archive /></Suspense>} />
             </Route>
           </Route>
 

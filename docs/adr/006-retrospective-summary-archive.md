@@ -3,6 +3,7 @@
 **Status:** Proposed
 **Date:** 2026-02-14
 **Depends on:** ADR-001 (WhatsApp Reader Bot), ADR-002 (WhatsApp Integration), ADR-004 (Grounded References), ADR-005 (Delivery Destinations)
+**Requires:** OpenRouter API access (replaces direct Anthropic API)
 **Repository:** [summarybotng/summarybot-ng](https://github.com/summarybotng/summarybot-ng)
 
 ---
@@ -381,7 +382,7 @@ Each summary `.md` file has a companion `.meta.json`:
   "generation": {
     "prompt_version": "2.1.0",
     "prompt_checksum": "sha256:a1b2c3d4e5f6...",
-    "model": "claude-sonnet-4-20250514",
+    "model": "anthropic/claude-sonnet-4-20250514",
     "options": {
       "summary_length": "detailed",
       "perspective": "general",
@@ -572,30 +573,34 @@ A global cost ledger tracks API costs per source for attribution:
 
 ### 4.2 Pricing History
 
-API pricing changes over time. The archive maintains a versioned pricing table:
+API pricing changes over time. The archive maintains a versioned pricing table (from OpenRouter):
 
 ```json
 {
   "schema_version": "1.0.0",
-  "pricing_source": "static",
+  "pricing_source": "openrouter",
   "versions": [
     {
       "effective_from": "2026-01-01",
       "models": {
-        "claude-sonnet-4-20250514": {
+        "anthropic/claude-sonnet-4-20250514": {
           "input_per_1k_tokens": 0.003,
           "output_per_1k_tokens": 0.015
         },
-        "claude-haiku-4-20250514": {
+        "anthropic/claude-haiku-4-20250514": {
           "input_per_1k_tokens": 0.00025,
           "output_per_1k_tokens": 0.00125
+        },
+        "openai/gpt-4-turbo": {
+          "input_per_1k_tokens": 0.01,
+          "output_per_1k_tokens": 0.03
         }
       }
     },
     {
       "effective_from": "2025-06-01",
       "models": {
-        "claude-sonnet-4-20250514": {
+        "anthropic/claude-sonnet-4-20250514": {
           "input_per_1k_tokens": 0.004,
           "output_per_1k_tokens": 0.018
         }
@@ -606,15 +611,16 @@ API pricing changes over time. The archive maintains a versioned pricing table:
 ```
 
 **Cost Calculation:**
-- Costs are calculated using the pricing table effective at generation time
+- Costs are calculated using OpenRouter pricing effective at generation time
 - Each summary metadata records `pricing_version` for audit trail
-- When Anthropic updates pricing, add a new version entry with `effective_from` date
+- When OpenRouter updates pricing, add a new version entry with `effective_from` date
+- Model IDs use OpenRouter format: `provider/model-name`
 
-**Future: Dynamic Pricing**
+**Dynamic Pricing:**
 ```python
 class PricingConfig(BaseModel):
-    pricing_source: Literal["static", "anthropic_api"] = "static"
-    # When "anthropic_api", fetch current pricing from Anthropic (if endpoint available)
+    pricing_source: Literal["static", "openrouter_api"] = "openrouter_api"
+    # When "openrouter_api", fetch current pricing from OpenRouter's /api/v1/models endpoint
 ```
 
 ### 4.3 Cost Tracking Service
@@ -767,14 +773,21 @@ Budgets can be set at multiple levels with priority-based overflow handling:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-### 4.6 Per-Server API Keys (OpenRouter)
+### 4.6 OpenRouter Integration (Exclusive Provider)
 
-Servers can provide their own OpenRouter API keys for direct billing:
+**All summarization uses OpenRouter as the exclusive LLM provider.** This replaces direct Anthropic API usage for:
 
-**Use Cases:**
+- **Unified billing**: All API calls go through OpenRouter
+- **Model flexibility**: Access to Claude, GPT-4, Llama, and other models via single API
+- **Per-server keys**: Servers can provide their own OpenRouter API keys for direct billing
+- **Rate limit pooling**: Avoid per-model rate limits through OpenRouter's aggregation
+
+**Use Cases for Per-Server Keys:**
 - **Enterprise customers** want costs billed directly to their OpenRouter account
 - **Community servers** may have sponsors who pay for their API usage
 - **Cost isolation** ensures one server's usage doesn't affect another's quota
+
+**Migration Note:** This replaces the previous direct Anthropic API integration in `src/summarization/claude_client.py`. The `AsyncAnthropic` client will be replaced with an OpenRouter-compatible client.
 
 **Configuration Hierarchy:**
 
@@ -1738,12 +1751,13 @@ class ArchiveConfig(BaseModel):
 | 29 | `src/dashboard/routes/api_keys.py` | **N** | Medium | API key management endpoints |
 | 30 | `src/frontend/src/components/settings/ApiKeyManager.tsx` | **N** | Medium | API key configuration UI |
 | 31 | `src/config/archive.py` | **N** | Low | Archive configuration schema |
-| 32 | `tests/unit/test_archive_*.py` | **N** | — | Unit tests |
-| 33 | `tests/unit/test_cost_tracker.py` | **N** | — | Cost tracking tests |
-| 34 | `tests/unit/test_locking.py` | **N** | — | Lock management tests |
-| 35 | `tests/unit/test_api_keys.py` | **N** | — | API key resolution tests |
+| 32 | `src/summarization/claude_client.py` | **M** | Low | Add per-server API key support via `ApiKeyResolver` |
+| 33 | `tests/unit/test_archive_*.py` | **N** | — | Unit tests |
+| 34 | `tests/unit/test_cost_tracker.py` | **N** | — | Cost tracking tests |
+| 35 | `tests/unit/test_locking.py` | **N** | — | Lock management tests |
+| 36 | `tests/unit/test_api_keys.py` | **N** | — | API key resolution tests |
 
-**Totals:** 1 file modified, 34 files created.
+**Totals:** 2 files modified, 34 files created.
 
 ---
 
@@ -1805,6 +1819,16 @@ class ArchiveConfig(BaseModel):
 ---
 
 ## 16. Implementation Phases
+
+### Phase 0 — OpenRouter Migration [COMPLETE]
+The codebase already uses OpenRouter exclusively:
+- [x] `OPENROUTER_API_KEY` environment variable required
+- [x] Base URL: `https://openrouter.ai/api`
+- [x] Model IDs use OpenRouter format (`anthropic/claude-3-haiku`, etc.)
+- [x] `ClaudeClient` in `src/summarization/claude_client.py` handles OpenRouter via `is_openrouter` detection
+- [x] Model name normalization handles legacy → OpenRouter format
+- [ ] *(Future)* Fetch dynamic pricing from OpenRouter `/api/v1/models` endpoint
+- [ ] *(Future)* Remove `anthropic` library dependency (currently used for API types)
 
 ### Phase 1 — Core Archive Structure (3-4 days)
 - [ ] Define multi-source archive folder structure
@@ -1931,5 +1955,5 @@ class ArchiveConfig(BaseModel):
 - [ADR-005: Summary Delivery Destinations](./005-summary-delivery-destinations.md) — Storage model
 - [ISO 8601 Date Format](https://en.wikipedia.org/wiki/ISO_8601) — Date naming standard
 - [Google Drive API](https://developers.google.com/drive/api) — Sync integration
-- [Anthropic Pricing](https://www.anthropic.com/pricing) — Cost calculation reference
+- [OpenRouter Pricing](https://openrouter.ai/docs/models) — Cost calculation reference
 - [IANA Time Zone Database](https://www.iana.org/time-zones) — Timezone handling

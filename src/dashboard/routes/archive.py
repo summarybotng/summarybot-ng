@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/archive", tags=["archive"])
+router = APIRouter(prefix="/archive", tags=["archive"])
 
 
 # Request/Response Models

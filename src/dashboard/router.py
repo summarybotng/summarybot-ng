@@ -9,7 +9,7 @@ from fastapi import APIRouter, FastAPI
 from cryptography.fernet import Fernet
 
 from .auth import DashboardAuth, set_auth_instance
-from .routes import auth_router, guilds_router, summaries_router, schedules_router, webhooks_router, events_router, feeds_router, errors_router
+from .routes import auth_router, guilds_router, summaries_router, schedules_router, webhooks_router, events_router, feeds_router, errors_router, archive_router
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +86,7 @@ def create_dashboard_router(
     router.include_router(webhooks_router, tags=["Webhooks"])
     router.include_router(events_router, tags=["Events"])
     router.include_router(feeds_router, tags=["Feeds"])
+    router.include_router(archive_router, tags=["Archive"])
 
     return router
 

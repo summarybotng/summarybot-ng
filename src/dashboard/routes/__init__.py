@@ -90,6 +90,7 @@ from .webhooks import router as webhooks_router
 from .events import router as events_router
 from .feeds import router as feeds_router
 from .errors import router as errors_router
+from .archive import router as archive_router
 
 __all__ = [
     "auth_router",
@@ -100,6 +101,7 @@ __all__ = [
     "events_router",
     "feeds_router",
     "errors_router",
+    "archive_router",
     "set_services",
     "get_discord_bot",
     "get_summarization_engine",

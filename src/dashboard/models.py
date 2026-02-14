@@ -721,6 +721,8 @@ class StoredSummaryDetailResponse(BaseModel):
     # Push history
     push_deliveries: List[Dict[str, Any]] = []
     has_references: bool = False
+    # ADR-004: Source references
+    references: List[SummaryReferenceResponse] = Field(default_factory=list)
 
 
 class StoredSummaryUpdateRequest(BaseModel):

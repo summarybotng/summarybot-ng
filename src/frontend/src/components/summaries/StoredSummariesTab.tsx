@@ -6,9 +6,10 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { useStoredSummaries, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel } from "@/hooks/useStoredSummaries";
+import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel } from "@/hooks/useStoredSummaries";
 import { useGuild } from "@/hooks/useGuilds";
-import { Card, CardContent } from "@/components/ui/card";
+import { useTimezone } from "@/contexts/TimezoneContext";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -42,6 +43,7 @@ import {
   Clock,
   AlertCircle,
   RefreshCw,
+  Link,
 } from "lucide-react";
 import { StoredSummaryCard } from "./StoredSummaryCard";
 import { PushToChannelModal } from "./PushToChannelModal";
@@ -314,39 +316,170 @@ function StoredSummaryDetailSheet({
   onOpenChange: (open: boolean) => void;
   onPush: (summaryId: string) => void;
 }) {
-  const { data: summary, isLoading } = useStoredSummaries(guildId, {});
-  // For a real implementation, we'd use useStoredSummary(guildId, summaryId)
-  // For now, we'll show basic info
+  const { data: summary, isLoading } = useStoredSummary(guildId, summaryId || "");
+  const { formatDateTime, formatTime } = useTimezone();
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-2xl lg:max-w-3xl">
+      <SheetContent className="w-full overflow-y-auto sm:max-w-[50vw] lg:max-w-[70vw]">
         {isLoading ? (
           <div className="space-y-4">
             <Skeleton className="h-8 w-48" />
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
           </div>
-        ) : summaryId ? (
+        ) : summary ? (
           <>
             <SheetHeader>
-              <SheetTitle>Stored Summary</SheetTitle>
+              <SheetTitle>{summary.title}</SheetTitle>
               <SheetDescription>
-                View and manage this stored summary
+                {summary.start_time && summary.end_time
+                  ? `${formatDateTime(summary.start_time)} - ${formatDateTime(summary.end_time)}`
+                  : `Created ${formatDateTime(summary.created_at)}`}
               </SheetDescription>
             </SheetHeader>
 
-            <div className="mt-6 space-y-4">
-              <Button onClick={() => onPush(summaryId)} className="w-full">
+            <div className="mt-6 space-y-6">
+              {/* Stats */}
+              <div className="flex flex-wrap gap-4">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <MessageSquare className="h-4 w-4" />
+                  <span>{summary.message_count} messages</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Users className="h-4 w-4" />
+                  <span>{summary.participants?.length || 0} participants</span>
+                </div>
+              </div>
+
+              {/* Push Button */}
+              <Button onClick={() => onPush(summary.id)} className="w-full sm:w-auto">
                 <Send className="mr-2 h-4 w-4" />
                 Push to Channel
               </Button>
 
-              <p className="text-sm text-muted-foreground text-center">
-                Full summary details will be displayed here
-              </p>
+              {/* Summary Text */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Summary</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                    {summary.summary_text}
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Key Points */}
+              {summary.key_points && summary.key_points.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Key Points</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="list-inside list-disc space-y-2 text-sm">
+                      {summary.key_points.map((point, i) => (
+                        <li key={i}>{point}</li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Action Items */}
+              {summary.action_items && summary.action_items.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Action Items</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-3">
+                      {summary.action_items.map((item, i) => (
+                        <li key={i} className="flex items-start gap-3">
+                          <Badge
+                            variant={
+                              item.priority === "high"
+                                ? "destructive"
+                                : item.priority === "medium"
+                                ? "default"
+                                : "secondary"
+                            }
+                            className="mt-0.5"
+                          >
+                            {item.priority}
+                          </Badge>
+                          <div className="flex-1">
+                            <p className="text-sm">{item.text}</p>
+                            {item.assignee && (
+                              <p className="text-xs text-muted-foreground">
+                                Assigned to: {item.assignee}
+                              </p>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* References (ADR-004) */}
+              {summary.references && summary.references.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Link className="h-4 w-4" />
+                      References
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b text-left text-muted-foreground">
+                            <th className="pb-2 pr-4 font-medium">#</th>
+                            <th className="pb-2 pr-4 font-medium">Who</th>
+                            <th className="pb-2 pr-4 font-medium">When</th>
+                            <th className="pb-2 font-medium">Said</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {summary.references.map((ref) => (
+                            <tr key={ref.id} className="border-b border-border/50 last:border-0">
+                              <td className="py-2 pr-4 text-muted-foreground">[{ref.id}]</td>
+                              <td className="py-2 pr-4 font-medium">{ref.author}</td>
+                              <td className="py-2 pr-4 text-muted-foreground whitespace-nowrap">
+                                {formatTime(ref.timestamp)}
+                              </td>
+                              <td className="py-2 text-muted-foreground">{ref.content}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Metadata */}
+              {summary.metadata && (
+                <div className="text-xs text-muted-foreground space-y-0.5">
+                  {(summary.metadata.model_used || summary.metadata.model) && (
+                    <p>Model: {summary.metadata.model_used || summary.metadata.model}</p>
+                  )}
+                  {typeof summary.metadata.tokens_used === "number" && (
+                    <p>Tokens used: {summary.metadata.tokens_used.toLocaleString()}</p>
+                  )}
+                </div>
+              )}
             </div>
           </>
+        ) : summaryId ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <AlertCircle className="h-12 w-12 text-muted-foreground/50 mb-4" />
+            <p className="text-muted-foreground">Summary not found</p>
+          </div>
         ) : null}
       </SheetContent>
     </Sheet>

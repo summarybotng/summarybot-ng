@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+import { useTimezone } from "@/contexts/TimezoneContext";
 import {
   Drawer,
   DrawerContent,
@@ -74,6 +75,7 @@ export function ErrorDetailDrawer({
   isResolving,
 }: ErrorDetailDrawerProps) {
   const isMobile = useIsMobile();
+  const { formatDateTime } = useTimezone();
   const [showResolveDialog, setShowResolveDialog] = useState(false);
   const [notes, setNotes] = useState("");
 
@@ -146,7 +148,7 @@ export function ErrorDetailDrawer({
           <Label className="text-xs text-muted-foreground">Occurred</Label>
           <p className="mt-1 text-sm font-medium flex items-center gap-1">
             <Clock className="h-3 w-3" />
-            {format(new Date(error.created_at), "MMM d, yyyy h:mm a")}
+            {formatDateTime(error.created_at)}
           </p>
           <p className="text-xs text-muted-foreground">
             {formatDistanceToNow(new Date(error.created_at), { addSuffix: true })}
@@ -199,7 +201,7 @@ export function ErrorDetailDrawer({
           </div>
           {error.resolved_at && (
             <p className="text-xs text-muted-foreground">
-              {format(new Date(error.resolved_at), "MMM d, yyyy h:mm a")}
+              {formatDateTime(error.resolved_at)}
             </p>
           )}
           {error.resolution_notes && (

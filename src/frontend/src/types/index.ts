@@ -285,6 +285,7 @@ export interface StoredSummaryDetail extends StoredSummary {
   end_time?: string;
   metadata?: SummaryMetadata;
   push_deliveries: PushDelivery[];
+  references?: SummaryReference[];
 }
 
 export interface PushDelivery {

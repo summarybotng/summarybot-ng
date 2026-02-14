@@ -795,6 +795,35 @@ async def get_stored_summary(
             generation_time_seconds=summary_result.metadata.get("processing_time"),
         )
 
+    # Build references from summary_result if available (ADR-004)
+    from ..models import SummaryReferenceResponse
+    references = []
+    if summary_result and hasattr(summary_result, 'reference_index') and summary_result.reference_index:
+        for ref in summary_result.reference_index:
+            # Handle both object and dict formats
+            if hasattr(ref, 'position'):
+                # Object format
+                references.append(SummaryReferenceResponse(
+                    id=ref.position,
+                    author=ref.sender,
+                    timestamp=ref.timestamp,
+                    content=ref.snippet,
+                    message_id=ref.message_id,
+                ))
+            elif isinstance(ref, dict):
+                # Dict format (from DB)
+                from datetime import datetime
+                ts = ref.get('timestamp')
+                if isinstance(ts, str):
+                    ts = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                references.append(SummaryReferenceResponse(
+                    id=ref.get('position', 0),
+                    author=ref.get('sender', 'Unknown'),
+                    timestamp=ts,
+                    content=ref.get('snippet', ''),
+                    message_id=ref.get('message_id'),
+                ))
+
     return StoredSummaryDetailResponse(
         id=stored.id,
         title=stored.title,
@@ -817,6 +846,7 @@ async def get_stored_summary(
         metadata=metadata,
         push_deliveries=[d.to_dict() for d in stored.push_deliveries],
         has_references=stored.has_references(),
+        references=references,
     )
 
 

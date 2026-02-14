@@ -353,12 +353,33 @@ class SummaryResult(BaseModel):
             md += "| # | Who | When | Said |\n"
             md += "|---|-----|------|------|\n"
             for ref in self.reference_index:
-                time_str = ref.timestamp.strftime("%H:%M")
+                # Handle both object and dict formats, and both datetime and string timestamps
+                if hasattr(ref, 'timestamp'):
+                    timestamp = ref.timestamp
+                    sender = ref.sender
+                    snippet = ref.snippet
+                    position = ref.position
+                else:
+                    # Dict format
+                    timestamp = ref.get('timestamp')
+                    sender = ref.get('sender', 'Unknown')
+                    snippet = ref.get('snippet', '')
+                    position = ref.get('position', 0)
+
+                # Parse string timestamp if needed
+                if isinstance(timestamp, str):
+                    try:
+                        from datetime import datetime as dt
+                        timestamp = dt.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    except (ValueError, TypeError):
+                        timestamp = None
+
+                time_str = timestamp.strftime("%H:%M") if timestamp else "??:??"
                 # Escape pipe characters in snippet
-                snippet = ref.snippet.replace("|", "\\|")
+                snippet = snippet.replace("|", "\\|")
                 if len(snippet) > 60:
                     snippet = snippet[:57] + "..."
-                md += f"| [{ref.position}] | {ref.sender} | {time_str} | \"{snippet}\" |\n"
+                md += f"| [{position}] | {sender} | {time_str} | \"{snippet}\" |\n"
             md += "\n"
 
         # Metadata

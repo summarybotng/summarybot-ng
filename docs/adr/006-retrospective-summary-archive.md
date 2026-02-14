@@ -337,6 +337,11 @@ Platform-agnostic manifest for any source:
     "budget_monthly_usd": 50.00,
     "alert_threshold_percent": 80,
     "priority": 2
+  },
+  "api_keys": {
+    "openrouter_key_ref": "vault:openrouter/family-chat",
+    "use_server_key": true,
+    "fallback_to_default": true
   }
 }
 ```
@@ -388,7 +393,9 @@ Each summary `.md` file has a companion `.meta.json`:
       "output": 850
     },
     "cost_usd": 0.0156,
-    "pricing_version": "2026-01-01"
+    "pricing_version": "2026-01-01",
+    "api_key_used": "server:group_abc123",
+    "provider": "openrouter"
   },
   "backfill": {
     "is_backfill": true,
@@ -756,6 +763,210 @@ Budgets can be set at multiple levels with priority-based overflow handling:
 │  └────────────────────────────────────────────────────────────┘  │
 │                                                                   │
 │  [Export CSV]  [Set Budgets]  [View History]                     │
+│                                                                   │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### 4.6 Per-Server API Keys (OpenRouter)
+
+Servers can provide their own OpenRouter API keys for direct billing:
+
+**Use Cases:**
+- **Enterprise customers** want costs billed directly to their OpenRouter account
+- **Community servers** may have sponsors who pay for their API usage
+- **Cost isolation** ensures one server's usage doesn't affect another's quota
+
+**Configuration Hierarchy:**
+
+```
+1. Server-specific key (if configured and enabled)
+     ↓ (fallback if not set or fails)
+2. Default installation key
+     ↓ (fallback if not set)
+3. Error: No API key available
+```
+
+**Server Manifest API Key Config:**
+
+```json
+{
+  "api_keys": {
+    "openrouter_key_ref": "vault:openrouter/acme-corp",
+    "use_server_key": true,
+    "fallback_to_default": true,
+    "key_added_at": "2026-01-15T10:00:00Z",
+    "key_last_validated": "2026-02-14T08:00:00Z",
+    "key_status": "valid"
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `openrouter_key_ref` | Reference to key in secure storage (never store raw keys!) |
+| `use_server_key` | Whether to use this server's key (can be disabled temporarily) |
+| `fallback_to_default` | If server key fails, fall back to default installation key |
+| `key_added_at` | When the key was configured |
+| `key_last_validated` | Last successful validation timestamp |
+| `key_status` | `valid`, `invalid`, `expired`, `rate_limited`, `unchecked` |
+
+**API Key Storage Options:**
+
+```python
+class ApiKeyStorageBackend(Enum):
+    ENV_VAR = "env"              # Environment variable (e.g., OPENROUTER_KEY_DISCORD_123)
+    VAULT = "vault"              # HashiCorp Vault or similar
+    ENCRYPTED_FILE = "file"      # Encrypted file with master key
+    DATABASE = "database"        # Encrypted column in database
+
+class ApiKeyConfig(BaseModel):
+    storage_backend: ApiKeyStorageBackend = ApiKeyStorageBackend.ENV_VAR
+    vault_address: Optional[str] = None
+    vault_path_prefix: str = "secret/summarybot/openrouter"
+    encryption_key_ref: Optional[str] = None  # For file/database backends
+```
+
+**Key Reference Formats:**
+
+| Backend | Reference Format | Example |
+|---------|-----------------|---------|
+| ENV_VAR | `env:VARIABLE_NAME` | `env:OPENROUTER_KEY_DISCORD_123` |
+| VAULT | `vault:path/to/secret` | `vault:openrouter/acme-corp` |
+| ENCRYPTED_FILE | `file:filename` | `file:keys/discord_123.enc` |
+| DATABASE | `db:source_key` | `db:discord:123456789` |
+
+**API Key Resolution:**
+
+```python
+class ApiKeyResolver:
+    """Resolves API keys for generation requests."""
+
+    def __init__(self, config: ApiKeyConfig, default_key: str):
+        self.config = config
+        self.default_key = default_key
+        self.key_cache: Dict[str, CachedKey] = {}
+
+    async def get_key_for_source(self, source_key: str,
+                                  server_manifest: dict) -> ResolvedKey:
+        """
+        Get the appropriate API key for a source.
+
+        Returns:
+            ResolvedKey with key value and metadata about which key was used
+        """
+        api_config = server_manifest.get("api_keys", {})
+
+        # Check if server has its own key and wants to use it
+        if api_config.get("use_server_key") and api_config.get("openrouter_key_ref"):
+            try:
+                key = await self._fetch_key(api_config["openrouter_key_ref"])
+                if await self._validate_key(key):
+                    return ResolvedKey(
+                        key=key,
+                        source="server",
+                        source_key=source_key,
+                        key_ref=api_config["openrouter_key_ref"]
+                    )
+            except KeyFetchError as e:
+                if not api_config.get("fallback_to_default", True):
+                    raise
+
+        # Fall back to default key
+        return ResolvedKey(
+            key=self.default_key,
+            source="default",
+            source_key=source_key,
+            key_ref="default"
+        )
+
+    async def _validate_key(self, key: str) -> bool:
+        """Validate key with OpenRouter API."""
+        # Call OpenRouter's key validation endpoint
+        ...
+
+@dataclass
+class ResolvedKey:
+    key: str
+    source: Literal["server", "default"]
+    source_key: str
+    key_ref: str
+```
+
+**Cost Ledger with Key Attribution:**
+
+```json
+{
+  "sources": {
+    "slack:T01ABC123": {
+      "server_name": "Acme Corp",
+      "total_cost_usd": 312.80,
+      "api_key_source": "server",
+      "api_key_ref": "vault:openrouter/acme-corp",
+      "monthly": {
+        "2026-02": {
+          "cost_usd": 28.90,
+          "summaries": 98,
+          "api_key_source": "server"
+        }
+      }
+    },
+    "discord:123456789": {
+      "server_name": "My Community",
+      "total_cost_usd": 127.45,
+      "api_key_source": "default",
+      "api_key_ref": "default",
+      "monthly": {
+        "2026-02": {
+          "cost_usd": 12.30,
+          "summaries": 45,
+          "api_key_source": "default"
+        }
+      }
+    }
+  }
+}
+```
+
+**Key Validation Endpoint:**
+
+```
+POST /api/v1/sources/{source_key}/api-key/validate
+
+Response:
+{
+  "valid": true,
+  "key_ref": "vault:openrouter/acme-corp",
+  "credits_remaining": 150.00,
+  "rate_limit": {
+    "requests_per_minute": 100,
+    "tokens_per_minute": 100000
+  },
+  "validated_at": "2026-02-14T16:00:00Z"
+}
+```
+
+**Dashboard UI for Key Management:**
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  API Key Settings: Acme Corp (Slack)                             │
+│  ────────────────────────────────────────────────────────────────│
+│                                                                   │
+│  ☑ Use server-specific OpenRouter API key                        │
+│                                                                   │
+│  Key Reference: [vault:openrouter/acme-corp___________]          │
+│  Status: ✅ Valid (checked 2 hours ago)                          │
+│  Credits Remaining: $150.00                                      │
+│                                                                   │
+│  ☑ Fall back to default key if server key fails                  │
+│                                                                   │
+│  [Validate Key]  [Remove Key]                                    │
+│                                                                   │
+│  ─────────────────────────────────────────────────────────────── │
+│  Key History:                                                     │
+│  • 2026-02-14 08:00 — Validation successful                      │
+│  • 2026-02-13 15:30 — Key updated                                │
+│  • 2026-01-15 10:00 — Key added                                  │
 │                                                                   │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -1521,12 +1732,18 @@ class ArchiveConfig(BaseModel):
 | 23 | `src/frontend/src/components/archive/SourceSelector.tsx` | **N** | Low | Multi-source picker |
 | 24 | `src/frontend/src/components/archive/ImportModal.tsx` | **N** | Low | WhatsApp import UI |
 | 25 | `src/frontend/src/components/costs/CostChart.tsx` | **N** | Low | Cost visualization |
-| 26 | `src/config/archive.py` | **N** | Low | Archive configuration schema |
-| 27 | `tests/unit/test_archive_*.py` | **N** | — | Unit tests |
-| 28 | `tests/unit/test_cost_tracker.py` | **N** | — | Cost tracking tests |
-| 29 | `tests/unit/test_locking.py` | **N** | — | Lock management tests |
+| 26 | `src/archive/api_keys.py` | **N** | Medium | API key resolver and storage backends |
+| 27 | `src/archive/api_keys/vault.py` | **N** | Medium | HashiCorp Vault integration |
+| 28 | `src/archive/api_keys/encrypted_file.py` | **N** | Low | Encrypted file storage |
+| 29 | `src/dashboard/routes/api_keys.py` | **N** | Medium | API key management endpoints |
+| 30 | `src/frontend/src/components/settings/ApiKeyManager.tsx` | **N** | Medium | API key configuration UI |
+| 31 | `src/config/archive.py` | **N** | Low | Archive configuration schema |
+| 32 | `tests/unit/test_archive_*.py` | **N** | — | Unit tests |
+| 33 | `tests/unit/test_cost_tracker.py` | **N** | — | Cost tracking tests |
+| 34 | `tests/unit/test_locking.py` | **N** | — | Lock management tests |
+| 35 | `tests/unit/test_api_keys.py` | **N** | — | API key resolution tests |
 
-**Totals:** 1 file modified, 28 files created.
+**Totals:** 1 file modified, 34 files created.
 
 ---
 
@@ -1548,6 +1765,10 @@ class ArchiveConfig(BaseModel):
 | Worker dies mid-generation | Lock expires after TTL; next worker can retry |
 | Soft-deleted summary needed | Recovery endpoint restores from `.deleted/` |
 | Pricing changes mid-month | Use pricing effective at generation time; track version |
+| Server API key invalid/expired | Fall back to default key if `fallback_to_default: true`; else pause |
+| Server API key rate limited | Back off and retry; optionally fall back to default |
+| API key storage backend unavailable | Fail fast with clear error; don't expose key details |
+| Key rotation mid-generation | Complete current job with old key; new jobs use new key |
 
 ---
 
@@ -1567,6 +1788,20 @@ class ArchiveConfig(BaseModel):
 
 7. **Identity Mapping Privacy** — Cross-platform identity linking may expose relationships. Keep `identity-mappings.json` secure.
 
+8. **OpenRouter API Key Security** — Per-server API keys require careful handling:
+   - **Never store raw keys** in manifests, config files, or version control
+   - Use secure storage backends (Vault, encrypted files, environment variables)
+   - Key references (not values) are stored in manifests
+   - Validate keys periodically to detect revocation
+   - Log key usage (which key, not the key value) for audit
+   - Support key rotation without service interruption
+
+9. **Key Isolation** — When servers provide their own API keys:
+   - Keys must not be accessible to other servers
+   - Failed key lookups must not expose key references
+   - Rate limiting on key validation endpoint to prevent enumeration
+   - Audit log of key access attempts
+
 ---
 
 ## 16. Implementation Phases
@@ -1584,53 +1819,63 @@ class ArchiveConfig(BaseModel):
 - [ ] Add budget hierarchy with priorities
 - [ ] Build cost reporting endpoints
 
-### Phase 3 — Locking and Concurrency (2 days)
+### Phase 3 — API Key Management (2-3 days)
+- [ ] Implement `ApiKeyResolver` with storage backends
+- [ ] Add key validation with OpenRouter API
+- [ ] Create per-server key configuration UI
+- [ ] Add key usage tracking in cost ledger
+- [ ] Implement key rotation support
+- [ ] Add fallback logic (server key → default key)
+
+### Phase 4 — Locking and Concurrency (2 days)
 - [ ] Implement file-based locking
 - [ ] Add lock TTL and expiration
 - [ ] Create atomic write utilities
 - [ ] Document distributed locking options
 
-### Phase 4 — Retrospective Generation (3-4 days)
+### Phase 5 — Retrospective Generation (3-4 days)
 - [ ] Implement `RetrospectiveGenerator` service
 - [ ] Add historical message fetching per platform
 - [ ] Create job queue with cost limits
 - [ ] Add progress tracking and pause/resume
 
-### Phase 5 — WhatsApp Import (2-3 days)
+### Phase 6 — WhatsApp Import (2-3 days)
 - [ ] Implement `.txt` export parser
 - [ ] Implement reader bot JSON parser
 - [ ] Create import manifest tracking
 - [ ] Add coverage gap detection
 
-### Phase 6 — Backfill Analysis (2-3 days)
+### Phase 7 — Backfill Analysis (2-3 days)
 - [ ] Implement `ArchiveScanner` for gap detection
 - [ ] Create `BackfillAnalyzer` with source filtering
 - [ ] Add prompt version comparison with thresholds
 - [ ] Generate backfill reports
 
-### Phase 7 — Retention Management (2 days)
+### Phase 8 — Retention Management (2 days)
 - [ ] Implement soft delete flow
 - [ ] Add grace period and purge logic
 - [ ] Create backup before delete
 - [ ] Add recovery endpoint
 
-### Phase 8 — Google Drive Sync (2-3 days)
+### Phase 9 — Google Drive Sync (2-3 days)
 - [ ] Implement flexible sync configuration
 - [ ] Support multiple drives per installation
 - [ ] Add per-source sync status tracking
 - [ ] Handle conflicts and errors
 
-### Phase 9 — Frontend UI (4-5 days)
+### Phase 10 — Frontend UI (4-5 days)
 - [ ] Create Archive page with source browser
 - [ ] Build Timeline visualization
 - [ ] Create Cost dashboard
 - [ ] Add Backfill configuration modal
 - [ ] Add WhatsApp import modal
+- [ ] Add API key management UI
 
-### Phase 10 — Testing & Polish (2-3 days)
+### Phase 11 — Testing & Polish (2-3 days)
 - [ ] Unit tests for all archive components
 - [ ] Integration tests for each platform
 - [ ] Cost tracking tests
+- [ ] API key resolution tests
 - [ ] Lock contention tests
 - [ ] Documentation and examples
 

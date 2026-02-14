@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 **Date:** 2026-02-14
-**Depends on:** ADR-002 (WhatsApp Integration), ADR-004 (Grounded References), ADR-005 (Delivery Destinations)
+**Depends on:** ADR-001 (WhatsApp Reader Bot), ADR-002 (WhatsApp Integration), ADR-004 (Grounded References), ADR-005 (Delivery Destinations)
 **Repository:** [summarybotng/summarybot-ng](https://github.com/summarybotng/summarybot-ng)
 
 ---
@@ -63,6 +63,8 @@ summarybot-archive/
 │   ├── whatsapp/
 │   │   └── {group_name}_{group_id}/
 │   │       ├── group-manifest.json
+│   │       ├── imports/                    # WhatsApp export files
+│   │       │   └── import-manifest.json
 │   │       └── summaries/
 │   │           └── {YYYY}/{MM}/...
 │   ├── slack/
@@ -73,6 +75,9 @@ summarybot-archive/
 │   └── telegram/
 │       └── {chat_name}_{chat_id}/...
 ├── cost-ledger.json                        # Global cost tracking by source
+├── pricing-history.json                    # API pricing versions over time
+├── identity-mappings.json                  # Optional cross-platform identity linking
+├── .deleted/                               # Soft-deleted summaries awaiting purge
 └── .archive-config.json                    # User preferences, sync settings
 ```
 
@@ -94,6 +99,11 @@ class ArchiveSource:
     server_name: str
     channel_id: Optional[str]   # None for single-channel sources (WhatsApp groups)
     channel_name: Optional[str]
+
+    @property
+    def source_key(self) -> str:
+        """Unique key for this source (used in cost tracking, etc.)."""
+        return f"{self.source_type.value}:{self.server_id}"
 
     @property
     def folder_path(self) -> str:
@@ -139,6 +149,99 @@ The archive supports generating summaries in different timezones:
 - **Server/group timezone**: Default, based on server/group settings
 - **User timezone**: Override for personal archives
 - **UTC**: Canonical reference for cross-timezone consistency
+
+### 2.5 Timezone and DST Handling
+
+**Daily Summaries Use Wall-Clock Days:**
+- "2026-03-10" in America/New_York means midnight-to-midnight local time
+- On DST transition days, this may be 23 or 25 hours
+- This matches user expectations ("what happened on Monday")
+
+**Metadata Records Actual Duration:**
+```json
+{
+  "period": {
+    "start": "2026-03-10T00:00:00-05:00",
+    "end": "2026-03-10T23:59:59-04:00",
+    "timezone": "America/New_York",
+    "duration_hours": 23,
+    "dst_transition": "spring_forward"
+  },
+  "period_utc": {
+    "start": "2026-03-10T05:00:00Z",
+    "end": "2026-03-11T03:59:59Z"
+  }
+}
+```
+
+**DST Transition Values:**
+- `null` — Normal day (24 hours)
+- `"spring_forward"` — 23-hour day (clocks advance)
+- `"fall_back"` — 25-hour day (clocks go back)
+
+**Weekly/Monthly Use Calendar Boundaries:**
+- Week = Monday 00:00 to Sunday 23:59 (local time)
+- Month = 1st 00:00 to last-day 23:59 (local time)
+
+### 2.6 WhatsApp Import Workflow
+
+WhatsApp lacks an API for historical messages. Data can come from two sources:
+
+**Option A: Manual Chat Export (Basic)**
+- User exports chat from WhatsApp → Settings → Export Chat
+- Upload `.txt` file via dashboard: `POST /api/v1/archive/import/whatsapp`
+- Parser extracts messages with timestamps and participants
+- Limited: No message IDs, no media metadata, no reactions
+
+**Option B: Reader Bot Export (Recommended)**
+- Use ADR-001 WhatsApp Reader Bot to capture messages in real-time
+- Reader bot exports structured JSON with full metadata
+- Import via: `POST /api/v1/archive/import/whatsapp?format=reader_bot`
+- Full fidelity: Message IDs, media, reactions, read receipts
+
+**Import Manifest:**
+```json
+{
+  "imports": [
+    {
+      "import_id": "imp_abc123",
+      "filename": "WhatsApp Chat - Family.txt",
+      "format": "whatsapp_txt",
+      "imported_at": "2026-02-14T10:00:00Z",
+      "date_range": {
+        "start": "2025-06-01",
+        "end": "2026-02-14"
+      },
+      "message_count": 4521,
+      "participant_count": 8,
+      "gaps": []
+    },
+    {
+      "import_id": "imp_def456",
+      "filename": "family-chat-export.json",
+      "format": "reader_bot",
+      "imported_at": "2026-02-15T08:00:00Z",
+      "date_range": {
+        "start": "2026-02-14",
+        "end": "2026-02-15"
+      },
+      "message_count": 47
+    }
+  ],
+  "coverage": {
+    "earliest": "2025-06-01",
+    "latest": "2026-02-15",
+    "gaps": [
+      { "start": "2025-08-15", "end": "2025-08-20", "reason": "no_export_coverage" }
+    ]
+  }
+}
+```
+
+**Backfill Behavior:**
+When backfill is requested for dates not covered by any import:
+- Status = `EXPORT_UNAVAILABLE`
+- User message: "No WhatsApp export covers this date range. Export the chat from WhatsApp and import to enable backfill."
 
 ---
 
@@ -206,6 +309,7 @@ Platform-agnostic manifest for any source:
   "server_id": "group_abc123",
   "server_name": "Family Chat",
   "default_timezone": "America/Chicago",
+  "default_granularity": "weekly",
   "prompt_versions": {
     "current": {
       "version": "2.1.0",
@@ -231,7 +335,8 @@ Platform-agnostic manifest for any source:
   "cost_tracking": {
     "enabled": true,
     "budget_monthly_usd": 50.00,
-    "alert_threshold_percent": 80
+    "alert_threshold_percent": 80,
+    "priority": 2
   }
 }
 ```
@@ -247,7 +352,13 @@ Each summary `.md` file has a companion `.meta.json`:
   "period": {
     "start": "2026-02-14T00:00:00-05:00",
     "end": "2026-02-14T23:59:59-05:00",
-    "timezone": "America/New_York"
+    "timezone": "America/New_York",
+    "duration_hours": 24,
+    "dst_transition": null
+  },
+  "period_utc": {
+    "start": "2026-02-14T05:00:00Z",
+    "end": "2026-02-15T04:59:59Z"
   },
   "source": {
     "source_type": "whatsapp",
@@ -263,8 +374,8 @@ Each summary `.md` file has a companion `.meta.json`:
     "attachment_count": 5
   },
   "generation": {
-    "prompt_checksum": "sha256:a1b2c3d4e5f6...",
     "prompt_version": "2.1.0",
+    "prompt_checksum": "sha256:a1b2c3d4e5f6...",
     "model": "claude-sonnet-4-20250514",
     "options": {
       "summary_length": "detailed",
@@ -276,7 +387,8 @@ Each summary `.md` file has a companion `.meta.json`:
       "input": 3200,
       "output": 850
     },
-    "cost_usd": 0.0156
+    "cost_usd": 0.0156,
+    "pricing_version": "2026-01-01"
   },
   "backfill": {
     "is_backfill": true,
@@ -285,6 +397,7 @@ Each summary `.md` file has a companion `.meta.json`:
     "reason": "historical_archive"
   },
   "status": "complete",
+  "lock": null,
   "integrity": {
     "content_checksum": "sha256:x1y2z3...",
     "references_validated": true
@@ -323,18 +436,65 @@ When a summary cannot be generated (no messages, error, etc.), create a marker f
 }
 ```
 
-Status codes for incomplete summaries:
+**Status Codes for Incomplete Summaries:**
 
-| Code | Description | Backfill Eligible |
-|------|-------------|-------------------|
-| `NO_MESSAGES` | No messages in period | No (no data exists) |
-| `INSUFFICIENT_MESSAGES` | Below minimum threshold | Yes (lower threshold) |
-| `API_ERROR` | Claude API failure | Yes |
-| `RATE_LIMITED` | Rate limit hit | Yes |
-| `BOT_OFFLINE` | Bot was offline | Yes |
-| `SOURCE_INACCESSIBLE` | No permission at time | Maybe (if fixed) |
-| `PROMPT_ERROR` | Prompt template error | Yes (after fix) |
-| `EXPORT_UNAVAILABLE` | WhatsApp export not provided | Yes (when provided) |
+| Code | Description | Backfill Eligible | User Action |
+|------|-------------|-------------------|-------------|
+| `NO_MESSAGES` | No messages in period | No | None (no data) |
+| `INSUFFICIENT_MESSAGES` | Below minimum threshold | Yes | Lower threshold or skip |
+| `API_ERROR` | Claude API failure | Yes | Retry |
+| `RATE_LIMITED` | Rate limit hit | Yes | Wait and retry |
+| `BOT_OFFLINE` | Bot was offline | Yes | Retry |
+| `SOURCE_INACCESSIBLE` | No permission at time | Maybe | Fix permissions |
+| `PROMPT_ERROR` | Prompt template error | Yes | Fix prompt and retry |
+| `EXPORT_UNAVAILABLE` | WhatsApp export not provided | Yes | Import chat export |
+| `BUDGET_EXCEEDED` | Cost limit reached | Yes | Increase budget |
+
+### 3.5 Participant Identity
+
+**Default: Source-Isolated Identities**
+
+Participants are identified by their platform-native handle:
+- Discord: `@john#1234` or display name
+- WhatsApp: Phone number or contact name from export
+- Slack: `@john.smith` or display name
+- Telegram: `@username` or display name
+
+**Optional: Identity Linking**
+
+For organizations wanting unified identity across platforms:
+
+```json
+// identity-mappings.json
+{
+  "schema_version": "1.0.0",
+  "enabled": false,
+  "people": [
+    {
+      "canonical_name": "John Smith",
+      "email": "john@example.com",
+      "identities": [
+        { "source_type": "discord", "server_id": "123456789", "identifier": "john#1234" },
+        { "source_type": "slack", "server_id": "T01ABC123", "identifier": "U01ABC123" },
+        { "source_type": "whatsapp", "server_id": "group_abc123", "identifier": "+1555123456" }
+      ]
+    },
+    {
+      "canonical_name": "Sarah Developer",
+      "identities": [
+        { "source_type": "discord", "server_id": "123456789", "identifier": "sarah.dev#5678" },
+        { "source_type": "slack", "server_id": "T01ABC123", "identifier": "U01DEF456" }
+      ]
+    }
+  ]
+}
+```
+
+**Identity Linking Behavior:**
+- When `enabled: true`, summaries display canonical names
+- Raw archives still preserve original platform identifiers for auditability
+- Participant analysis can aggregate across platforms for the same person
+- Linking is **display-only** — never modifies source data
 
 ---
 
@@ -348,24 +508,24 @@ A global cost ledger tracks API costs per source for attribution:
 {
   "schema_version": "1.0.0",
   "currency": "USD",
-  "pricing": {
-    "claude-sonnet-4-20250514": {
-      "input_per_1k": 0.003,
-      "output_per_1k": 0.015
-    },
-    "claude-haiku-4-20250514": {
-      "input_per_1k": 0.00025,
-      "output_per_1k": 0.00125
-    }
-  },
   "sources": {
     "discord:123456789": {
       "server_name": "My Community",
       "total_cost_usd": 127.45,
       "summary_count": 450,
       "monthly": {
-        "2026-02": { "cost_usd": 12.30, "summaries": 45, "tokens_input": 425000, "tokens_output": 67000 },
-        "2026-01": { "cost_usd": 14.20, "summaries": 52, "tokens_input": 490000, "tokens_output": 78000 }
+        "2026-02": {
+          "cost_usd": 12.30,
+          "summaries": 45,
+          "tokens_input": 425000,
+          "tokens_output": 67000
+        },
+        "2026-01": {
+          "cost_usd": 14.20,
+          "summaries": 52,
+          "tokens_input": 490000,
+          "tokens_output": 78000
+        }
       },
       "last_updated": "2026-02-14T16:30:00Z"
     },
@@ -374,7 +534,12 @@ A global cost ledger tracks API costs per source for attribution:
       "total_cost_usd": 28.90,
       "summary_count": 180,
       "monthly": {
-        "2026-02": { "cost_usd": 3.45, "summaries": 14, "tokens_input": 112000, "tokens_output": 18500 }
+        "2026-02": {
+          "cost_usd": 3.45,
+          "summaries": 14,
+          "tokens_input": 112000,
+          "tokens_output": 18500
+        }
       },
       "last_updated": "2026-02-14T16:30:00Z"
     },
@@ -383,7 +548,12 @@ A global cost ledger tracks API costs per source for attribution:
       "total_cost_usd": 312.80,
       "summary_count": 890,
       "monthly": {
-        "2026-02": { "cost_usd": 28.90, "summaries": 98, "tokens_input": 980000, "tokens_output": 156000 }
+        "2026-02": {
+          "cost_usd": 28.90,
+          "summaries": 98,
+          "tokens_input": 980000,
+          "tokens_output": 156000
+        }
       },
       "last_updated": "2026-02-14T16:30:00Z"
     }
@@ -393,7 +563,54 @@ A global cost ledger tracks API costs per source for attribution:
 }
 ```
 
-### 4.2 Cost Tracking Service
+### 4.2 Pricing History
+
+API pricing changes over time. The archive maintains a versioned pricing table:
+
+```json
+{
+  "schema_version": "1.0.0",
+  "pricing_source": "static",
+  "versions": [
+    {
+      "effective_from": "2026-01-01",
+      "models": {
+        "claude-sonnet-4-20250514": {
+          "input_per_1k_tokens": 0.003,
+          "output_per_1k_tokens": 0.015
+        },
+        "claude-haiku-4-20250514": {
+          "input_per_1k_tokens": 0.00025,
+          "output_per_1k_tokens": 0.00125
+        }
+      }
+    },
+    {
+      "effective_from": "2025-06-01",
+      "models": {
+        "claude-sonnet-4-20250514": {
+          "input_per_1k_tokens": 0.004,
+          "output_per_1k_tokens": 0.018
+        }
+      }
+    }
+  ]
+}
+```
+
+**Cost Calculation:**
+- Costs are calculated using the pricing table effective at generation time
+- Each summary metadata records `pricing_version` for audit trail
+- When Anthropic updates pricing, add a new version entry with `effective_from` date
+
+**Future: Dynamic Pricing**
+```python
+class PricingConfig(BaseModel):
+    pricing_source: Literal["static", "anthropic_api"] = "static"
+    # When "anthropic_api", fetch current pricing from Anthropic (if endpoint available)
+```
+
+### 4.3 Cost Tracking Service
 
 ```python
 @dataclass
@@ -406,13 +623,27 @@ class CostEntry:
     tokens_input: int
     tokens_output: int
     cost_usd: float
+    pricing_version: str
 
 class CostTracker:
     """Tracks and attributes costs per source."""
 
-    def __init__(self, ledger_path: Path):
+    def __init__(self, ledger_path: Path, pricing_path: Path):
         self.ledger_path = ledger_path
+        self.pricing_path = pricing_path
         self.ledger = self._load_ledger()
+        self.pricing = self._load_pricing()
+
+    def calculate_cost(self, model: str, tokens_input: int, tokens_output: int,
+                       timestamp: datetime = None) -> Tuple[float, str]:
+        """Calculate cost using pricing effective at timestamp."""
+        pricing_version = self._get_pricing_version(timestamp or datetime.utcnow())
+        rates = self.pricing[pricing_version]["models"][model]
+
+        cost = (tokens_input / 1000 * rates["input_per_1k_tokens"] +
+                tokens_output / 1000 * rates["output_per_1k_tokens"])
+
+        return cost, pricing_version
 
     def record_cost(self, entry: CostEntry) -> None:
         """Record a cost entry to the ledger."""
@@ -425,7 +656,10 @@ class CostTracker:
 
         month_key = entry.timestamp.strftime("%Y-%m")
         month = source["monthly"].setdefault(month_key, {
-            "cost_usd": 0, "summaries": 0, "tokens_input": 0, "tokens_output": 0
+            "cost_usd": 0,
+            "summaries": 0,
+            "tokens_input": 0,
+            "tokens_output": 0
         })
 
         source["total_cost_usd"] += entry.cost_usd
@@ -440,17 +674,62 @@ class CostTracker:
 
         self._save_ledger()
 
-    def get_source_cost(self, source_key: str,
-                        month: Optional[str] = None) -> CostSummary:
-        """Get cost summary for a source, optionally filtered by month."""
-        ...
-
-    def get_cost_report(self) -> CostReport:
-        """Generate full cost report across all sources."""
+    def estimate_cost(self, source_key: str, periods: int,
+                      avg_tokens_per_summary: int = 5000) -> CostEstimate:
+        """Estimate cost for a backfill job (dry run)."""
         ...
 ```
 
-### 4.3 Cost Report UI
+### 4.4 Budget Hierarchy
+
+Budgets can be set at multiple levels with priority-based overflow handling:
+
+```json
+{
+  "cost_tracking": {
+    "global_budget_monthly_usd": 500.00,
+    "overflow_behavior": "pause_lowest_priority",
+    "alert_email": "admin@example.com",
+    "source_budgets": {
+      "slack:T01ABC123": {
+        "budget_monthly_usd": 200.00,
+        "priority": 1,
+        "alert_threshold_percent": 80
+      },
+      "discord:123456789": {
+        "budget_monthly_usd": 100.00,
+        "priority": 2,
+        "alert_threshold_percent": 80
+      },
+      "whatsapp:group_abc123": {
+        "budget_monthly_usd": 50.00,
+        "priority": 3,
+        "alert_threshold_percent": 90
+      }
+    }
+  }
+}
+```
+
+**Budget Behavior:**
+
+| Scenario | Action |
+|----------|--------|
+| Source hits its own budget | That source pauses; others continue |
+| Global budget hit | Depends on `overflow_behavior` |
+| Alert threshold reached | Send notification; continue generating |
+
+**Overflow Behaviors:**
+- `pause_lowest_priority`: Pause sources in reverse priority order until under budget
+- `pause_all`: Stop all generation immediately
+- `warn_only`: Log warning but continue (soft budget)
+
+**Priority System:**
+- Lower number = higher priority (1 is highest)
+- When pausing for budget, highest priority sources continue longest
+- Equal priority sources are paused together
+
+### 4.5 Cost Report UI
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -458,21 +737,22 @@ class CostTracker:
 │  ────────────────────────────────────────────────────────────────│
 │                                                                   │
 │  Period: February 2026                   Total: $44.65            │
+│  Global Budget: $500/mo                  Used: 8.9%               │
 │  ─────────────────────────────────────────────────────────────── │
 │                                                                   │
 │  By Source:                                                       │
 │  ┌────────────────────────────────────────────────────────────┐  │
-│  │  💬 Discord: My Community                                  │  │
+│  │  💬 Discord: My Community                     Priority: 2  │  │
 │  │     $12.30 (45 summaries, 492K tokens)                     │  │
-│  │     Budget: $50/mo — 24.6% used ████░░░░░░░░░░░░          │  │
+│  │     Budget: $100/mo — 12.3% used ██░░░░░░░░░░░░░░          │  │
 │  ├────────────────────────────────────────────────────────────┤  │
-│  │  📱 WhatsApp: Family Chat                                  │  │
+│  │  📱 WhatsApp: Family Chat                     Priority: 3  │  │
 │  │     $3.45 (14 summaries, 130K tokens)                      │  │
-│  │     Budget: $10/mo — 34.5% used ███████░░░░░░░░░░          │  │
+│  │     Budget: $50/mo — 6.9% used █░░░░░░░░░░░░░░░            │  │
 │  ├────────────────────────────────────────────────────────────┤  │
-│  │  💼 Slack: Acme Corp                                       │  │
+│  │  💼 Slack: Acme Corp                          Priority: 1  │  │
 │  │     $28.90 (98 summaries, 1.1M tokens)                     │  │
-│  │     Budget: $100/mo — 28.9% used ██████░░░░░░░░░░░         │  │
+│  │     Budget: $200/mo — 14.5% used ███░░░░░░░░░░░░░          │  │
 │  └────────────────────────────────────────────────────────────┘  │
 │                                                                   │
 │  [Export CSV]  [Set Budgets]  [View History]                     │
@@ -484,28 +764,92 @@ class CostTracker:
 
 ## 5. Prompt Version Tracking
 
-### 5.1 Prompt Checksum Generation
+### 5.1 Prompt Version Semantics
+
+Prompt changes are categorized by impact level using semantic versioning:
+
+```python
+@dataclass
+class PromptVersion:
+    major: int  # Breaking change: different output structure
+    minor: int  # Significant change: different extraction/emphasis
+    patch: int  # Trivial change: typo fix, wording tweak
+
+    def __str__(self) -> str:
+        return f"{self.major}.{self.minor}.{self.patch}"
+
+# Examples:
+# 1.0.0 → 2.0.0: Changed from bullet points to narrative format (major)
+# 1.0.0 → 1.1.0: Added sentiment analysis section (minor)
+# 1.0.0 → 1.0.1: Fixed typo in prompt (patch)
+```
+
+### 5.2 Prompt Checksum Generation
 
 ```python
 import hashlib
 from typing import Dict, Any
 
-def compute_prompt_checksum(prompt_config: Dict[str, Any]) -> str:
+def compute_prompt_checksum(
+    prompt_config: Dict[str, Any],
+    include_parameters: bool = False
+) -> str:
     """
     Generate a deterministic checksum of the prompt configuration.
 
-    Includes:
+    Args:
+        prompt_config: Prompt templates and settings
+        include_parameters: If True, include temperature/max_tokens in checksum
+
+    Always includes:
     - System prompt template
     - User prompt template
-    - Model parameters (temperature, max_tokens)
+    - Model name
     - Extraction settings (action_items, technical_terms, etc.)
+
+    Optionally includes (if include_parameters=True):
+    - Temperature
+    - Max tokens
     """
-    # Normalize and serialize deterministically
-    canonical = json.dumps(prompt_config, sort_keys=True, separators=(',', ':'))
+    config_to_hash = {
+        "system_prompt": prompt_config["system_prompt"],
+        "user_prompt": prompt_config["user_prompt"],
+        "model": prompt_config["model"],
+        "extractions": prompt_config.get("extractions", {})
+    }
+
+    if include_parameters:
+        config_to_hash["temperature"] = prompt_config.get("temperature")
+        config_to_hash["max_tokens"] = prompt_config.get("max_tokens")
+
+    canonical = json.dumps(config_to_hash, sort_keys=True, separators=(',', ':'))
     return f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()[:16]}"
 ```
 
-### 5.2 Backfill Eligibility Detection
+### 5.3 Outdated Detection Configuration
+
+```json
+{
+  "prompt_tracking": {
+    "flag_outdated_on": "minor",
+    "auto_regenerate_on": null,
+    "include_parameters_in_checksum": false
+  }
+}
+```
+
+| Setting | Values | Description |
+|---------|--------|-------------|
+| `flag_outdated_on` | `"major"`, `"minor"`, `"patch"` | Minimum version change to flag as outdated |
+| `auto_regenerate_on` | `"major"`, `"minor"`, `"patch"`, `null` | Auto-regenerate on version change (null = never) |
+| `include_parameters_in_checksum` | `true`, `false` | Include temperature/max_tokens in checksum |
+
+**Default Behavior:**
+- Flag on minor changes (section additions, extraction changes)
+- Don't flag on patch changes (typo fixes)
+- Never auto-regenerate (user must explicitly request)
+
+### 5.4 Backfill Eligibility Detection
 
 ```python
 class BackfillAnalyzer:
@@ -515,7 +859,7 @@ class BackfillAnalyzer:
         self,
         archive_path: Path,
         source_filter: Optional[ArchiveSource] = None,
-        current_prompt_checksum: str = None
+        current_prompt_version: PromptVersion = None
     ) -> BackfillReport:
         """
         Scan archive and identify:
@@ -524,6 +868,8 @@ class BackfillAnalyzer:
         3. Summaries generated with outdated prompts
         """
         report = BackfillReport()
+        config = self._load_config(archive_path)
+        flag_threshold = config.prompt_tracking.flag_outdated_on
 
         for meta_file in archive_path.glob("**/sources/**/*.meta.json"):
             meta = json.loads(meta_file.read_text())
@@ -541,17 +887,28 @@ class BackfillAnalyzer:
                         reason=meta["incomplete_reason"]["code"]
                     )
 
-            # Check for outdated prompt
-            elif (current_prompt_checksum and
-                  meta.get("generation", {}).get("prompt_checksum") != current_prompt_checksum):
-                report.add_outdated(
-                    source=meta["source"],
-                    period=meta["period"],
-                    old_checksum=meta["generation"]["prompt_checksum"],
-                    summary_file=meta_file.with_suffix(".md")
-                )
+            # Check for outdated prompt (respecting threshold)
+            elif current_prompt_version:
+                old_version = PromptVersion.parse(meta["generation"]["prompt_version"])
+                if self._exceeds_threshold(old_version, current_prompt_version, flag_threshold):
+                    report.add_outdated(
+                        source=meta["source"],
+                        period=meta["period"],
+                        old_version=str(old_version),
+                        summary_file=meta_file.with_suffix(".md")
+                    )
 
         return report
+
+    def _exceeds_threshold(self, old: PromptVersion, new: PromptVersion,
+                           threshold: str) -> bool:
+        """Check if version difference exceeds threshold."""
+        if threshold == "major":
+            return new.major > old.major
+        elif threshold == "minor":
+            return new.major > old.major or new.minor > old.minor
+        else:  # patch
+            return new != old
 ```
 
 ---
@@ -640,7 +997,8 @@ class ArchiveSyncSettings(BaseModel):
       "enabled": true,
       "folder_id": "1ABC123_shared_archives",
       "credentials_path": "/secure/gdrive-service-account.json",
-      "sync_frequency": "hourly"
+      "sync_frequency": "hourly",
+      "sync_deletes": false
     },
     "source_overrides": {
       "slack:T01ABC123": {
@@ -694,9 +1052,178 @@ class ArchiveSyncSettings(BaseModel):
 
 ---
 
-## 7. Summary Markdown Format
+## 7. Generation Locking
 
-### 7.1 Standard Template (Platform-Aware)
+### 7.1 Preventing Duplicate Generation
+
+To prevent concurrent generation of the same summary:
+
+```json
+{
+  "status": "generating",
+  "lock": {
+    "job_id": "job_xyz789",
+    "acquired_at": "2026-02-14T16:30:00Z",
+    "acquired_by": "worker-01",
+    "expires_at": "2026-02-14T16:35:00Z"
+  }
+}
+```
+
+**Status Values:**
+- `pending` — Not yet attempted
+- `generating` — Currently being generated (locked)
+- `complete` — Successfully generated
+- `incomplete` — Generation attempted but failed
+- `deleted` — Soft-deleted, awaiting purge
+
+### 7.2 Lock Behavior
+
+```python
+class GenerationLock:
+    """Manages locks for summary generation."""
+
+    LOCK_TTL_SECONDS = 300  # 5 minutes
+
+    async def acquire_lock(self, meta_path: Path, job_id: str,
+                           worker_id: str) -> bool:
+        """
+        Attempt to acquire lock for generation.
+
+        Returns True if lock acquired, False if already locked.
+        """
+        try:
+            if meta_path.exists():
+                meta = json.loads(meta_path.read_text())
+
+                # Already complete or generating
+                if meta.get("status") == "complete":
+                    return False
+
+                if meta.get("status") == "generating":
+                    lock = meta.get("lock", {})
+                    expires_at = datetime.fromisoformat(lock.get("expires_at", "2000-01-01"))
+
+                    # Lock still valid
+                    if datetime.utcnow() < expires_at:
+                        return False
+
+                    # Lock expired, we can take over
+                    logger.warning(f"Taking over expired lock from {lock.get('job_id')}")
+
+            # Acquire lock
+            meta = self._create_lock_meta(job_id, worker_id)
+            self._atomic_write(meta_path, meta)
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to acquire lock: {e}")
+            return False
+
+    async def release_lock(self, meta_path: Path, status: str,
+                           summary_data: Optional[dict] = None) -> None:
+        """Release lock and update status."""
+        meta = json.loads(meta_path.read_text())
+        meta["status"] = status
+        meta["lock"] = None
+
+        if summary_data:
+            meta.update(summary_data)
+
+        self._atomic_write(meta_path, meta)
+
+    def _atomic_write(self, path: Path, data: dict) -> None:
+        """Write atomically using rename."""
+        tmp_path = path.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(data, indent=2))
+        tmp_path.rename(path)  # Atomic on POSIX
+```
+
+### 7.3 Distributed Locking (Future)
+
+For multi-worker deployments, file-based locking is insufficient. Options:
+
+```python
+class LockBackend(Enum):
+    FILE = "file"           # Single-worker only
+    REDIS = "redis"         # Redis-based distributed lock
+    DATABASE = "database"   # PostgreSQL advisory locks
+
+class LockConfig(BaseModel):
+    backend: LockBackend = LockBackend.FILE
+    redis_url: Optional[str] = None
+    lock_ttl_seconds: int = 300
+```
+
+---
+
+## 8. Retention and Deletion
+
+### 8.1 Retention Configuration
+
+```python
+class RetentionConfig(BaseModel):
+    """Controls automatic cleanup of old summaries."""
+
+    retention_days: Optional[int] = None          # None = keep forever
+    soft_delete_grace_days: int = 30              # Days before permanent deletion
+    sync_deletes_to_drive: bool = False           # Also delete from Google Drive?
+    archive_before_delete: bool = True            # Create backup before purge
+    archive_format: Literal["zip", "tar.gz"] = "zip"
+```
+
+### 8.2 Deletion Flow
+
+```
+Day 0: Summary exceeds retention_days
+       └── Moved to .deleted/{source_key}/{date}/
+           └── Status updated to "deleted"
+           └── Manifest updated with deletion info
+
+Day 30: soft_delete_grace_days elapsed
+        └── If archive_before_delete: Create ZIP backup
+        └── Permanently delete from local filesystem
+        └── If sync_deletes_to_drive: Delete from Google Drive
+        └── Remove from manifest
+```
+
+### 8.3 Soft Delete Manifest
+
+```json
+{
+  "deleted": [
+    {
+      "summary_id": "sum_abc123",
+      "source_key": "discord:123456789",
+      "period": "2025-06-01",
+      "deleted_at": "2026-02-14T10:00:00Z",
+      "reason": "retention_policy",
+      "permanent_delete_at": "2026-03-16T10:00:00Z",
+      "backup_path": ".deleted/discord_123456789/2025-06-01_daily.zip",
+      "original_path": "sources/discord/my-community_123456789/channels/general_456/summaries/2025/06/2025-06-01_daily.md"
+    }
+  ]
+}
+```
+
+### 8.4 Recovery
+
+Soft-deleted summaries can be recovered before permanent deletion:
+
+```bash
+# API endpoint
+POST /api/v1/archive/recover/{summary_id}
+
+# Moves from .deleted/ back to original location
+# Removes deletion entry from manifest
+# Re-syncs to Google Drive if applicable
+```
+
+---
+
+## 9. Summary Markdown Format
+
+### 9.1 Standard Template (Platform-Aware)
 
 ```markdown
 # Daily Summary: Family Chat
@@ -756,7 +1283,7 @@ A brief 2-3 sentence overview of the day's activity.
 *Cost: $0.016*
 ```
 
-### 7.2 Platform-Specific Headers
+### 9.2 Platform-Specific Headers
 
 | Platform | Header Format |
 |----------|--------------|
@@ -765,7 +1292,25 @@ A brief 2-3 sentence overview of the day's activity.
 | Slack | `**Workspace:** Acme Corp` / `**Channel:** #engineering` |
 | Telegram | `**Chat:** Project Discussion` |
 
-### 7.3 Perspective Variants
+### 9.3 Per-Source Granularity
+
+Each source can have its own granularity setting:
+
+```json
+{
+  "source_type": "whatsapp",
+  "server_id": "group_abc123",
+  "overrides": {
+    "granularity": "weekly"
+  }
+}
+```
+
+**Rationale:** A busy Slack workspace may need daily summaries, while a quiet WhatsApp family group only needs weekly.
+
+**Cross-Source Reports:** Not supported in v1. If needed, weekly summaries can aggregate dailies within a source, but mixing granularities across sources requires future work.
+
+### 9.4 Perspective Variants
 
 | Perspective | Emphasized Sections |
 |-------------|---------------------|
@@ -778,21 +1323,23 @@ A brief 2-3 sentence overview of the day's activity.
 
 ---
 
-## 8. Archive Generation API
+## 10. Archive Generation API
 
-### 8.1 New Endpoints
+### 10.1 New Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/v1/archive/generate` | POST | Generate retrospective summaries |
 | `/api/v1/archive/status/{job_id}` | GET | Check generation job status |
 | `/api/v1/archive/backfill-report` | POST | Analyze archive for backfill opportunities |
+| `/api/v1/archive/import/whatsapp` | POST | Import WhatsApp chat export |
 | `/api/v1/archive/sync` | POST | Sync archive to external storage |
 | `/api/v1/archive/download` | GET | Download archive as ZIP |
 | `/api/v1/archive/costs` | GET | Get cost report by source |
 | `/api/v1/archive/costs/{source_key}` | GET | Get cost details for specific source |
+| `/api/v1/archive/recover/{summary_id}` | POST | Recover soft-deleted summary |
 
-### 8.2 Generate Retrospective Request
+### 10.2 Generate Retrospective Request
 
 ```python
 class RetrospectiveGenerateRequest(BaseModel):
@@ -829,18 +1376,19 @@ class DateRange(BaseModel):
     end: date    # Inclusive
 ```
 
-### 8.3 Generation Job Response
+### 10.3 Generation Job Response
 
 ```python
 class GenerationJobResponse(BaseModel):
     job_id: str
     source_key: str                     # e.g., "whatsapp:group_abc123"
-    status: Literal["queued", "running", "completed", "failed", "cancelled"]
+    status: Literal["queued", "running", "completed", "failed", "cancelled", "paused"]
     progress: GenerationProgress
     cost: CostProgress
     created_at: datetime
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
+    pause_reason: Optional[str]         # e.g., "budget_exceeded"
 
 class GenerationProgress(BaseModel):
     total_periods: int
@@ -855,14 +1403,15 @@ class CostProgress(BaseModel):
     tokens_input: int
     tokens_output: int
     max_cost_usd: Optional[float]
+    budget_remaining_usd: Optional[float]
     percent_of_max: Optional[float]
 ```
 
 ---
 
-## 9. Backfill Workflow
+## 11. Backfill Workflow
 
-### 9.1 User-Initiated Backfill (Multi-Source)
+### 11.1 User-Initiated Backfill (Multi-Source)
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -872,19 +1421,20 @@ class CostProgress(BaseModel):
 │  Sources: [All ▼]  Filter by: [Platform ▼]                       │
 │  ─────────────────────────────────────────────────────────────── │
 │                                                                   │
-│  💬 Discord: My Community                                         │
-│     259 days | 245 ✓ | 8 ✗ | 6 ○ | 52 outdated                  │
-│     Estimated backfill: $2.40                                    │
+│  💬 Discord: My Community                         Priority: 2    │
+│     259 days | 245 ✓ | 8 ✗ | 6 ○ | 52 📋                        │
+│     Estimated backfill: $2.40 (14 summaries)                     │
 │     [Expand] [Backfill]                                          │
 │  ─────────────────────────────────────────────────────────────── │
-│  📱 WhatsApp: Family Chat                                         │
-│     180 days | 175 ✓ | 2 ✗ | 3 ○ | 0 outdated                   │
-│     Estimated backfill: $0.85                                    │
-│     [Expand] [Backfill]                                          │
+│  📱 WhatsApp: Family Chat                         Priority: 3    │
+│     180 days | 175 ✓ | 2 ✗ | 3 ○ | 0 📋                         │
+│     ⚠️ 5 days not covered by exports                             │
+│     Estimated backfill: $0.85 (5 summaries)                      │
+│     [Expand] [Backfill] [Import Export]                          │
 │  ─────────────────────────────────────────────────────────────── │
-│  💼 Slack: Acme Corp                                              │
-│     420 days | 890 ✓ | 12 ✗ | 8 ○ | 120 outdated                │
-│     Estimated backfill: $23.40                                   │
+│  💼 Slack: Acme Corp                              Priority: 1    │
+│     420 days | 890 ✓ | 12 ✗ | 8 ○ | 120 📋                      │
+│     Estimated backfill: $23.40 (140 summaries)                   │
 │     [Expand] [Backfill]                                          │
 │  ─────────────────────────────────────────────────────────────── │
 │                                                                   │
@@ -897,9 +1447,9 @@ class CostProgress(BaseModel):
 
 ---
 
-## 10. Configuration Management
+## 12. Configuration Management
 
-### 10.1 Archive Settings
+### 12.1 Archive Settings
 
 ```python
 class ArchiveConfig(BaseModel):
@@ -913,8 +1463,7 @@ class ArchiveConfig(BaseModel):
     default_timezone: str = "UTC"
 
     # Retention
-    auto_archive_after_days: Optional[int] = None
-    retention_days: Optional[int] = None
+    retention: RetentionConfig = RetentionConfig()
 
     # Naming
     folder_name_format: str = "{server_name}_{server_id}"
@@ -924,45 +1473,26 @@ class ArchiveConfig(BaseModel):
     sync: ArchiveSyncSettings = ArchiveSyncSettings()
 
     # Cost tracking
-    cost_tracking_enabled: bool = True
-    default_budget_monthly_usd: Optional[float] = None
+    cost_tracking: CostTrackingConfig = CostTrackingConfig()
+
+    # Prompt tracking
+    prompt_tracking: PromptTrackingConfig = PromptTrackingConfig()
+
+    # Identity linking
+    identity_linking_enabled: bool = False
+
+    # Locking
+    lock_backend: LockBackend = LockBackend.FILE
+    lock_ttl_seconds: int = 300
 
     # Performance
     max_concurrent_generations: int = 3
     rate_limit_per_minute: int = 10
 ```
 
-### 10.2 Per-Source Overrides
-
-```json
-{
-  "source_type": "slack",
-  "server_id": "T01ABC123",
-  "server_name": "Acme Corp",
-  "overrides": {
-    "summary_options": {
-      "perspective": "developer",
-      "include_technical_terms": true
-    },
-    "granularity": "daily",
-    "timezone": "America/Los_Angeles"
-  },
-  "cost_tracking": {
-    "budget_monthly_usd": 100.00,
-    "alert_threshold_percent": 80,
-    "alert_email": "billing@acme.com"
-  },
-  "sync": {
-    "google_drive": {
-      "folder_id": "1XYZ_acme_specific_folder"
-    }
-  }
-}
-```
-
 ---
 
-## 11. File-by-File Change Map
+## 13. File-by-File Change Map
 
 | # | File | Action | Risk | Description |
 |---|------|--------|------|-------------|
@@ -973,45 +1503,55 @@ class ArchiveConfig(BaseModel):
 | 5 | `src/archive/scanner.py` | **N** | Low | Archive scanning and gap detection |
 | 6 | `src/archive/backfill.py` | **N** | Medium | Backfill analysis and execution |
 | 7 | `src/archive/cost_tracker.py` | **N** | Low | Per-source cost attribution |
-| 8 | `src/archive/sync/base.py` | **N** | Low | Base sync provider interface |
-| 9 | `src/archive/sync/google_drive.py` | **N** | Medium | Google Drive sync (flexible sharing) |
-| 10 | `src/archive/prompt_tracker.py` | **N** | Low | Prompt checksum generation and tracking |
-| 11 | `src/dashboard/routes/archive.py` | **N** | Medium | Archive management API endpoints |
-| 12 | `src/dashboard/routes/costs.py` | **N** | Low | Cost reporting API endpoints |
-| 13 | `src/dashboard/models.py` | **M** | Low | Add archive/cost request/response models |
-| 14 | `src/frontend/src/pages/Archive.tsx` | **N** | Medium | Archive management UI |
-| 15 | `src/frontend/src/pages/Costs.tsx` | **N** | Low | Cost dashboard UI |
-| 16 | `src/frontend/src/components/archive/TimelineView.tsx` | **N** | Low | Visual timeline |
-| 17 | `src/frontend/src/components/archive/BackfillModal.tsx` | **N** | Low | Backfill configuration |
-| 18 | `src/frontend/src/components/archive/SourceSelector.tsx` | **N** | Low | Multi-source picker |
-| 19 | `src/frontend/src/components/costs/CostChart.tsx` | **N** | Low | Cost visualization |
-| 20 | `src/config/archive.py` | **N** | Low | Archive configuration schema |
-| 21 | `tests/unit/test_archive_*.py` | **N** | — | Unit tests |
-| 22 | `tests/unit/test_cost_tracker.py` | **N** | — | Cost tracking tests |
+| 8 | `src/archive/pricing.py` | **N** | Low | Versioned pricing table |
+| 9 | `src/archive/locking.py` | **N** | Medium | Generation lock management |
+| 10 | `src/archive/retention.py` | **N** | Medium | Soft delete and purge logic |
+| 11 | `src/archive/identity.py` | **N** | Low | Cross-platform identity linking |
+| 12 | `src/archive/sync/base.py` | **N** | Low | Base sync provider interface |
+| 13 | `src/archive/sync/google_drive.py` | **N** | Medium | Google Drive sync (flexible sharing) |
+| 14 | `src/archive/prompt_tracker.py` | **N** | Low | Prompt versioning and checksums |
+| 15 | `src/archive/importers/whatsapp.py` | **N** | Medium | WhatsApp export import |
+| 16 | `src/dashboard/routes/archive.py` | **N** | Medium | Archive management API endpoints |
+| 17 | `src/dashboard/routes/costs.py` | **N** | Low | Cost reporting API endpoints |
+| 18 | `src/dashboard/models.py` | **M** | Low | Add archive/cost request/response models |
+| 19 | `src/frontend/src/pages/Archive.tsx` | **N** | Medium | Archive management UI |
+| 20 | `src/frontend/src/pages/Costs.tsx` | **N** | Low | Cost dashboard UI |
+| 21 | `src/frontend/src/components/archive/TimelineView.tsx` | **N** | Low | Visual timeline |
+| 22 | `src/frontend/src/components/archive/BackfillModal.tsx` | **N** | Low | Backfill configuration |
+| 23 | `src/frontend/src/components/archive/SourceSelector.tsx` | **N** | Low | Multi-source picker |
+| 24 | `src/frontend/src/components/archive/ImportModal.tsx` | **N** | Low | WhatsApp import UI |
+| 25 | `src/frontend/src/components/costs/CostChart.tsx` | **N** | Low | Cost visualization |
+| 26 | `src/config/archive.py` | **N** | Low | Archive configuration schema |
+| 27 | `tests/unit/test_archive_*.py` | **N** | — | Unit tests |
+| 28 | `tests/unit/test_cost_tracker.py` | **N** | — | Cost tracking tests |
+| 29 | `tests/unit/test_locking.py` | **N** | — | Lock management tests |
 
-**Totals:** 1 file modified, 21 files created.
+**Totals:** 1 file modified, 28 files created.
 
 ---
 
-## 12. Edge Cases and Mitigations
+## 14. Edge Cases and Mitigations
 
 | Edge Case | Mitigation |
 |-----------|------------|
 | Source deleted, history inaccessible | Mark as `SOURCE_DELETED` in meta; not backfill eligible |
-| WhatsApp export not provided for period | Mark as `EXPORT_UNAVAILABLE`; backfill when export provided |
+| WhatsApp export not provided for period | Mark as `EXPORT_UNAVAILABLE`; prompt user to import |
 | Very long time range (years) | Paginate generation; show progress; allow pause/resume |
 | Rate limits during batch generation | Exponential backoff; queue remaining; report partial progress |
-| Conflicting timezone changes | Store canonical UTC times; convert on display |
+| DST transition days | Record actual duration; store UTC canonical times |
 | Large channels (10k+ messages/day) | Chunk processing; cache intermediate results |
 | Prompt changes mid-backfill | Lock prompt version for job duration; note in manifest |
 | Google Drive quota exceeded | Fail gracefully; queue for retry; notify user |
-| Concurrent backfill jobs | Queue system; prevent duplicate date processing |
+| Concurrent backfill jobs | Lock-based coordination; expired locks auto-release |
 | Cost budget exceeded mid-generation | Pause job; notify user; allow resume or cancel |
 | Different prompt versions per source | Track per-source prompt history independently |
+| Worker dies mid-generation | Lock expires after TTL; next worker can retry |
+| Soft-deleted summary needed | Recovery endpoint restores from `.deleted/` |
+| Pricing changes mid-month | Use pricing effective at generation time; track version |
 
 ---
 
-## 13. Security Considerations
+## 15. Security Considerations
 
 1. **Message Access Permissions** — Retrospective generation requires historical message access. Verify access rights per platform.
 
@@ -1025,55 +1565,78 @@ class ArchiveConfig(BaseModel):
 
 6. **Cross-Org Data Separation** — When using separate drives per source, ensure no cross-contamination of credentials or data.
 
+7. **Identity Mapping Privacy** — Cross-platform identity linking may expose relationships. Keep `identity-mappings.json` secure.
+
 ---
 
-## 14. Implementation Phases
+## 16. Implementation Phases
 
 ### Phase 1 — Core Archive Structure (3-4 days)
 - [ ] Define multi-source archive folder structure
 - [ ] Implement `ArchiveSource` abstraction
 - [ ] Create manifest schemas for all platforms
 - [ ] Implement `ArchiveWriter` for Markdown generation
+- [ ] Add DST-aware period handling
 
 ### Phase 2 — Cost Tracking (2-3 days)
 - [ ] Implement `CostTracker` with per-source attribution
-- [ ] Create cost ledger format and persistence
-- [ ] Add cost estimation for dry runs
+- [ ] Create versioned pricing table
+- [ ] Add budget hierarchy with priorities
 - [ ] Build cost reporting endpoints
 
-### Phase 3 — Retrospective Generation (3-4 days)
+### Phase 3 — Locking and Concurrency (2 days)
+- [ ] Implement file-based locking
+- [ ] Add lock TTL and expiration
+- [ ] Create atomic write utilities
+- [ ] Document distributed locking options
+
+### Phase 4 — Retrospective Generation (3-4 days)
 - [ ] Implement `RetrospectiveGenerator` service
 - [ ] Add historical message fetching per platform
 - [ ] Create job queue with cost limits
-- [ ] Add progress tracking and reporting
+- [ ] Add progress tracking and pause/resume
 
-### Phase 4 — Backfill Analysis (2-3 days)
+### Phase 5 — WhatsApp Import (2-3 days)
+- [ ] Implement `.txt` export parser
+- [ ] Implement reader bot JSON parser
+- [ ] Create import manifest tracking
+- [ ] Add coverage gap detection
+
+### Phase 6 — Backfill Analysis (2-3 days)
 - [ ] Implement `ArchiveScanner` for gap detection
 - [ ] Create `BackfillAnalyzer` with source filtering
-- [ ] Add prompt version comparison logic
+- [ ] Add prompt version comparison with thresholds
 - [ ] Generate backfill reports
 
-### Phase 5 — Google Drive Sync (2-3 days)
+### Phase 7 — Retention Management (2 days)
+- [ ] Implement soft delete flow
+- [ ] Add grace period and purge logic
+- [ ] Create backup before delete
+- [ ] Add recovery endpoint
+
+### Phase 8 — Google Drive Sync (2-3 days)
 - [ ] Implement flexible sync configuration
 - [ ] Support multiple drives per installation
 - [ ] Add per-source sync status tracking
 - [ ] Handle conflicts and errors
 
-### Phase 6 — Frontend UI (3-4 days)
+### Phase 9 — Frontend UI (4-5 days)
 - [ ] Create Archive page with source browser
 - [ ] Build Timeline visualization
 - [ ] Create Cost dashboard
 - [ ] Add Backfill configuration modal
+- [ ] Add WhatsApp import modal
 
-### Phase 7 — Testing & Polish (2-3 days)
+### Phase 10 — Testing & Polish (2-3 days)
 - [ ] Unit tests for all archive components
 - [ ] Integration tests for each platform
 - [ ] Cost tracking tests
+- [ ] Lock contention tests
 - [ ] Documentation and examples
 
 ---
 
-## 15. Future Extensions
+## 17. Future Extensions
 
 | Extension | Description |
 |-----------|-------------|
@@ -1084,10 +1647,12 @@ class ArchiveConfig(BaseModel):
 | **Cost Optimization** | Suggest using Haiku for low-activity periods |
 | **Archive Analytics** | Trends, statistics, and insights across archive |
 | **Billing Integration** | Export cost data for invoicing/chargebacks |
+| **Redis/DB Locking** | Distributed locking for multi-worker deployments |
+| **Automatic Identity Linking** | Suggest mappings based on name/email similarity |
 
 ---
 
-## 16. Consequences
+## 18. Consequences
 
 ### Positive
 - **Multi-Platform Support**: Unified archive for Discord, WhatsApp, Slack, Telegram
@@ -1095,25 +1660,31 @@ class ArchiveConfig(BaseModel):
 - **Cost Transparency**: Know exactly what each server/group costs
 - **Historical Coverage**: Communities can document their entire history
 - **Portable Archives**: Human-readable Markdown works everywhere
+- **Smart Backfill**: Intelligent gap detection with actionable reasons
+- **Safe Deletion**: Soft delete with recovery window
 
 ### Negative
-- **Storage Requirements**: Full archives can grow large (~50KB/day/channel)
+- **Storage Requirements**: Full archives can grow large (~75-100KB/day/channel)
 - **API Costs**: Retrospective generation for long periods can be expensive
 - **Complexity**: More configuration options and workflows to learn
 - **Credential Management**: Multiple drives means multiple service accounts
+- **WhatsApp Friction**: Requires manual export/import workflow
 
 ### Trade-offs
-- **Flexibility vs. Simplicity**: Supporting per-source drive config adds complexity but enables enterprise use cases
+- **Flexibility vs. Simplicity**: Per-source configuration adds complexity but enables enterprise use cases
 - **Markdown vs. Database**: Chose Markdown for portability, sacrificing query performance
 - **Cost Granularity**: Per-summary cost tracking adds overhead but enables accurate attribution
+- **File Locking vs. Distributed**: File locking is simple but limits to single-worker; DB locking is future work
 
 ---
 
-## 17. References
+## 19. References
 
+- [ADR-001: WhatsApp Conversation Reader Bot](./001-whatsapp-conversation-reader-bot.md) — Reader bot for structured export
 - [ADR-002: WhatsApp Data Source Integration](./002-whatsapp-datasource-integration-summarybotng.md) — Multi-source architecture
 - [ADR-004: Grounded Summary References](./004-grounded-summary-references.md) — Citation format
 - [ADR-005: Summary Delivery Destinations](./005-summary-delivery-destinations.md) — Storage model
 - [ISO 8601 Date Format](https://en.wikipedia.org/wiki/ISO_8601) — Date naming standard
 - [Google Drive API](https://developers.google.com/drive/api) — Sync integration
 - [Anthropic Pricing](https://www.anthropic.com/pricing) — Cost calculation reference
+- [IANA Time Zone Database](https://www.iana.org/time-zones) — Timezone handling

@@ -2,9 +2,12 @@
 Authentication routes for dashboard API.
 """
 
+import os
 import logging
+from typing import Optional, List
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel
 
 from ..auth import (
     get_auth,
@@ -181,4 +184,89 @@ async def get_me(user: dict = Depends(get_current_user)):
         avatar_url=f"https://cdn.discordapp.com/avatars/{user['sub']}/{user.get('avatar')}.png"
         if user.get("avatar")
         else None,
+    )
+
+
+# =============================================================================
+# Development/Testing Endpoints (only available when DEV_AUTH_ENABLED=true)
+# =============================================================================
+
+class DevTokenRequest(BaseModel):
+    """Request body for dev token endpoint."""
+    user_id: str = "123456789012345678"
+    username: str = "TestUser"
+    avatar: Optional[str] = None
+    guild_ids: List[str] = []
+
+
+class DevTokenResponse(BaseModel):
+    """Response from dev token endpoint."""
+    token: str
+    user: UserResponse
+    guilds: List[GuildBriefResponse]
+
+
+@router.post(
+    "/dev-token",
+    response_model=DevTokenResponse,
+    summary="Generate dev token (DEV ONLY)",
+    description="Generate a JWT token for testing. Only available when DEV_AUTH_ENABLED=true.",
+    responses={
+        403: {"model": ErrorResponse, "description": "Dev auth not enabled"},
+    },
+)
+async def dev_token(body: DevTokenRequest):
+    """Generate a development token for UI testing.
+
+    This endpoint is only available when DEV_AUTH_ENABLED=true environment variable is set.
+    It creates a valid JWT token without requiring Discord OAuth.
+    """
+    if os.environ.get("DEV_AUTH_ENABLED", "").lower() != "true":
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "DEV_AUTH_DISABLED", "message": "Dev auth is not enabled"},
+        )
+
+    auth = get_auth()
+
+    # If no guild_ids provided, try to get from bot
+    guild_ids = body.guild_ids
+    if not guild_ids:
+        bot = get_discord_bot()
+        if bot and bot.client:
+            guild_ids = [str(g.id) for g in bot.client.guilds]
+
+    # Create a mock user
+    from ..models import DashboardUser
+    user = DashboardUser(
+        id=body.user_id,
+        username=body.username,
+        discriminator=None,
+        avatar=body.avatar,
+    )
+
+    # Create JWT token
+    token = auth.create_jwt(user, guild_ids)
+
+    # Build response
+    guild_responses = [
+        GuildBriefResponse(
+            id=gid,
+            name=f"Guild {gid[-4:]}",
+            icon_url=None,
+            role=GuildRole.ADMIN,
+        )
+        for gid in guild_ids
+    ]
+
+    return DevTokenResponse(
+        token=token,
+        user=UserResponse(
+            id=user.id,
+            username=user.username,
+            avatar_url=f"https://cdn.discordapp.com/avatars/{user.id}/{user.avatar}.png"
+            if user.avatar
+            else None,
+        ),
+        guilds=guild_responses,
     )

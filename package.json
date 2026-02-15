@@ -17,5 +17,9 @@
     "frontend:install": "cd src/frontend && npm install",
     "frontend:dev": "cd src/frontend && npm run dev",
     "frontend:build": "cd src/frontend && npm run build"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "playwright": "^1.58.2"
   }
 }

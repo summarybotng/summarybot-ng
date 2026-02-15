@@ -1,0 +1,14 @@
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5OTk5OTk5OTk5OTk5OTk5OTkiLCJ1c2VybmFtZSI6IlVJRHJpdmVyIiwiYXZhdGFyIjpudWxsLCJndWlsZHMiOlsiOTMyMzM2NDU1MDI2NjM4ODQ4IiwiMTI4Mzg3NDMxMDcyMDcxNjg5MCIsIjEzOTkzODY5MjgyMDk0NjE0MjgiLCIxNDIwMTg4NzUwMzk0MTY3NDQ3Il0sImlhdCI6MTc3MTEyNTUwMSwiZXhwIjoxNzcxMjExOTAxfQ.RMnDoUPgDypvrZLfNqQADK7oBjxCAo4zJmVzrnRX8-w",
+  "user": {
+    "id": "999999999999999999",
+    "username": "UIDriver",
+    "avatar_url": null
+  },
+  "guilds": [
+    "932336455026638848",
+    "1283874310720716890",
+    "1399386928209461428",
+    "1420188750394167447"
+  ]
+}

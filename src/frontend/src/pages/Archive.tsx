@@ -51,7 +51,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Archive,
+  Archive as ArchiveIcon,
   FolderOpen,
   Calendar,
   DollarSign,
@@ -119,7 +119,7 @@ export function Archive() {
       >
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Archive className="h-6 w-6" />
+            <ArchiveIcon className="h-6 w-6" />
             Archive
           </h1>
           <p className="text-muted-foreground">
@@ -791,7 +791,7 @@ function EmptyState({ onImport }: { onImport: () => void }) {
       animate={{ opacity: 1 }}
       className="flex flex-col items-center justify-center py-20"
     >
-      <Archive className="mb-4 h-16 w-16 text-muted-foreground/30" />
+      <ArchiveIcon className="mb-4 h-16 w-16 text-muted-foreground/30" />
       <h2 className="mb-2 text-xl font-semibold">No archive sources yet</h2>
       <p className="mb-6 text-center text-muted-foreground max-w-md">
         Import WhatsApp chats or generate retrospective summaries to build your archive

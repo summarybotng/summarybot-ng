@@ -58,7 +58,7 @@ async function createAuthenticatedPage(browser) {
 
     // Inject auth state into localStorage
     await page.evaluate((state) => {
-      localStorage.setItem('auth-storage', JSON.stringify({
+      localStorage.setItem('summarybot-auth', JSON.stringify({
         state: {
           token: state.token,
           user: state.user,
@@ -76,7 +76,7 @@ async function createAuthenticatedPage(browser) {
 
 async function screenshot(url, outputPath) {
   const browser = await createBrowser();
-  const page = await browser.newPage();
+  const page = await createAuthenticatedPage(browser);
 
   try {
     const fullUrl = url.startsWith('http') ? url : `${BASE_URL}${url}`;
@@ -104,7 +104,7 @@ async function screenshot(url, outputPath) {
 
 async function click(url, selector) {
   const browser = await createBrowser();
-  const page = await browser.newPage();
+  const page = await createAuthenticatedPage(browser);
 
   try {
     const fullUrl = url.startsWith('http') ? url : `${BASE_URL}${url}`;
@@ -126,7 +126,7 @@ async function click(url, selector) {
 
 async function type(url, selector, text) {
   const browser = await createBrowser();
-  const page = await browser.newPage();
+  const page = await createAuthenticatedPage(browser);
 
   try {
     const fullUrl = url.startsWith('http') ? url : `${BASE_URL}${url}`;
@@ -205,7 +205,7 @@ async function navigate(url) {
 
 async function evalJs(url, expression) {
   const browser = await createBrowser();
-  const page = await browser.newPage();
+  const page = await createAuthenticatedPage(browser);
 
   try {
     const fullUrl = url.startsWith('http') ? url : `${BASE_URL}${url}`;

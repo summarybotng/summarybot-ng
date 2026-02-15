@@ -274,28 +274,39 @@ async def cancel_generation(job_id: str):
 @router.post("/estimate", response_model=CostEstimateResponse)
 async def estimate_generation_cost(request: GenerateRequest):
     """Estimate cost for generation request."""
-    from src.archive.models import SourceType, ArchiveSource
-    from src.archive.generator import GenerationRequest
+    from datetime import datetime, timedelta
+    from src.archive.cost_tracker import CostTracker
 
-    source = ArchiveSource(
-        source_type=SourceType(request.source_type),
-        server_id=request.server_id,
-        server_name=request.server_id,
+    # Calculate number of periods based on date range and granularity
+    start = datetime.strptime(request.date_range.start, "%Y-%m-%d").date()
+    end = datetime.strptime(request.date_range.end, "%Y-%m-%d").date()
+
+    if request.granularity == "weekly":
+        periods = max(1, (end - start).days // 7)
+    elif request.granularity == "monthly":
+        periods = max(1, (end - start).days // 30)
+    else:  # daily
+        periods = max(1, (end - start).days + 1)
+
+    # Use cost tracker for estimation
+    archive_root = get_archive_root()
+    cost_tracker = CostTracker(archive_root / "cost-ledger.json")
+
+    source_key = f"{request.source_type}:{request.server_id}"
+    model = request.model or "anthropic/claude-3-haiku"
+
+    estimate = cost_tracker.estimate_backfill_cost(
+        source_key=source_key,
+        periods=periods,
+        model=model,
     )
 
-    gen_request = GenerationRequest(
-        source=source,
-        start_date=request.date_range.start,
-        end_date=request.date_range.end,
-        granularity=request.granularity,
-        timezone=request.timezone,
-        model=request.model,
+    return CostEstimateResponse(
+        periods=estimate.periods,
+        estimated_cost_usd=estimate.estimated_cost_usd,
+        estimated_tokens=estimate.estimated_tokens,
+        model=model,
     )
-
-    generator = get_generator()
-    estimate = await generator.estimate_cost(gen_request)
-
-    return CostEstimateResponse(**estimate)
 
 
 @router.post("/import/whatsapp")

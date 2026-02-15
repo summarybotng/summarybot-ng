@@ -274,12 +274,17 @@ async def cancel_generation(job_id: str):
 @router.post("/estimate", response_model=CostEstimateResponse)
 async def estimate_generation_cost(request: GenerateRequest):
     """Estimate cost for generation request."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, date, timedelta
     from src.archive.cost_tracker import CostTracker
 
     # Calculate number of periods based on date range and granularity
-    start = datetime.strptime(request.date_range.start, "%Y-%m-%d").date()
-    end = datetime.strptime(request.date_range.end, "%Y-%m-%d").date()
+    # Handle both string and date objects from Pydantic
+    start = request.date_range.start
+    end = request.date_range.end
+    if isinstance(start, str):
+        start = datetime.strptime(start, "%Y-%m-%d").date()
+    if isinstance(end, str):
+        end = datetime.strptime(end, "%Y-%m-%d").date()
 
     if request.granularity == "weekly":
         periods = max(1, (end - start).days // 7)

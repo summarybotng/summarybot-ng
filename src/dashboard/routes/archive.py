@@ -102,13 +102,25 @@ def get_generator():
     """Get retrospective generator instance."""
     from src.archive.generator import RetrospectiveGenerator
     from src.archive.cost_tracker import CostTracker
+    from src.archive.sources import SourceRegistry
+    from src.archive.api_keys import ApiKeyResolver
+    from . import get_summarization_engine
 
     archive_root = get_archive_root()
     cost_tracker = CostTracker(archive_root / "cost-ledger.json")
+    source_registry = SourceRegistry(archive_root)
+    api_key_resolver = ApiKeyResolver()
+
+    summarization_service = get_summarization_engine()
+    if summarization_service is None:
+        raise HTTPException(503, "Summarization service not available")
 
     return RetrospectiveGenerator(
         archive_root=archive_root,
+        summarization_service=summarization_service,
+        source_registry=source_registry,
         cost_tracker=cost_tracker,
+        api_key_resolver=api_key_resolver,
     )
 
 

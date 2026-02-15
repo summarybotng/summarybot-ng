@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
 from pydantic import BaseModel, Field
 
+from . import get_discord_bot
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/archive", tags=["archive"])
@@ -98,8 +100,106 @@ def get_archive_root() -> Path:
     return Path(os.environ.get("ARCHIVE_ROOT", "./summarybot-archive"))
 
 
+# Singleton generator instance to preserve job state across requests
+_generator_instance = None
+
+
+class SummarizationAdapter:
+    """
+    Adapter that wraps SummarizationEngine to match the interface expected
+    by the archive generator.
+    """
+
+    def __init__(self, engine):
+        self.engine = engine
+
+    async def generate_summary(self, messages: List[Dict], api_key: str = None):
+        """
+        Generate a summary from message dictionaries.
+
+        Converts message dicts to ProcessedMessage objects and calls the engine.
+        Returns an object with the fields the generator expects.
+        """
+        from datetime import datetime, timezone as tz
+        from src.models.message import ProcessedMessage, MessageType
+        from src.models.summary import SummaryOptions, SummaryLength, SummarizationContext
+
+        # Convert message dicts to ProcessedMessage objects
+        processed_messages = []
+        for msg in messages:
+            timestamp = msg.get("timestamp")
+            if isinstance(timestamp, str):
+                # Parse ISO format timestamp
+                timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+
+            processed_messages.append(ProcessedMessage(
+                id=msg.get("id", ""),
+                author_name=msg.get("author_name", "Unknown"),
+                author_id=msg.get("author_id", ""),
+                content=msg.get("content", ""),
+                timestamp=timestamp,
+                message_type=MessageType.DEFAULT,
+                channel_id=msg.get("channel_id"),
+                channel_name=msg.get("channel_name"),
+                embeds_count=msg.get("embeds", 0),
+            ))
+
+        if not processed_messages:
+            return None
+
+        # Create options and context
+        options = SummaryOptions(
+            summary_length=SummaryLength.DETAILED,
+            min_messages=1,  # Allow any number for archive
+        )
+
+        # Get unique participants and calculate time span
+        participants = set(m.author_id for m in processed_messages)
+        timestamps = [m.timestamp for m in processed_messages]
+        time_span = (max(timestamps) - min(timestamps)).total_seconds() / 3600.0 if len(timestamps) > 1 else 24.0
+
+        context = SummarizationContext(
+            channel_name="archive",
+            guild_name="",
+            total_participants=len(participants),
+            time_span_hours=time_span,
+        )
+
+        # Get channel/guild info from first message
+        channel_id = processed_messages[0].channel_id or ""
+        guild_id = ""
+
+        # Call the engine
+        result = await self.engine.summarize_messages(
+            messages=processed_messages,
+            options=options,
+            context=context,
+            channel_id=channel_id,
+            guild_id=guild_id,
+        )
+
+        # Create a simple response object with the fields the generator expects
+        class SummaryResponse:
+            pass
+
+        response = SummaryResponse()
+        response.content = result.summary_text
+        response.model = result.metadata.get("claude_model", "unknown")
+        response.tokens_input = result.metadata.get("input_tokens", 0)
+        response.tokens_output = result.metadata.get("output_tokens", 0)
+        response.prompt_version = result.metadata.get("prompt_source", {}).get("version", "1.0.0") if isinstance(result.metadata.get("prompt_source"), dict) else "1.0.0"
+        response.prompt_checksum = ""
+
+        return response
+
+
 def get_generator():
-    """Get retrospective generator instance."""
+    """Get retrospective generator instance (singleton to preserve job state)."""
+    global _generator_instance
+
+    if _generator_instance is not None:
+        return _generator_instance
+
     from src.archive.generator import RetrospectiveGenerator
     from src.archive.cost_tracker import CostTracker
     from src.archive.sources import SourceRegistry
@@ -111,17 +211,22 @@ def get_generator():
     source_registry = SourceRegistry(archive_root)
     api_key_resolver = ApiKeyResolver()
 
-    summarization_service = get_summarization_engine()
-    if summarization_service is None:
+    engine = get_summarization_engine()
+    if engine is None:
         raise HTTPException(503, "Summarization service not available")
 
-    return RetrospectiveGenerator(
+    # Wrap the engine with our adapter
+    summarization_adapter = SummarizationAdapter(engine)
+
+    _generator_instance = RetrospectiveGenerator(
         archive_root=archive_root,
-        summarization_service=summarization_service,
+        summarization_service=summarization_adapter,
         source_registry=source_registry,
         cost_tracker=cost_tracker,
         api_key_resolver=api_key_resolver,
     )
+
+    return _generator_instance
 
 
 def get_scanner():
@@ -134,6 +239,80 @@ def get_source_registry():
     """Get source registry instance."""
     from src.archive.sources import SourceRegistry
     return SourceRegistry(get_archive_root())
+
+
+def create_message_fetcher(channel_ids: Optional[List[str]] = None):
+    """
+    Create a message fetcher callback for the generator.
+
+    This fetches messages from Discord using the bot client and converts
+    them to the dictionary format expected by the archive generator.
+    """
+    from src.message_processing.fetcher import MessageFetcher
+
+    async def fetch_messages(source, start_time, end_time):
+        """Fetch messages for a period from Discord."""
+        bot = get_discord_bot()
+        if not bot:
+            raise HTTPException(503, "Discord bot not available")
+
+        fetcher = MessageFetcher(bot)
+        all_messages = []
+
+        # Determine which channels to fetch from
+        if source.channel_id:
+            # Single channel specified in source
+            target_channels = [source.channel_id]
+        elif channel_ids:
+            # Channels specified in request
+            target_channels = channel_ids
+        else:
+            # Get all text channels in the guild
+            guild = bot.get_guild(int(source.server_id))
+            if not guild:
+                logger.warning(f"Guild not found: {source.server_id}")
+                return []
+
+            target_channels = [
+                str(ch.id) for ch in guild.text_channels
+                if ch.permissions_for(guild.me).read_message_history
+            ]
+
+        for channel_id in target_channels:
+            try:
+                messages = await fetcher.fetch_messages(
+                    channel_id=channel_id,
+                    start_time=start_time,
+                    end_time=end_time,
+                )
+
+                # Convert Discord messages to dict format for generator
+                for msg in messages:
+                    all_messages.append({
+                        "id": str(msg.id),
+                        "author_id": str(msg.author.id),
+                        "author_name": msg.author.display_name,
+                        "content": msg.content,
+                        "timestamp": msg.created_at.isoformat(),
+                        "channel_id": str(msg.channel.id),
+                        "channel_name": getattr(msg.channel, 'name', 'unknown'),
+                        "attachments": [
+                            {"filename": a.filename, "url": a.url}
+                            for a in msg.attachments
+                        ],
+                        "embeds": len(msg.embeds),
+                        "is_bot": msg.author.bot,
+                    })
+
+            except Exception as e:
+                logger.warning(f"Failed to fetch from channel {channel_id}: {e}")
+                continue
+
+        # Sort by timestamp
+        all_messages.sort(key=lambda m: m["timestamp"])
+        return all_messages
+
+    return fetch_messages
 
 
 # Routes
@@ -155,17 +334,48 @@ async def list_sources(
         except ValueError:
             raise HTTPException(400, f"Invalid source type: {source_type}")
 
-    return [
-        SourceResponse(
+    archive_root = get_archive_root()
+    results = []
+    for s in sources:
+        # Count summaries by counting .md files in the archive path
+        archive_path = s.get_archive_path(archive_root)
+        summary_count = 0
+        date_range = None
+
+        if archive_path.exists():
+            md_files = list(archive_path.glob("**/*.md"))
+            summary_count = len(md_files)
+
+            # Get date range from filenames (format: YYYY-MM-DD_daily.md)
+            if md_files:
+                dates = []
+                for f in md_files:
+                    name = f.stem  # e.g., "2026-02-14_daily"
+                    if "_" in name:
+                        date_str = name.split("_")[0]
+                        try:
+                            from datetime import datetime
+                            dates.append(datetime.strptime(date_str, "%Y-%m-%d").date())
+                        except ValueError:
+                            pass
+                if dates:
+                    date_range = {
+                        "start": min(dates).isoformat(),
+                        "end": max(dates).isoformat(),
+                    }
+
+        results.append(SourceResponse(
             source_key=s.source_key,
             source_type=s.source_type.value,
             server_id=s.server_id,
             server_name=s.server_name,
             channel_id=s.channel_id,
             channel_name=s.channel_name,
-        )
-        for s in sources
-    ]
+            summary_count=summary_count,
+            date_range=date_range,
+        ))
+
+    return results
 
 
 @router.get("/sources/{source_key}/scan", response_model=ScanResultResponse)
@@ -227,35 +437,42 @@ async def get_backfill_report(request: BackfillReportRequest):
 async def generate_retrospective(request: GenerateRequest):
     """Generate retrospective summaries."""
     from src.archive.models import SourceType, ArchiveSource
-    from src.archive.generator import GenerationRequest
+
+    # Check if Discord bot is available for non-dry-run requests
+    if not request.dry_run:
+        bot = get_discord_bot()
+        if not bot:
+            raise HTTPException(
+                503,
+                "Discord bot not available. Archive generation requires the bot to fetch messages."
+            )
 
     source = ArchiveSource(
         source_type=SourceType(request.source_type),
         server_id=request.server_id,
         server_name=request.server_id,
-    )
-
-    gen_request = GenerationRequest(
-        source=source,
-        start_date=request.date_range.start,
-        end_date=request.date_range.end,
-        granularity=request.granularity,
-        timezone=request.timezone,
-        skip_existing=request.skip_existing,
-        regenerate_outdated=request.regenerate_outdated,
-        regenerate_failed=request.regenerate_failed,
-        max_cost_usd=request.max_cost_usd,
-        dry_run=request.dry_run,
-        model=request.model,
+        channel_id=request.channel_ids[0] if request.channel_ids and len(request.channel_ids) == 1 else None,
     )
 
     generator = get_generator()
-    job = await generator.create_job(gen_request)
+    job = await generator.create_job(
+        source=source,
+        start_date=request.date_range.start,
+        end_date=request.date_range.end,
+        granularity=request.granularity or "daily",
+        timezone=request.timezone or "UTC",
+        skip_existing=request.skip_existing if request.skip_existing is not None else True,
+        regenerate_outdated=request.regenerate_outdated or False,
+        regenerate_failed=request.regenerate_failed if request.regenerate_failed is not None else True,
+        max_cost_usd=request.max_cost_usd,
+        dry_run=request.dry_run or False,
+    )
 
     # Start job in background if not dry run
     if not request.dry_run:
         import asyncio
-        asyncio.create_task(generator.run_job(job.job_id))
+        message_fetcher = create_message_fetcher(request.channel_ids)
+        asyncio.create_task(generator.run_job(job.job_id, message_fetcher=message_fetcher))
 
     return JobResponse(**job.to_dict())
 
@@ -277,7 +494,7 @@ async def cancel_generation(job_id: str):
     """Cancel a running generation job."""
     generator = get_generator()
 
-    if not generator.cancel_job(job_id):
+    if not await generator.cancel_job(job_id):
         raise HTTPException(404, f"Job not found: {job_id}")
 
     return {"status": "cancelled", "job_id": job_id}
@@ -414,20 +631,458 @@ async def list_deleted():
     return [d.to_dict() for d in deleted]
 
 
-@router.post("/sync/{source_key}")
-async def sync_source(source_key: str, provider: str = "google_drive"):
-    """Sync a source to external storage."""
-    from src.archive.sync.google_drive import SyncManager
+# ==================== Sync Endpoints (ADR-007) ====================
 
+
+class SyncStatusResponse(BaseModel):
+    """Sync service status response."""
+    enabled: bool
+    configured: bool
+    folder_id: Optional[str] = None
+    sync_on_generation: bool
+    sync_frequency: str
+    create_subfolders: bool
+    sources_synced: int
+
+
+class SyncResultResponse(BaseModel):
+    """Sync operation result."""
+    status: str
+    files_synced: int
+    files_failed: int
+    bytes_uploaded: int
+    errors: List[str] = []
+
+
+class DriveStatusResponse(BaseModel):
+    """Google Drive status response."""
+    connected: bool
+    provider: Optional[str] = None
+    folder_id: Optional[str] = None
+    quota: Optional[Dict[str, int]] = None
+    error: Optional[str] = None
+
+
+def get_sync_service():
+    """Get sync service instance."""
+    from src.archive.sync import get_sync_service as _get_sync_service
+    return _get_sync_service(get_archive_root())
+
+
+@router.get("/sync/status", response_model=SyncStatusResponse)
+async def get_sync_status():
+    """Get sync service status."""
+    service = get_sync_service()
+    return SyncStatusResponse(**service.get_status())
+
+
+@router.get("/sync/status/{source_key}")
+async def get_source_sync_status(source_key: str):
+    """Get sync status for a specific source."""
+    service = get_sync_service()
+    status = service.get_source_status(source_key)
+
+    if not status:
+        return {"source_key": source_key, "synced": False, "message": "Never synced"}
+
+    return status
+
+
+@router.get("/sync/sources")
+async def list_sync_states():
+    """List sync states for all sources."""
+    service = get_sync_service()
+    return service.list_sync_states()
+
+
+@router.post("/sync/trigger/{source_key}", response_model=SyncResultResponse)
+async def trigger_source_sync(source_key: str):
+    """Trigger sync for a specific source."""
+    service = get_sync_service()
+
+    if not service.is_enabled():
+        raise HTTPException(
+            503,
+            "Google Drive sync not configured. Set ARCHIVE_GOOGLE_DRIVE_* environment variables."
+        )
+
+    # Parse source key and find source path
+    parts = source_key.split(":")
+    if len(parts) != 2:
+        raise HTTPException(400, f"Invalid source key: {source_key}")
+
+    source_type, server_id = parts
     archive_root = get_archive_root()
-    manager = SyncManager(archive_root)
+    sources_dir = archive_root / "sources" / source_type
 
-    results = await manager.sync_source(source_key, provider)
+    # Find the source directory
+    source_dir = None
+    server_name = server_id
 
-    if not results:
-        raise HTTPException(400, f"No sync configured for source: {source_key}")
+    if sources_dir.exists():
+        for d in sources_dir.iterdir():
+            if d.is_dir() and d.name.endswith(f"_{server_id}"):
+                source_dir = d
+                # Extract server name from folder
+                folder_name = d.name
+                last_underscore = folder_name.rfind('_')
+                if last_underscore > 0:
+                    server_name = folder_name[:last_underscore]
+                break
+
+    if not source_dir or not source_dir.exists():
+        raise HTTPException(404, f"Source not found: {source_key}")
+
+    result = await service.sync_source(
+        source_key=source_key,
+        source_path=source_dir,
+        server_name=server_name,
+    )
+
+    return SyncResultResponse(
+        status=result.status.value,
+        files_synced=result.files_synced,
+        files_failed=result.files_failed,
+        bytes_uploaded=result.bytes_uploaded,
+        errors=result.errors,
+    )
+
+
+@router.post("/sync/trigger")
+async def trigger_sync_all():
+    """Trigger sync for all sources."""
+    service = get_sync_service()
+
+    if not service.is_enabled():
+        raise HTTPException(
+            503,
+            "Google Drive sync not configured. Set ARCHIVE_GOOGLE_DRIVE_* environment variables."
+        )
+
+    results = await service.sync_all()
 
     return {
-        provider: result.to_dict()
-        for provider, result in results.items()
+        source_key: {
+            "status": result.status.value,
+            "files_synced": result.files_synced,
+            "files_failed": result.files_failed,
+        }
+        for source_key, result in results.items()
     }
+
+
+@router.get("/sync/drive", response_model=DriveStatusResponse)
+async def get_drive_status():
+    """Get Google Drive connection status and quota."""
+    service = get_sync_service()
+    status = await service.get_drive_status()
+    return DriveStatusResponse(**status)
+
+
+# ==================== OAuth Endpoints (ADR-007 Phase 2) ====================
+
+
+class OAuthConfigResponse(BaseModel):
+    """OAuth configuration status."""
+    configured: bool
+    client_id_set: bool
+    redirect_uri: str
+
+
+class ServerSyncConfigResponse(BaseModel):
+    """Server sync configuration."""
+    server_id: str
+    enabled: bool
+    folder_id: Optional[str] = None
+    folder_name: Optional[str] = None
+    configured_by: Optional[str] = None
+    configured_at: Optional[str] = None
+    last_sync: Optional[str] = None
+    using_fallback: bool = False
+
+
+class ConfigureServerSyncRequest(BaseModel):
+    """Request to configure server sync."""
+    folder_id: str
+    folder_name: str = ""
+    sync_on_generation: bool = True
+    include_metadata: bool = True
+
+
+def get_oauth_flow():
+    """Get OAuth flow instance."""
+    from src.archive.sync import get_oauth_flow as _get_oauth_flow
+    return _get_oauth_flow(get_archive_root())
+
+
+@router.get("/oauth/config", response_model=OAuthConfigResponse)
+async def get_oauth_config():
+    """Check if OAuth is configured."""
+    oauth = get_oauth_flow()
+    return OAuthConfigResponse(
+        configured=oauth.is_configured(),
+        client_id_set=bool(oauth.client_id),
+        redirect_uri=oauth.redirect_uri,
+    )
+
+
+@router.get("/oauth/google")
+async def start_oauth_flow(
+    server_id: str,
+    user_id: str,
+):
+    """
+    Start Google OAuth flow for a server.
+
+    Args:
+        server_id: Discord server ID
+        user_id: Discord user ID initiating the flow
+
+    Returns:
+        Redirect URL for OAuth
+    """
+    oauth = get_oauth_flow()
+
+    if not oauth.is_configured():
+        raise HTTPException(
+            503,
+            "Google OAuth not configured. Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET."
+        )
+
+    try:
+        auth_url, state = oauth.generate_auth_url(server_id, user_id)
+        return {
+            "auth_url": auth_url,
+            "state": state,
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Failed to generate OAuth URL: {e}")
+
+
+@router.get("/oauth/google/callback")
+async def oauth_callback(
+    code: str,
+    state: str,
+):
+    """
+    Handle Google OAuth callback.
+
+    Args:
+        code: Authorization code from Google
+        state: State token for CSRF protection
+
+    Returns:
+        Success response with server info
+    """
+    oauth = get_oauth_flow()
+
+    # Validate state
+    oauth_state = oauth.validate_state(state)
+    if not oauth_state:
+        raise HTTPException(400, "Invalid or expired state token")
+
+    try:
+        # Exchange code for tokens
+        tokens = await oauth.exchange_code(code, oauth_state)
+
+        return {
+            "success": True,
+            "server_id": oauth_state.server_id,
+            "message": "Google Drive connected successfully. Now select a folder.",
+        }
+
+    except Exception as e:
+        logger.error(f"OAuth callback failed: {e}")
+        raise HTTPException(500, f"OAuth failed: {e}")
+
+
+@router.delete("/oauth/google/{server_id}")
+async def disconnect_google_drive(server_id: str):
+    """
+    Disconnect Google Drive for a server.
+
+    Args:
+        server_id: Discord server ID
+    """
+    oauth = get_oauth_flow()
+    service = get_sync_service()
+
+    # Delete tokens
+    await oauth.disconnect(server_id)
+
+    # Delete server config
+    await service.delete_server_config(server_id)
+
+    return {"success": True, "message": "Google Drive disconnected"}
+
+
+@router.get("/sync/servers")
+async def list_configured_servers():
+    """List all servers with custom sync configuration."""
+    service = get_sync_service()
+    servers = await service.list_configured_servers()
+    return servers
+
+
+@router.get("/sync/server/{server_id}", response_model=ServerSyncConfigResponse)
+async def get_server_sync_config(server_id: str):
+    """Get sync configuration for a specific server."""
+    service = get_sync_service()
+    config = await service.get_server_config(server_id)
+
+    if config and config.enabled:
+        return ServerSyncConfigResponse(
+            server_id=server_id,
+            enabled=True,
+            folder_id=config.folder_id,
+            folder_name=config.folder_name,
+            configured_by=config.configured_by,
+            configured_at=config.configured_at.isoformat() if config.configured_at else None,
+            last_sync=config.last_sync.isoformat() if config.last_sync else None,
+            using_fallback=False,
+        )
+
+    # Check if using fallback
+    using_fallback = service.config.is_configured()
+
+    return ServerSyncConfigResponse(
+        server_id=server_id,
+        enabled=using_fallback,
+        folder_id=service.config.folder_id if using_fallback else None,
+        using_fallback=using_fallback,
+    )
+
+
+@router.put("/sync/server/{server_id}")
+async def configure_server_sync(
+    server_id: str,
+    request: ConfigureServerSyncRequest,
+    user_id: str = "",
+):
+    """
+    Configure sync for a server after OAuth.
+
+    Args:
+        server_id: Discord server ID
+        request: Configuration options
+        user_id: Discord user ID making the change
+    """
+    from src.archive.sync import ServerSyncConfig
+
+    service = get_sync_service()
+    oauth = get_oauth_flow()
+
+    # Verify OAuth tokens exist
+    token_id = f"srv_{server_id}_gdrive"
+    tokens = await oauth.get_valid_tokens(token_id)
+
+    if not tokens:
+        raise HTTPException(
+            400,
+            "No OAuth tokens found. Please connect Google Drive first."
+        )
+
+    # Create config
+    config = ServerSyncConfig(
+        enabled=True,
+        folder_id=request.folder_id,
+        folder_name=request.folder_name,
+        oauth_token_id=token_id,
+        configured_by=user_id,
+        configured_at=datetime.utcnow(),
+        sync_on_generation=request.sync_on_generation,
+        include_metadata=request.include_metadata,
+    )
+
+    # Save config
+    success = await service.save_server_config(server_id, config)
+
+    if not success:
+        raise HTTPException(500, "Failed to save configuration")
+
+    return {
+        "success": True,
+        "server_id": server_id,
+        "folder_id": request.folder_id,
+        "message": "Server sync configured successfully",
+    }
+
+
+@router.post("/sync/server/{server_id}/test")
+async def test_server_sync(server_id: str):
+    """
+    Test sync configuration for a server.
+
+    Creates a test file in the configured folder to verify access.
+    """
+    service = get_sync_service()
+    config = await service.get_server_config(server_id)
+
+    if not config or not config.enabled:
+        raise HTTPException(400, "Server sync not configured")
+
+    # Get OAuth tokens
+    oauth = get_oauth_flow()
+    tokens = await oauth.get_valid_tokens(config.oauth_token_id)
+
+    if not tokens:
+        raise HTTPException(400, "OAuth tokens expired. Please reconnect.")
+
+    # TODO: Create test file in Drive folder
+    # For now, just verify we have valid tokens
+
+    return {
+        "success": True,
+        "message": "Connection verified",
+        "folder_id": config.folder_id,
+    }
+
+
+@router.get("/oauth/google/folders")
+async def list_drive_folders(
+    server_id: str,
+    parent_id: str = "root",
+):
+    """
+    List folders in Google Drive for folder selection.
+
+    Args:
+        server_id: Discord server ID (to get OAuth tokens)
+        parent_id: Parent folder ID (default: root)
+    """
+    oauth = get_oauth_flow()
+    token_id = f"srv_{server_id}_gdrive"
+
+    tokens = await oauth.get_valid_tokens(token_id)
+    if not tokens:
+        raise HTTPException(400, "No valid OAuth tokens. Please connect first.")
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://www.googleapis.com/drive/v3/files",
+                headers={"Authorization": f"Bearer {tokens.access_token}"},
+                params={
+                    "q": f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+                    "fields": "files(id, name, mimeType)",
+                    "orderBy": "name",
+                    "pageSize": 100,
+                },
+            )
+
+            if response.status_code != 200:
+                raise HTTPException(response.status_code, "Failed to list folders")
+
+            data = response.json()
+            return {
+                "parent_id": parent_id,
+                "folders": [
+                    {"id": f["id"], "name": f["name"]}
+                    for f in data.get("files", [])
+                ],
+            }
+
+    except httpx.HTTPError as e:
+        raise HTTPException(500, f"Drive API error: {e}")

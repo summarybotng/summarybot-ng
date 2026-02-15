@@ -11,6 +11,15 @@ import {
   useCancelJob,
   useCostReport,
   useImportWhatsApp,
+  useSyncStatus,
+  useDriveStatus,
+  useOAuthConfig,
+  useServerSyncConfig,
+  useStartOAuth,
+  useDisconnectDrive,
+  useConfigureServerSync,
+  useTriggerSync,
+  useDriveFolders,
   type ArchiveSource,
   type GenerateRequest,
 } from "@/hooks/useArchive";
@@ -68,6 +77,14 @@ import {
   Loader2,
   FileText,
   MessageSquare,
+  Cloud,
+  CloudOff,
+  Link,
+  Unlink,
+  ExternalLink,
+  Settings,
+  HardDrive,
+  Folder,
 } from "lucide-react";
 
 export function Archive() {
@@ -228,6 +245,10 @@ export function Archive() {
             <DollarSign className="h-4 w-4" />
             Costs
           </TabsTrigger>
+          <TabsTrigger value="sync" className="gap-2">
+            <Cloud className="h-4 w-4" />
+            Sync
+          </TabsTrigger>
         </TabsList>
 
         {/* Sources Tab */}
@@ -258,6 +279,11 @@ export function Archive() {
         {/* Costs Tab */}
         <TabsContent value="costs">
           <CostsView report={costReport} />
+        </TabsContent>
+
+        {/* Sync Tab */}
+        <TabsContent value="sync">
+          <SyncSettings guildId={guildId || ""} />
         </TabsContent>
       </Tabs>
     </div>
@@ -821,6 +847,380 @@ function SourcesSkeleton() {
           </CardHeader>
         </Card>
       ))}
+    </div>
+  );
+}
+
+// ==================== Sync Settings Component ====================
+
+function SyncSettings({ guildId }: { guildId: string }) {
+  const { toast } = useToast();
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [folderPath, setFolderPath] = useState<{ id: string; name: string }[]>([
+    { id: "root", name: "My Drive" },
+  ]);
+
+  // Queries
+  const { data: syncStatus, isLoading: syncStatusLoading } = useSyncStatus();
+  const { data: driveStatus } = useDriveStatus();
+  const { data: oauthConfig } = useOAuthConfig();
+  const { data: serverConfig, refetch: refetchServerConfig } = useServerSyncConfig(guildId);
+  const { data: foldersData, isLoading: foldersLoading } = useDriveFolders(
+    guildId,
+    folderPath[folderPath.length - 1]?.id || "root"
+  );
+
+  // Mutations
+  const startOAuth = useStartOAuth();
+  const disconnectDrive = useDisconnectDrive();
+  const configureSync = useConfigureServerSync();
+  const triggerSync = useTriggerSync();
+
+  const handleConnectDrive = async () => {
+    try {
+      // For now, use a placeholder user ID - in production this would come from auth
+      const result = await startOAuth.mutateAsync({
+        serverId: guildId,
+        userId: "dashboard_user",
+      });
+
+      // Open OAuth URL in new window
+      window.open(result.auth_url, "_blank", "width=600,height=700");
+
+      toast({
+        title: "Authorization started",
+        description: "Complete the authorization in the popup window, then return here.",
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to start authorization",
+        description: "Please try again",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await disconnectDrive.mutateAsync(guildId);
+      toast({
+        title: "Disconnected",
+        description: "Google Drive has been disconnected",
+      });
+      refetchServerConfig();
+    } catch {
+      toast({
+        title: "Failed to disconnect",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSelectFolder = async (folderId: string, folderName: string) => {
+    try {
+      await configureSync.mutateAsync({
+        serverId: guildId,
+        folderId,
+        folderName,
+      });
+      toast({
+        title: "Folder configured",
+        description: `Archives will sync to "${folderName}"`,
+      });
+      setSelectedFolder(null);
+      refetchServerConfig();
+    } catch {
+      toast({
+        title: "Failed to configure folder",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleTriggerSync = async () => {
+    try {
+      const result = await triggerSync.mutateAsync(`discord:${guildId}`);
+      toast({
+        title: "Sync complete",
+        description: `Synced ${result.files_synced} files`,
+      });
+    } catch {
+      toast({
+        title: "Sync failed",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const navigateToFolder = (folderId: string, folderName: string) => {
+    setFolderPath([...folderPath, { id: folderId, name: folderName }]);
+  };
+
+  const navigateBack = (index: number) => {
+    setFolderPath(folderPath.slice(0, index + 1));
+  };
+
+  if (syncStatusLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading sync settings...
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Global Sync Status */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <HardDrive className="h-5 w-5" />
+            Google Drive Sync
+          </CardTitle>
+          <CardDescription>
+            Sync your archive summaries to Google Drive for backup and sharing
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Connection Status */}
+          <div className="flex items-center justify-between p-4 border rounded-lg">
+            <div className="flex items-center gap-3">
+              {serverConfig?.enabled && !serverConfig.using_fallback ? (
+                <Cloud className="h-8 w-8 text-green-500" />
+              ) : syncStatus?.configured ? (
+                <Cloud className="h-8 w-8 text-blue-500" />
+              ) : (
+                <CloudOff className="h-8 w-8 text-muted-foreground" />
+              )}
+              <div>
+                <p className="font-medium">
+                  {serverConfig?.enabled && !serverConfig.using_fallback
+                    ? "Custom Drive Connected"
+                    : syncStatus?.configured
+                    ? "Using Default Drive"
+                    : "Not Connected"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {serverConfig?.enabled && !serverConfig.using_fallback
+                    ? `Folder: ${serverConfig.folder_name || serverConfig.folder_id}`
+                    : syncStatus?.configured
+                    ? "Archives sync to the bot operator's Drive"
+                    : "Connect Google Drive to enable backup"}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {serverConfig?.enabled && !serverConfig.using_fallback ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTriggerSync}
+                    disabled={triggerSync.isPending}
+                  >
+                    {triggerSync.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                    )}
+                    Sync Now
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDisconnect}
+                    disabled={disconnectDrive.isPending}
+                  >
+                    <Unlink className="mr-2 h-4 w-4" />
+                    Disconnect
+                  </Button>
+                </>
+              ) : oauthConfig?.configured ? (
+                <Button onClick={handleConnectDrive} disabled={startOAuth.isPending}>
+                  {startOAuth.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Link className="mr-2 h-4 w-4" />
+                  )}
+                  Connect Your Drive
+                </Button>
+              ) : syncStatus?.configured ? (
+                <Badge variant="secondary">Using Fallback</Badge>
+              ) : (
+                <Badge variant="outline">OAuth Not Configured</Badge>
+              )}
+            </div>
+          </div>
+
+          {/* Server Sync Info */}
+          {serverConfig?.last_sync && (
+            <div className="text-sm text-muted-foreground">
+              Last synced: {new Date(serverConfig.last_sync).toLocaleString()}
+            </div>
+          )}
+
+          {/* Folder Selection Dialog */}
+          {oauthConfig?.configured && !serverConfig?.enabled && (
+            <Dialog open={selectedFolder !== null} onOpenChange={(open) => !open && setSelectedFolder(null)}>
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setSelectedFolder("root")}
+                >
+                  <Folder className="mr-2 h-4 w-4" />
+                  Select Folder After Connecting
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Select Archive Folder</DialogTitle>
+                  <DialogDescription>
+                    Choose where to store your archive summaries
+                  </DialogDescription>
+                </DialogHeader>
+
+                {/* Breadcrumb */}
+                <div className="flex items-center gap-1 text-sm overflow-x-auto py-2">
+                  {folderPath.map((folder, index) => (
+                    <div key={folder.id} className="flex items-center">
+                      {index > 0 && <ChevronRight className="h-4 w-4 text-muted-foreground mx-1" />}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto py-1 px-2"
+                        onClick={() => navigateBack(index)}
+                      >
+                        {folder.name}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Folder List */}
+                <div className="border rounded-lg max-h-64 overflow-y-auto">
+                  {foldersLoading ? (
+                    <div className="flex items-center justify-center p-8">
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    </div>
+                  ) : foldersData?.folders.length === 0 ? (
+                    <div className="p-8 text-center text-muted-foreground">
+                      No folders found
+                    </div>
+                  ) : (
+                    foldersData?.folders.map((folder) => (
+                      <div
+                        key={folder.id}
+                        className="flex items-center justify-between p-3 hover:bg-muted/50 border-b last:border-b-0"
+                      >
+                        <button
+                          className="flex items-center gap-2 flex-1 text-left"
+                          onClick={() => navigateToFolder(folder.id, folder.name)}
+                        >
+                          <Folder className="h-4 w-4 text-muted-foreground" />
+                          <span>{folder.name}</span>
+                        </button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleSelectFolder(folder.id, folder.name)}
+                        >
+                          Select
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    onClick={() =>
+                      handleSelectFolder(
+                        folderPath[folderPath.length - 1].id,
+                        folderPath[folderPath.length - 1].name
+                      )
+                    }
+                    disabled={configureSync.isPending}
+                  >
+                    {configureSync.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Use Current Folder
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Sync Status Details */}
+      {syncStatus && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Sync Configuration
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Auto-sync on generation</p>
+                <p className="font-medium">
+                  {syncStatus.sync_on_generation ? "Enabled" : "Disabled"}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Sync frequency</p>
+                <p className="font-medium capitalize">{syncStatus.sync_frequency.replace("_", " ")}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Create server subfolders</p>
+                <p className="font-medium">
+                  {syncStatus.create_subfolders ? "Yes" : "No"}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Sources synced</p>
+                <p className="font-medium">{syncStatus.sources_synced}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Drive Quota */}
+      {driveStatus?.connected && driveStatus.quota && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <HardDrive className="h-5 w-5" />
+              Storage Quota
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>Used</span>
+                <span>
+                  {(driveStatus.quota.usage / 1024 / 1024 / 1024).toFixed(2)} GB of{" "}
+                  {(driveStatus.quota.limit / 1024 / 1024 / 1024).toFixed(0)} GB
+                </span>
+              </div>
+              <Progress
+                value={(driveStatus.quota.usage / driveStatus.quota.limit) * 100}
+                className="h-2"
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

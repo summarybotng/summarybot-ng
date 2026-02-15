@@ -210,3 +210,175 @@ export function useImportWhatsApp() {
     },
   });
 }
+
+// ==================== Sync Types (ADR-007) ====================
+
+export interface SyncStatus {
+  enabled: boolean;
+  configured: boolean;
+  folder_id?: string;
+  sync_on_generation: boolean;
+  sync_frequency: string;
+  create_subfolders: boolean;
+  sources_synced: number;
+}
+
+export interface SyncResult {
+  status: string;
+  files_synced: number;
+  files_failed: number;
+  bytes_uploaded: number;
+  errors: string[];
+}
+
+export interface DriveStatus {
+  connected: boolean;
+  provider?: string;
+  folder_id?: string;
+  quota?: {
+    limit: number;
+    usage: number;
+    usage_in_drive: number;
+  };
+  error?: string;
+}
+
+export interface OAuthConfig {
+  configured: boolean;
+  client_id_set: boolean;
+  redirect_uri: string;
+}
+
+export interface ServerSyncConfig {
+  server_id: string;
+  enabled: boolean;
+  folder_id?: string;
+  folder_name?: string;
+  configured_by?: string;
+  configured_at?: string;
+  last_sync?: string;
+  using_fallback: boolean;
+}
+
+export interface DriveFolder {
+  id: string;
+  name: string;
+}
+
+// ==================== Sync Hooks ====================
+
+export function useSyncStatus() {
+  return useQuery({
+    queryKey: ["archive", "sync", "status"],
+    queryFn: () => api.get<SyncStatus>("/archive/sync/status"),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useDriveStatus() {
+  return useQuery({
+    queryKey: ["archive", "sync", "drive"],
+    queryFn: () => api.get<DriveStatus>("/archive/sync/drive"),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useOAuthConfig() {
+  return useQuery({
+    queryKey: ["archive", "oauth", "config"],
+    queryFn: () => api.get<OAuthConfig>("/archive/oauth/config"),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useServerSyncConfig(serverId: string) {
+  return useQuery({
+    queryKey: ["archive", "sync", "server", serverId],
+    queryFn: () => api.get<ServerSyncConfig>(`/archive/sync/server/${serverId}`),
+    enabled: !!serverId,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useStartOAuth() {
+  return useMutation({
+    mutationFn: ({ serverId, userId }: { serverId: string; userId: string }) =>
+      api.get<{ auth_url: string; state: string }>(
+        `/archive/oauth/google?server_id=${serverId}&user_id=${userId}`
+      ),
+  });
+}
+
+export function useDisconnectDrive() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (serverId: string) =>
+      api.delete(`/archive/oauth/google/${serverId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["archive", "sync"] });
+    },
+  });
+}
+
+export function useConfigureServerSync() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      serverId,
+      folderId,
+      folderName,
+      userId,
+    }: {
+      serverId: string;
+      folderId: string;
+      folderName: string;
+      userId?: string;
+    }) =>
+      api.put(`/archive/sync/server/${serverId}?user_id=${userId || ""}`, {
+        folder_id: folderId,
+        folder_name: folderName,
+        sync_on_generation: true,
+        include_metadata: true,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["archive", "sync"] });
+    },
+  });
+}
+
+export function useTriggerSync() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (sourceKey: string) =>
+      api.post<SyncResult>(`/archive/sync/trigger/${encodeURIComponent(sourceKey)}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["archive", "sync"] });
+    },
+  });
+}
+
+export function useTriggerSyncAll() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => api.post("/archive/sync/trigger"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["archive", "sync"] });
+    },
+  });
+}
+
+export function useDriveFolders(serverId: string, parentId: string = "root") {
+  return useQuery({
+    queryKey: ["archive", "oauth", "folders", serverId, parentId],
+    queryFn: () =>
+      api.get<{ parent_id: string; folders: DriveFolder[] }>(
+        `/archive/oauth/google/folders?server_id=${serverId}&parent_id=${parentId}`
+      ),
+    enabled: !!serverId,
+    staleTime: 60 * 1000,
+  });
+}

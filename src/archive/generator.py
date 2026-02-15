@@ -302,12 +302,47 @@ class RetrospectiveGenerator:
                 job.status = JobStatus.COMPLETED
                 job.completed_at = datetime.utcnow()
 
+                # Trigger sync if configured
+                await self._trigger_sync(job)
+
         except Exception as e:
             job.status = JobStatus.FAILED
             job.error = str(e)
             logger.error(f"Job {job_id} failed: {e}")
 
         return job
+
+    async def _trigger_sync(self, job: GenerationJob) -> None:
+        """Trigger Google Drive sync after job completion."""
+        try:
+            from .sync import get_sync_service
+
+            sync_service = get_sync_service(self.archive_root)
+            if not sync_service.is_enabled():
+                logger.debug("Sync not enabled, skipping")
+                return
+
+            if not sync_service.config.sync_on_generation:
+                logger.debug("Sync on generation disabled, skipping")
+                return
+
+            # Get source path
+            source_path = job.source.get_archive_path(self.archive_root).parent
+
+            logger.info(f"Triggering sync for {job.source.source_key}")
+            result = await sync_service.sync_source(
+                source_key=job.source.source_key,
+                source_path=source_path,
+                server_name=job.source.server_name,
+            )
+            logger.info(
+                f"Sync completed: status={result.status.value}, "
+                f"files={result.files_synced}"
+            )
+
+        except Exception as e:
+            # Don't fail the job if sync fails
+            logger.warning(f"Sync failed for {job.source.source_key}: {e}")
 
     async def _generate_period(
         self,
@@ -323,10 +358,11 @@ class RetrospectiveGenerator:
             logger.debug(f"Skipping existing: {period_start}")
             return "skipped"
 
-        # Create period info
+        # Create period info with UTC timezone-aware datetimes
+        from datetime import timezone as tz
         period = PeriodInfo(
-            start=datetime.combine(period_start, datetime.min.time()),
-            end=datetime.combine(period_end, datetime.max.time().replace(microsecond=0)),
+            start=datetime.combine(period_start, datetime.min.time(), tzinfo=tz.utc),
+            end=datetime.combine(period_end, datetime.max.time().replace(microsecond=0), tzinfo=tz.utc),
             timezone=job.timezone,
             duration_hours=24 if job.granularity == "daily" else 168 if job.granularity == "weekly" else 720,
         )

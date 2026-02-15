@@ -22,9 +22,15 @@ apscheduler>=3.10.0        # Automated task scheduling
 # Authentication & Security
 python-jose[cryptography]>=3.3.0  # JWT tokens
 python-multipart>=0.0.6           # File upload support
+cryptography>=41.0.0              # Encryption for OAuth tokens
 
 # HTTP Client
 aiohttp>=3.9.0             # Async HTTP for webhook delivery
+
+# Google Drive Integration (Phase 9/ADR-007)
+google-api-python-client>=2.0.0  # Google Drive API client
+google-auth>=2.0.0               # Google authentication
+google-auth-oauthlib>=1.0.0      # OAuth 2.0 flow
 
 # Utilities
 html2text>=2020.1.16       # HTML to text conversion for message cleaning

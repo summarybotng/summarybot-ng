@@ -309,7 +309,7 @@ async def estimate_generation_cost(request: GenerateRequest):
     return CostEstimateResponse(
         periods=estimate.periods,
         estimated_cost_usd=estimate.estimated_cost_usd,
-        estimated_tokens=estimate.estimated_tokens,
+        estimated_tokens=estimate.avg_tokens_per_summary * estimate.periods,
         model=model,
     )
 

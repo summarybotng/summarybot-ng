@@ -194,7 +194,10 @@ class GoogleOAuthFlow:
 
     GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
     GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-    SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+    SCOPES = [
+        "https://www.googleapis.com/auth/drive.file",  # Create/access app files
+        "https://www.googleapis.com/auth/drive.metadata.readonly",  # Browse existing folders
+    ]
 
     def __init__(self, token_store: SecureTokenStore):
         """

@@ -1073,7 +1073,9 @@ async def list_drive_folders(
             )
 
             if response.status_code != 200:
-                raise HTTPException(response.status_code, "Failed to list folders")
+                error_detail = response.text[:500] if response.text else "Unknown error"
+                logger.error(f"Drive API error {response.status_code}: {error_detail}")
+                raise HTTPException(response.status_code, f"Drive API error: {error_detail}")
 
             data = response.json()
             return {
@@ -1085,4 +1087,8 @@ async def list_drive_folders(
             }
 
     except httpx.HTTPError as e:
+        logger.error(f"HTTP error listing folders: {e}")
         raise HTTPException(500, f"Drive API error: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error listing folders: {e}")
+        raise HTTPException(500, f"Failed to list folders: {e}")

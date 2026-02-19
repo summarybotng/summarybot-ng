@@ -68,7 +68,7 @@ export interface GenerateRequest {
 export interface GenerationJob {
   job_id: string;
   source_key: string;
-  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  status: "pending" | "queued" | "running" | "completed" | "failed" | "cancelled" | "paused";
   progress: {
     total: number;
     completed: number;
@@ -383,5 +383,89 @@ export function useDriveFolders(serverId: string, parentId: string = "root") {
       ),
     enabled: !!serverId,
     staleTime: 60 * 1000,
+  });
+}
+
+// ==================== Archive Summaries for Summaries Page ====================
+
+export interface ArchiveSummary {
+  id: string;
+  source_key: string;
+  date: string;
+  channel_name: string;
+  summary_text: string;
+  message_count: number;
+  participant_count: number;
+  created_at: string;
+  summary_length: string;
+  preview: string;
+  is_archive: boolean;
+}
+
+export interface ArchiveSummariesResponse {
+  summaries: ArchiveSummary[];
+  total: number;
+}
+
+export function useArchiveSummaries(serverId: string, limit: number = 50, offset: number = 0) {
+  return useQuery({
+    queryKey: ["archive", "summaries", serverId, limit, offset],
+    queryFn: () =>
+      api.get<ArchiveSummariesResponse>(
+        `/archive/summaries/${serverId}?limit=${limit}&offset=${offset}`
+      ),
+    enabled: !!serverId,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useArchiveSummary(serverId: string, summaryId: string | null) {
+  return useQuery({
+    queryKey: ["archive", "summary", serverId, summaryId],
+    queryFn: () =>
+      api.get<ArchiveSummary & { metadata: Record<string, unknown> }>(
+        `/archive/summaries/${serverId}/${summaryId}`
+      ),
+    enabled: !!serverId && !!summaryId,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+// ==================== Jobs Management ====================
+
+export function useAllJobs(status?: string) {
+  return useQuery({
+    queryKey: ["archive", "jobs", status],
+    queryFn: () => {
+      const params = status ? `?status=${status}` : "";
+      return api.get<GenerationJob[]>(`/archive/jobs${params}`);
+    },
+    staleTime: 5 * 1000, // 5 seconds - jobs change frequently
+    refetchInterval: 10 * 1000, // Poll every 10 seconds
+  });
+}
+
+export function usePauseJob() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ jobId, reason }: { jobId: string; reason?: string }) =>
+      api.post(`/archive/jobs/${jobId}/pause${reason ? `?reason=${encodeURIComponent(reason)}` : ""}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["archive", "jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["archive", "job"] });
+    },
+  });
+}
+
+export function useResumeJob() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (jobId: string) => api.post(`/archive/jobs/${jobId}/resume`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["archive", "jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["archive", "job"] });
+    },
   });
 }

@@ -20,8 +20,12 @@ import {
   useConfigureServerSync,
   useTriggerSync,
   useDriveFolders,
+  useAllJobs,
+  usePauseJob,
+  useResumeJob,
   type ArchiveSource,
   type GenerateRequest,
+  type GenerationJob,
 } from "@/hooks/useArchive";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -85,6 +89,9 @@ import {
   Settings,
   HardDrive,
   Folder,
+  Briefcase,
+  Pause,
+  RotateCcw,
 } from "lucide-react";
 
 export function Archive() {
@@ -212,7 +219,8 @@ export function Archive() {
                   <div>
                     <p className="font-medium">Generating archive summaries...</p>
                     <p className="text-sm text-muted-foreground">
-                      {activeJob.progress.completed} of {activeJob.progress.total} complete
+                      {activeJob.progress.completed} of {activeJob.progress.total || "?"} complete
+                      {activeJob.progress.failed > 0 && ` (${activeJob.progress.failed} failed)`}
                     </p>
                   </div>
                 </div>
@@ -226,7 +234,7 @@ export function Archive() {
                 </Button>
               </div>
               <Progress
-                value={(activeJob.progress.completed / activeJob.progress.total) * 100}
+                value={activeJob.progress.total ? (activeJob.progress.completed / activeJob.progress.total) * 100 : 0}
                 className="h-2"
               />
             </CardContent>
@@ -240,6 +248,10 @@ export function Archive() {
           <TabsTrigger value="sources" className="gap-2">
             <FolderOpen className="h-4 w-4" />
             Sources
+          </TabsTrigger>
+          <TabsTrigger value="jobs" className="gap-2">
+            <Briefcase className="h-4 w-4" />
+            Jobs
           </TabsTrigger>
           <TabsTrigger value="costs" className="gap-2">
             <DollarSign className="h-4 w-4" />
@@ -274,6 +286,11 @@ export function Archive() {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        {/* Jobs Tab */}
+        <TabsContent value="jobs">
+          <JobsView guildId={guildId || ""} />
         </TabsContent>
 
         {/* Costs Tab */}
@@ -886,6 +903,333 @@ function SourcesSkeleton() {
           </CardHeader>
         </Card>
       ))}
+    </div>
+  );
+}
+
+// ==================== Jobs View Component ====================
+
+function JobsView({ guildId }: { guildId: string }) {
+  const { toast } = useToast();
+  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+
+  // Queries
+  const { data: jobs, isLoading, refetch } = useAllJobs(statusFilter);
+
+  // Mutations
+  const pauseJob = usePauseJob();
+  const resumeJob = useResumeJob();
+  const cancelJob = useCancelJob();
+
+  // Filter jobs for this guild
+  const guildJobs = jobs?.filter(
+    (job) => job.source_key.includes(guildId) || !guildId
+  ) || [];
+
+  const handlePause = async (jobId: string) => {
+    try {
+      await pauseJob.mutateAsync({ jobId });
+      toast({
+        title: "Job paused",
+        description: `Job ${jobId} has been paused`,
+      });
+    } catch {
+      toast({
+        title: "Failed to pause job",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleResume = async (jobId: string) => {
+    try {
+      await resumeJob.mutateAsync(jobId);
+      toast({
+        title: "Job resumed",
+        description: `Job ${jobId} has been resumed`,
+      });
+    } catch {
+      toast({
+        title: "Failed to resume job",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCancel = async (jobId: string) => {
+    try {
+      await cancelJob.mutateAsync(jobId);
+      toast({
+        title: "Job cancelled",
+        description: `Job ${jobId} has been cancelled`,
+      });
+      refetch();
+    } catch {
+      toast({
+        title: "Failed to cancel job",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case "running":
+        return "default";
+      case "completed":
+        return "secondary";
+      case "failed":
+        return "destructive";
+      case "paused":
+        return "outline";
+      case "cancelled":
+        return "secondary";
+      default:
+        return "outline";
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "running":
+        return <Loader2 className="h-3 w-3 animate-spin" />;
+      case "completed":
+        return <CheckCircle2 className="h-3 w-3 text-green-500" />;
+      case "failed":
+        return <XCircle className="h-3 w-3 text-red-500" />;
+      case "paused":
+        return <Pause className="h-3 w-3 text-yellow-500" />;
+      case "cancelled":
+        return <Square className="h-3 w-3 text-muted-foreground" />;
+      default:
+        return <Clock className="h-3 w-3" />;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading jobs...
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Filter Bar */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Label>Filter by status:</Label>
+          <Select
+            value={statusFilter || "all"}
+            onValueChange={(v) => setStatusFilter(v === "all" ? undefined : v)}
+          >
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="All jobs" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All jobs</SelectItem>
+              <SelectItem value="running">Running</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="paused">Paused</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Refresh
+        </Button>
+      </div>
+
+      {/* Jobs List */}
+      {guildJobs.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Briefcase className="h-12 w-12 text-muted-foreground/30 mb-4" />
+            <p className="text-muted-foreground">
+              {statusFilter ? `No ${statusFilter} jobs` : "No generation jobs yet"}
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Use the Generate button to create archive summaries
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {guildJobs.map((job) => (
+            <Card key={job.job_id} className="border-border/50">
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-4">
+                  {/* Job Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      {getStatusIcon(job.status)}
+                      <span className="font-medium truncate">{job.job_id}</span>
+                      <Badge variant={getStatusBadgeVariant(job.status)}>
+                        {job.status}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground truncate">
+                      {job.source_key}
+                    </p>
+                    <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                      <span>
+                        Created: {new Date(job.created_at).toLocaleString()}
+                      </span>
+                      {job.started_at && (
+                        <span>
+                          Started: {new Date(job.started_at).toLocaleString()}
+                        </span>
+                      )}
+                      {job.completed_at && (
+                        <span>
+                          Completed: {new Date(job.completed_at).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Progress */}
+                    {(job.status === "running" || job.status === "paused") && (
+                      <div className="mt-3">
+                        <div className="flex justify-between text-xs mb-1">
+                          <span>
+                            {job.progress.completed} / {job.progress.total} periods
+                          </span>
+                          <span>
+                            {job.progress.failed > 0 && (
+                              <span className="text-red-500 mr-2">
+                                {job.progress.failed} failed
+                              </span>
+                            )}
+                            {job.progress.skipped > 0 && (
+                              <span className="text-muted-foreground">
+                                {job.progress.skipped} skipped
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        <Progress
+                          value={(job.progress.completed / job.progress.total) * 100}
+                          className="h-1.5"
+                        />
+                      </div>
+                    )}
+
+                    {/* Error */}
+                    {job.error && (
+                      <div className="mt-2 text-sm text-red-500 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        {job.error}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {job.status === "running" && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handlePause(job.job_id)}
+                          disabled={pauseJob.isPending}
+                        >
+                          <Pause className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCancel(job.job_id)}
+                          disabled={cancelJob.isPending}
+                        >
+                          <Square className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
+                    {job.status === "paused" && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleResume(job.job_id)}
+                          disabled={resumeJob.isPending}
+                        >
+                          <RotateCcw className="mr-1 h-4 w-4" />
+                          Resume
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCancel(job.job_id)}
+                          disabled={cancelJob.isPending}
+                        >
+                          <Square className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
+                    {job.status === "pending" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleCancel(job.job_id)}
+                        disabled={cancelJob.isPending}
+                      >
+                        <Square className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Summary Stats */}
+      {guildJobs.length > 0 && (
+        <Card className="border-border/50 bg-muted/30">
+          <CardContent className="p-4">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-center">
+              <div>
+                <p className="text-2xl font-bold">{guildJobs.length}</p>
+                <p className="text-xs text-muted-foreground">Total</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-blue-500">
+                  {guildJobs.filter((j) => j.status === "running").length}
+                </p>
+                <p className="text-xs text-muted-foreground">Running</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-yellow-500">
+                  {guildJobs.filter((j) => j.status === "paused").length}
+                </p>
+                <p className="text-xs text-muted-foreground">Paused</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-green-500">
+                  {guildJobs.filter((j) => j.status === "completed").length}
+                </p>
+                <p className="text-xs text-muted-foreground">Completed</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-red-500">
+                  {guildJobs.filter((j) => j.status === "failed").length}
+                </p>
+                <p className="text-xs text-muted-foreground">Failed</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

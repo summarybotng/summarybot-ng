@@ -532,6 +532,75 @@ async def cancel_generation(job_id: str):
     return {"status": "cancelled", "job_id": job_id}
 
 
+@router.get("/jobs", response_model=List[JobResponse])
+async def list_all_jobs(
+    status: Optional[str] = None,
+    limit: int = 50,
+):
+    """
+    List all generation jobs.
+
+    Args:
+        status: Filter by status (pending, running, completed, failed, cancelled)
+        limit: Maximum number of jobs to return
+    """
+    from src.archive.generator import JobStatus
+
+    generator = get_generator()
+
+    # Filter by status if provided
+    status_filter = None
+    if status:
+        try:
+            status_filter = JobStatus(status)
+        except ValueError:
+            raise HTTPException(400, f"Invalid status: {status}")
+
+    jobs = generator.list_jobs(status=status_filter)
+
+    # Sort by created_at descending (newest first)
+    jobs.sort(key=lambda j: j.created_at, reverse=True)
+
+    # Apply limit
+    jobs = jobs[:limit]
+
+    return [JobResponse(**j.to_dict()) for j in jobs]
+
+
+@router.post("/jobs/{job_id}/pause")
+async def pause_job(job_id: str, reason: str = "user_requested"):
+    """Pause a running job."""
+    generator = get_generator()
+
+    if not await generator.pause_job(job_id, reason):
+        raise HTTPException(404, f"Job not found or cannot be paused: {job_id}")
+
+    return {"status": "paused", "job_id": job_id, "reason": reason}
+
+
+@router.post("/jobs/{job_id}/resume")
+async def resume_job(job_id: str):
+    """Resume a paused job."""
+    import asyncio
+    from src.archive.generator import JobStatus
+
+    generator = get_generator()
+    job = generator.get_job(job_id)
+
+    if not job:
+        raise HTTPException(404, f"Job not found: {job_id}")
+
+    if job.status != JobStatus.PAUSED:
+        raise HTTPException(400, f"Job is not paused: {job_id} (status: {job.status.value})")
+
+    # Clear pause state and restart
+    job.pause_reason = None
+    message_fetcher = create_message_fetcher(None)
+    asyncio.create_task(generator.run_job(job_id, message_fetcher=message_fetcher))
+
+    return {"status": "resumed", "job_id": job_id}
+
+
 @router.post("/estimate", response_model=CostEstimateResponse)
 async def estimate_generation_cost(request: GenerateRequest):
     """Estimate cost for generation request."""
@@ -661,6 +730,198 @@ async def list_deleted():
 
     deleted = manager.list_deleted()
     return [d.to_dict() for d in deleted]
+
+
+# ==================== Archive Summary Reading ====================
+
+
+class ArchiveSummaryResponse(BaseModel):
+    """Response for reading archive summaries."""
+    id: str
+    source_key: str
+    date: str
+    channel_name: str
+    summary_text: str
+    message_count: int
+    participant_count: int
+    created_at: str
+    summary_length: str = "detailed"
+    preview: str = ""
+    is_archive: bool = True
+
+
+class ArchiveSummariesListResponse(BaseModel):
+    """Response for listing archive summaries."""
+    summaries: List[ArchiveSummaryResponse]
+    total: int
+
+
+@router.get("/summaries/{server_id}", response_model=ArchiveSummariesListResponse)
+async def list_archive_summaries(
+    server_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """
+    List archive summaries for a server.
+
+    Returns summaries from the archive that can be displayed alongside
+    regular summaries in the UI.
+    """
+    archive_root = get_archive_root()
+    sources_dir = archive_root / "sources" / "discord"
+
+    summaries = []
+
+    if sources_dir.exists():
+        # Find the server directory
+        for server_dir in sources_dir.iterdir():
+            if server_dir.is_dir() and server_dir.name.endswith(f"_{server_id}"):
+                # Found the server, now read all summaries
+                server_name = server_dir.name.rsplit("_", 1)[0]
+
+                # Find all markdown files
+                md_files = sorted(server_dir.glob("**/*.md"), reverse=True)
+
+                for md_path in md_files:
+                    # Skip non-summary files
+                    if md_path.name.startswith(".") or "incomplete" in md_path.name:
+                        continue
+
+                    try:
+                        # Read metadata file
+                        meta_path = md_path.with_suffix(".meta.json")
+                        metadata = {}
+                        if meta_path.exists():
+                            import json
+                            with open(meta_path) as f:
+                                metadata = json.load(f)
+
+                        # Read summary content
+                        content = md_path.read_text()
+
+                        # Extract date from filename (e.g., 2026-01-20_daily.md)
+                        date_str = md_path.stem.split("_")[0]
+
+                        # Create preview (first ~200 chars after title)
+                        lines = content.split("\n")
+                        preview_lines = []
+                        in_content = False
+                        for line in lines:
+                            if line.startswith("## ") and not in_content:
+                                in_content = True
+                                continue
+                            if in_content and line.strip():
+                                preview_lines.append(line.strip())
+                                if len(" ".join(preview_lines)) > 200:
+                                    break
+                        preview = " ".join(preview_lines)[:200]
+                        if len(preview) == 200:
+                            preview += "..."
+
+                        # Get stats from metadata
+                        stats = metadata.get("statistics", {})
+                        generation = metadata.get("generation", {})
+
+                        summaries.append(ArchiveSummaryResponse(
+                            id=f"archive_{date_str}_{server_id}",
+                            source_key=f"discord:{server_id}",
+                            date=date_str,
+                            channel_name=server_name,  # Use server name as channel
+                            summary_text=content,
+                            message_count=stats.get("message_count", 0),
+                            participant_count=stats.get("participant_count", 0),
+                            created_at=metadata.get("created_at", date_str),
+                            summary_length=generation.get("options", {}).get("summary_type", "detailed"),
+                            preview=preview,
+                            is_archive=True,
+                        ))
+                    except Exception as e:
+                        logger.warning(f"Failed to read archive summary {md_path}: {e}")
+                        continue
+
+                break  # Found the server, no need to continue
+
+    # Apply pagination
+    total = len(summaries)
+    summaries = summaries[offset:offset + limit]
+
+    return ArchiveSummariesListResponse(
+        summaries=summaries,
+        total=total,
+    )
+
+
+@router.get("/summaries/{server_id}/{summary_id}")
+async def get_archive_summary(
+    server_id: str,
+    summary_id: str,
+):
+    """
+    Get a specific archive summary by ID.
+
+    The summary_id format is: archive_{date}_{server_id}
+    """
+    # Parse the summary ID
+    parts = summary_id.split("_")
+    if len(parts) < 3 or parts[0] != "archive":
+        raise HTTPException(400, "Invalid archive summary ID format")
+
+    date_str = parts[1]
+
+    archive_root = get_archive_root()
+    sources_dir = archive_root / "sources" / "discord"
+
+    if not sources_dir.exists():
+        raise HTTPException(404, "Archive not found")
+
+    # Find the server directory
+    for server_dir in sources_dir.iterdir():
+        if server_dir.is_dir() and server_dir.name.endswith(f"_{server_id}"):
+            server_name = server_dir.name.rsplit("_", 1)[0]
+
+            # Parse date to find file path
+            try:
+                from datetime import datetime as dt
+                target_date = dt.strptime(date_str, "%Y-%m-%d")
+                year = target_date.strftime("%Y")
+                month = target_date.strftime("%m")
+            except ValueError:
+                raise HTTPException(400, "Invalid date format in summary ID")
+
+            # Look for the file
+            md_path = server_dir / year / month / f"{date_str}_daily.md"
+            meta_path = md_path.with_suffix(".meta.json")
+
+            if not md_path.exists():
+                raise HTTPException(404, f"Summary not found: {summary_id}")
+
+            # Read content and metadata
+            content = md_path.read_text()
+            metadata = {}
+            if meta_path.exists():
+                import json
+                with open(meta_path) as f:
+                    metadata = json.load(f)
+
+            stats = metadata.get("statistics", {})
+            generation = metadata.get("generation", {})
+
+            return {
+                "id": summary_id,
+                "source_key": f"discord:{server_id}",
+                "date": date_str,
+                "channel_name": server_name,
+                "summary_text": content,
+                "message_count": stats.get("message_count", 0),
+                "participant_count": stats.get("participant_count", 0),
+                "created_at": metadata.get("created_at", date_str),
+                "summary_length": generation.get("options", {}).get("summary_type", "detailed"),
+                "is_archive": True,
+                "metadata": metadata,
+            }
+
+    raise HTTPException(404, f"Server not found: {server_id}")
 
 
 # ==================== Sync Endpoints (ADR-007) ====================

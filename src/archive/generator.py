@@ -111,7 +111,7 @@ class GenerationJob:
             "source_key": self.source.source_key,
             "status": self.status.value,
             "progress": {
-                "total_periods": self.progress.total_periods,
+                "total": self.progress.total_periods,
                 "completed": self.progress.completed,
                 "failed": self.progress.failed,
                 "skipped": self.progress.skipped,

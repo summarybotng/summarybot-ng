@@ -39,7 +39,8 @@ import {
 } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, FileText, Calendar, MessageSquare, Clock, Users, Loader2, AlertCircle, RefreshCw, Hash, FolderOpen, Server, Eye, Search, Send, Archive, Link } from "lucide-react";
+import { Sparkles, FileText, Calendar, MessageSquare, Clock, Users, Loader2, AlertCircle, RefreshCw, Hash, FolderOpen, Server, Eye, Search, Send, Archive as ArchiveIcon, Link } from "lucide-react";
+import { useArchiveSummaries, type ArchiveSummary } from "@/hooks/useArchive";
 import { Input } from "@/components/ui/input";
 import { SummaryPromptDialog } from "@/components/summaries/SummaryPromptDialog";
 import { StoredSummariesTab } from "@/components/summaries/StoredSummariesTab";
@@ -370,6 +371,10 @@ export function Summaries() {
             <FileText className="h-4 w-4" />
             History
           </TabsTrigger>
+          <TabsTrigger value="archive" className="gap-2">
+            <ArchiveIcon className="h-4 w-4" />
+            Archive
+          </TabsTrigger>
           <TabsTrigger value="stored" className="gap-2">
             <Send className="h-4 w-4" />
             Stored & Share
@@ -431,6 +436,11 @@ export function Summaries() {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        {/* Archive Tab - Retrospective summaries from archive */}
+        <TabsContent value="archive">
+          <ArchiveSummariesTab guildId={id || ""} />
         </TabsContent>
 
         {/* Stored Tab - Summaries with Push to Channel */}
@@ -763,6 +773,222 @@ function SummaryDetailSheet({
         onSubmit={handlePush}
       />
     )}
+    </>
+  );
+}
+
+function ArchiveSummariesTab({ guildId }: { guildId: string }) {
+  const { formatDate } = useTimezone();
+  const [selectedArchiveSummary, setSelectedArchiveSummary] = useState<string | null>(null);
+  const { data, isLoading, isError, refetch } = useArchiveSummaries(guildId);
+
+  if (isLoading) {
+    return <SummariesSkeleton />;
+  }
+
+  if (isError) {
+    return (
+      <Card className="border-destructive/50 bg-destructive/5">
+        <CardContent className="flex items-center justify-between p-4">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 text-destructive" />
+            <p className="font-medium text-destructive">Failed to load archive summaries</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!data?.summaries.length) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex flex-col items-center justify-center py-20"
+      >
+        <ArchiveIcon className="mb-4 h-16 w-16 text-muted-foreground/30" />
+        <h2 className="mb-2 text-xl font-semibold">No archive summaries yet</h2>
+        <p className="mb-6 text-center text-muted-foreground max-w-md">
+          Generate retrospective summaries from the Archive page to see them here
+        </p>
+        <Button variant="outline" asChild>
+          <a href={`/guilds/${guildId}/archive`}>
+            <ArchiveIcon className="mr-2 h-4 w-4" />
+            Go to Archive
+          </a>
+        </Button>
+      </motion.div>
+    );
+  }
+
+  return (
+    <>
+      <div className="mb-4 rounded-md border border-primary/20 bg-primary/5 p-3">
+        <p className="text-sm text-muted-foreground">
+          <ArchiveIcon className="inline-block mr-1.5 h-4 w-4" />
+          These are <strong>retrospective summaries</strong> generated from historical data. Go to{" "}
+          <a href={`/guilds/${guildId}/archive`} className="text-primary underline">
+            Archive
+          </a>{" "}
+          to generate more.
+        </p>
+      </div>
+
+      <div className="grid gap-4">
+        {data.summaries.map((summary, index) => (
+          <ArchiveSummaryCard
+            key={summary.id}
+            summary={summary}
+            index={index}
+            onClick={() => setSelectedArchiveSummary(summary.id)}
+          />
+        ))}
+      </div>
+
+      {/* Archive Summary Detail Sheet */}
+      <Sheet
+        open={!!selectedArchiveSummary}
+        onOpenChange={(open) => !open && setSelectedArchiveSummary(null)}
+      >
+        <SheetContent className="w-full overflow-y-auto sm:max-w-[50vw] lg:max-w-[70vw]">
+          {selectedArchiveSummary && (
+            <ArchiveSummaryDetail
+              guildId={guildId}
+              summaryId={selectedArchiveSummary}
+              summary={data.summaries.find(s => s.id === selectedArchiveSummary)}
+            />
+          )}
+        </SheetContent>
+      </Sheet>
+    </>
+  );
+}
+
+function ArchiveSummaryCard({
+  summary,
+  index,
+  onClick,
+}: {
+  summary: ArchiveSummary;
+  index: number;
+  onClick: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.05 }}
+    >
+      <Card
+        className="cursor-pointer border-border/50 transition-all hover:border-primary/50 hover:shadow-lg"
+        onClick={onClick}
+      >
+        <CardContent className="p-5">
+          <div className="mb-3 flex items-start justify-between">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="bg-orange-500/10 text-orange-600 border-orange-500/20">
+                <ArchiveIcon className="mr-1 h-3 w-3" />
+                Archive
+              </Badge>
+              <Badge variant="outline">{summary.channel_name}</Badge>
+              <Badge variant="secondary">{summary.summary_length}</Badge>
+            </div>
+            <span className="text-sm text-muted-foreground">{summary.date}</span>
+          </div>
+
+          <p className="mb-4 line-clamp-2 text-muted-foreground">
+            {summary.preview || "No preview available"}
+          </p>
+
+          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <Calendar className="h-4 w-4" />
+              <span>{summary.date}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <MessageSquare className="h-4 w-4" />
+              <span>{summary.message_count} messages</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Users className="h-4 w-4" />
+              <span>{summary.participant_count} participants</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+function ArchiveSummaryDetail({
+  guildId,
+  summaryId,
+  summary,
+}: {
+  guildId: string;
+  summaryId: string;
+  summary?: ArchiveSummary;
+}) {
+  const { formatDateTime } = useTimezone();
+
+  if (!summary) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <SheetHeader>
+        <SheetTitle className="flex items-center gap-2">
+          <Badge variant="secondary" className="bg-orange-500/10 text-orange-600 border-orange-500/20">
+            <ArchiveIcon className="mr-1 h-3 w-3" />
+            Archive
+          </Badge>
+          {summary.channel_name} - {summary.date}
+        </SheetTitle>
+        <SheetDescription>
+          Retrospective summary generated from historical data
+        </SheetDescription>
+      </SheetHeader>
+
+      <div className="mt-6 space-y-6">
+        {/* Stats */}
+        <div className="flex flex-wrap gap-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <MessageSquare className="h-4 w-4" />
+            <span>{summary.message_count} messages</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Users className="h-4 w-4" />
+            <span>{summary.participant_count} participants</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Calendar className="h-4 w-4" />
+            <span>{summary.date}</span>
+          </div>
+        </div>
+
+        {/* Summary Content */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Summary</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans">
+                {summary.summary_text}
+              </pre>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </>
   );
 }

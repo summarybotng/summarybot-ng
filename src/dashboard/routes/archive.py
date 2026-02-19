@@ -721,23 +721,22 @@ async def trigger_source_sync(source_key: str):
         if not tokens:
             raise HTTPException(400, "OAuth tokens expired. Please reconnect Google Drive.")
 
-        # Find source directory
-        sources_dir = archive_root / "sources" / source_type
-        source_dir = None
-        server_name = server_id
+        # Find source using registry (same as list_sources)
+        registry = get_source_registry()
+        registry.discover_sources()
+        sources = registry.list_sources()
 
-        if sources_dir.exists():
-            for d in sources_dir.iterdir():
-                if d.is_dir() and d.name.endswith(f"_{server_id}"):
-                    source_dir = d
-                    folder_name = d.name
-                    last_underscore = folder_name.rfind('_')
-                    if last_underscore > 0:
-                        server_name = folder_name[:last_underscore]
-                    break
+        source_info = None
+        for s in sources:
+            if s.source_key == source_key:
+                source_info = s
+                break
 
-        if not source_dir or not source_dir.exists():
+        if not source_info:
             raise HTTPException(404, f"Source not found: {source_key}")
+
+        source_dir = source_info.get_archive_path(archive_root)
+        server_name = source_info.server_name
 
         # Sync using OAuth tokens
         files_synced = 0

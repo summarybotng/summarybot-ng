@@ -929,9 +929,10 @@ function SyncSettings({ guildId }: { guildId: string }) {
       });
       setSelectedFolder(null);
       refetchServerConfig();
-    } catch {
+    } catch (error) {
       toast({
         title: "Failed to configure folder",
+        description: error instanceof Error ? error.message : String(error),
         variant: "destructive",
       });
     }

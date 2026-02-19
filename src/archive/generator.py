@@ -465,7 +465,10 @@ class RetrospectiveGenerator:
                 prompt_version=summary_result.prompt_version,
                 prompt_checksum=summary_result.prompt_checksum,
                 model=summary_result.model,
-                options={},
+                options={
+                    "summary_type": job.summary_type,
+                    "perspective": job.perspective,
+                },
                 duration_seconds=duration,
                 tokens_input=summary_result.tokens_input,
                 tokens_output=summary_result.tokens_output,

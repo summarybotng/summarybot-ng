@@ -206,8 +206,19 @@ class SummarizationAdapter:
         response.model = result.metadata.get("claude_model", "unknown")
         response.tokens_input = result.metadata.get("input_tokens", 0)
         response.tokens_output = result.metadata.get("output_tokens", 0)
-        response.prompt_version = result.metadata.get("prompt_source", {}).get("version", "1.0.0") if isinstance(result.metadata.get("prompt_source"), dict) else "1.0.0"
-        response.prompt_checksum = ""
+
+        # Extract prompt version and generate checksum
+        prompt_source = result.metadata.get("prompt_source", {})
+        if isinstance(prompt_source, dict):
+            response.prompt_version = prompt_source.get("version", "1.0.0")
+            # Generate checksum from prompt file path + version as a proxy
+            checksum_input = f"{prompt_source.get('file_path', '')}:{prompt_source.get('version', '')}"
+        else:
+            response.prompt_version = "1.0.0"
+            checksum_input = "default:1.0.0"
+
+        import hashlib
+        response.prompt_checksum = f"sha256:{hashlib.sha256(checksum_input.encode()).hexdigest()[:16]}"
 
         return response
 

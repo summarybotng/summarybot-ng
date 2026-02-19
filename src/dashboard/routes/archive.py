@@ -4,6 +4,7 @@ Archive management API routes.
 Phase 10: Frontend UI - Backend API
 """
 
+import json
 import logging
 from datetime import date, datetime
 from pathlib import Path
@@ -698,13 +699,10 @@ async def list_sync_states():
 @router.post("/sync/trigger/{source_key}", response_model=SyncResultResponse)
 async def trigger_source_sync(source_key: str):
     """Trigger sync for a specific source."""
-    service = get_sync_service()
+    import httpx
 
-    if not service.is_enabled():
-        raise HTTPException(
-            503,
-            "Google Drive sync not configured. Set ARCHIVE_GOOGLE_DRIVE_* environment variables."
-        )
+    service = get_sync_service()
+    oauth = get_oauth_flow()
 
     # Parse source key and find source path
     parts = source_key.split(":")
@@ -713,6 +711,112 @@ async def trigger_source_sync(source_key: str):
 
     source_type, server_id = parts
     archive_root = get_archive_root()
+
+    # Check for per-server OAuth config first
+    server_config = await service.get_server_config(server_id)
+
+    if server_config and server_config.enabled:
+        # Use per-server OAuth tokens
+        tokens = await oauth.get_valid_tokens(server_config.oauth_token_id)
+        if not tokens:
+            raise HTTPException(400, "OAuth tokens expired. Please reconnect Google Drive.")
+
+        # Find source directory
+        sources_dir = archive_root / "sources" / source_type
+        source_dir = None
+        server_name = server_id
+
+        if sources_dir.exists():
+            for d in sources_dir.iterdir():
+                if d.is_dir() and d.name.endswith(f"_{server_id}"):
+                    source_dir = d
+                    folder_name = d.name
+                    last_underscore = folder_name.rfind('_')
+                    if last_underscore > 0:
+                        server_name = folder_name[:last_underscore]
+                    break
+
+        if not source_dir or not source_dir.exists():
+            raise HTTPException(404, f"Source not found: {source_key}")
+
+        # Sync using OAuth tokens
+        files_synced = 0
+        files_failed = 0
+        bytes_uploaded = 0
+        errors = []
+
+        try:
+            async with httpx.AsyncClient() as client:
+                # Get list of markdown files to sync
+                md_files = list(source_dir.glob("**/*.md"))
+
+                for md_file in md_files:
+                    try:
+                        # Upload file to Drive
+                        rel_path = md_file.relative_to(source_dir)
+                        file_content = md_file.read_text()
+
+                        # Create file metadata
+                        metadata = {
+                            "name": md_file.name,
+                            "parents": [server_config.folder_id],
+                        }
+
+                        # Simple upload using multipart
+                        boundary = "===boundary==="
+                        body = (
+                            f"--{boundary}\r\n"
+                            f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+                            f"{json.dumps(metadata)}\r\n"
+                            f"--{boundary}\r\n"
+                            f"Content-Type: text/markdown\r\n\r\n"
+                            f"{file_content}\r\n"
+                            f"--{boundary}--"
+                        )
+
+                        response = await client.post(
+                            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+                            headers={
+                                "Authorization": f"Bearer {tokens.access_token}",
+                                "Content-Type": f"multipart/related; boundary={boundary}",
+                            },
+                            content=body.encode(),
+                        )
+
+                        if response.status_code in (200, 201):
+                            files_synced += 1
+                            bytes_uploaded += len(file_content.encode())
+                        else:
+                            files_failed += 1
+                            errors.append(f"{md_file.name}: {response.status_code}")
+
+                    except Exception as e:
+                        files_failed += 1
+                        errors.append(f"{md_file.name}: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"Sync failed: {e}")
+            raise HTTPException(500, f"Sync failed: {e}")
+
+        # Update last sync time
+        server_config.last_sync = datetime.utcnow()
+        await service.save_server_config(server_id, server_config)
+
+        return SyncResultResponse(
+            status="success" if files_failed == 0 else "partial",
+            files_synced=files_synced,
+            files_failed=files_failed,
+            bytes_uploaded=bytes_uploaded,
+            errors=errors[:5],
+        )
+
+    # Fall back to global service account config
+    if not service.is_enabled():
+        raise HTTPException(
+            503,
+            "Google Drive sync not configured. Connect via OAuth or set ARCHIVE_GOOGLE_DRIVE_* environment variables."
+        )
+
     sources_dir = archive_root / "sources" / source_type
 
     # Find the source directory

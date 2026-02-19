@@ -40,6 +40,9 @@ class GenerateRequest(BaseModel):
     max_cost_usd: Optional[float] = None
     dry_run: bool = False
     model: str = "anthropic/claude-3-haiku"
+    # Summary options (same as regular summaries)
+    summary_type: str = "detailed"  # brief, detailed, comprehensive
+    perspective: str = "general"  # general, developer, marketing, product, finance, executive, support
 
 
 class BackfillReportRequest(BaseModel):
@@ -114,7 +117,13 @@ class SummarizationAdapter:
     def __init__(self, engine):
         self.engine = engine
 
-    async def generate_summary(self, messages: List[Dict], api_key: str = None):
+    async def generate_summary(
+        self,
+        messages: List[Dict],
+        api_key: str = None,
+        summary_type: str = "detailed",
+        perspective: str = "general",
+    ):
         """
         Generate a summary from message dictionaries.
 
@@ -148,9 +157,18 @@ class SummarizationAdapter:
         if not processed_messages:
             return None
 
+        # Map summary_type string to SummaryLength enum
+        length_map = {
+            "brief": SummaryLength.BRIEF,
+            "detailed": SummaryLength.DETAILED,
+            "comprehensive": SummaryLength.COMPREHENSIVE,
+        }
+        summary_length = length_map.get(summary_type, SummaryLength.DETAILED)
+
         # Create options and context
         options = SummaryOptions(
-            summary_length=SummaryLength.DETAILED,
+            summary_length=summary_length,
+            perspective=perspective,
             min_messages=1,  # Allow any number for archive
         )
 
@@ -467,6 +485,8 @@ async def generate_retrospective(request: GenerateRequest):
         regenerate_failed=request.regenerate_failed if request.regenerate_failed is not None else True,
         max_cost_usd=request.max_cost_usd,
         dry_run=request.dry_run or False,
+        summary_type=request.summary_type or "detailed",
+        perspective=request.perspective or "general",
     )
 
     # Start job in background if not dry run

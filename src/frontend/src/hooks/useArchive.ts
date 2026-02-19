@@ -60,6 +60,9 @@ export interface GenerateRequest {
   max_cost_usd?: number;
   dry_run?: boolean;
   model?: string;
+  // Summary options
+  summary_type?: "brief" | "detailed" | "comprehensive";
+  perspective?: "general" | "developer" | "marketing" | "product" | "finance" | "executive" | "support";
 }
 
 export interface GenerationJob {

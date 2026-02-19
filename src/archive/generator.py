@@ -101,6 +101,9 @@ class GenerationJob:
     regenerate_failed: bool = True
     max_cost_usd: Optional[float] = None
     dry_run: bool = False
+    # Summary options
+    summary_type: str = "detailed"  # brief, detailed, comprehensive
+    perspective: str = "general"  # general, developer, marketing, product, etc.
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -184,6 +187,8 @@ class RetrospectiveGenerator:
         regenerate_failed: bool = True,
         max_cost_usd: Optional[float] = None,
         dry_run: bool = False,
+        summary_type: str = "detailed",
+        perspective: str = "general",
     ) -> GenerationJob:
         """
         Create a new generation job.
@@ -199,6 +204,8 @@ class RetrospectiveGenerator:
             regenerate_failed: Retry failed summaries
             max_cost_usd: Maximum cost limit
             dry_run: Estimate cost without generating
+            summary_type: Type of summary (brief, detailed, comprehensive)
+            perspective: Perspective/audience (general, developer, etc.)
 
         Returns:
             Created job
@@ -220,6 +227,8 @@ class RetrospectiveGenerator:
             regenerate_failed=regenerate_failed,
             max_cost_usd=max_cost_usd,
             dry_run=dry_run,
+            summary_type=summary_type,
+            perspective=perspective,
         )
 
         if max_cost_usd:
@@ -414,6 +423,8 @@ class RetrospectiveGenerator:
             summary_result = await self.summarization_service.generate_summary(
                 messages=messages,
                 api_key=resolved_key.key,
+                summary_type=job.summary_type,
+                perspective=job.perspective,
             )
             duration = (datetime.utcnow() - start_time).total_seconds()
 

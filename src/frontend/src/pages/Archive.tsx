@@ -486,6 +486,8 @@ function GenerateDialog({
   const [startDate, setStartDate] = useState(format(subDays(new Date(), 30), "yyyy-MM-dd"));
   const [endDate, setEndDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [model, setModel] = useState("anthropic/claude-3-haiku");
+  const [summaryType, setSummaryType] = useState<"brief" | "detailed" | "comprehensive">("detailed");
+  const [perspective, setPerspective] = useState<"general" | "developer" | "marketing" | "product" | "finance" | "executive" | "support">("general");
   const [skipExisting, setSkipExisting] = useState(true);
   const [regenerateFailed, setRegenerateFailed] = useState(true);
   const [maxCost, setMaxCost] = useState<string>("");
@@ -500,6 +502,8 @@ function GenerateDialog({
         server_id: guildId,
         date_range: { start: startDate, end: endDate },
         model,
+        summary_type: summaryType,
+        perspective,
         skip_existing: skipExisting,
         regenerate_failed: regenerateFailed,
         dry_run: true,
@@ -517,6 +521,8 @@ function GenerateDialog({
       server_id: guildId,
       date_range: { start: startDate, end: endDate },
       model,
+      summary_type: summaryType,
+      perspective,
       skip_existing: skipExisting,
       regenerate_failed: regenerateFailed,
       max_cost_usd: maxCost ? parseFloat(maxCost) : undefined,
@@ -579,6 +585,39 @@ function GenerateDialog({
               <SelectItem value="anthropic/claude-3-opus">Claude 3 Opus (best quality)</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Summary Type</Label>
+            <Select value={summaryType} onValueChange={(v) => setSummaryType(v as typeof summaryType)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="brief">Brief</SelectItem>
+                <SelectItem value="detailed">Detailed</SelectItem>
+                <SelectItem value="comprehensive">Comprehensive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Perspective</Label>
+            <Select value={perspective} onValueChange={(v) => setPerspective(v as typeof perspective)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="general">General</SelectItem>
+                <SelectItem value="developer">Developer</SelectItem>
+                <SelectItem value="executive">Executive</SelectItem>
+                <SelectItem value="marketing">Marketing</SelectItem>
+                <SelectItem value="product">Product</SelectItem>
+                <SelectItem value="finance">Finance</SelectItem>
+                <SelectItem value="support">Support</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <div className="space-y-3">

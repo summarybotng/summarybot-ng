@@ -745,10 +745,14 @@ async def trigger_source_sync(source_key: str):
         bytes_uploaded = 0
         errors = []
 
+        logger.info(f"Syncing source_dir: {source_dir}")
+        logger.info(f"source_dir exists: {source_dir.exists()}")
+
         try:
             async with httpx.AsyncClient() as client:
                 # Get list of markdown files to sync
                 md_files = list(source_dir.glob("**/*.md"))
+                logger.info(f"Found {len(md_files)} markdown files to sync")
 
                 for md_file in md_files:
                     try:
@@ -801,6 +805,16 @@ async def trigger_source_sync(source_key: str):
         # Update last sync time
         server_config.last_sync = datetime.utcnow()
         await service.save_server_config(server_id, server_config)
+
+        # Include debug info in errors if no files found
+        if files_synced == 0 and files_failed == 0:
+            errors.append(f"Debug: source_dir={source_dir}, exists={source_dir.exists()}")
+            if source_dir.exists():
+                try:
+                    contents = list(source_dir.iterdir())
+                    errors.append(f"Debug: dir contents={[c.name for c in contents[:5]]}")
+                except Exception as e:
+                    errors.append(f"Debug: list error={e}")
 
         return SyncResultResponse(
             status="success" if files_failed == 0 else "partial",

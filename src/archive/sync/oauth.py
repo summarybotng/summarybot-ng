@@ -206,10 +206,20 @@ class GoogleOAuthFlow:
         self.token_store = token_store
         self._pending_states: Dict[str, OAuthState] = {}
 
-        # Load OAuth credentials from environment
-        self.client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
-        self.client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
-        self.redirect_uri = os.environ.get(
+    @property
+    def client_id(self) -> str:
+        """Get client ID from environment (dynamic reload)."""
+        return os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+
+    @property
+    def client_secret(self) -> str:
+        """Get client secret from environment (dynamic reload)."""
+        return os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+
+    @property
+    def redirect_uri(self) -> str:
+        """Get redirect URI from environment."""
+        return os.environ.get(
             "GOOGLE_OAUTH_REDIRECT_URI",
             "https://summarybot-ng.fly.dev/api/v1/archive/oauth/google/callback"
         )

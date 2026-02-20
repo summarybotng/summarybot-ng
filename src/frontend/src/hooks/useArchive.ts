@@ -75,6 +75,16 @@ export interface GenerationJob {
     failed: number;
     skipped: number;
   };
+  // Job criteria
+  date_range?: {
+    start: string;
+    end: string;
+  };
+  granularity?: string;
+  summary_type?: string;
+  perspective?: string;
+  server_name?: string;
+  // Timestamps
   created_at: string;
   started_at?: string;
   completed_at?: string;
@@ -388,6 +398,18 @@ export function useDriveFolders(serverId: string, parentId: string = "root") {
 
 // ==================== Archive Summaries for Summaries Page ====================
 
+export interface ArchiveGenerationMetadata {
+  model?: string;
+  prompt_version?: string;
+  prompt_checksum?: string;
+  tokens_input: number;
+  tokens_output: number;
+  cost_usd: number;
+  duration_seconds?: number;
+  has_prompt_data: boolean;
+  perspective: string;
+}
+
 export interface ArchiveSummary {
   id: string;
   source_key: string;
@@ -400,6 +422,7 @@ export interface ArchiveSummary {
   summary_length: string;
   preview: string;
   is_archive: boolean;
+  generation?: ArchiveGenerationMetadata;
 }
 
 export interface ArchiveSummariesResponse {

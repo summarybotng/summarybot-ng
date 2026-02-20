@@ -27,6 +27,27 @@ class DateRangeRequest(BaseModel):
     end: date
 
 
+def get_model_for_summary_type(summary_type: str, explicit_model: Optional[str] = None) -> str:
+    """
+    Select the appropriate model based on summary type.
+
+    - brief: Use fast/cheap model (Haiku)
+    - detailed: Use balanced model (Sonnet)
+    - comprehensive: Use best model (Sonnet)
+
+    If an explicit model is provided, use that instead.
+    """
+    if explicit_model:
+        return explicit_model
+
+    model_map = {
+        "brief": "anthropic/claude-3-haiku",
+        "detailed": "anthropic/claude-3.5-sonnet",
+        "comprehensive": "anthropic/claude-3.5-sonnet",
+    }
+    return model_map.get(summary_type, "anthropic/claude-3-haiku")
+
+
 class GenerateRequest(BaseModel):
     source_type: str
     server_id: str
@@ -39,7 +60,7 @@ class GenerateRequest(BaseModel):
     regenerate_failed: bool = True
     max_cost_usd: Optional[float] = None
     dry_run: bool = False
-    model: str = "anthropic/claude-3-haiku"
+    model: Optional[str] = None  # If not set, auto-selected based on summary_type
     # Summary options (same as regular summaries)
     summary_type: str = "detailed"  # brief, detailed, comprehensive
     perspective: str = "general"  # general, developer, marketing, product, finance, executive, support
@@ -628,7 +649,8 @@ async def estimate_generation_cost(request: GenerateRequest):
     cost_tracker = CostTracker(archive_root / "cost-ledger.json")
 
     source_key = f"{request.source_type}:{request.server_id}"
-    model = request.model or "anthropic/claude-3-haiku"
+    # Auto-select model based on summary type if not explicitly specified
+    model = get_model_for_summary_type(request.summary_type, request.model)
 
     estimate = cost_tracker.estimate_backfill_cost(
         source_key=source_key,
@@ -735,6 +757,19 @@ async def list_deleted():
 # ==================== Archive Summary Reading ====================
 
 
+class ArchiveGenerationMetadata(BaseModel):
+    """Generation metadata for archive summaries."""
+    model: Optional[str] = None
+    prompt_version: Optional[str] = None
+    prompt_checksum: Optional[str] = None
+    tokens_input: int = 0
+    tokens_output: int = 0
+    cost_usd: float = 0.0
+    duration_seconds: Optional[float] = None
+    has_prompt_data: bool = False
+    perspective: str = "general"
+
+
 class ArchiveSummaryResponse(BaseModel):
     """Response for reading archive summaries."""
     id: str
@@ -748,6 +783,8 @@ class ArchiveSummaryResponse(BaseModel):
     summary_length: str = "detailed"
     preview: str = ""
     is_archive: bool = True
+    # Generation metadata for View Details
+    generation: Optional[ArchiveGenerationMetadata] = None
 
 
 class ArchiveSummariesListResponse(BaseModel):
@@ -821,7 +858,21 @@ async def list_archive_summaries(
 
                         # Get stats from metadata
                         stats = metadata.get("statistics", {})
-                        generation = metadata.get("generation", {})
+                        generation_data = metadata.get("generation", {})
+                        options = generation_data.get("options", {})
+
+                        # Build generation metadata
+                        gen_meta = ArchiveGenerationMetadata(
+                            model=generation_data.get("model"),
+                            prompt_version=generation_data.get("prompt_version"),
+                            prompt_checksum=generation_data.get("prompt_checksum"),
+                            tokens_input=generation_data.get("tokens_input", 0),
+                            tokens_output=generation_data.get("tokens_output", 0),
+                            cost_usd=generation_data.get("cost_usd", 0.0),
+                            duration_seconds=generation_data.get("duration_seconds"),
+                            has_prompt_data=bool(generation_data),
+                            perspective=options.get("perspective", "general"),
+                        )
 
                         summaries.append(ArchiveSummaryResponse(
                             id=f"archive_{date_str}_{server_id}",
@@ -832,9 +883,10 @@ async def list_archive_summaries(
                             message_count=stats.get("message_count", 0),
                             participant_count=stats.get("participant_count", 0),
                             created_at=metadata.get("created_at", date_str),
-                            summary_length=generation.get("options", {}).get("summary_type", "detailed"),
+                            summary_length=options.get("summary_type", "detailed"),
                             preview=preview,
                             is_archive=True,
+                            generation=gen_meta,
                         ))
                     except Exception as e:
                         logger.warning(f"Failed to read archive summary {md_path}: {e}")

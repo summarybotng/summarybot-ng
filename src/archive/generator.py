@@ -106,6 +106,7 @@ class GenerationJob:
     perspective: str = "general"  # general, developer, marketing, product, etc.
 
     def to_dict(self) -> Dict[str, Any]:
+        start_date, end_date = self.date_range
         return {
             "job_id": self.job_id,
             "source_key": self.source.source_key,
@@ -125,6 +126,16 @@ class GenerationJob:
                 "max_cost_usd": self.cost.max_cost_usd,
                 "percent_of_max": self.cost.percent_of_max,
             },
+            # Job criteria for display
+            "date_range": {
+                "start": start_date.isoformat() if hasattr(start_date, 'isoformat') else str(start_date),
+                "end": end_date.isoformat() if hasattr(end_date, 'isoformat') else str(end_date),
+            },
+            "granularity": self.granularity,
+            "summary_type": self.summary_type,
+            "perspective": self.perspective,
+            "server_name": self.source.server_name,
+            # Timestamps
             "created_at": self.created_at.isoformat(),
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,

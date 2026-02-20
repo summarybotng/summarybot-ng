@@ -943,6 +943,8 @@ function ArchiveSummaryDetail({
     );
   }
 
+  const gen = summary.generation;
+
   return (
     <>
       <SheetHeader>
@@ -973,6 +975,9 @@ function ArchiveSummaryDetail({
             <Calendar className="h-4 w-4" />
             <span>{summary.date}</span>
           </div>
+          {gen?.perspective && gen.perspective !== "general" && (
+            <Badge variant="outline">{gen.perspective}</Badge>
+          )}
         </div>
 
         {/* Summary Content */}
@@ -988,6 +993,60 @@ function ArchiveSummaryDetail({
             </div>
           </CardContent>
         </Card>
+
+        {/* Generation Details */}
+        {gen && gen.has_prompt_data && (
+          <Card className="border-border/50 bg-muted/30">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Eye className="h-4 w-4" />
+                Generation Details
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                {gen.model && (
+                  <div>
+                    <p className="text-muted-foreground">Model</p>
+                    <p className="font-medium">{gen.model}</p>
+                  </div>
+                )}
+                {gen.prompt_version && (
+                  <div>
+                    <p className="text-muted-foreground">Prompt Version</p>
+                    <p className="font-medium">{gen.prompt_version}</p>
+                  </div>
+                )}
+                {(gen.tokens_input > 0 || gen.tokens_output > 0) && (
+                  <div>
+                    <p className="text-muted-foreground">Tokens</p>
+                    <p className="font-medium">
+                      {gen.tokens_input.toLocaleString()} in / {gen.tokens_output.toLocaleString()} out
+                    </p>
+                  </div>
+                )}
+                {gen.cost_usd > 0 && (
+                  <div>
+                    <p className="text-muted-foreground">Cost</p>
+                    <p className="font-medium">${gen.cost_usd.toFixed(4)}</p>
+                  </div>
+                )}
+                {gen.duration_seconds && (
+                  <div>
+                    <p className="text-muted-foreground">Duration</p>
+                    <p className="font-medium">{gen.duration_seconds.toFixed(2)}s</p>
+                  </div>
+                )}
+                {gen.prompt_checksum && (
+                  <div className="col-span-2">
+                    <p className="text-muted-foreground">Prompt Checksum</p>
+                    <p className="font-mono text-xs">{gen.prompt_checksum}</p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </>
   );

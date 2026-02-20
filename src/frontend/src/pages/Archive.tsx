@@ -1070,16 +1070,35 @@ function JobsView({ guildId }: { guildId: string }) {
                 <div className="flex items-start justify-between gap-4">
                   {/* Job Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       {getStatusIcon(job.status)}
-                      <span className="font-medium truncate">{job.job_id}</span>
+                      <span className="font-medium">{job.server_name || job.source_key}</span>
                       <Badge variant={getStatusBadgeVariant(job.status)}>
                         {job.status}
                       </Badge>
+                      {job.summary_type && (
+                        <Badge variant="outline" className="text-xs">
+                          {job.summary_type}
+                        </Badge>
+                      )}
+                      {job.perspective && job.perspective !== "general" && (
+                        <Badge variant="secondary" className="text-xs">
+                          {job.perspective}
+                        </Badge>
+                      )}
                     </div>
-                    <p className="text-sm text-muted-foreground truncate">
-                      {job.source_key}
-                    </p>
+                    {/* Job criteria */}
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
+                      {job.date_range && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {job.date_range.start} → {job.date_range.end}
+                        </span>
+                      )}
+                      {job.granularity && (
+                        <span className="capitalize">{job.granularity}</span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                       <span>
                         Created: {new Date(job.created_at).toLocaleString()}

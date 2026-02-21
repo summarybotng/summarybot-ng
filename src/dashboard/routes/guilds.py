@@ -146,13 +146,14 @@ async def get_guild(
     channels = []
     categories = {}
 
-    # Get text channels - use cached channels or fetch if empty
-    text_channels = guild.text_channels
-    if not text_channels:
-        # Channels not in cache, try to fetch them
-        logger.warning(f"No text channels in cache for guild {guild_id}, attempting fetch")
+    # Get text channels - always fetch from Discord API to ensure fresh data
+    text_channels = list(guild.text_channels)
+    logger.info(f"Guild {guild_id} has {len(text_channels)} cached text channels")
+
+    if len(text_channels) == 0:
+        # Channels not in cache, fetch them from Discord API
+        logger.warning(f"No text channels in cache for guild {guild_id}, fetching from Discord API")
         try:
-            # Fetch all channels for the guild
             fetched_channels = await guild.fetch_channels()
             text_channels = [ch for ch in fetched_channels if isinstance(ch, discord.TextChannel)]
             logger.info(f"Fetched {len(text_channels)} text channels for guild {guild_id}")

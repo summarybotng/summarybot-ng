@@ -5,11 +5,15 @@ RSS 2.0 and Atom 1.0 feed generator for Discord summaries.
 import hashlib
 from datetime import datetime
 from typing import List, Optional
-from xml.etree.ElementTree import Element, SubElement, tostring
+from xml.etree.ElementTree import Element, SubElement, tostring, register_namespace
 from xml.dom import minidom
 
 from ..models.summary import SummaryResult
 from ..models.feed import FeedConfig, FeedType
+
+# Register namespace prefixes to avoid duplicate/ns0 declarations
+register_namespace('atom', 'http://www.w3.org/2005/Atom')
+register_namespace('dc', 'http://purl.org/dc/elements/1.1/')
 
 
 class FeedGenerator:
@@ -70,11 +74,9 @@ class FeedGenerator:
         description = feed_config.description or self._default_description(guild_name, channel_name)
 
         # Create root element
-        rss = Element('rss', {
-            'version': '2.0',
-            'xmlns:dc': 'http://purl.org/dc/elements/1.1/',
-            'xmlns:atom': 'http://www.w3.org/2005/Atom'
-        })
+        # Note: namespace declarations are added automatically via register_namespace
+        # when we use Clark notation ({namespace}element) for namespaced elements
+        rss = Element('rss', {'version': '2.0'})
 
         channel = SubElement(rss, 'channel')
 

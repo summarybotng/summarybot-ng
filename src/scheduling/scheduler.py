@@ -138,6 +138,8 @@ class TaskScheduler:
             )
 
             # Add job to scheduler
+            # Use 1 hour grace period to handle deployments/restarts
+            # coalesce=True ensures only one execution if multiple are missed
             self.scheduler.add_job(
                 func=self._execute_scheduled_task,
                 trigger=trigger,
@@ -145,7 +147,8 @@ class TaskScheduler:
                 id=task.id,
                 name=task.name or f"Task {task.id}",
                 replace_existing=True,
-                misfire_grace_time=300  # 5 minutes grace period
+                misfire_grace_time=3600,  # 1 hour grace period for deployments
+                coalesce=True  # Run once if multiple executions missed
             )
 
             # Track task

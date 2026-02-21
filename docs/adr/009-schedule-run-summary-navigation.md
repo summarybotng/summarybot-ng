@@ -1,7 +1,7 @@
 # ADR-009: Schedule → Run → Summary Navigation
 
 ## Status
-Proposed
+Accepted (Implemented 2026-02-21)
 
 ## Context
 

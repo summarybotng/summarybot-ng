@@ -310,6 +310,11 @@ def create_message_fetcher(channel_ids: Optional[List[str]] = None):
         fetcher = MessageFetcher(bot)
         all_messages = []
 
+        logger.info(
+            f"Fetching messages for {source.source_key} from "
+            f"{start_time.isoformat()} to {end_time.isoformat()}"
+        )
+
         # Determine which channels to fetch from
         if source.channel_id:
             # Single channel specified in source
@@ -361,6 +366,19 @@ def create_message_fetcher(channel_ids: Optional[List[str]] = None):
 
         # Sort by timestamp
         all_messages.sort(key=lambda m: m["timestamp"])
+
+        if not all_messages:
+            logger.warning(
+                f"No messages found for {source.source_key} in period "
+                f"{start_time.isoformat()} to {end_time.isoformat()}. "
+                f"Checked {len(target_channels)} channel(s)."
+            )
+        else:
+            logger.info(
+                f"Found {len(all_messages)} messages for {source.source_key} "
+                f"from {len(target_channels)} channel(s)"
+            )
+
         return all_messages
 
     return fetch_messages

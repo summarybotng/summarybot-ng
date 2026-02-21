@@ -3,7 +3,8 @@ Discord message fetching functionality.
 """
 
 import asyncio
-from datetime import datetime, timedelta
+import logging
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, AsyncGenerator
 import discord
 
@@ -11,6 +12,8 @@ from ..exceptions import (
     MessageFetchError, ChannelAccessError, RateLimitExceededError,
     create_error_context
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MessageFetcher:
@@ -241,23 +244,56 @@ class MessageFetcher:
                                             start_time: datetime,
                                             end_time: datetime,
                                             limit: Optional[int] = None) -> AsyncGenerator[discord.Message, None]:
-        """Fetch messages with proper pagination and time filtering."""
+        """Fetch messages with proper pagination and time filtering.
+
+        Uses Discord snowflake IDs for efficient historical date range queries.
+        This is critical for retrospective summaries where start_time may be
+        months in the past - using snowflakes allows Discord API to jump directly
+        to the target time instead of iterating from channel creation.
+        """
         total_fetched = 0
-        
-        # Use discord.py's history method with time-based filtering
+
+        # Convert datetime to snowflake for efficient positioning
+        # This tells Discord API exactly where to start, avoiding slow iteration
+        # Ensure timezone-aware datetime for snowflake conversion
+        if start_time.tzinfo is None:
+            start_time_aware = start_time.replace(tzinfo=timezone.utc)
+        else:
+            start_time_aware = start_time
+
+        start_snowflake = discord.utils.time_snowflake(start_time_aware)
+        after_obj = discord.Object(id=start_snowflake)
+
+        logger.debug(
+            f"Fetching messages from channel {channel.id}: "
+            f"start={start_time.isoformat()}, end={end_time.isoformat()}, "
+            f"start_snowflake={start_snowflake}"
+        )
+
+        # Use discord.py's history method with snowflake-based after parameter
         async for message in channel.history(
             limit=None,
             before=end_time,
-            after=start_time,
+            after=after_obj,
             oldest_first=True
         ):
             if limit and total_fetched >= limit:
                 break
-                
+
             # Double-check time bounds (discord.py filtering isn't always precise)
-            if start_time <= message.created_at <= end_time:
+            if start_time <= message.created_at.replace(tzinfo=None) <= end_time:
                 yield message
                 total_fetched += 1
+
+        if total_fetched == 0:
+            logger.warning(
+                f"No messages found in channel {channel.id} for period "
+                f"{start_time.isoformat()} to {end_time.isoformat()}. "
+                f"This could indicate: (1) channel was empty during this period, "
+                f"(2) messages were deleted, or (3) bot lacks history access."
+            )
+        else:
+            logger.debug(f"Fetched {total_fetched} messages from channel {channel.id}")
     
     async def get_channel_info(self, channel_id: str) -> dict:
         """Get basic information about a channel.

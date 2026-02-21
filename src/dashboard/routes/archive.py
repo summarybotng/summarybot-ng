@@ -244,7 +244,7 @@ class SummarizationAdapter:
         return response
 
 
-def get_generator():
+async def get_generator():
     """Get retrospective generator instance (singleton to preserve job state)."""
     global _generator_instance
 
@@ -255,7 +255,7 @@ def get_generator():
     from src.archive.cost_tracker import CostTracker
     from src.archive.sources import SourceRegistry
     from src.archive.api_keys import ApiKeyResolver
-    from . import get_summarization_engine
+    from . import get_summarization_engine, get_summary_repository
 
     archive_root = get_archive_root()
     cost_tracker = CostTracker(archive_root / "cost-ledger.json")
@@ -269,12 +269,21 @@ def get_generator():
     # Wrap the engine with our adapter
     summarization_adapter = SummarizationAdapter(engine)
 
+    # ADR-008: Get stored summary repository for database persistence
+    # This is critical - without it, summaries only go to ephemeral files
+    stored_summary_repo = await get_summary_repository()
+    if stored_summary_repo:
+        logger.info("Archive generator initialized with database storage")
+    else:
+        logger.warning("Archive generator initialized WITHOUT database storage - summaries will only be written to files")
+
     _generator_instance = RetrospectiveGenerator(
         archive_root=archive_root,
         summarization_service=summarization_adapter,
         source_registry=source_registry,
         cost_tracker=cost_tracker,
         api_key_resolver=api_key_resolver,
+        stored_summary_repository=stored_summary_repo,
     )
 
     return _generator_instance
@@ -523,7 +532,7 @@ async def generate_retrospective(request: GenerateRequest):
         channel_id=request.channel_ids[0] if request.channel_ids and len(request.channel_ids) == 1 else None,
     )
 
-    generator = get_generator()
+    generator = await get_generator()
     job = await generator.create_job(
         source=source,
         start_date=request.date_range.start,
@@ -551,7 +560,7 @@ async def generate_retrospective(request: GenerateRequest):
 @router.get("/generate/{job_id}", response_model=JobResponse)
 async def get_generation_status(job_id: str):
     """Get generation job status."""
-    generator = get_generator()
+    generator = await get_generator()
     job = generator.get_job(job_id)
 
     if not job:
@@ -563,7 +572,7 @@ async def get_generation_status(job_id: str):
 @router.post("/generate/{job_id}/cancel")
 async def cancel_generation(job_id: str):
     """Cancel a running generation job."""
-    generator = get_generator()
+    generator = await get_generator()
 
     if not await generator.cancel_job(job_id):
         raise HTTPException(404, f"Job not found: {job_id}")
@@ -585,7 +594,7 @@ async def list_all_jobs(
     """
     from src.archive.generator import JobStatus
 
-    generator = get_generator()
+    generator = await get_generator()
 
     # Filter by status if provided
     status_filter = None
@@ -609,7 +618,7 @@ async def list_all_jobs(
 @router.post("/jobs/{job_id}/pause")
 async def pause_job(job_id: str, reason: str = "user_requested"):
     """Pause a running job."""
-    generator = get_generator()
+    generator = await get_generator()
 
     if not await generator.pause_job(job_id, reason):
         raise HTTPException(404, f"Job not found or cannot be paused: {job_id}")
@@ -623,7 +632,7 @@ async def resume_job(job_id: str):
     import asyncio
     from src.archive.generator import JobStatus
 
-    generator = get_generator()
+    generator = await get_generator()
     job = generator.get_job(job_id)
 
     if not job:

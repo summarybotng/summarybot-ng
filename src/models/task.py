@@ -342,11 +342,20 @@ class ScheduledTask(BaseModel):
         """Get human-readable schedule description."""
         if self.schedule_type == ScheduleType.ONCE:
             return "One time"
-        
+
+        if self.schedule_type == ScheduleType.FIFTEEN_MINUTES:
+            return "Every 15 minutes"
+
+        if self.schedule_type == ScheduleType.HOURLY:
+            return "Hourly"
+
+        if self.schedule_type == ScheduleType.EVERY_4_HOURS:
+            return "Every 4 hours"
+
         if self.schedule_type == ScheduleType.DAILY:
             time_part = f" at {self.schedule_time}" if self.schedule_time else ""
             return f"Daily{time_part}"
-        
+
         if self.schedule_type == ScheduleType.WEEKLY:
             day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
             if self.schedule_days:

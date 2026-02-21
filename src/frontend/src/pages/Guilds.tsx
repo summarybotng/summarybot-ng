@@ -1,12 +1,29 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useGuilds } from "@/hooks/useGuilds";
+import { useDefaultPrompts, type DefaultPrompt } from "@/hooks/usePrompts";
 import { Header } from "@/components/layout/Header";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, FileText, AlertCircle, CheckCircle2, Settings } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Users, FileText, AlertCircle, CheckCircle2, Settings, GitBranch, Eye, MessageSquare, Gavel, MessagesSquare } from "lucide-react";
 import type { Guild } from "@/types";
 
 function GuildCard({ guild, index }: { guild: Guild; index: number }) {
@@ -85,13 +102,107 @@ function GuildSkeleton() {
   );
 }
 
+// Icon mapping for prompt categories
+const PROMPT_ICONS: Record<string, typeof FileText> = {
+  default: FileText,
+  discussion: MessagesSquare,
+  meeting: MessageSquare,
+  moderation: Gavel,
+};
+
+function DefaultPromptsCard() {
+  const { data: prompts, isLoading } = useDefaultPrompts();
+  const [selectedPrompt, setSelectedPrompt] = useState<DefaultPrompt | null>(null);
+
+  if (isLoading) {
+    return (
+      <Card className="border-border/50 bg-card/50">
+        <CardHeader>
+          <Skeleton className="h-6 w-48" />
+          <Skeleton className="h-4 w-64" />
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <Skeleton className="h-9 w-24" />
+            <Skeleton className="h-9 w-24" />
+            <Skeleton className="h-9 w-24" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <Card className="border-border/50 bg-card/50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <GitBranch className="h-5 w-5" />
+            Default Prompts
+          </CardTitle>
+          <CardDescription>
+            View the built-in prompts that drive summary generation
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {prompts?.map((prompt) => {
+              const Icon = PROMPT_ICONS[prompt.category] || FileText;
+              return (
+                <Button
+                  key={prompt.name}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedPrompt(prompt)}
+                  className="gap-2"
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="capitalize">{prompt.name}</span>
+                  <Eye className="h-3 w-3 text-muted-foreground" />
+                </Button>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Prompt Viewer Dialog */}
+      <Dialog open={!!selectedPrompt} onOpenChange={(open) => !open && setSelectedPrompt(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 capitalize">
+              {selectedPrompt && (
+                <>
+                  {(() => {
+                    const Icon = PROMPT_ICONS[selectedPrompt.category] || FileText;
+                    return <Icon className="h-5 w-5" />;
+                  })()}
+                  {selectedPrompt.name} Prompt
+                </>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedPrompt?.description}
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh] pr-4">
+            <pre className="text-sm bg-muted/50 p-4 rounded-lg overflow-x-auto whitespace-pre-wrap font-mono">
+              {selectedPrompt?.content}
+            </pre>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 export function Guilds() {
   const { data: guilds, isLoading, error } = useGuilds();
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main className="container py-8">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -102,6 +213,16 @@ export function Guilds() {
           <p className="text-muted-foreground">
             Select a server to configure SummaryBot
           </p>
+        </motion.div>
+
+        {/* Default Prompts Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="mb-8"
+        >
+          <DefaultPromptsCard />
         </motion.div>
 
         {error && (

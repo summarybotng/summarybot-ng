@@ -91,6 +91,7 @@ from .events import router as events_router
 from .feeds import router as feeds_router
 from .errors import router as errors_router
 from .archive import router as archive_router
+from .prompts import router as prompts_router
 
 __all__ = [
     "auth_router",
@@ -102,6 +103,7 @@ __all__ = [
     "feeds_router",
     "errors_router",
     "archive_router",
+    "prompts_router",
     "set_services",
     "get_discord_bot",
     "get_summarization_engine",

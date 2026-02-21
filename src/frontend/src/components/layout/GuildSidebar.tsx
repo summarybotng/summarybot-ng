@@ -37,7 +37,7 @@ const navItems = [
   { icon: Webhook, label: "Webhooks", path: "/webhooks" },
   { icon: Rss, label: "Feeds", path: "/feeds" },
   { icon: AlertTriangle, label: "Errors", path: "/errors", showBadge: true },
-  { icon: Archive, label: "Archive", path: "/archive" },
+  { icon: Archive, label: "Retrospective", path: "/archive" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 

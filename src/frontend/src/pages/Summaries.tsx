@@ -373,7 +373,7 @@ export function Summaries() {
           </TabsTrigger>
           <TabsTrigger value="archive" className="gap-2">
             <ArchiveIcon className="h-4 w-4" />
-            Archive
+            Retrospective
           </TabsTrigger>
           <TabsTrigger value="stored" className="gap-2">
             <Send className="h-4 w-4" />
@@ -812,14 +812,14 @@ function ArchiveSummariesTab({ guildId }: { guildId: string }) {
         className="flex flex-col items-center justify-center py-20"
       >
         <ArchiveIcon className="mb-4 h-16 w-16 text-muted-foreground/30" />
-        <h2 className="mb-2 text-xl font-semibold">No archive summaries yet</h2>
+        <h2 className="mb-2 text-xl font-semibold">No retrospective summaries yet</h2>
         <p className="mb-6 text-center text-muted-foreground max-w-md">
-          Generate retrospective summaries from the Archive page to see them here
+          Generate retrospective summaries from the Retrospective page to see them here
         </p>
         <Button variant="outline" asChild>
           <a href={`/guilds/${guildId}/archive`}>
             <ArchiveIcon className="mr-2 h-4 w-4" />
-            Go to Archive
+            Go to Retrospective
           </a>
         </Button>
       </motion.div>
@@ -833,7 +833,7 @@ function ArchiveSummariesTab({ guildId }: { guildId: string }) {
           <ArchiveIcon className="inline-block mr-1.5 h-4 w-4" />
           These are <strong>retrospective summaries</strong> generated from historical data. Go to{" "}
           <a href={`/guilds/${guildId}/archive`} className="text-primary underline">
-            Archive
+            Retrospective
           </a>{" "}
           to generate more.
         </p>

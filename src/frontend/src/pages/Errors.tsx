@@ -59,17 +59,30 @@ const severities: { value: ErrorSeverity; label: string }[] = [
 export function Errors() {
   const { id: guildId } = useParams<{ id: string }>();
   const { toast } = useToast();
-  
+
   const [filters, setFilters] = useState<ErrorFilters>({
     include_resolved: false,
     limit: 100,
     error_types: [],
   });
+  // Missing Access errors (discord_permission) hidden by default
+  const [showMissingAccess, setShowMissingAccess] = useState(false);
   const [selectedError, setSelectedError] = useState<ErrorLogItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [bulkResolveType, setBulkResolveType] = useState<ErrorType | null>(null);
 
-  const { data, isLoading, refetch } = useErrors(guildId || "", filters);
+  const { data: rawData, isLoading, refetch } = useErrors(guildId || "", filters);
+
+  // Filter out Missing Access errors client-side if toggle is off
+  const data = rawData ? {
+    ...rawData,
+    errors: showMissingAccess
+      ? rawData.errors
+      : rawData.errors.filter(e => e.error_type !== "discord_permission"),
+    unresolved_count: showMissingAccess
+      ? rawData.unresolved_count
+      : rawData.errors.filter(e => e.error_type !== "discord_permission" && !e.is_resolved).length,
+  } : rawData;
   const resolveError = useResolveError(guildId || "");
   const bulkResolve = useBulkResolveErrors(guildId || "");
 
@@ -129,9 +142,10 @@ export function Errors() {
 
   const clearFilters = () => {
     setFilters({ include_resolved: false, limit: 100, error_types: [] });
+    setShowMissingAccess(false);
   };
 
-  const hasActiveFilters = (filters.error_types && filters.error_types.length > 0) || filters.severity;
+  const hasActiveFilters = (filters.error_types && filters.error_types.length > 0) || filters.severity || showMissingAccess;
 
   // Get count of unresolved errors by type for bulk resolve menu
   const unresolvedByType = data?.errors.reduce((acc, err) => {
@@ -286,6 +300,17 @@ export function Errors() {
                   ))}
                 </SelectContent>
               </Select>
+
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="show-missing-access"
+                  checked={showMissingAccess}
+                  onCheckedChange={setShowMissingAccess}
+                />
+                <Label htmlFor="show-missing-access" className="text-sm">
+                  Show Missing Access
+                </Label>
+              </div>
 
               <div className="flex items-center gap-2">
                 <Switch

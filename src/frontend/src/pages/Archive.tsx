@@ -144,10 +144,10 @@ export function Archive() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <ArchiveIcon className="h-6 w-6" />
-            Archive
+            Retrospective
           </h1>
           <p className="text-muted-foreground">
-            Retrospective summaries, backfill, and historical data
+            Backfill summaries and import historical data
           </p>
         </div>
         <div className="flex gap-2">

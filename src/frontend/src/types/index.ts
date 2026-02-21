@@ -265,6 +265,7 @@ export interface StoredSummary {
   title: string;
   source_channel_ids: string[];
   schedule_id?: string;
+  schedule_name?: string;  // ADR-009: For navigation
   created_at: string;
   viewed_at?: string;
   pushed_at?: string;
@@ -334,4 +335,18 @@ export interface StoredSummaryUpdateRequest {
   is_pinned?: boolean;
   is_archived?: boolean;
   tags?: string[];
+}
+
+// ADR-009: Execution history types for schedule → run → summary navigation
+export interface ExecutionHistoryItem {
+  execution_id: string;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  started_at: string;
+  completed_at: string | null;
+  summary_id: string | null;
+  error: string | null;
+}
+
+export interface ExecutionHistoryResponse {
+  executions: ExecutionHistoryItem[];
 }

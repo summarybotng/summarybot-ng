@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
-import type { Schedule, Destination, SummaryOptions } from "@/types";
+import type { Schedule, Destination, SummaryOptions, ExecutionHistoryResponse } from "@/types";
 
 interface SchedulesResponse {
   schedules: Schedule[];
@@ -73,5 +73,18 @@ export function useRunSchedule(guildId: string) {
       queryClient.invalidateQueries({ queryKey: ["schedules", guildId] });
       queryClient.invalidateQueries({ queryKey: ["summaries", guildId] });
     },
+  });
+}
+
+// ADR-009: Hook for fetching execution history
+export function useExecutionHistory(guildId: string, scheduleId: string | null) {
+  return useQuery({
+    queryKey: ["execution-history", guildId, scheduleId],
+    queryFn: () =>
+      api.get<ExecutionHistoryResponse>(
+        `/guilds/${guildId}/schedules/${scheduleId}/history`
+      ),
+    select: (data) => data.executions,
+    enabled: !!guildId && !!scheduleId,
   });
 }

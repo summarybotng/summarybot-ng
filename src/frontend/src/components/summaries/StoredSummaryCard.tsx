@@ -1,9 +1,11 @@
 /**
- * Stored Summary Card Component (ADR-005, ADR-008)
+ * Stored Summary Card Component (ADR-005, ADR-008, ADR-009)
  *
  * ADR-008: Extended to show source badges for unified summary experience.
+ * ADR-009: Extended to show schedule name with navigation.
  */
 
+import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -66,6 +68,16 @@ export function StoredSummaryCard({
   onArchive,
   onDelete,
 }: StoredSummaryCardProps) {
+  const { id: guildId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+
+  const handleScheduleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (summary.schedule_id) {
+      navigate(`/guilds/${guildId}/schedules`);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -142,6 +154,17 @@ export function StoredSummaryCard({
               }
               return null;
             })()}
+            {/* ADR-009: Show schedule name for scheduled summaries */}
+            {summary.source === "scheduled" && summary.schedule_name && (
+              <Badge
+                variant="outline"
+                className="border-blue-500/50 text-blue-600 cursor-pointer hover:bg-blue-500/10"
+                onClick={handleScheduleClick}
+              >
+                <Clock className="mr-1 h-3 w-3" />
+                {summary.schedule_name}
+              </Badge>
+            )}
             <Badge variant="outline">
               {summary.source_channel_ids.length} channel
               {summary.source_channel_ids.length > 1 ? "s" : ""}

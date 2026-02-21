@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { format, subDays } from "date-fns";
 import {
@@ -97,11 +97,14 @@ import {
 export function Archive() {
   const { id: guildId } = useParams<{ id: string }>();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  // ADR-009: Track last completed job for navigation
+  const [lastCompletedJob, setLastCompletedJob] = useState<{ count: number } | null>(null);
 
   // Queries
   const { data: sources, isLoading: sourcesLoading, refetch: refetchSources } = useArchiveSources();
@@ -128,6 +131,10 @@ export function Archive() {
           : activeJob.error || "An error occurred",
         variant: activeJob.status === "completed" ? "default" : "destructive",
       });
+      // ADR-009: Track completed job for navigation
+      if (activeJob.status === "completed" && activeJob.progress.completed > 0) {
+        setLastCompletedJob({ count: activeJob.progress.completed });
+      }
       setActiveJobId(null);
       refetchSources();
     }
@@ -237,6 +244,43 @@ export function Archive() {
                 value={activeJob.progress.total ? (activeJob.progress.completed / activeJob.progress.total) * 100 : 0}
                 className="h-2"
               />
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* ADR-009: Last Completed Job Banner */}
+      {lastCompletedJob && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <Card className="border-green-500/50 bg-green-500/5">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                  <div>
+                    <p className="font-medium">Retrospective complete</p>
+                    <p className="text-sm text-muted-foreground">
+                      Generated {lastCompletedJob.count} summaries
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setLastCompletedJob(null)}
+                  >
+                    Dismiss
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => navigate(`/guilds/${guildId}/summaries?source=archive`)}
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    View Summaries
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </motion.div>

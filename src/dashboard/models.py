@@ -670,11 +670,12 @@ class ErrorExportResponse(BaseModel):
 # ============================================================================
 
 class StoredSummaryListItem(BaseModel):
-    """Stored summary item in list (ADR-005, ADR-008)."""
+    """Stored summary item in list (ADR-005, ADR-008, ADR-009)."""
     id: str
     title: str
     source_channel_ids: List[str]
     schedule_id: Optional[str] = None
+    schedule_name: Optional[str] = None  # ADR-009: For navigation
     created_at: datetime
     viewed_at: Optional[datetime] = None
     pushed_at: Optional[datetime] = None

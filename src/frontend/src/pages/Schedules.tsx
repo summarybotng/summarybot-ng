@@ -24,6 +24,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Calendar, Loader2, Pencil } from "lucide-react";
 import { ScheduleCard } from "@/components/schedules/ScheduleCard";
+import { RunHistoryDrawer } from "@/components/schedules/RunHistoryDrawer";
 import {
   ScheduleForm,
   initialFormData,
@@ -44,6 +45,8 @@ export function Schedules() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
+  const [historySchedule, setHistorySchedule] = useState<Schedule | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [formData, setFormData] = useState<ScheduleFormData>(initialFormData);
 
   const resetForm = () => {
@@ -53,6 +56,11 @@ export function Schedules() {
   const openEditDialog = (schedule: Schedule) => {
     setFormData(scheduleToFormData(schedule));
     setEditingSchedule(schedule);
+  };
+
+  const openHistoryDrawer = (schedule: Schedule) => {
+    setHistorySchedule(schedule);
+    setHistoryOpen(true);
   };
 
   const handleCreate = async () => {
@@ -288,12 +296,20 @@ export function Schedules() {
               onEdit={openEditDialog}
               onDelete={handleDelete}
               onRunNow={handleRunNow}
+              onViewHistory={openHistoryDrawer}
               isDeleting={deleteSchedule.isPending}
               isRunning={runSchedule.isPending}
             />
           ))}
         </div>
       )}
+
+      {/* Run History Drawer */}
+      <RunHistoryDrawer
+        schedule={historySchedule}
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+      />
     </div>
   );
 }

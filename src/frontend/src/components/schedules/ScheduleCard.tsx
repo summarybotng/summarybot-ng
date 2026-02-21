@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Play, Trash2, Calendar, Clock, Pencil } from "lucide-react";
+import { Play, Trash2, Calendar, Clock, Pencil, History } from "lucide-react";
 import type { Schedule } from "@/types";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -27,6 +27,7 @@ interface ScheduleCardProps {
   onEdit: (schedule: Schedule) => void;
   onDelete: (id: string) => void;
   onRunNow: (id: string) => void;
+  onViewHistory: (schedule: Schedule) => void;
   isDeleting: boolean;
   isRunning: boolean;
 }
@@ -38,6 +39,7 @@ export function ScheduleCard({
   onEdit,
   onDelete,
   onRunNow,
+  onViewHistory,
   isDeleting,
   isRunning,
 }: ScheduleCardProps) {
@@ -97,6 +99,15 @@ export function ScheduleCard({
                 checked={schedule.is_active}
                 onCheckedChange={(checked) => onToggle(schedule.id, checked)}
               />
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onViewHistory(schedule)}
+                title="View run history"
+              >
+                <History className="h-4 w-4" />
+              </Button>
 
               <Button
                 variant="ghost"

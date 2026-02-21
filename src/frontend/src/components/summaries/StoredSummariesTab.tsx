@@ -60,12 +60,13 @@ import type { StoredSummary, StoredSummaryDetail } from "@/types";
 
 interface StoredSummariesTabProps {
   guildId: string;
+  initialSource?: SummarySourceType;  // ADR-009: For deep linking from Archive page
 }
 
-export function StoredSummariesTab({ guildId }: StoredSummariesTabProps) {
+export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTabProps) {
   const [page, setPage] = useState(1);
   const [showArchived, setShowArchived] = useState(false);
-  const [sourceFilter, setSourceFilter] = useState<SummarySourceType>("all");  // ADR-008
+  const [sourceFilter, setSourceFilter] = useState<SummarySourceType>(initialSource || "all");  // ADR-008, ADR-009
   const [selectedSummary, setSelectedSummary] = useState<string | null>(null);
   const [pushModalSummary, setPushModalSummary] = useState<StoredSummary | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);

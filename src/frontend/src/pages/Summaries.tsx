@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSummaries, useSummary, useGenerateSummary, useTaskStatus, usePushSummary } from "@/hooks/useSummaries";
@@ -49,12 +49,35 @@ import type { Summary, SummaryOptions, GenerateRequest, Channel, PushToChannelRe
 
 export function Summaries() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: summariesData, isLoading, isError, error, refetch } = useSummaries(id || "");
   const { data: guild } = useGuild(id || "");
   const generateSummary = useGenerateSummary(id || "");
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
+
+  // ADR-009: Read source and highlight from URL params
+  const sourceParam = searchParams.get("source");
+  const highlightParam = searchParams.get("highlight");
+
+  // Set initial tab based on source param
+  const initialTab = sourceParam ? "stored" : "history";
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  // ADR-009: Update tab when source param changes
+  useEffect(() => {
+    if (sourceParam) {
+      setActiveTab("stored");
+    }
+  }, [sourceParam]);
+
+  // ADR-009: Clear params after reading them
+  useEffect(() => {
+    if (highlightParam || sourceParam) {
+      // Keep the params for StoredSummariesTab to read, but could clear after a delay
+    }
+  }, [highlightParam, sourceParam]);
+
   const [selectedSummary, setSelectedSummary] = useState<string | null>(null);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [scope, setScope] = useState<"channel" | "category" | "guild">("channel");
@@ -365,7 +388,7 @@ export function Summaries() {
       )}
 
       {/* Tabs for History vs Stored */}
-      <Tabs defaultValue="history" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="history" className="gap-2">
             <FileText className="h-4 w-4" />
@@ -452,7 +475,7 @@ export function Summaries() {
               Use the <strong>Source</strong> filter to view archive summaries or create a schedule with "Dashboard" destination.
             </p>
           </div>
-          <StoredSummariesTab guildId={id || ""} />
+          <StoredSummariesTab guildId={id || ""} initialSource={sourceParam as "archive" | undefined} />
         </TabsContent>
       </Tabs>
 

@@ -32,7 +32,7 @@ from ..models import (
     PushToChannelResponse,
     PushDeliveryResult,
 )
-from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_config_manager
+from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_config_manager, get_task_scheduler
 from ...data.base import SearchCriteria
 
 logger = logging.getLogger(__name__)
@@ -723,11 +723,24 @@ async def list_stored_summaries(
         include_archived=archived,
     )
 
+    # ADR-009: Build schedule name lookup for summaries with schedule_ids
+    schedule_names: dict[str, str] = {}
+    scheduler = get_task_scheduler()
+    if scheduler:
+        schedule_ids = {s.schedule_id for s in summaries if s.schedule_id}
+        for schedule_id in schedule_ids:
+            task = scheduler.get_task(schedule_id)
+            if task:
+                schedule_names[schedule_id] = task.name
+
     # Convert to response items
-    items = [
-        StoredSummaryListItem(**s.to_list_item_dict())
-        for s in summaries
-    ]
+    items = []
+    for s in summaries:
+        item_dict = s.to_list_item_dict()
+        # ADR-009: Add schedule_name if available
+        if s.schedule_id and s.schedule_id in schedule_names:
+            item_dict["schedule_name"] = schedule_names[s.schedule_id]
+        items.append(StoredSummaryListItem(**item_dict))
 
     return StoredSummaryListResponse(
         items=items,

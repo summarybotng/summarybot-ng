@@ -283,7 +283,12 @@ class TaskExecutor:
             logger.info(f"Fetched {len(all_messages)} total messages from {len(channel_ids)} channel(s)")
 
             # Create summarization context
-            channel_display = ", ".join(channel_names) if task.is_cross_channel() or task.is_category_summary() else channel_names[0]
+            if not channel_names:
+                channel_display = "Unknown Channel"
+            elif task.is_cross_channel() or task.is_category_summary():
+                channel_display = ", ".join(channel_names)
+            else:
+                channel_display = channel_names[0]
             context = SummarizationContext(
                 channel_name=channel_display,
                 guild_name=f"Guild {task.guild_id}",
@@ -767,9 +772,12 @@ class TaskExecutor:
             notification += "\n❌ **Task has been disabled due to repeated failures.**"
 
         try:
-            channel_id = discord_destinations[0].target
-            channel = self.discord_client.get_channel(int(channel_id))
-            if channel:
-                await channel.send(notification)
+            if discord_destinations:
+                channel_id = discord_destinations[0].target
+                channel = self.discord_client.get_channel(int(channel_id))
+                if channel:
+                    await channel.send(notification)
+            else:
+                logger.warning(f"No Discord destinations configured for failure notification")
         except Exception as e:
             logger.error(f"Failed to send failure notification: {e}")

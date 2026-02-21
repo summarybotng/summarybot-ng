@@ -240,6 +240,10 @@ class WebhookServer:
         except Exception as e:
             logger.error(f"Failed to initialize WhatsApp/Ingest API: {e}")
 
+        # Public feed serving routes at root level (clean URLs for RSS readers)
+        # These must be registered BEFORE the SPA catch-all route
+        self._setup_public_feed_routes()
+
         # Serve frontend static files in production (if dist/ exists)
         if has_frontend:
             assets_dir = frontend_dist / "assets"
@@ -269,6 +273,150 @@ class WebhookServer:
             logger.info(f"Frontend SPA serving enabled from {frontend_dist}")
         else:
             logger.info("Frontend dist/ not found, SPA serving disabled")
+
+    def _setup_public_feed_routes(self) -> None:
+        """Configure public feed serving routes at root level.
+
+        These routes serve RSS/Atom feeds without the /api/v1 prefix for cleaner URLs
+        that work well with RSS readers.
+        """
+        from fastapi import Path, Query
+        from fastapi.responses import Response
+
+        @self.app.get("/feeds/{feed_id}.rss", tags=["Feeds"], include_in_schema=True)
+        async def get_public_rss_feed(
+            request: Request,
+            feed_id: str = Path(..., description="Feed ID"),
+            token: Optional[str] = Query(None, description="Feed authentication token"),
+        ):
+            """Serve RSS 2.0 feed at root URL for RSS readers."""
+            return await self._serve_public_feed(request, feed_id, token, "rss")
+
+        @self.app.get("/feeds/{feed_id}.atom", tags=["Feeds"], include_in_schema=True)
+        async def get_public_atom_feed(
+            request: Request,
+            feed_id: str = Path(..., description="Feed ID"),
+            token: Optional[str] = Query(None, description="Feed authentication token"),
+        ):
+            """Serve Atom 1.0 feed at root URL for RSS readers."""
+            return await self._serve_public_feed(request, feed_id, token, "atom")
+
+        logger.info("Public feed routes registered at /feeds/*.rss and /feeds/*.atom")
+
+    async def _serve_public_feed(
+        self,
+        request: Request,
+        feed_id: str,
+        token: Optional[str],
+        feed_format: str,
+    ):
+        """Serve feed content with proper caching headers."""
+        from fastapi import HTTPException
+        from fastapi.responses import Response
+        from ..dashboard.routes import get_feed_repository, get_summary_repository
+        from ..models.feed import FeedType
+        from ..feeds.generator import FeedGenerator
+        from ..data.base import SearchCriteria
+
+        feed_repo = await get_feed_repository()
+        if not feed_repo:
+            raise HTTPException(status_code=503, detail="Database not available")
+
+        feed = await feed_repo.get_feed(feed_id)
+        if not feed:
+            raise HTTPException(status_code=404, detail="Feed not found")
+
+        # Check authentication for private feeds
+        if not feed.is_public:
+            if token != feed.token:
+                auth_header = request.headers.get("Authorization", "")
+                if auth_header.startswith("Bearer "):
+                    header_token = auth_header[7:]
+                    if header_token != feed.token:
+                        raise HTTPException(status_code=401, detail="Invalid feed token")
+                else:
+                    raise HTTPException(status_code=401, detail="Feed token required")
+
+        # Get guild info
+        if not self.discord_bot or not self.discord_bot.client:
+            raise HTTPException(status_code=503, detail="Discord bot not available")
+
+        guild = self.discord_bot.client.get_guild(int(feed.guild_id))
+        if not guild:
+            raise HTTPException(status_code=404, detail="Guild not found")
+
+        guild_name = guild.name
+        channel_name = None
+        if feed.channel_id:
+            channel = guild.get_channel(int(feed.channel_id))
+            channel_name = channel.name if channel else None
+
+        # Get summaries from database
+        summaries = []
+        summary_repo = await get_summary_repository()
+        if summary_repo:
+            criteria = SearchCriteria(
+                guild_id=feed.guild_id,
+                channel_id=feed.channel_id,
+                limit=feed.max_items,
+                order_by="created_at",
+                order_direction="DESC",
+            )
+            summaries = await summary_repo.find_summaries(criteria)
+
+        # Generate feed content
+        import os
+        base_url = os.environ.get("FEED_BASE_URL", "https://summarybot-ng.fly.dev")
+        dashboard_url = os.environ.get("DASHBOARD_URL", "https://summarybot.lovable.app")
+        generator = FeedGenerator(base_url, dashboard_url)
+
+        # Set feed type for generation
+        requested_type = FeedType.RSS if feed_format == "rss" else FeedType.ATOM
+        original_type = feed.feed_type
+        feed.feed_type = requested_type
+
+        try:
+            content = generator.generate(summaries, feed, guild_name, channel_name)
+        finally:
+            feed.feed_type = original_type
+
+        # Update access stats
+        await feed_repo.update_access_stats(feed_id)
+
+        # Generate caching headers
+        etag = FeedGenerator.generate_etag(feed_id, summaries)
+        last_modified = FeedGenerator.get_last_modified(summaries)
+
+        # Check If-None-Match header
+        if_none_match = request.headers.get("If-None-Match", "").strip('"')
+        if if_none_match == etag:
+            return Response(status_code=304)
+
+        # Check If-Modified-Since header
+        if_modified_since = request.headers.get("If-Modified-Since")
+        if if_modified_since:
+            try:
+                from email.utils import parsedate_to_datetime
+                ims_dt = parsedate_to_datetime(if_modified_since)
+                if ims_dt >= last_modified:
+                    return Response(status_code=304)
+            except (ValueError, TypeError):
+                pass
+
+        # Build response
+        content_type = feed.get_content_type()
+        headers = {
+            "ETag": f'"{etag}"',
+            "Last-Modified": last_modified.strftime("%a, %d %b %Y %H:%M:%S GMT"),
+            "Cache-Control": "public, max-age=300",
+            "Vary": "Accept-Encoding",
+        }
+
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers=headers,
+        )
 
     def _setup_error_handlers(self) -> None:
         """Configure global error handlers."""

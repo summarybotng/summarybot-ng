@@ -255,25 +255,30 @@ class MessageFetcher:
 
         # Convert datetime to snowflake for efficient positioning
         # This tells Discord API exactly where to start, avoiding slow iteration
-        # Ensure timezone-aware datetime for snowflake conversion
+        # Ensure timezone-aware datetimes for snowflake conversion and comparisons
         if start_time.tzinfo is None:
             start_time_aware = start_time.replace(tzinfo=timezone.utc)
         else:
             start_time_aware = start_time
+
+        if end_time.tzinfo is None:
+            end_time_aware = end_time.replace(tzinfo=timezone.utc)
+        else:
+            end_time_aware = end_time
 
         start_snowflake = discord.utils.time_snowflake(start_time_aware)
         after_obj = discord.Object(id=start_snowflake)
 
         logger.debug(
             f"Fetching messages from channel {channel.id}: "
-            f"start={start_time.isoformat()}, end={end_time.isoformat()}, "
+            f"start={start_time_aware.isoformat()}, end={end_time_aware.isoformat()}, "
             f"start_snowflake={start_snowflake}"
         )
 
         # Use discord.py's history method with snowflake-based after parameter
         async for message in channel.history(
             limit=None,
-            before=end_time,
+            before=end_time_aware,
             after=after_obj,
             oldest_first=True
         ):
@@ -281,7 +286,8 @@ class MessageFetcher:
                 break
 
             # Double-check time bounds (discord.py filtering isn't always precise)
-            if start_time <= message.created_at.replace(tzinfo=None) <= end_time:
+            # message.created_at is always timezone-aware (UTC)
+            if start_time_aware <= message.created_at <= end_time_aware:
                 yield message
                 total_fetched += 1
 

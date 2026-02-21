@@ -73,6 +73,9 @@ class ResolvedPrompt:
     file_path: Optional[str] = None  # The file path that was actually used
     tried_paths: List[str] = field(default_factory=list)  # All paths tried in order
     github_file_url: Optional[str] = None  # Full GitHub URL to the file (if from GitHub)
+    # Path resolution details - ADR-010
+    path_template: Optional[str] = None  # e.g., "prompts/{perspective}/{type}.md"
+    resolved_variables: Dict[str, str] = field(default_factory=dict)  # Variables that drove selection
 
     def get_age_seconds(self) -> float:
         """Get age of this resolved prompt in seconds."""
@@ -88,6 +91,9 @@ class ResolvedPrompt:
             "github_file_url": self.github_file_url,
             "version": self.version,
             "is_stale": self.is_stale,
+            # Path resolution details - ADR-010
+            "path_template": self.path_template,
+            "resolved_variables": self.resolved_variables,
         }
 
 

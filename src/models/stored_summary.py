@@ -194,6 +194,16 @@ class StoredSummary(BaseModel):
 
     def to_list_item_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for list display (minimal data)."""
+        # Extract generation details from metadata
+        summary_length = None
+        perspective = None
+        model_used = None
+        if self.summary_result and self.summary_result.metadata:
+            meta = self.summary_result.metadata
+            summary_length = meta.get("summary_length")
+            perspective = meta.get("perspective")
+            model_used = meta.get("model_used") or meta.get("model")
+
         return {
             "id": self.id,
             "guild_id": self.guild_id,
@@ -215,6 +225,10 @@ class StoredSummary(BaseModel):
             "source": self.source.value,
             "archive_period": self.archive_period,
             "archive_granularity": self.archive_granularity,
+            # Generation details
+            "summary_length": summary_length,
+            "perspective": perspective,
+            "model_used": model_used,
         }
 
     def to_dict(self) -> Dict[str, Any]:

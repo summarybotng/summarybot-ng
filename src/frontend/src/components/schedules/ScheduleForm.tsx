@@ -75,6 +75,9 @@ export function ScheduleForm({ formData, onChange, channels = [] }: ScheduleForm
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="fifteen-minutes">Every 15 Minutes</SelectItem>
+            <SelectItem value="hourly">Hourly</SelectItem>
+            <SelectItem value="every-4-hours">Every 4 Hours</SelectItem>
             <SelectItem value="daily">Daily</SelectItem>
             <SelectItem value="weekly">Weekly</SelectItem>
             <SelectItem value="monthly">Monthly</SelectItem>
@@ -107,14 +110,17 @@ export function ScheduleForm({ formData, onChange, channels = [] }: ScheduleForm
         </div>
       )}
 
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Time</label>
-        <Input
-          type="time"
-          value={formData.schedule_time}
-          onChange={(e) => onChange({ ...formData, schedule_time: e.target.value })}
-        />
-      </div>
+      {/* Hide time picker for interval-based schedules */}
+      {!["fifteen-minutes", "hourly", "every-4-hours"].includes(formData.schedule_type) && (
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Time</label>
+          <Input
+            type="time"
+            value={formData.schedule_time}
+            onChange={(e) => onChange({ ...formData, schedule_time: e.target.value })}
+          />
+        </div>
+      )}
 
       <div className="space-y-2">
         <label className="text-sm font-medium">Timezone</label>

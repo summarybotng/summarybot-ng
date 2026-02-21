@@ -64,6 +64,9 @@ class TaskType(Enum):
 class ScheduleType(Enum):
     """Types of scheduling."""
     ONCE = "once"
+    FIFTEEN_MINUTES = "fifteen-minutes"  # Every 15 minutes
+    HOURLY = "hourly"  # Every hour
+    EVERY_4_HOURS = "every-4-hours"  # Every 4 hours
     DAILY = "daily"
     WEEKLY = "weekly"
     HALF_WEEKLY = "half-weekly"  # Specific days of the week

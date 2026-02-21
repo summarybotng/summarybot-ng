@@ -133,6 +133,9 @@ export interface PromptSource {
   github_file_url: string | null;
   version: string;
   is_stale: boolean;
+  // Path resolution details - show what parameters drove prompt selection
+  path_template?: string | null;  // e.g., "prompts/{perspective}/{type}.md"
+  resolved_variables?: Record<string, string>;  // Variables that drove selection
 }
 
 export interface SummaryMetadata {
@@ -154,7 +157,7 @@ export interface Schedule {
   id: string;
   name: string;
   channel_ids: string[];
-  schedule_type: "daily" | "weekly" | "monthly" | "once";
+  schedule_type: "fifteen-minutes" | "hourly" | "every-4-hours" | "daily" | "weekly" | "monthly" | "once";
   schedule_time: string;
   schedule_days: number[] | null;
   timezone: string;
@@ -281,6 +284,10 @@ export interface StoredSummary {
   source: SummarySourceType;
   archive_period?: string;
   archive_granularity?: string;
+  // Summary generation details
+  summary_length?: string;  // brief, detailed, comprehensive
+  perspective?: string;  // general, developer, marketing, etc.
+  model_used?: string;  // e.g., claude-3-5-sonnet
 }
 
 export interface StoredSummaryDetail extends StoredSummary {

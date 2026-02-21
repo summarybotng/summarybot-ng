@@ -183,6 +183,20 @@ class PromptTemplateResolver:
         # Resolve paths using PATH config
         file_paths = self.path_parser.resolve_paths(path_config, context)
 
+        # Get the first matching route's path template for transparency
+        path_template = None
+        if path_config.fallback_chain and path_config.routes:
+            first_route = path_config.fallback_chain[0]
+            if first_route in path_config.routes:
+                path_template = path_config.routes[first_route].path_template
+
+        # Build resolved variables dict for transparency (ADR-010)
+        context_dict = context.to_dict()
+        resolved_variables = {
+            k: str(v) for k, v in context_dict.items()
+            if v and k in ['perspective', 'summary_type', 'category', 'channel_name']
+        }
+
         # Try each path until we find a file
         tried_paths = []
         for file_path in file_paths:
@@ -224,7 +238,9 @@ class PromptTemplateResolver:
                     variables=context.to_dict(),
                     file_path=file_path,
                     tried_paths=tried_paths,
-                    github_file_url=github_file_url
+                    github_file_url=github_file_url,
+                    path_template=path_template,
+                    resolved_variables=resolved_variables,
                 )
 
         # No prompt found in any path

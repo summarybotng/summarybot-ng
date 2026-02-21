@@ -347,6 +347,18 @@ class TaskScheduler:
             run_time = task.next_run or datetime.utcnow()
             return DateTrigger(run_date=run_time, timezone=self.timezone)
 
+        elif task.schedule_type == ScheduleType.FIFTEEN_MINUTES:
+            # Every 15 minutes
+            return IntervalTrigger(minutes=15, timezone=self.timezone)
+
+        elif task.schedule_type == ScheduleType.HOURLY:
+            # Every hour
+            return IntervalTrigger(hours=1, timezone=self.timezone)
+
+        elif task.schedule_type == ScheduleType.EVERY_4_HOURS:
+            # Every 4 hours
+            return IntervalTrigger(hours=4, timezone=self.timezone)
+
         elif task.schedule_type == ScheduleType.DAILY:
             # Daily execution
             if task.schedule_time:

@@ -691,6 +691,10 @@ class StoredSummaryListItem(BaseModel):
     source: str = "realtime"  # realtime, archive, scheduled, manual, imported
     archive_period: Optional[str] = None
     archive_granularity: Optional[str] = None
+    # Summary generation details
+    summary_length: Optional[str] = None  # brief, detailed, comprehensive
+    perspective: Optional[str] = None  # general, developer, marketing, etc.
+    model_used: Optional[str] = None  # e.g., claude-3-5-sonnet
 
 
 class StoredSummaryListResponse(BaseModel):

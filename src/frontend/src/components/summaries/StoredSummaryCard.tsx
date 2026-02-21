@@ -29,6 +29,8 @@ import {
   Tag,
   History,
   Clock,
+  Sparkles,
+  Settings2,
 } from "lucide-react";
 import type { StoredSummary, SummarySourceType } from "@/types";
 
@@ -202,6 +204,25 @@ export function StoredSummaryCard({
               </div>
             )}
           </div>
+
+          {/* Generation details - how the summary was made */}
+          {(summary.summary_length || summary.perspective || summary.model_used) && (
+            <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+              <Settings2 className="h-3 w-3" />
+              {summary.summary_length && (
+                <span className="capitalize">{summary.summary_length}</span>
+              )}
+              {summary.perspective && summary.perspective !== "general" && (
+                <span className="capitalize">{summary.perspective} view</span>
+              )}
+              {summary.model_used && (
+                <span className="flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" />
+                  {summary.model_used.replace("claude-", "").replace("-", " ")}
+                </span>
+              )}
+            </div>
+          )}
 
           {summary.tags.length > 0 && (
             <div className="mt-3 flex items-center gap-2">

@@ -604,13 +604,13 @@ function StoredSummaryDetailSheet({
                         <div className="flex items-start gap-2">
                           <GitBranch className="h-4 w-4 mt-0.5 text-muted-foreground" />
                           <div className="flex-1 space-y-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <Badge variant="outline" className="text-xs">
                                 {summary.metadata.prompt_source.source === "custom" ? "Custom Prompt" :
                                  summary.metadata.prompt_source.source === "cached" ? "Cached" :
                                  summary.metadata.prompt_source.source === "default" ? "Default" : "Fallback"}
                               </Badge>
-                              {summary.metadata.prompt_source.github_file_url && (
+                              {summary.metadata.prompt_source.github_file_url ? (
                                 <a
                                   href={summary.metadata.prompt_source.github_file_url}
                                   target="_blank"
@@ -618,6 +618,14 @@ function StoredSummaryDetailSheet({
                                   className="text-xs text-primary hover:underline flex items-center gap-1"
                                 >
                                   View on GitHub
+                                  <ExternalLink className="h-3 w-3" />
+                                </a>
+                              ) : (
+                                <a
+                                  href="/guilds"
+                                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                                >
+                                  View Default Prompts
                                   <ExternalLink className="h-3 w-3" />
                                 </a>
                               )}

@@ -302,7 +302,181 @@ Response includes scope information:
 }
 ```
 
-### 8. UI/UX Considerations
+### 8. Archive File Structure and Naming
+
+This is a critical decision point: how do we organize summaries when multiple channels are involved?
+
+#### Current Structure
+
+```
+summarybot-archive/
+└── sources/
+    └── discord/
+        └── {server-name}_{server_id}/
+            ├── summaries/                           # Server-wide summaries
+            │   └── 2025/01/2025-01-15_daily.md
+            └── channels/
+                └── {channel-name}_{channel_id}/
+                    └── summaries/                   # Per-channel summaries
+                        └── 2025/01/2025-01-15_daily.md
+```
+
+#### Proposed Structure with Scope Support
+
+**Option A: Combined Summaries (Recommended)**
+
+For category/guild scopes, generate ONE combined summary that includes all channels:
+
+```
+summarybot-archive/
+└── sources/
+    └── discord/
+        └── {server-name}_{server_id}/
+            ├── summaries/                           # Guild-scope summaries
+            │   └── 2025/01/2025-01-15_daily.md
+            ├── categories/
+            │   └── {category-name}_{category_id}/
+            │       └── summaries/                   # Category-scope summaries
+            │           └── 2025/01/2025-01-15_daily.md
+            └── channels/
+                └── {channel-name}_{channel_id}/
+                    └── summaries/                   # Channel-scope summaries
+                        └── 2025/01/2025-01-15_daily.md
+```
+
+**Pros:**
+- Single file to share/sync to Google Drive
+- Holistic view of activity across channels
+- Cleaner folder structure
+
+**Cons:**
+- Larger summaries
+- Can't easily compare channels
+
+**Option B: Per-Channel with Aggregation**
+
+Generate individual summaries per channel, plus an aggregate:
+
+```
+summarybot-archive/
+└── sources/
+    └── discord/
+        └── {server-name}_{server_id}/
+            ├── summaries/                           # Guild aggregate
+            │   └── 2025/01/2025-01-15_daily.md
+            │   └── 2025/01/2025-01-15_daily_index.md  # Links to channels
+            ├── categories/
+            │   └── {category-name}_{category_id}/
+            │       └── summaries/
+            │           └── 2025/01/2025-01-15_daily.md      # Category aggregate
+            │           └── 2025/01/2025-01-15_daily_index.md
+            └── channels/
+                └── {channel-name}_{channel_id}/
+                    └── summaries/
+                        └── 2025/01/2025-01-15_daily.md
+```
+
+**Pros:**
+- Granular per-channel data preserved
+- Can drill down or roll up
+
+**Cons:**
+- More files to sync
+- Higher cost (multiple LLM calls)
+- More complex
+
+#### Recommended Approach: Option A with Metadata
+
+Use **Option A (Combined)** but include channel breakdown in metadata:
+
+```python
+@dataclass
+class ArchiveSource:
+    source_type: SourceType
+    server_id: str
+    server_name: str
+    # Existing fields
+    channel_id: Optional[str] = None
+    channel_name: Optional[str] = None
+    # New fields for scope
+    scope: SummaryScope = SummaryScope.CHANNEL
+    category_id: Optional[str] = None
+    category_name: Optional[str] = None
+    included_channels: Optional[List[str]] = None  # Channel IDs in this summary
+
+    def get_archive_path(self, archive_root: Path) -> Path:
+        """Generate full archive path based on scope."""
+        base = archive_root / "sources" / self.source_type.value / self.folder_name
+
+        if self.scope == SummaryScope.CHANNEL and self.channel_id:
+            return base / "channels" / self.channel_folder_name / "summaries"
+        elif self.scope == SummaryScope.CATEGORY and self.category_id:
+            return base / "categories" / self.category_folder_name / "summaries"
+        else:  # GUILD scope
+            return base / "summaries"
+
+    @property
+    def category_folder_name(self) -> Optional[str]:
+        """Generate safe folder name for category."""
+        if not self.category_id or not self.category_name:
+            return None
+        safe_name = re.sub(r'[^\w\-]', '-', self.category_name.lower())
+        return f"{safe_name}_{self.category_id}"
+```
+
+#### Metadata for Multi-Channel Summaries
+
+The `.meta.json` file includes source channels:
+
+```json
+{
+  "summary_id": "sum_abc123",
+  "source": {
+    "scope": "category",
+    "server_id": "123456789",
+    "server_name": "My Server",
+    "category_id": "987654321",
+    "category_name": "Engineering",
+    "included_channels": [
+      {"id": "111", "name": "backend"},
+      {"id": "222", "name": "frontend"},
+      {"id": "333", "name": "devops"}
+    ]
+  },
+  "statistics": {
+    "message_count": 150,
+    "participant_count": 12,
+    "channels_summarized": 3
+  }
+}
+```
+
+#### Google Drive Sync Implications
+
+**Folder Structure in Drive:**
+```
+SummaryBot Archives/
+└── My Server/
+    ├── Server Summaries/
+    │   └── 2025-01-15_daily.md
+    ├── Categories/
+    │   └── Engineering/
+    │       └── 2025-01-15_daily.md
+    └── Channels/
+        └── general/
+            └── 2025-01-15_daily.md
+```
+
+**File Naming Convention:**
+- `{date}_{granularity}.md` - e.g., `2025-01-15_daily.md`
+- `{date}_{granularity}_{scope}.md` - e.g., `2025-01-15_daily_engineering-category.md` (alternative)
+
+**Sync Service Updates:**
+- Detect scope from metadata when syncing
+- Create appropriate folder structure in Drive
+- Include scope info in sync state tracking
+
+### 9. UI/UX Considerations
 
 1. **Scope Badge**: Show scope type badge on schedule cards (e.g., "Category: Engineering")
 2. **Channel Count**: Display resolved channel count for category/guild scopes
@@ -349,6 +523,9 @@ Response includes scope information:
 | `src/dashboard/routes/schedules.py` | Use scope resolver, update responses |
 | `src/dashboard/routes/archive.py` | Add scope to GenerateRequest, use resolver |
 | `src/scheduler/executor.py` | Dynamic channel resolution |
+| `src/archive/models.py` | Add scope, category_id, included_channels to ArchiveSource |
+| `src/archive/writer.py` | Handle category folder paths |
+| `src/archive/sync.py` | Update sync to respect scope-based folder structure |
 | `src/frontend/src/components/common/ScopeSelector.tsx` | New shared component |
 | `src/frontend/src/components/schedules/ScheduleForm.tsx` | Integrate ScopeSelector |
 | `src/frontend/src/pages/Archive.tsx` | Add scope to GenerateDialog |
@@ -363,15 +540,20 @@ Response includes scope information:
 - Dynamic resolution means schedules adapt to channel changes
 - Reduced friction for whole-category or whole-server summaries
 - Reusable components reduce code duplication
+- Clear archive organization by scope type
+- Google Drive sync maintains intuitive folder structure
 
 ### Negative
 - Migration complexity for existing schedules
 - More complex validation logic
 - Category/guild scopes may generate larger summaries (cost consideration)
+- Archive structure changes may affect existing file organization
 
 ### Risks
 - Large guild scopes could hit rate limits or timeouts
 - Category resolution depends on Discord API availability
+- Combined multi-channel summaries may exceed token limits
+- Google Drive folder reorganization during migration
 
 ## Related ADRs
 - ADR-005: Scheduled Summary Delivery

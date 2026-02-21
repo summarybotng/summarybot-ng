@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { format, subDays } from "date-fns";
+import { format, subDays, addDays } from "date-fns";
 import {
   useArchiveSources,
   useScanSource,
@@ -621,7 +621,16 @@ function GenerateDialog({
             <Input
               type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => {
+                const newStartDate = e.target.value;
+                setStartDate(newStartDate);
+                // Auto-set end date to one week after start date
+                if (newStartDate) {
+                  const startDateObj = new Date(newStartDate);
+                  const endDateObj = addDays(startDateObj, 7);
+                  setEndDate(format(endDateObj, "yyyy-MM-dd"));
+                }
+              }}
             />
           </div>
           <div className="space-y-2">

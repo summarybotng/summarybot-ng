@@ -321,12 +321,33 @@ async def test_webhook(
             detail={"code": "NOT_FOUND", "message": "Webhook not found"},
         )
 
-    # Send test request
-    test_payload = {
-        "type": "test",
-        "message": "This is a test from SummaryBot Dashboard",
-        "timestamp": datetime.utcnow().isoformat(),
-    }
+    # Build test payload based on webhook type
+    webhook_type = webhook.get("type", "generic")
+    test_message = "This is a test from SummaryBot Dashboard"
+
+    if webhook_type == "discord":
+        # Discord expects { "content": "..." }
+        test_payload = {
+            "content": test_message,
+        }
+    elif webhook_type == "slack":
+        # Slack expects { "text": "..." }
+        test_payload = {
+            "text": test_message,
+        }
+    elif webhook_type == "notion":
+        # Notion API format (simplified - real usage would need page_id etc.)
+        test_payload = {
+            "type": "test",
+            "message": test_message,
+        }
+    else:
+        # Generic webhook
+        test_payload = {
+            "type": "test",
+            "message": test_message,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
 
     start_time = time.time()
 

@@ -42,7 +42,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Webhook as WebhookIcon, Trash2, Loader2, Send, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Webhook as WebhookIcon, Trash2, Loader2, Send, CheckCircle2, XCircle, Pencil } from "lucide-react";
 import type { Webhook } from "@/types";
 
 export function Webhooks() {
@@ -55,7 +55,14 @@ export function Webhooks() {
   const { toast } = useToast();
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingWebhook, setEditingWebhook] = useState<Webhook | null>(null);
   const [formData, setFormData] = useState({
+    name: "",
+    url: "",
+    type: "generic" as Webhook["type"],
+  });
+  const [editFormData, setEditFormData] = useState({
     name: "",
     url: "",
     type: "generic" as Webhook["type"],
@@ -127,6 +134,54 @@ export function Webhooks() {
       toast({
         title: "Test failed",
         description: "Failed to test webhook.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEditOpen = (webhook: Webhook) => {
+    setEditingWebhook(webhook);
+    setEditFormData({
+      name: webhook.name,
+      url: "", // Don't show masked URL, let user enter new one if needed
+      type: webhook.type,
+    });
+    setEditOpen(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!editingWebhook) return;
+    try {
+      const updates: { name?: string; url?: string; type?: string } = {};
+      if (editFormData.name && editFormData.name !== editingWebhook.name) {
+        updates.name = editFormData.name;
+      }
+      if (editFormData.url) {
+        updates.url = editFormData.url;
+      }
+      if (editFormData.type !== editingWebhook.type) {
+        updates.type = editFormData.type;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        setEditOpen(false);
+        return;
+      }
+
+      await updateWebhook.mutateAsync({
+        webhookId: editingWebhook.id,
+        webhook: updates,
+      });
+      setEditOpen(false);
+      setEditingWebhook(null);
+      toast({
+        title: "Webhook updated",
+        description: "Your webhook has been updated.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update webhook.",
         variant: "destructive",
       });
     }
@@ -215,6 +270,75 @@ export function Webhooks() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Edit Dialog */}
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Webhook</DialogTitle>
+              <DialogDescription>
+                Update webhook settings
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Name</label>
+                <Input
+                  placeholder="Slack Notifications"
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">URL (leave empty to keep current)</label>
+                <Input
+                  type="url"
+                  placeholder="https://hooks.slack.com/..."
+                  value={editFormData.url}
+                  onChange={(e) => setEditFormData({ ...editFormData, url: e.target.value })}
+                />
+                {editingWebhook && (
+                  <p className="text-xs text-muted-foreground">
+                    Current: {editingWebhook.url_preview}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Type</label>
+                <Select
+                  value={editFormData.type}
+                  onValueChange={(v) => setEditFormData({ ...editFormData, type: v as Webhook["type"] })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="discord">Discord</SelectItem>
+                    <SelectItem value="slack">Slack</SelectItem>
+                    <SelectItem value="notion">Notion</SelectItem>
+                    <SelectItem value="generic">Generic</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleEditSave}
+                disabled={!editFormData.name || updateWebhook.isPending}
+              >
+                {updateWebhook.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </motion.div>
 
       {isLoading ? (
@@ -245,6 +369,7 @@ export function Webhooks() {
               onToggle={handleToggle}
               onDelete={handleDelete}
               onTest={handleTest}
+              onEdit={handleEditOpen}
               isDeleting={deleteWebhook.isPending}
               isTesting={testWebhook.isPending}
             />
@@ -261,6 +386,7 @@ function WebhookCard({
   onToggle,
   onDelete,
   onTest,
+  onEdit,
   isDeleting,
   isTesting,
 }: {
@@ -269,6 +395,7 @@ function WebhookCard({
   onToggle: (id: string, enabled: boolean) => void;
   onDelete: (id: string) => void;
   onTest: (id: string) => void;
+  onEdit: (webhook: Webhook) => void;
   isDeleting: boolean;
   isTesting: boolean;
 }) {
@@ -324,12 +451,22 @@ function WebhookCard({
                 size="icon"
                 onClick={() => onTest(webhook.id)}
                 disabled={isTesting}
+                title="Test webhook"
               >
                 {isTesting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Send className="h-4 w-4" />
                 )}
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onEdit(webhook)}
+                title="Edit webhook"
+              >
+                <Pencil className="h-4 w-4" />
               </Button>
 
               <AlertDialog>

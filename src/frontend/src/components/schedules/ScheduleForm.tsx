@@ -12,16 +12,36 @@ import { Archive, Hash, Globe } from "lucide-react";
 import type { Schedule, SummaryOptions, Destination, Channel } from "@/types";
 
 const TIMEZONES = [
+  "America/Toronto",
   "America/New_York",
   "America/Chicago",
   "America/Denver",
   "America/Los_Angeles",
+  "America/Vancouver",
   "Europe/London",
   "Europe/Paris",
+  "Europe/Berlin",
   "Asia/Tokyo",
+  "Asia/Singapore",
   "Australia/Sydney",
+  "Pacific/Auckland",
   "UTC",
 ];
+
+// Get user's browser timezone, fallback to America/Toronto
+function getBrowserTimezone(): string {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    // If the detected timezone is in our list, use it
+    if (TIMEZONES.includes(tz)) {
+      return tz;
+    }
+    // Otherwise default to America/Toronto (Eastern)
+    return "America/Toronto";
+  } catch {
+    return "America/Toronto";
+  }
+}
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -300,12 +320,12 @@ export function ScheduleForm({ formData, onChange, channels = [] }: ScheduleForm
   );
 }
 
-export const initialFormData: ScheduleFormData = {
+export const getInitialFormData = (): ScheduleFormData => ({
   name: "",
   schedule_type: "daily",
   schedule_time: "09:00",
   schedule_days: [],
-  timezone: "UTC",
+  timezone: getBrowserTimezone(),
   summary_length: "detailed",
   perspective: "general",
   destinations: {
@@ -315,7 +335,10 @@ export const initialFormData: ScheduleFormData = {
     webhook: false,
     webhook_url: "",
   },
-};
+});
+
+// For backwards compatibility
+export const initialFormData: ScheduleFormData = getInitialFormData();
 
 export function scheduleToFormData(schedule: Schedule): ScheduleFormData {
   // Extract destinations from schedule

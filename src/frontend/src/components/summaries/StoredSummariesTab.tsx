@@ -53,10 +53,49 @@ import {
   RefreshCw,
   Link,
   History,
+  GitBranch,
+  ExternalLink,
+  Sparkles,
+  Settings2,
 } from "lucide-react";
 import { StoredSummaryCard } from "./StoredSummaryCard";
 import { PushToChannelModal } from "./PushToChannelModal";
 import type { StoredSummary, StoredSummaryDetail } from "@/types";
+
+// Helper to group summaries by recency
+function groupSummariesByRecency(summaries: StoredSummary[]): {
+  today: StoredSummary[];
+  lastThreeDays: StoredSummary[];
+  thisWeek: StoredSummary[];
+  older: StoredSummary[];
+} {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const threeDaysAgo = new Date(today.getTime() - 3 * 24 * 60 * 60 * 1000);
+  const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  const groups = {
+    today: [] as StoredSummary[],
+    lastThreeDays: [] as StoredSummary[],
+    thisWeek: [] as StoredSummary[],
+    older: [] as StoredSummary[],
+  };
+
+  for (const summary of summaries) {
+    const createdAt = new Date(summary.created_at);
+    if (createdAt >= today) {
+      groups.today.push(summary);
+    } else if (createdAt >= threeDaysAgo) {
+      groups.lastThreeDays.push(summary);
+    } else if (createdAt >= weekAgo) {
+      groups.thisWeek.push(summary);
+    } else {
+      groups.older.push(summary);
+    }
+  }
+
+  return groups;
+}
 
 interface StoredSummariesTabProps {
   guildId: string;
@@ -245,21 +284,49 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
         </motion.div>
       )}
 
-      {/* Summary List */}
-      <div className="grid gap-4">
-        {summaries.map((summary, index) => (
-          <StoredSummaryCard
-            key={summary.id}
-            summary={summary}
-            index={index}
-            onView={() => setSelectedSummary(summary.id)}
-            onPush={() => setPushModalSummary(summary)}
-            onPin={() => handlePin(summary)}
-            onArchive={() => handleArchive(summary)}
-            onDelete={() => setDeleteConfirmId(summary.id)}
-          />
-        ))}
-      </div>
+      {/* Summary List - Grouped by Recency */}
+      {(() => {
+        const groups = groupSummariesByRecency(summaries);
+        let globalIndex = 0;
+
+        const renderGroup = (title: string, items: StoredSummary[], icon: React.ReactNode) => {
+          if (items.length === 0) return null;
+          const startIndex = globalIndex;
+          globalIndex += items.length;
+          return (
+            <div key={title} className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                {icon}
+                <span>{title}</span>
+                <span className="text-xs">({items.length})</span>
+              </div>
+              <div className="grid gap-3">
+                {items.map((summary, idx) => (
+                  <StoredSummaryCard
+                    key={summary.id}
+                    summary={summary}
+                    index={startIndex + idx}
+                    onView={() => setSelectedSummary(summary.id)}
+                    onPush={() => setPushModalSummary(summary)}
+                    onPin={() => handlePin(summary)}
+                    onArchive={() => handleArchive(summary)}
+                    onDelete={() => setDeleteConfirmId(summary.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        };
+
+        return (
+          <div className="space-y-6">
+            {renderGroup("Today", groups.today, <Clock className="h-4 w-4" />)}
+            {renderGroup("Last 3 Days", groups.lastThreeDays, <Calendar className="h-4 w-4" />)}
+            {renderGroup("This Week", groups.thisWeek, <Calendar className="h-4 w-4" />)}
+            {renderGroup("Older", groups.older, <History className="h-4 w-4" />)}
+          </div>
+        );
+      })()}
 
       {/* Pagination */}
       {totalPages > 1 && (
@@ -491,16 +558,94 @@ function StoredSummaryDetailSheet({
                 </Card>
               )}
 
-              {/* Metadata */}
+              {/* ADR-010: How This Summary Was Generated */}
               {summary.metadata && (
-                <div className="text-xs text-muted-foreground space-y-0.5">
-                  {(summary.metadata.model_used || summary.metadata.model) && (
-                    <p>Model: {summary.metadata.model_used || summary.metadata.model}</p>
-                  )}
-                  {typeof summary.metadata.tokens_used === "number" && (
-                    <p>Tokens used: {summary.metadata.tokens_used.toLocaleString()}</p>
-                  )}
-                </div>
+                <Card className="bg-muted/30">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Settings2 className="h-4 w-4" />
+                      How This Summary Was Generated
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      {(summary.metadata.model_used || summary.metadata.model) && (
+                        <div>
+                          <span className="text-muted-foreground">Model:</span>{" "}
+                          <span className="font-medium flex items-center gap-1 inline-flex">
+                            <Sparkles className="h-3 w-3" />
+                            {(summary.metadata.model_used || summary.metadata.model)?.replace("claude-", "").replace(/-/g, " ")}
+                          </span>
+                        </div>
+                      )}
+                      {summary.metadata.summary_length && (
+                        <div>
+                          <span className="text-muted-foreground">Length:</span>{" "}
+                          <span className="font-medium capitalize">{summary.metadata.summary_length}</span>
+                        </div>
+                      )}
+                      {summary.metadata.perspective && (
+                        <div>
+                          <span className="text-muted-foreground">Perspective:</span>{" "}
+                          <span className="font-medium capitalize">{summary.metadata.perspective}</span>
+                        </div>
+                      )}
+                      {typeof summary.metadata.tokens_used === "number" && (
+                        <div>
+                          <span className="text-muted-foreground">Tokens:</span>{" "}
+                          <span className="font-medium">{summary.metadata.tokens_used.toLocaleString()}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ADR-010: Prompt Source */}
+                    {summary.metadata.prompt_source && (
+                      <div className="pt-2 border-t border-border/50">
+                        <div className="flex items-start gap-2">
+                          <GitBranch className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs">
+                                {summary.metadata.prompt_source.source === "custom" ? "Custom Prompt" :
+                                 summary.metadata.prompt_source.source === "cached" ? "Cached" :
+                                 summary.metadata.prompt_source.source === "default" ? "Default" : "Fallback"}
+                              </Badge>
+                              {summary.metadata.prompt_source.github_file_url && (
+                                <a
+                                  href={summary.metadata.prompt_source.github_file_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                                >
+                                  View on GitHub
+                                  <ExternalLink className="h-3 w-3" />
+                                </a>
+                              )}
+                            </div>
+                            {summary.metadata.prompt_source.file_path && (
+                              <p className="text-xs text-muted-foreground font-mono">
+                                {summary.metadata.prompt_source.file_path}
+                              </p>
+                            )}
+                            {summary.metadata.prompt_source.path_template && (
+                              <p className="text-xs text-muted-foreground">
+                                Template: <code className="bg-muted px-1 rounded">{summary.metadata.prompt_source.path_template}</code>
+                              </p>
+                            )}
+                            {summary.metadata.prompt_source.resolved_variables &&
+                             Object.keys(summary.metadata.prompt_source.resolved_variables).length > 0 && (
+                              <p className="text-xs text-muted-foreground">
+                                Variables: {Object.entries(summary.metadata.prompt_source.resolved_variables)
+                                  .map(([k, v]) => `${k}=${v}`)
+                                  .join(", ")}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               )}
             </div>
           </>

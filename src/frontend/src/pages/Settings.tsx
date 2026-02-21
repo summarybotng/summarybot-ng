@@ -19,7 +19,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Save, Loader2, Server, Globe } from "lucide-react";
+import { Save, Loader2, Server, Globe, GitBranch, ExternalLink, RefreshCw } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import type { SummaryOptions } from "@/types";
 
 export function Settings() {
@@ -238,11 +239,78 @@ export function Settings() {
         </Card>
       </motion.div>
 
-      {/* Guild Info Card */}
+      {/* ADR-010: Prompt Configuration Card */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
+      >
+        <Card className="border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <GitBranch className="h-5 w-5" />
+              Prompt Configuration
+            </CardTitle>
+            <CardDescription>
+              Configure custom prompts from a GitHub repository to customize how summaries are generated
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between rounded-lg bg-muted/30 px-4 py-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                  <GitBranch className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="font-medium">Default Prompts</p>
+                  <p className="text-sm text-muted-foreground">
+                    Using built-in SummaryBot prompts
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-dashed border-border p-4">
+              <p className="text-sm font-medium mb-2">Custom Prompt Repository</p>
+              <p className="text-xs text-muted-foreground mb-3">
+                Point to a GitHub repository containing custom prompts. The repository should have a PATH file defining prompt routes.
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="https://github.com/your-org/prompts"
+                  className="flex-1"
+                  disabled
+                />
+                <Button variant="outline" disabled>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Sync
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Coming soon - Configure via Discord: <code>/config prompts repo:URL</code>
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <ExternalLink className="h-3 w-3" />
+              <a
+                href="https://github.com/summarybotng/prompts-template"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:underline"
+              >
+                View prompt repository template
+              </a>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Guild Info Card */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.25 }}
       >
         <Card className="border-border/50">
           <CardHeader>
@@ -275,7 +343,7 @@ export function Settings() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
+        transition={{ delay: 0.35 }}
       >
         <Card className="border-border/50">
           <CardHeader>

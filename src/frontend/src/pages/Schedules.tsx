@@ -27,7 +27,7 @@ import { ScheduleCard } from "@/components/schedules/ScheduleCard";
 import { RunHistoryDrawer } from "@/components/schedules/RunHistoryDrawer";
 import {
   ScheduleForm,
-  initialFormData,
+  getInitialFormData,
   scheduleToFormData,
   type ScheduleFormData,
 } from "@/components/schedules/ScheduleForm";
@@ -47,10 +47,10 @@ export function Schedules() {
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
   const [historySchedule, setHistorySchedule] = useState<Schedule | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [formData, setFormData] = useState<ScheduleFormData>(initialFormData);
+  const [formData, setFormData] = useState<ScheduleFormData>(() => getInitialFormData());
 
   const resetForm = () => {
-    setFormData(initialFormData);
+    setFormData(getInitialFormData());
   };
 
   const openEditDialog = (schedule: Schedule) => {

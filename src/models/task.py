@@ -3,12 +3,44 @@ Task and scheduling models.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from enum import Enum
 
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo  # type: ignore
+
 from .base import BaseModel, generate_id
 from .summary import SummaryOptions
+
+
+def _get_timezone(tz_name: str) -> Any:
+    """Get a timezone object from name, with fallback to UTC."""
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return timezone.utc
+
+
+def _localize_time(dt: datetime, tz_name: str) -> datetime:
+    """Create a timezone-aware datetime in the specified timezone."""
+    tz = _get_timezone(tz_name)
+    if dt.tzinfo is None:
+        # Naive datetime - treat as local time in the target timezone
+        return dt.replace(tzinfo=tz)
+    else:
+        # Already timezone-aware - convert to target timezone
+        return dt.astimezone(tz)
+
+
+def _to_utc(dt: datetime) -> datetime:
+    """Convert a timezone-aware datetime to UTC."""
+    if dt.tzinfo is None:
+        # Assume UTC if naive
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 class TaskStatus(Enum):
@@ -111,95 +143,109 @@ class ScheduledTask(BaseModel):
     resolve_category_at_runtime: bool = False  # Resolve category channels at execution time vs creation time
     
     def calculate_next_run(self, from_time: Optional[datetime] = None) -> Optional[datetime]:
-        """Calculate the next run time for this task."""
+        """Calculate the next run time for this task.
+
+        The schedule_time is interpreted in the task's timezone, and the
+        returned next_run is always in UTC for consistent storage/comparison.
+        """
         if not self.is_active:
             return None
-        
-        base_time = from_time or datetime.utcnow()
-        
+
+        # Get current time in UTC
+        utc_now = from_time or datetime.now(timezone.utc)
+        if utc_now.tzinfo is None:
+            utc_now = utc_now.replace(tzinfo=timezone.utc)
+
+        # Convert to task's timezone for schedule calculations
+        task_tz = _get_timezone(self.timezone)
+        local_now = utc_now.astimezone(task_tz)
+
         if self.schedule_type == ScheduleType.ONCE:
             # One-time tasks don't have a next run after completion
-            return None if self.last_run else base_time
-        
+            return None if self.last_run else utc_now
+
         if self.schedule_type == ScheduleType.DAILY:
-            next_run = base_time.replace(second=0, microsecond=0)
-            
+            # Build the next run time in the task's timezone
+            next_run_local = local_now.replace(second=0, microsecond=0)
+
             if self.schedule_time:
                 try:
                     hour, minute = map(int, self.schedule_time.split(':'))
-                    next_run = next_run.replace(hour=hour, minute=minute)
-                    
-                    # If the time has passed today, schedule for tomorrow
-                    if next_run <= base_time:
-                        next_run += timedelta(days=1)
+                    next_run_local = next_run_local.replace(hour=hour, minute=minute)
+
+                    # If the time has passed today (in local timezone), schedule for tomorrow
+                    if next_run_local <= local_now:
+                        next_run_local += timedelta(days=1)
                 except ValueError:
                     # Invalid time format, use current time + 1 day
-                    next_run += timedelta(days=1)
+                    next_run_local += timedelta(days=1)
             else:
                 # No specific time, run daily at the same time as now
-                next_run += timedelta(days=1)
-            
-            return next_run
-        
+                next_run_local += timedelta(days=1)
+
+            # Convert back to UTC for storage
+            return _to_utc(next_run_local)
+
         if self.schedule_type == ScheduleType.WEEKLY:
-            next_run = base_time.replace(second=0, microsecond=0)
-            
+            next_run_local = local_now.replace(second=0, microsecond=0)
+
             if self.schedule_time:
                 try:
                     hour, minute = map(int, self.schedule_time.split(':'))
-                    next_run = next_run.replace(hour=hour, minute=minute)
+                    next_run_local = next_run_local.replace(hour=hour, minute=minute)
                 except ValueError:
                     pass
-            
+
             # Find next scheduled day
-            current_weekday = base_time.weekday()  # 0=Monday
+            current_weekday = local_now.weekday()  # 0=Monday
             scheduled_days = self.schedule_days or [current_weekday]
-            
+
             days_ahead = None
             for day in sorted(scheduled_days):
-                if day > current_weekday or (day == current_weekday and next_run > base_time):
+                if day > current_weekday or (day == current_weekday and next_run_local > local_now):
                     days_ahead = day - current_weekday
                     break
-            
+
             if days_ahead is None:
                 # Next occurrence is next week
                 days_ahead = (7 - current_weekday) + min(scheduled_days)
-            
-            next_run += timedelta(days=days_ahead)
-            return next_run
+
+            next_run_local += timedelta(days=days_ahead)
+            return _to_utc(next_run_local)
         
         if self.schedule_type == ScheduleType.MONTHLY:
             # Simple monthly scheduling - same day of month
-            next_run = base_time.replace(second=0, microsecond=0, day=1)
-            
+            # Use local time for calculations
+            next_run_local = local_now.replace(second=0, microsecond=0, day=1)
+
             if self.schedule_time:
                 try:
                     hour, minute = map(int, self.schedule_time.split(':'))
-                    next_run = next_run.replace(hour=hour, minute=minute)
+                    next_run_local = next_run_local.replace(hour=hour, minute=minute)
                 except ValueError:
                     pass
-            
+
             # Try to use the same day of month as the original creation
             target_day = self.created_at.day
-            
+
             # Add one month
-            if next_run.month == 12:
-                next_run = next_run.replace(year=next_run.year + 1, month=1)
+            if next_run_local.month == 12:
+                next_run_local = next_run_local.replace(year=next_run_local.year + 1, month=1)
             else:
-                next_run = next_run.replace(month=next_run.month + 1)
-            
+                next_run_local = next_run_local.replace(month=next_run_local.month + 1)
+
             # Adjust for day of month
             try:
-                next_run = next_run.replace(day=target_day)
+                next_run_local = next_run_local.replace(day=target_day)
             except ValueError:
                 # Day doesn't exist in this month (e.g., Feb 31)
                 # Use last day of month
-                if next_run.month == 12:
-                    next_run = next_run.replace(year=next_run.year + 1, month=1, day=1) - timedelta(days=1)
+                if next_run_local.month == 12:
+                    next_run_local = next_run_local.replace(year=next_run_local.year + 1, month=1, day=1) - timedelta(days=1)
                 else:
-                    next_run = next_run.replace(month=next_run.month + 1, day=1) - timedelta(days=1)
-            
-            return next_run
+                    next_run_local = next_run_local.replace(month=next_run_local.month + 1, day=1) - timedelta(days=1)
+
+            return _to_utc(next_run_local)
         
         # CUSTOM type would use cron_expression (not implemented here)
         return None
@@ -208,15 +254,22 @@ class ScheduledTask(BaseModel):
         """Check if task should run now."""
         if not self.is_active:
             return False
-        
+
         if not self.next_run:
             self.next_run = self.calculate_next_run(current_time)
-        
+
         if not self.next_run:
             return False
-        
-        current_time = current_time or datetime.utcnow()
-        return current_time >= self.next_run
+
+        current_time = current_time or datetime.now(timezone.utc)
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=timezone.utc)
+
+        next_run = self.next_run
+        if next_run.tzinfo is None:
+            next_run = next_run.replace(tzinfo=timezone.utc)
+
+        return current_time >= next_run
     
     def mark_run_started(self) -> None:
         """Mark that a run has started."""

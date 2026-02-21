@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Save, Loader2, Server, Globe, GitBranch, ExternalLink, RefreshCw } from "lucide-react";
+import { Save, Loader2, Server, Globe, GitBranch, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import type { SummaryOptions } from "@/types";
 
@@ -291,17 +291,9 @@ export function Settings() {
               </p>
             </div>
 
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <ExternalLink className="h-3 w-3" />
-              <a
-                href="https://github.com/summarybotng/prompts-template"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:underline"
-              >
-                View prompt repository template
-              </a>
-            </div>
+            <p className="text-xs text-muted-foreground italic">
+              Documentation for custom prompt repositories coming soon.
+            </p>
           </CardContent>
         </Card>
       </motion.div>

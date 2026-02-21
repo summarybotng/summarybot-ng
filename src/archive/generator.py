@@ -234,7 +234,12 @@ class RetrospectiveGenerator:
         job_id = f"job_{uuid.uuid4().hex[:12]}"
 
         # Calculate periods
+        logger.info(
+            f"Creating job {job_id}: start_date={start_date} (type={type(start_date).__name__}), "
+            f"end_date={end_date} (type={type(end_date).__name__}), granularity={granularity}"
+        )
         periods = list(self._generate_periods(start_date, end_date, granularity))
+        logger.info(f"Job {job_id}: calculated {len(periods)} periods")
 
         job = GenerationJob(
             job_id=job_id,

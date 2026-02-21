@@ -103,9 +103,16 @@ class JobResponse(BaseModel):
     source_key: str
     status: str
     progress: Dict[str, Any]
+    cost: Optional[Dict[str, Any]] = None
+    date_range: Optional[Dict[str, str]] = None
+    granularity: Optional[str] = None
+    summary_type: Optional[str] = None
+    perspective: Optional[str] = None
+    server_name: Optional[str] = None
     created_at: str
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
+    pause_reason: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -515,6 +522,13 @@ async def get_backfill_report(request: BackfillReportRequest):
 async def generate_retrospective(request: GenerateRequest):
     """Generate retrospective summaries."""
     from src.archive.models import SourceType, ArchiveSource
+
+    logger.info(
+        f"Generate request: date_range.start={request.date_range.start} "
+        f"(type={type(request.date_range.start).__name__}), "
+        f"date_range.end={request.date_range.end} "
+        f"(type={type(request.date_range.end).__name__})"
+    )
 
     # Check if Discord bot is available for non-dry-run requests
     if not request.dry_run:

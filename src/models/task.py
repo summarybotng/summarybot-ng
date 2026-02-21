@@ -83,6 +83,13 @@ class DestinationType(Enum):
     DASHBOARD = "dashboard"  # ADR-005: Store in dashboard for viewing/manual push
 
 
+class SummaryScope(Enum):
+    """Scope types for summary generation (ADR-011)."""
+    CHANNEL = "channel"
+    CATEGORY = "category"
+    GUILD = "guild"
+
+
 @dataclass
 class Destination(BaseModel):
     """Delivery destination for scheduled summaries."""
@@ -139,11 +146,14 @@ class ScheduledTask(BaseModel):
     # Timezone support
     timezone: str = "UTC"  # Timezone for schedule times (e.g., "America/New_York")
 
+    # ADR-011: Unified scope selection
+    scope: SummaryScope = SummaryScope.CHANNEL
+
     # Category support
     category_id: Optional[str] = None  # Discord category ID for category-based summaries
     excluded_channel_ids: List[str] = field(default_factory=list)  # Channels to exclude from category
     category_mode: str = "combined"  # "combined" (one summary) or "individual" (per-channel summaries)
-    resolve_category_at_runtime: bool = False  # Resolve category channels at execution time vs creation time
+    resolve_category_at_runtime: bool = True  # Resolve channels at execution time (default for dynamic scope)
     
     def calculate_next_run(self, from_time: Optional[datetime] = None) -> Optional[datetime]:
         """Calculate the next run time for this task.

@@ -51,14 +51,27 @@ class DSTTransition(Enum):
     FALL_BACK = "fall_back"
 
 
+class ArchiveScopeType(Enum):
+    """Scope types for archive sources (ADR-011)."""
+    CHANNEL = "channel"
+    CATEGORY = "category"
+    GUILD = "guild"
+
+
 @dataclass
 class ArchiveSource:
-    """Platform-agnostic source identifier."""
+    """Platform-agnostic source identifier with scope support (ADR-011)."""
     source_type: SourceType
     server_id: str
     server_name: str
     channel_id: Optional[str] = None
     channel_name: Optional[str] = None
+    # ADR-011: Scope support
+    scope: ArchiveScopeType = ArchiveScopeType.CHANNEL
+    category_id: Optional[str] = None
+    category_name: Optional[str] = None
+    channel_ids: Optional[List[str]] = None  # Multiple channels for CHANNEL scope
+    channel_names: Optional[List[str]] = None
 
     @property
     def source_key(self) -> str:
@@ -79,32 +92,78 @@ class ArchiveSource:
         safe_name = re.sub(r'[^\w\-]', '-', self.channel_name.lower())
         return f"{safe_name}_{self.channel_id}"
 
+    @property
+    def category_folder_name(self) -> Optional[str]:
+        """Generate safe folder name for category (ADR-011)."""
+        if not self.category_id or not self.category_name:
+            return None
+        safe_name = re.sub(r'[^\w\-]', '-', self.category_name.lower())
+        return f"{safe_name}_{self.category_id}"
+
     def get_archive_path(self, archive_root: Path) -> Path:
-        """Generate full archive path for this source."""
+        """
+        Generate full archive path for this source (ADR-011).
+
+        Structure:
+        - CHANNEL scope: sources/{type}/{server}/channels/{channel}/summaries/
+        - CATEGORY scope: sources/{type}/{server}/categories/{category}/summaries/
+        - GUILD scope: sources/{type}/{server}/summaries/
+        """
         base = archive_root / "sources" / self.source_type.value / self.folder_name
-        if self.channel_id:
+
+        if self.scope == ArchiveScopeType.CHANNEL and self.channel_id:
             return base / "channels" / self.channel_folder_name / "summaries"
-        return base / "summaries"
+        elif self.scope == ArchiveScopeType.CATEGORY and self.category_id:
+            return base / "categories" / self.category_folder_name / "summaries"
+        else:
+            # GUILD scope or fallback
+            return base / "summaries"
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
-        return {
+        result = {
             "source_type": self.source_type.value,
             "server_id": self.server_id,
             "server_name": self.server_name,
-            "channel_id": self.channel_id,
-            "channel_name": self.channel_name,
+            "scope": self.scope.value,
         }
+        # Include channel fields for backward compatibility
+        if self.channel_id:
+            result["channel_id"] = self.channel_id
+        if self.channel_name:
+            result["channel_name"] = self.channel_name
+        # ADR-011: Include scope-specific fields
+        if self.category_id:
+            result["category_id"] = self.category_id
+        if self.category_name:
+            result["category_name"] = self.category_name
+        if self.channel_ids:
+            result["channel_ids"] = self.channel_ids
+        if self.channel_names:
+            result["channel_names"] = self.channel_names
+        return result
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ArchiveSource":
         """Deserialize from dictionary."""
+        # Handle scope with backward compatibility
+        scope_str = data.get("scope", "channel")
+        try:
+            scope = ArchiveScopeType(scope_str)
+        except ValueError:
+            scope = ArchiveScopeType.CHANNEL
+
         return cls(
             source_type=SourceType(data["source_type"]),
             server_id=data["server_id"],
             server_name=data["server_name"],
             channel_id=data.get("channel_id"),
             channel_name=data.get("channel_name"),
+            scope=scope,
+            category_id=data.get("category_id"),
+            category_name=data.get("category_name"),
+            channel_ids=data.get("channel_ids"),
+            channel_names=data.get("channel_names"),
         )
 
 

@@ -156,7 +156,11 @@ export interface SummaryMetadata {
 export interface Schedule {
   id: string;
   name: string;
+  // ADR-011: Unified scope selection
+  scope: "channel" | "category" | "guild";
   channel_ids: string[];
+  category_id?: string;
+  category_name?: string;
   schedule_type: "fifteen-minutes" | "hourly" | "every-4-hours" | "daily" | "weekly" | "monthly" | "once";
   schedule_time: string;
   schedule_days: number[] | null;

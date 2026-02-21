@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any
 import discord
 
 from .tasks import SummaryTask, CleanupTask
-from ..models.task import TaskResult, DestinationType, ScheduledTask, Destination
+from ..models.task import TaskResult, DestinationType, ScheduledTask, Destination, SummaryScope
 from ..models.summary import SummaryResult, SummarizationContext
 from ..models.stored_summary import StoredSummary
 from ..models.error_log import ErrorType, ErrorSeverity
@@ -21,6 +21,7 @@ from ..exceptions import (
 )
 from ..logging import CommandLogger, log_command, CommandType
 from ..logging.error_tracker import get_error_tracker
+from ..dashboard.models import SummaryScope as DashboardScope
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +85,9 @@ class TaskExecutor:
         start_time = datetime.utcnow()
         task.mark_started()
 
-        # Check if this is a category task that needs runtime resolution
-        if task.should_resolve_runtime():
-            await self._resolve_category_channels_runtime(task)
+        # ADR-011: Check if this task needs runtime scope resolution
+        if task.should_resolve_runtime() or self._needs_scope_resolution(task):
+            await self._resolve_scope_channels_runtime(task)
 
         # Check if this is individual mode
         if task.is_category_summary() and task.scheduled_task.category_mode == "individual":
@@ -95,32 +96,70 @@ class TaskExecutor:
         # Otherwise execute combined mode (default)
         return await self._execute_combined_mode(task, start_time)
 
+    def _needs_scope_resolution(self, task: SummaryTask) -> bool:
+        """Check if task needs scope-based channel resolution (ADR-011)."""
+        scope = getattr(task.scheduled_task, 'scope', None)
+        if scope is None:
+            return False
+        return scope in (SummaryScope.CATEGORY, SummaryScope.GUILD)
+
+    async def _resolve_scope_channels_runtime(self, task: SummaryTask) -> None:
+        """Resolve channels based on scope at runtime (ADR-011).
+
+        Args:
+            task: Summary task with scope to resolve
+        """
+        if not self.discord_client:
+            raise MessageFetchError("Discord client not available for scope resolution")
+
+        scope = getattr(task.scheduled_task, 'scope', SummaryScope.CHANNEL)
+        guild = self.discord_client.get_guild(int(task.guild_id))
+
+        if not guild:
+            raise MessageFetchError(f"Guild {task.guild_id} not found")
+
+        if scope == SummaryScope.CATEGORY:
+            # Resolve category channels
+            category_id = task.scheduled_task.category_id
+            if not category_id:
+                raise MessageFetchError("Category ID required for CATEGORY scope")
+
+            category = guild.get_channel(int(category_id))
+            if not isinstance(category, discord.CategoryChannel):
+                raise MessageFetchError(f"Category {category_id} not found or not accessible")
+
+            excluded = set(task.scheduled_task.excluded_channel_ids)
+            channels = [
+                ch for ch in category.text_channels
+                if str(ch.id) not in excluded
+                and ch.permissions_for(guild.me).read_message_history
+            ]
+
+            task.scheduled_task.channel_ids = [str(ch.id) for ch in channels]
+            logger.info(f"Resolved category '{category.name}' to {len(channels)} channels at runtime")
+
+        elif scope == SummaryScope.GUILD:
+            # Resolve all accessible text channels in guild
+            channels = [
+                ch for ch in guild.text_channels
+                if ch.permissions_for(guild.me).read_message_history
+            ]
+
+            task.scheduled_task.channel_ids = [str(ch.id) for ch in channels]
+            logger.info(f"Resolved guild scope to {len(channels)} channels at runtime")
+
+        else:
+            # CHANNEL scope - channels already set, just validate
+            logger.debug(f"Channel scope - using {len(task.scheduled_task.channel_ids)} pre-set channels")
+
     async def _resolve_category_channels_runtime(self, task: SummaryTask) -> None:
-        """Resolve category channels at runtime.
+        """Resolve category channels at runtime (legacy, delegates to scope resolver).
 
         Args:
             task: Summary task with category to resolve
         """
-        if not self.discord_client:
-            raise MessageFetchError("Discord client not available for category resolution")
-
-        category_id = task.scheduled_task.category_id
-        category = self.discord_client.get_channel(int(category_id))
-
-        if not isinstance(category, discord.CategoryChannel):
-            raise MessageFetchError(f"Category {category_id} not found or not accessible")
-
-        # Get text channels from category, excluding specified channels
-        excluded = set(task.scheduled_task.excluded_channel_ids)
-        channels = [
-            ch for ch in category.text_channels
-            if str(ch.id) not in excluded
-        ]
-
-        # Update task's channel_ids for this execution
-        task.scheduled_task.channel_ids = [str(ch.id) for ch in channels]
-
-        logger.info(f"Resolved category {category.name} to {len(channels)} channels at runtime")
+        # Delegate to scope-based resolution
+        await self._resolve_scope_channels_runtime(task)
 
     async def _execute_individual_mode(self, task: SummaryTask, start_time: datetime) -> TaskExecutionResult:
         """Execute task in individual mode - separate summaries per channel.

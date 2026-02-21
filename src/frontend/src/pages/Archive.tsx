@@ -27,6 +27,8 @@ import {
   type GenerateRequest,
   type GenerationJob,
 } from "@/hooks/useArchive";
+import { useGuild } from "@/hooks/useGuilds";
+import { ScopeSelector, type ScopeSelectorValue, getInitialScopeValue } from "@/components/ScopeSelector";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -111,6 +113,8 @@ export function Archive() {
   const { data: scanResult, isLoading: scanLoading } = useScanSource(selectedSource || "");
   const { data: costReport } = useCostReport();
   const { data: activeJob } = useGenerationJob(activeJobId);
+  // ADR-011: Get guild data for scope selection
+  const { data: guild } = useGuild(guildId || "");
 
   // Mutations
   const estimateCost = useEstimateCost();
@@ -196,6 +200,8 @@ export function Archive() {
             <GenerateDialog
               guildId={guildId || ""}
               sources={guildSources}
+              channels={guild?.channels || []}
+              categories={guild?.categories || []}
               onEstimate={async (request) => {
                 const result = await estimateCost.mutateAsync(request);
                 return result;
@@ -533,12 +539,16 @@ function StatBox({
 function GenerateDialog({
   guildId,
   sources,
+  channels,
+  categories,
   onEstimate,
   onGenerate,
   isPending,
 }: {
   guildId: string;
   sources: ArchiveSource[];
+  channels: { id: string; name: string; type: string }[];
+  categories: { id: string; name: string; channel_count: number }[];
   onEstimate: (request: GenerateRequest) => Promise<{ periods: number; estimated_cost_usd: number; estimated_tokens: number; model: string }>;
   onGenerate: (request: GenerateRequest) => Promise<void>;
   isPending: boolean;
@@ -554,21 +564,42 @@ function GenerateDialog({
   const [maxCost, setMaxCost] = useState<string>("");
   const [estimate, setEstimate] = useState<{ periods: number; estimated_cost_usd: number; estimated_tokens: number; model: string } | null>(null);
   const [estimating, setEstimating] = useState(false);
+  // ADR-011: Scope selection state
+  const [scopeValue, setScopeValue] = useState<ScopeSelectorValue>(getInitialScopeValue("guild"));
+
+  // Build request with scope
+  const buildRequest = (dryRun: boolean): GenerateRequest => {
+    const request: GenerateRequest = {
+      source_type: sourceType,
+      server_id: guildId,
+      scope: scopeValue.scope,
+      date_range: { start: startDate, end: endDate },
+      model,
+      summary_type: summaryType,
+      perspective,
+      skip_existing: skipExisting,
+      regenerate_failed: regenerateFailed,
+      dry_run: dryRun,
+    };
+
+    // Add scope-specific fields
+    if (scopeValue.scope === "channel" && scopeValue.channelIds.length > 0) {
+      request.channel_ids = scopeValue.channelIds;
+    } else if (scopeValue.scope === "category" && scopeValue.categoryId) {
+      request.category_id = scopeValue.categoryId;
+    }
+
+    if (!dryRun && maxCost) {
+      request.max_cost_usd = parseFloat(maxCost);
+    }
+
+    return request;
+  };
 
   const handleEstimate = async () => {
     setEstimating(true);
     try {
-      const result = await onEstimate({
-        source_type: sourceType,
-        server_id: guildId,
-        date_range: { start: startDate, end: endDate },
-        model,
-        summary_type: summaryType,
-        perspective,
-        skip_existing: skipExisting,
-        regenerate_failed: regenerateFailed,
-        dry_run: true,
-      });
+      const result = await onEstimate(buildRequest(true));
       setEstimate(result);
     } catch {
       setEstimate(null);
@@ -577,17 +608,7 @@ function GenerateDialog({
   };
 
   const handleGenerate = () => {
-    onGenerate({
-      source_type: sourceType,
-      server_id: guildId,
-      date_range: { start: startDate, end: endDate },
-      model,
-      summary_type: summaryType,
-      perspective,
-      skip_existing: skipExisting,
-      regenerate_failed: regenerateFailed,
-      max_cost_usd: maxCost ? parseFloat(maxCost) : undefined,
-    });
+    onGenerate(buildRequest(false));
   };
 
   return (
@@ -614,6 +635,17 @@ function GenerateDialog({
             </SelectContent>
           </Select>
         </div>
+
+        {/* ADR-011: Scope Selection */}
+        {sourceType === "discord" && (
+          <ScopeSelector
+            value={scopeValue}
+            onChange={setScopeValue}
+            channels={channels}
+            categories={categories}
+            compact
+          />
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">

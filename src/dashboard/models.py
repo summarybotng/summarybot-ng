@@ -381,7 +381,11 @@ class ScheduleListItem(BaseModel):
     """Schedule item in list."""
     id: str
     name: str
-    channel_ids: List[str]
+    # ADR-011: Scope-based channel selection
+    scope: str = "channel"  # channel, category, guild
+    channel_ids: List[str]  # Resolved channel IDs at response time
+    category_id: Optional[str] = None
+    category_name: Optional[str] = None  # Resolved for display
     schedule_type: str
     schedule_time: str
     schedule_days: Optional[List[int]]
@@ -403,7 +407,11 @@ class SchedulesResponse(BaseModel):
 class ScheduleCreateRequest(BaseModel):
     """Request to create schedule."""
     name: str
-    channel_ids: List[str]
+    # ADR-011: Scope-based channel selection
+    scope: SummaryScope = SummaryScope.CHANNEL  # Default for backwards compatibility
+    channel_ids: Optional[List[str]] = None     # Required for CHANNEL scope
+    category_id: Optional[str] = None           # Required for CATEGORY scope
+    # GUILD scope needs no additional fields
     schedule_type: str = "daily"
     schedule_time: str = "09:00"
     schedule_days: Optional[List[int]] = None
@@ -415,7 +423,10 @@ class ScheduleCreateRequest(BaseModel):
 class ScheduleUpdateRequest(BaseModel):
     """Request to update schedule."""
     name: Optional[str] = None
+    # ADR-011: Scope-based channel selection
+    scope: Optional[SummaryScope] = None
     channel_ids: Optional[List[str]] = None
+    category_id: Optional[str] = None
     schedule_type: Optional[str] = None
     schedule_time: Optional[str] = None
     schedule_days: Optional[List[int]] = None

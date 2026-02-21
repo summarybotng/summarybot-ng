@@ -9,7 +9,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Archive, Hash, Globe } from "lucide-react";
-import type { Schedule, SummaryOptions, Destination, Channel } from "@/types";
+import type { Schedule, SummaryOptions, Destination, Channel, Category } from "@/types";
+import { ScopeSelector, type ScopeSelectorValue, type ScopeType } from "@/components/ScopeSelector";
 
 const TIMEZONES = [
   "America/Toronto",
@@ -47,6 +48,10 @@ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export interface ScheduleFormData {
   name: string;
+  // ADR-011: Unified scope selection
+  scope: ScopeType;
+  channel_ids: string[];
+  category_id: string;
   schedule_type: Schedule["schedule_type"];
   schedule_time: string;
   schedule_days: number[];
@@ -67,10 +72,27 @@ interface ScheduleFormProps {
   formData: ScheduleFormData;
   onChange: (data: ScheduleFormData) => void;
   channels?: Channel[];
+  categories?: Category[];
 }
 
-export function ScheduleForm({ formData, onChange, channels = [] }: ScheduleFormProps) {
+export function ScheduleForm({ formData, onChange, channels = [], categories = [] }: ScheduleFormProps) {
   const textChannels = channels.filter((c) => c.type === "text");
+
+  // Convert form data to ScopeSelector value
+  const scopeValue: ScopeSelectorValue = {
+    scope: formData.scope,
+    channelIds: formData.channel_ids,
+    categoryId: formData.category_id,
+  };
+
+  const handleScopeChange = (value: ScopeSelectorValue) => {
+    onChange({
+      ...formData,
+      scope: value.scope,
+      channel_ids: value.channelIds,
+      category_id: value.categoryId,
+    });
+  };
 
   return (
     <div className="space-y-4 py-4">
@@ -82,6 +104,15 @@ export function ScheduleForm({ formData, onChange, channels = [] }: ScheduleForm
           onChange={(e) => onChange({ ...formData, name: e.target.value })}
         />
       </div>
+
+      {/* ADR-011: Scope Selection */}
+      <ScopeSelector
+        value={scopeValue}
+        onChange={handleScopeChange}
+        channels={channels}
+        categories={categories}
+        compact
+      />
 
       <div className="space-y-2">
         <label className="text-sm font-medium">Schedule Type</label>
@@ -322,6 +353,10 @@ export function ScheduleForm({ formData, onChange, channels = [] }: ScheduleForm
 
 export const getInitialFormData = (): ScheduleFormData => ({
   name: "",
+  // ADR-011: Default to channel scope
+  scope: "channel",
+  channel_ids: [],
+  category_id: "",
   schedule_type: "daily",
   schedule_time: "09:00",
   schedule_days: [],
@@ -346,8 +381,14 @@ export function scheduleToFormData(schedule: Schedule): ScheduleFormData {
   const discordDest = schedule.destinations.find((d) => d.type === "discord_channel");
   const webhookDest = schedule.destinations.find((d) => d.type === "webhook");
 
+  // ADR-011: Extract scope from schedule
+  const scope = (schedule.scope as ScopeType) || "channel";
+
   return {
     name: schedule.name,
+    scope,
+    channel_ids: schedule.channel_ids || [],
+    category_id: schedule.category_id || "",
     schedule_type: schedule.schedule_type,
     schedule_time: schedule.schedule_time,
     schedule_days: schedule.schedule_days || [],

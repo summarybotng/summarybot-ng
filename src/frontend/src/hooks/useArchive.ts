@@ -47,7 +47,10 @@ export interface CostEstimate {
 export interface GenerateRequest {
   source_type: string;
   server_id: string;
+  // ADR-011: Unified scope selection
+  scope?: "channel" | "category" | "guild";
   channel_ids?: string[];
+  category_id?: string;
   date_range: {
     start: string;
     end: string;

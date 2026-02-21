@@ -65,9 +65,20 @@ export function Schedules() {
 
   const handleCreate = async () => {
     try {
+      // ADR-011: Determine channel_ids based on scope
+      let channelIds: string[] = [];
+      if (formData.scope === "channel") {
+        channelIds = formData.channel_ids.length > 0
+          ? formData.channel_ids
+          : guild?.config.enabled_channels || [];
+      }
+      // For category and guild scopes, channels are resolved server-side
+
       await createSchedule.mutateAsync({
         name: formData.name,
-        channel_ids: guild?.config.enabled_channels || [],
+        scope: formData.scope,
+        channel_ids: channelIds,
+        category_id: formData.scope === "category" ? formData.category_id : undefined,
         schedule_type: formData.schedule_type,
         schedule_time: formData.schedule_time,
         schedule_days: formData.schedule_type === "weekly" ? formData.schedule_days : undefined,
@@ -99,10 +110,21 @@ export function Schedules() {
     if (!editingSchedule) return;
 
     try {
+      // ADR-011: Determine channel_ids based on scope
+      let channelIds: string[] | undefined = undefined;
+      if (formData.scope === "channel") {
+        channelIds = formData.channel_ids.length > 0
+          ? formData.channel_ids
+          : guild?.config.enabled_channels || [];
+      }
+
       await updateSchedule.mutateAsync({
         scheduleId: editingSchedule.id,
         schedule: {
           name: formData.name,
+          scope: formData.scope,
+          channel_ids: channelIds,
+          category_id: formData.scope === "category" ? formData.category_id : undefined,
           schedule_type: formData.schedule_type,
           schedule_time: formData.schedule_time,
           schedule_days: formData.schedule_type === "weekly" ? formData.schedule_days : undefined,
@@ -209,7 +231,12 @@ export function Schedules() {
                 Set up an automated summary schedule
               </DialogDescription>
             </DialogHeader>
-            <ScheduleForm formData={formData} onChange={setFormData} />
+            <ScheduleForm
+              formData={formData}
+              onChange={setFormData}
+              channels={guild?.channels || []}
+              categories={guild?.categories || []}
+            />
             <DialogFooter>
               <Button variant="outline" onClick={() => setCreateOpen(false)}>
                 Cancel
@@ -247,7 +274,12 @@ export function Schedules() {
               Modify your automated summary schedule
             </DialogDescription>
           </DialogHeader>
-          <ScheduleForm formData={formData} onChange={setFormData} />
+          <ScheduleForm
+            formData={formData}
+            onChange={setFormData}
+            channels={guild?.channels || []}
+            categories={guild?.categories || []}
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingSchedule(null)}>
               Cancel

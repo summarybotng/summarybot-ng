@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Query
 from pydantic import BaseModel, Field
 
 from . import get_discord_bot
+from ..models import SummaryScope
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,10 @@ def get_model_for_summary_type(summary_type: str, explicit_model: Optional[str] 
 class GenerateRequest(BaseModel):
     source_type: str
     server_id: str
-    channel_ids: Optional[List[str]] = None
+    # ADR-011: Unified scope selection
+    scope: SummaryScope = SummaryScope.GUILD  # Default to guild for retrospective
+    channel_ids: Optional[List[str]] = None  # For CHANNEL scope
+    category_id: Optional[str] = None  # For CATEGORY scope
     date_range: DateRangeRequest
     granularity: str = "daily"
     timezone: str = "UTC"
@@ -69,7 +73,10 @@ class GenerateRequest(BaseModel):
 class BackfillReportRequest(BaseModel):
     source_type: str
     server_id: str
-    channel_ids: Optional[List[str]] = None
+    # ADR-011: Unified scope selection
+    scope: SummaryScope = SummaryScope.GUILD
+    channel_ids: Optional[List[str]] = None  # For CHANNEL scope
+    category_id: Optional[str] = None  # For CATEGORY scope
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     include_outdated: bool = False
@@ -521,29 +528,66 @@ async def get_backfill_report(request: BackfillReportRequest):
 @router.post("/generate", response_model=JobResponse)
 async def generate_retrospective(request: GenerateRequest):
     """Generate retrospective summaries."""
-    from src.archive.models import SourceType, ArchiveSource
+    from src.archive.models import SourceType, ArchiveSource, ArchiveScopeType
+    from ..utils.scope_resolver import resolve_channels_for_scope
 
     logger.info(
         f"Generate request: date_range.start={request.date_range.start} "
         f"(type={type(request.date_range.start).__name__}), "
         f"date_range.end={request.date_range.end} "
-        f"(type={type(request.date_range.end).__name__})"
+        f"(type={type(request.date_range.end).__name__}), "
+        f"scope={request.scope}"
     )
 
     # Check if Discord bot is available for non-dry-run requests
+    bot = get_discord_bot()
     if not request.dry_run:
-        bot = get_discord_bot()
         if not bot:
             raise HTTPException(
                 503,
                 "Discord bot not available. Archive generation requires the bot to fetch messages."
             )
 
+    # ADR-011: Resolve channels based on scope
+    resolved_channel_ids = request.channel_ids or []
+    category_id = request.category_id
+    category_name = None
+    server_name = request.server_id
+
+    if bot and bot.client:
+        guild = bot.client.get_guild(int(request.server_id))
+        if guild:
+            server_name = guild.name
+
+            # Resolve channels based on scope
+            resolved = await resolve_channels_for_scope(
+                guild=guild,
+                scope=request.scope,
+                channel_ids=request.channel_ids,
+                category_id=request.category_id,
+            )
+            resolved_channel_ids = [str(ch.id) for ch in resolved.channels]
+
+            if resolved.category_info:
+                category_id = str(resolved.category_info.id)
+                category_name = resolved.category_info.name
+
+    # Convert scope to archive scope type
+    try:
+        archive_scope = ArchiveScopeType(request.scope.value)
+    except (ValueError, AttributeError):
+        archive_scope = ArchiveScopeType.GUILD
+
+    # Create source with scope info (ADR-011)
     source = ArchiveSource(
         source_type=SourceType(request.source_type),
         server_id=request.server_id,
-        server_name=request.server_id,
-        channel_id=request.channel_ids[0] if request.channel_ids and len(request.channel_ids) == 1 else None,
+        server_name=server_name,
+        scope=archive_scope,
+        channel_id=resolved_channel_ids[0] if len(resolved_channel_ids) == 1 else None,
+        channel_ids=resolved_channel_ids if len(resolved_channel_ids) > 1 else None,
+        category_id=category_id,
+        category_name=category_name,
     )
 
     generator = await get_generator()
@@ -565,7 +609,7 @@ async def generate_retrospective(request: GenerateRequest):
     # Start job in background if not dry run
     if not request.dry_run:
         import asyncio
-        message_fetcher = create_message_fetcher(request.channel_ids)
+        message_fetcher = create_message_fetcher(resolved_channel_ids)
         asyncio.create_task(generator.run_job(job.job_id, message_fetcher=message_fetcher))
 
     return JobResponse(**job.to_dict())

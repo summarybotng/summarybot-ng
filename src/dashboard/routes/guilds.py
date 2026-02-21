@@ -5,6 +5,8 @@ Guild routes for dashboard API.
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
+
+import discord
 from fastapi import APIRouter, Depends, HTTPException, Path
 
 from ..auth import get_current_user
@@ -144,7 +146,21 @@ async def get_guild(
     channels = []
     categories = {}
 
-    for channel in guild.text_channels:
+    # Get text channels - use cached channels or fetch if empty
+    text_channels = guild.text_channels
+    if not text_channels:
+        # Channels not in cache, try to fetch them
+        logger.warning(f"No text channels in cache for guild {guild_id}, attempting fetch")
+        try:
+            # Fetch all channels for the guild
+            fetched_channels = await guild.fetch_channels()
+            text_channels = [ch for ch in fetched_channels if isinstance(ch, discord.TextChannel)]
+            logger.info(f"Fetched {len(text_channels)} text channels for guild {guild_id}")
+        except Exception as e:
+            logger.error(f"Failed to fetch channels for guild {guild_id}: {e}")
+            text_channels = []
+
+    for channel in text_channels:
         category_name = channel.category.name if channel.category else None
         category_id = str(channel.category.id) if channel.category else None
 
@@ -329,8 +345,16 @@ async def sync_channels(
             guild_config = current_config.guild_configs.get(guild_id)
     enabled_channels = set(guild_config.enabled_channels if guild_config else [])
 
-    # Build current channel list
-    current_channels = {str(c.id) for c in guild.text_channels}
+    # Build current channel list - always fetch to ensure fresh data
+    try:
+        fetched_channels = await guild.fetch_channels()
+        text_channels = [ch for ch in fetched_channels if isinstance(ch, discord.TextChannel)]
+        logger.info(f"Sync: Fetched {len(text_channels)} text channels for guild {guild_id}")
+    except Exception as e:
+        logger.error(f"Sync: Failed to fetch channels for guild {guild_id}: {e}")
+        text_channels = list(guild.text_channels)
+
+    current_channels = {str(c.id) for c in text_channels}
 
     # Calculate changes
     # Channels that were enabled but no longer exist
@@ -344,7 +368,7 @@ async def sync_channels(
 
     # Build channel response
     channels = []
-    for channel in guild.text_channels:
+    for channel in text_channels:
         category_name = channel.category.name if channel.category else None
         channels.append(
             ChannelResponse(

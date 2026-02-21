@@ -18,8 +18,10 @@ from ..models import (
     ExecutionHistoryItem,
     DestinationResponse,
     SummaryOptionsResponse,
+    SummaryScope,
     ErrorResponse,
 )
+from ..utils.scope_resolver import resolve_channels_for_scope
 from . import get_discord_bot, get_task_scheduler, get_task_repository
 
 logger = logging.getLogger(__name__)
@@ -55,7 +57,7 @@ def _get_guild_or_404(guild_id: str):
     return guild
 
 
-def _task_to_response(task) -> ScheduleListItem:
+def _task_to_response(task, category_name: str = None) -> ScheduleListItem:
     """Convert ScheduledTask to API response."""
     destinations = []
     for dest in task.destinations:
@@ -67,10 +69,26 @@ def _task_to_response(task) -> ScheduleListItem:
             )
         )
 
+    # ADR-011: Include scope info
+    scope_value = getattr(task, 'scope', None)
+    if scope_value:
+        scope_str = scope_value.value if hasattr(scope_value, 'value') else str(scope_value)
+    else:
+        # Infer scope from existing fields for backward compatibility
+        if task.category_id:
+            scope_str = "category"
+        elif len(task.get_all_channel_ids()) > 1 or not task.get_all_channel_ids():
+            scope_str = "guild"
+        else:
+            scope_str = "channel"
+
     return ScheduleListItem(
         id=task.id,
         name=task.name,
+        scope=scope_str,
         channel_ids=task.get_all_channel_ids(),
+        category_id=task.category_id,
+        category_name=category_name,
         schedule_type=task.schedule_type.value,
         schedule_time=task.schedule_time or "00:00",
         schedule_days=task.schedule_days if task.schedule_days else None,
@@ -106,7 +124,7 @@ async def list_schedules(
 ):
     """List schedules for a guild."""
     _check_guild_access(guild_id, user)
-    _get_guild_or_404(guild_id)
+    guild = _get_guild_or_404(guild_id)
 
     scheduler = get_task_scheduler()
     if not scheduler:
@@ -114,7 +132,19 @@ async def list_schedules(
 
     # Get tasks for this guild
     tasks = await scheduler.get_scheduled_tasks(guild_id)
-    schedules = [_task_to_response(task) for task in tasks]
+
+    # Build category name lookup
+    schedules = []
+    for task in tasks:
+        category_name = None
+        if task.category_id:
+            try:
+                category = guild.get_channel(int(task.category_id))
+                if category:
+                    category_name = category.name
+            except Exception:
+                pass
+        schedules.append(_task_to_response(task, category_name=category_name))
 
     return SchedulesResponse(schedules=schedules)
 
@@ -145,18 +175,31 @@ async def create_schedule(
             detail={"code": "SCHEDULER_UNAVAILABLE", "message": "Scheduler not available"},
         )
 
-    # Validate channels
-    guild_channels = {str(c.id) for c in guild.text_channels}
-    invalid_channels = set(body.channel_ids) - guild_channels
-    if invalid_channels:
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "INVALID_CHANNELS", "message": f"Invalid channel IDs: {', '.join(invalid_channels)}"},
-        )
-
-    # Create task
-    from ...models.task import ScheduledTask, ScheduleType, Destination, DestinationType
+    # ADR-011: Resolve channels based on scope
+    from ...models.task import ScheduledTask, ScheduleType, Destination, DestinationType, SummaryScope as TaskScope
     from ...models.summary import SummaryOptions, SummaryLength
+
+    # Convert scope to task scope enum
+    try:
+        task_scope = TaskScope(body.scope.value if hasattr(body.scope, 'value') else body.scope)
+    except ValueError:
+        task_scope = TaskScope.CHANNEL
+
+    # Resolve channels for scope
+    resolved = await resolve_channels_for_scope(
+        guild=guild,
+        scope=body.scope,
+        channel_ids=body.channel_ids,
+        category_id=body.category_id,
+    )
+
+    # Get resolved channel IDs
+    channel_ids = [str(ch.id) for ch in resolved.channels]
+    category_id = body.category_id
+    category_name = None
+
+    if resolved.category_info:
+        category_name = resolved.category_info.name
 
     # Convert destinations
     destinations = []
@@ -182,8 +225,10 @@ async def create_schedule(
 
     task = ScheduledTask(
         name=body.name,
-        channel_id=body.channel_ids[0] if body.channel_ids else "",
-        channel_ids=body.channel_ids,
+        scope=task_scope,
+        channel_id=channel_ids[0] if channel_ids else "",
+        channel_ids=channel_ids,
+        category_id=category_id,
         guild_id=guild_id,
         schedule_type=schedule_type,
         schedule_time=body.schedule_time,
@@ -193,6 +238,7 @@ async def create_schedule(
         summary_options=summary_opts,
         is_active=True,
         created_by=user["sub"],
+        resolve_category_at_runtime=(task_scope in (TaskScope.CATEGORY, TaskScope.GUILD)),
     )
 
     # Calculate next run
@@ -201,7 +247,7 @@ async def create_schedule(
     # Add to scheduler
     await scheduler.schedule_task(task)
 
-    return _task_to_response(task)
+    return _task_to_response(task, category_name=category_name)
 
 
 @router.get(
@@ -221,6 +267,7 @@ async def get_schedule(
 ):
     """Get schedule details."""
     _check_guild_access(guild_id, user)
+    guild = _get_guild_or_404(guild_id)
 
     scheduler = get_task_scheduler()
     if not scheduler:
@@ -236,7 +283,17 @@ async def get_schedule(
             detail={"code": "NOT_FOUND", "message": "Schedule not found"},
         )
 
-    return _task_to_response(task)
+    # Get category name if applicable
+    category_name = None
+    if task.category_id:
+        try:
+            category = guild.get_channel(int(task.category_id))
+            if category:
+                category_name = category.name
+        except Exception:
+            pass
+
+    return _task_to_response(task, category_name=category_name)
 
 
 @router.patch(
@@ -277,17 +334,45 @@ async def update_schedule(
     if body.name is not None:
         task.name = body.name
 
-    if body.channel_ids is not None:
-        # Validate channels
-        guild_channels = {str(c.id) for c in guild.text_channels}
-        invalid_channels = set(body.channel_ids) - guild_channels
-        if invalid_channels:
-            raise HTTPException(
-                status_code=400,
-                detail={"code": "INVALID_CHANNELS", "message": f"Invalid channel IDs: {', '.join(invalid_channels)}"},
-            )
-        task.channel_id = body.channel_ids[0] if body.channel_ids else ""
-        task.channel_ids = body.channel_ids
+    # ADR-011: Handle scope updates
+    category_name = None
+    if body.scope is not None or body.category_id is not None or body.channel_ids is not None:
+        from ...models.task import SummaryScope as TaskScope
+
+        # Determine which scope to use
+        scope = body.scope if body.scope is not None else task.scope
+        category_id = body.category_id if body.category_id is not None else task.category_id
+        channel_ids = body.channel_ids if body.channel_ids is not None else task.channel_ids
+
+        # Convert to enum if needed
+        if hasattr(scope, 'value'):
+            scope_enum = SummaryScope(scope.value)
+        elif isinstance(scope, str):
+            scope_enum = SummaryScope(scope)
+        else:
+            scope_enum = scope
+
+        # Resolve channels based on scope
+        resolved = await resolve_channels_for_scope(
+            guild=guild,
+            scope=scope_enum,
+            channel_ids=channel_ids,
+            category_id=category_id,
+        )
+
+        # Update task with resolved scope
+        try:
+            task.scope = TaskScope(scope_enum.value)
+        except ValueError:
+            task.scope = TaskScope.CHANNEL
+
+        task.channel_ids = [str(ch.id) for ch in resolved.channels]
+        task.channel_id = task.channel_ids[0] if task.channel_ids else ""
+        task.category_id = category_id if scope_enum == SummaryScope.CATEGORY else None
+        task.resolve_category_at_runtime = scope_enum in (SummaryScope.CATEGORY, SummaryScope.GUILD)
+
+        if resolved.category_info:
+            category_name = resolved.category_info.name
 
     if body.schedule_type is not None:
         from ...models.task import ScheduleType
@@ -328,7 +413,7 @@ async def update_schedule(
     # Update in scheduler
     await scheduler.update_task(task)
 
-    return _task_to_response(task)
+    return _task_to_response(task, category_name=category_name)
 
 
 @router.delete(

@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { useGuild, useUpdateConfig } from "@/hooks/useGuilds";
 import { useHealth } from "@/hooks/useHealth";
-import { useTimezone, TIMEZONE_OPTIONS } from "@/contexts/TimezoneContext";
+import { useTimezone, TIMEZONE_OPTIONS, parseAsUTC } from "@/contexts/TimezoneContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -358,7 +358,7 @@ export function Settings() {
                 <dt className="text-sm font-medium text-muted-foreground">Built</dt>
                 <dd className="text-sm">
                   {health?.build_date
-                    ? formatDistanceToNow(new Date(health.build_date), { addSuffix: true })
+                    ? formatDistanceToNow(parseAsUTC(health.build_date), { addSuffix: true })
                     : "—"}
                 </dd>
               </div>

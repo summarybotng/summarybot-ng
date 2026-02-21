@@ -1,5 +1,6 @@
 import { formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
+import { parseAsUTC } from "@/contexts/TimezoneContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -83,11 +84,8 @@ export function ScheduleCard({
                 <span>Failures: {schedule.failure_count}</span>
                 {schedule.next_run && (
                   <span>
-                    Next: {new Date(schedule.next_run).toLocaleString()} (
-                    {formatDistanceToNow(
-                      new Date(Math.max(new Date(schedule.next_run).getTime(), Date.now())),
-                      { addSuffix: true }
-                    )}
+                    Next: {parseAsUTC(schedule.next_run).toLocaleString()} (
+                    {formatDistanceToNow(parseAsUTC(schedule.next_run), { addSuffix: true })}
                     )
                   </span>
                 )}

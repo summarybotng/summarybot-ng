@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
+import { parseAsUTC } from "@/contexts/TimezoneContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -114,14 +115,14 @@ export function FeedCard({
                 {feed.last_accessed && (
                   <span>
                     Last accessed{" "}
-                    {formatDistanceToNow(new Date(feed.last_accessed), {
+                    {formatDistanceToNow(parseAsUTC(feed.last_accessed), {
                       addSuffix: true,
                     })}
                   </span>
                 )}
                 <span>
                   Created{" "}
-                  {formatDistanceToNow(new Date(feed.created_at), {
+                  {formatDistanceToNow(parseAsUTC(feed.created_at), {
                     addSuffix: true,
                   })}
                 </span>

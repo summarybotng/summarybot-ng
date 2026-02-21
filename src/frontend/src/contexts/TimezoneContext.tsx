@@ -41,6 +41,20 @@ export const TIMEZONE_OPTIONS = [
 
 const STORAGE_KEY = "summarybot_timezone";
 
+/**
+ * Parse a date string as UTC.
+ * Handles ISO strings with or without the Z suffix.
+ * Export this for use with date-fns functions like formatDistanceToNow.
+ */
+export function parseAsUTC(date: string | Date): Date {
+  if (date instanceof Date) return date;
+  // If the string doesn't have timezone info, treat as UTC
+  if (!date.endsWith('Z') && !date.includes('+') && !date.match(/[+-]\d{2}:\d{2}$/)) {
+    return new Date(date + 'Z');
+  }
+  return new Date(date);
+}
+
 interface TimezoneContextType {
   timezone: string;
   setTimezone: (tz: string) => void;
@@ -81,7 +95,7 @@ export function TimezoneProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const formatDate = (date: string | Date, options?: Intl.DateTimeFormatOptions): string => {
-    const d = typeof date === "string" ? new Date(date) : date;
+    const d = parseAsUTC(date);
     return d.toLocaleDateString(undefined, {
       timeZone: timezone,
       ...options,
@@ -89,7 +103,7 @@ export function TimezoneProvider({ children }: { children: ReactNode }) {
   };
 
   const formatTime = (date: string | Date, options?: Intl.DateTimeFormatOptions): string => {
-    const d = typeof date === "string" ? new Date(date) : date;
+    const d = parseAsUTC(date);
     return d.toLocaleTimeString(undefined, {
       timeZone: timezone,
       hour: "2-digit",
@@ -99,7 +113,7 @@ export function TimezoneProvider({ children }: { children: ReactNode }) {
   };
 
   const formatDateTime = (date: string | Date, options?: Intl.DateTimeFormatOptions): string => {
-    const d = typeof date === "string" ? new Date(date) : date;
+    const d = parseAsUTC(date);
     return d.toLocaleString(undefined, {
       timeZone: timezone,
       ...options,

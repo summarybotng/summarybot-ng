@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+import { parseAsUTC } from "@/contexts/TimezoneContext";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertCircle,
@@ -105,11 +106,7 @@ export function ErrorCard({ error, index, onClick }: ErrorCardProps) {
       </div>
 
       <div className="flex-shrink-0 text-xs text-muted-foreground">
-        {formatDistanceToNow(
-          // Clamp to now if timestamp is in the future (clock skew protection)
-          new Date(Math.min(new Date(error.created_at).getTime(), Date.now())),
-          { addSuffix: true }
-        )}
+        {formatDistanceToNow(parseAsUTC(error.created_at), { addSuffix: true })}
       </div>
     </motion.div>
   );

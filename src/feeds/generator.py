@@ -24,7 +24,7 @@ class FeedGenerator:
 
         Args:
             base_url: Base URL for the API (e.g., https://summarybot-ng.fly.dev)
-            dashboard_url: Base URL for the dashboard (e.g., https://summarybot.lovable.app)
+            dashboard_url: Base URL for the dashboard (e.g., https://summarybot-ng.fly.dev)
         """
         self.base_url = base_url.rstrip('/')
         self.dashboard_url = (dashboard_url or base_url).rstrip('/')

@@ -36,7 +36,7 @@ def _get_feed_generator() -> FeedGenerator:
     global _feed_generator
     if _feed_generator is None:
         base_url = os.environ.get("FEED_BASE_URL", "https://summarybot-ng.fly.dev")
-        dashboard_url = os.environ.get("DASHBOARD_URL", "https://summarybot.lovable.app")
+        dashboard_url = os.environ.get("DASHBOARD_URL", "https://summarybot-ng.fly.dev")
         _feed_generator = FeedGenerator(base_url, dashboard_url)
     return _feed_generator
 

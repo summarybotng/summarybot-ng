@@ -443,12 +443,13 @@ export function Summaries() {
           <ArchiveSummariesTab guildId={id || ""} />
         </TabsContent>
 
-        {/* Stored Tab - Summaries with Push to Channel */}
+        {/* Stored Tab - Summaries with Push to Channel (ADR-005, ADR-008) */}
         <TabsContent value="stored">
           <div className="mb-4 rounded-md border border-primary/20 bg-primary/5 p-3">
             <p className="text-sm text-muted-foreground">
               <Send className="inline-block mr-1.5 h-4 w-4" />
-              Stored summaries can be <strong>pushed to Discord channels</strong>. Create a schedule with "Dashboard" destination to store summaries here.
+              All stored summaries (real-time and archive) can be <strong>pushed to Discord channels</strong>.
+              Use the <strong>Source</strong> filter to view archive summaries or create a schedule with "Dashboard" destination.
             </p>
           </div>
           <StoredSummariesTab guildId={id || ""} />

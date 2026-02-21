@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 **Date:** 2026-02-20
-**Depends on:** ADR-006 (Retrospective Summary Archive), ADR-005 (Summary Delivery Destinations)
+**Depends on:** ADR-006 (Retrospective Summary Archive), ADR-005 (Summary Delivery Destinations), ADR-004 (Grounded Summary References)
 **Repository:** [summarybotng/summarybot-ng](https://github.com/summarybotng/summarybot-ng)
 
 ---
@@ -207,6 +207,91 @@ Archive summaries store the same generation metadata as real-time summaries:
 
 The "View Generation Details" button works identically for archive summaries.
 
+### 2.7 ADR-004 Grounded References for Archive Summaries
+
+Archive summaries support the same **message-level citations** as real-time summaries (per ADR-004). Each key point, action item, decision, and participant contribution traces back to specific source messages.
+
+#### How It Works
+
+1. **Message Numbering** — When the archive generator fetches historical messages, it assigns position numbers `[1]`, `[2]`, `[N]` to each message before passing to the summarization engine.
+
+2. **Citation Instructions** — The same prompt builder adds citation instructions telling Claude to include `"references": [N, M]` arrays in its structured output.
+
+3. **Reference Resolution** — The response parser uses the `PositionIndex` to resolve position numbers to full `MessageReference` objects:
+
+```python
+class MessageReference(BaseModel):
+    """A citation pointing to a specific source message."""
+    message_id: str          # Discord snowflake or source-native ID
+    sender: str              # Display name of author
+    timestamp: datetime      # When the message was sent
+    snippet: str             # Relevant excerpt (max 200 chars)
+    position: int            # 1-based position in conversation window
+```
+
+4. **Storage** — The `reference_index` is stored alongside the summary in both:
+   - **Database**: `reference_index` JSON column for API access
+   - **Markdown file**: "Sources" table at the bottom for human readability
+
+#### Archive Markdown with Citations
+
+Archive summaries written to Markdown include inline citations and a sources table:
+
+```markdown
+## Key Points
+
+- Bob proposed increasing marketing allocation by 15% to recover Q4 shortfall [2][4]
+- The team reached consensus to proceed with the increase [5][6]
+
+## Action Items
+
+- [ ] **Bob** to update the Q1 budget spreadsheet [6]
+
+---
+
+### Sources
+
+| # | Who | When | Said |
+|---|-----|------|------|
+| [2] | Bob | 14:32 | "I think we need to increase the marketing allocation by 15%" |
+| [4] | Bob | 14:35 | "Last quarter we underspent on marketing..." |
+| [5] | Carol | 14:40 | "I agree with Bob. We lost momentum in Q4." |
+| [6] | Alice | 14:42 | "OK, let's go with it. Bob, can you update the spreadsheet?" |
+```
+
+#### API Response
+
+Archive summary API responses include the same `references` array as real-time summaries:
+
+```json
+{
+  "key_points": [
+    {
+      "text": "Bob proposed increasing marketing allocation by 15%",
+      "references": [
+        {
+          "message_id": "1234567890123456789",
+          "sender": "Bob",
+          "timestamp": "2026-02-10T14:32:00Z",
+          "snippet": "I think we need to increase the marketing allocation by 15%",
+          "position": 2
+        }
+      ],
+      "confidence": 0.95
+    }
+  ],
+  "has_references": true,
+  "reference_index": [...]
+}
+```
+
+#### Benefits for Archive Summaries
+
+- **Verifiability** — Users can trace any claim back to the original message
+- **Trust** — Reduces hallucination risk by requiring citations
+- **Context** — Click a reference to see exactly what was said
+- **Consistency** — Same reference experience whether real-time or archive
+
 ---
 
 ## 3. UI Changes
@@ -345,30 +430,35 @@ Works identically for both types (if `has_prompt_data=true`).
 
 ## 6. Implementation Phases
 
-### Phase 1: Model Selection (Immediate)
+### Phase 1: Model Selection (Immediate) ✅
 - [x] Add `get_model_for_summary_type()` function
 - [x] Update archive generation to use auto-selected model
 - [x] Add job criteria (date range, type, perspective) to job display
 
-### Phase 2: Database Schema (1 day)
-- [ ] Add new columns to summaries table
-- [ ] Update Summary model with new fields
-- [ ] Update summary repository with source filtering
+### Phase 2: Database Schema ✅
+- [x] Add new columns to stored_summaries table (source, archive_period, archive_granularity, archive_source_key)
+- [x] Update StoredSummary model with new fields and SummarySource enum
+- [x] Update summary repository with source filtering
 
-### Phase 3: Archive Storage Integration (2 days)
-- [ ] Modify archive generator to save to database
-- [ ] Keep Markdown file generation for portability
-- [ ] Ensure generation metadata is captured
+### Phase 3: Archive Storage Integration ✅
+- [x] Modify archive generator to save to database via StoredSummaryRepository
+- [x] Keep Markdown file generation for portability
+- [x] Ensure generation metadata is captured in database
+- [ ] Thread `PositionIndex` through archive generator to summarization engine (future)
+- [ ] Store `reference_index` in database alongside summary (future - depends on summarization engine integration)
+- [ ] Update archive Markdown writer to include citations and Sources table (future)
 
-### Phase 4: UI Unification (1 day)
-- [ ] Remove separate Archive tab from Summaries page
-- [ ] Add source badges to summary cards
-- [ ] Enable Push to Channel for archive summaries
-- [ ] Enable View Generation Details for archive summaries
+### Phase 4: UI Unification ✅
+- [x] Add source filter dropdown to Stored & Share tab
+- [x] Add source badges to summary cards (Archive, Scheduled, Manual)
+- [x] Enable Push to Channel for archive summaries
+- [x] Enable View Generation Details for archive summaries
+- [ ] Remove separate Archive tab from Summaries page (optional - kept for backwards compatibility)
 
-### Phase 5: Migration (1 day)
+### Phase 5: Migration (Pending)
 - [ ] Write migration script for existing archive files
 - [ ] Test migration on staging
+- [ ] Deploy migration
 - [ ] Deploy migration
 
 ---
@@ -379,7 +469,8 @@ Works identically for both types (if `has_prompt_data=true`).
 |------|--------|-------------|
 | `src/models/summary.py` | **M** | Add source, archive_period, generation metadata fields |
 | `src/database/repositories/summary.py` | **M** | Add source filtering, archive queries |
-| `src/archive/generator.py` | **M** | Save to database + Markdown file |
+| `src/archive/generator.py` | **M** | Save to database + Markdown file, thread PositionIndex |
+| `src/archive/writer.py` | **M** | Add citations to Markdown output, include Sources table |
 | `src/dashboard/routes/archive.py` | **M** | Add model selection, remove duplicate endpoints |
 | `src/dashboard/routes/summaries.py` | **M** | Add source filter parameter |
 | `src/frontend/src/pages/Summaries.tsx` | **M** | Unify archive display, add badges |
@@ -410,6 +501,7 @@ Works identically for both types (if `has_prompt_data=true`).
 
 ## 9. References
 
+- [ADR-004: Grounded Summary References](./004-grounded-summary-references.md) — Message-level citations for verifiable summaries
 - [ADR-005: Summary Delivery Destinations](./005-summary-delivery-destinations.md) — Push to channel mechanism
 - [ADR-006: Retrospective Summary Archive](./006-retrospective-summary-archive.md) — Archive system
 - [OpenRouter Models](https://openrouter.ai/docs/models) — Model pricing reference

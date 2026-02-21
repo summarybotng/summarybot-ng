@@ -4,6 +4,9 @@ Retrospective summary generator.
 Generates summaries for arbitrary past time ranges with cost limits
 and progress tracking. Implements ADR-006 Section 10.
 
+Extended by ADR-008: Unified Summary Experience to save archive
+summaries to the database alongside real-time summaries.
+
 Phase 5: Retrospective Generation
 """
 
@@ -14,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Callable, AsyncIterator
+from typing import Any, Dict, List, Optional, Callable, AsyncIterator, TYPE_CHECKING
 
 from .models import (
     SourceType,
@@ -31,6 +34,10 @@ from .cost_tracker import CostTracker, PricingTable
 from .locking import LockManager
 from .writer import SummaryWriter, summary_exists
 from .api_keys import ApiKeyResolver
+
+# ADR-008: Import for database storage
+if TYPE_CHECKING:
+    from ..data.base import StoredSummaryRepository
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +168,7 @@ class RetrospectiveGenerator:
         api_key_resolver: ApiKeyResolver,
         lock_manager: Optional[LockManager] = None,
         max_concurrent: int = 3,
+        stored_summary_repository: Optional['StoredSummaryRepository'] = None,
     ):
         """
         Initialize retrospective generator.
@@ -173,6 +181,7 @@ class RetrospectiveGenerator:
             api_key_resolver: API key resolver
             lock_manager: Lock manager (created if not provided)
             max_concurrent: Maximum concurrent generations
+            stored_summary_repository: ADR-008 - Repository for saving to database
         """
         self.archive_root = archive_root
         self.summarization_service = summarization_service
@@ -182,6 +191,7 @@ class RetrospectiveGenerator:
         self.lock_manager = lock_manager or LockManager()
         self.writer = SummaryWriter(archive_root)
         self.max_concurrent = max_concurrent
+        self.stored_summary_repository = stored_summary_repository
 
         self._jobs: Dict[str, GenerationJob] = {}
         self._semaphore = asyncio.Semaphore(max_concurrent)
@@ -488,6 +498,9 @@ class RetrospectiveGenerator:
                 api_key_used=resolved_key.api_key_used,
             )
 
+            # Generate summary ID
+            summary_id = f"sum_{uuid.uuid4().hex[:12]}"
+
             self.writer.write_summary(
                 source=job.source,
                 period=period,
@@ -496,7 +509,19 @@ class RetrospectiveGenerator:
                 generation=generation,
                 is_backfill=True,
                 backfill_reason="historical_archive",
+                summary_id=summary_id,
             )
+
+            # ADR-008: Save to database for unified access
+            if self.stored_summary_repository:
+                await self._save_to_database(
+                    job=job,
+                    period=period,
+                    summary_result=summary_result,
+                    statistics=statistics,
+                    generation=generation,
+                    summary_id=summary_id,
+                )
 
             await self.lock_manager.release_lock(meta_path, SummaryStatus.COMPLETE)
             return "completed"
@@ -505,6 +530,79 @@ class RetrospectiveGenerator:
             logger.error(f"Error generating summary for {period_start}: {e}")
             await self.lock_manager.release_lock(meta_path, SummaryStatus.INCOMPLETE)
             return "failed"
+
+    async def _save_to_database(
+        self,
+        job: GenerationJob,
+        period: PeriodInfo,
+        summary_result: Any,  # SummaryResult from summarization service
+        statistics: SummaryStatistics,
+        generation: GenerationInfo,
+        summary_id: str,
+    ) -> None:
+        """
+        ADR-008: Save archive summary to database for unified access.
+
+        This enables archive summaries to appear in the Summaries page
+        alongside real-time summaries, with consistent features like
+        Push to Channel and View Generation Details.
+        """
+        from ..models.stored_summary import StoredSummary, SummarySource
+        from ..models.summary import SummaryResult
+
+        try:
+            # Build a SummaryResult object if we have raw content
+            if hasattr(summary_result, 'to_summary_result'):
+                db_summary_result = summary_result.to_summary_result()
+            elif isinstance(summary_result, SummaryResult):
+                db_summary_result = summary_result
+            else:
+                # Create minimal SummaryResult from available data
+                db_summary_result = SummaryResult(
+                    id=summary_id,
+                    guild_id=job.source.server_id or "",
+                    channel_id=job.source.channel_id or "",
+                    start_time=period.start,
+                    end_time=period.end,
+                    message_count=statistics.message_count,
+                    summary_text=summary_result.content if hasattr(summary_result, 'content') else str(summary_result),
+                    key_points=getattr(summary_result, 'key_points', []),
+                    action_items=getattr(summary_result, 'action_items', []),
+                    participants=[],
+                    technical_terms=[],
+                    metadata={
+                        "summary_type": job.summary_type,
+                        "perspective": job.perspective,
+                        "model": generation.model,
+                        "prompt_version": generation.prompt_version,
+                        "prompt_checksum": generation.prompt_checksum,
+                        "tokens_input": generation.tokens_input,
+                        "tokens_output": generation.tokens_output,
+                        "cost_usd": generation.cost_usd,
+                        "duration_seconds": generation.duration_seconds,
+                    },
+                )
+
+            # Create StoredSummary with archive source
+            stored = StoredSummary(
+                id=summary_id,
+                guild_id=job.source.server_id or "",
+                source_channel_ids=[job.source.channel_id] if job.source.channel_id else [],
+                summary_result=db_summary_result,
+                title=f"{job.source.channel_name or job.source.server_name} - {period.start.strftime('%Y-%m-%d')}",
+                # ADR-008: Archive-specific metadata
+                source=SummarySource.ARCHIVE,
+                archive_period=period.start.strftime('%Y-%m-%d'),
+                archive_granularity=job.granularity,
+                archive_source_key=job.source.source_key,
+            )
+
+            await self.stored_summary_repository.save(stored)
+            logger.debug(f"Saved archive summary to database: {summary_id}")
+
+        except Exception as e:
+            # Log but don't fail the job - file was already written
+            logger.warning(f"Failed to save archive summary to database: {e}")
 
     def _generate_periods(
         self,

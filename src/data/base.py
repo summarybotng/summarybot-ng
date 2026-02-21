@@ -740,6 +740,7 @@ class StoredSummaryRepository(ABC):
         pinned_only: bool = False,
         include_archived: bool = False,
         tags: Optional[List[str]] = None,
+        source: Optional[str] = None,
     ) -> List[StoredSummary]:
         """
         Find stored summaries for a guild.
@@ -751,6 +752,8 @@ class StoredSummaryRepository(ABC):
             pinned_only: Only return pinned summaries
             include_archived: Include archived summaries
             tags: Filter by tags (any match)
+            source: ADR-008 - Filter by source type (realtime, archive, etc.)
+                    Use "all" or None for no filtering
 
         Returns:
             List of matching stored summaries

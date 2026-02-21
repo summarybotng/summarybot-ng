@@ -49,7 +49,7 @@ from ..models.task import (
 )
 from ..models.feed import FeedConfig, FeedType
 from ..models.error_log import ErrorLog, ErrorType, ErrorSeverity
-from ..models.stored_summary import StoredSummary, PushDelivery
+from ..models.stored_summary import StoredSummary, PushDelivery, SummarySource
 from ..config.settings import GuildConfig, PermissionSettings
 
 
@@ -972,8 +972,9 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         INSERT OR REPLACE INTO stored_summaries (
             id, guild_id, source_channel_ids, schedule_id,
             summary_json, created_at, viewed_at, pushed_at,
-            push_deliveries, title, is_pinned, is_archived, tags
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            push_deliveries, title, is_pinned, is_archived, tags,
+            source, archive_period, archive_granularity, archive_source_key
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -990,6 +991,11 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             summary.is_pinned,
             summary.is_archived,
             json.dumps(summary.tags),
+            # ADR-008: Source tracking
+            summary.source.value,
+            summary.archive_period,
+            summary.archive_granularity,
+            summary.archive_source_key,
         )
 
         await self.connection.execute(query, params)
@@ -1013,8 +1019,23 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         pinned_only: bool = False,
         include_archived: bool = False,
         tags: Optional[List[str]] = None,
+        source: Optional[str] = None,  # ADR-008: Filter by source
     ) -> List[StoredSummary]:
-        """Find stored summaries for a guild."""
+        """Find stored summaries for a guild.
+
+        Args:
+            guild_id: Discord guild/server ID
+            limit: Maximum number of results
+            offset: Pagination offset
+            pinned_only: Only return pinned summaries
+            include_archived: Include archived summaries
+            tags: Filter by any of these tags
+            source: ADR-008 - Filter by source type (realtime, archive, etc.)
+                    Use "all" or None for no filtering
+
+        Returns:
+            List of matching StoredSummary objects
+        """
         conditions = ["guild_id = ?"]
         params: List[Any] = [guild_id]
 
@@ -1023,6 +1044,11 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
 
         if not include_archived:
             conditions.append("is_archived = 0")
+
+        # ADR-008: Source filtering
+        if source and source != "all":
+            conditions.append("source = ?")
+            params.append(source)
 
         where_clause = " AND ".join(conditions)
 
@@ -1129,6 +1155,13 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         push_deliveries_data = json.loads(row.get('push_deliveries') or '[]')
         push_deliveries = [PushDelivery.from_dict(d) for d in push_deliveries_data]
 
+        # ADR-008: Parse source enum
+        source_str = row.get('source', 'realtime')
+        try:
+            source = SummarySource(source_str)
+        except ValueError:
+            source = SummarySource.REALTIME
+
         return StoredSummary(
             id=row['id'],
             guild_id=row['guild_id'],
@@ -1143,6 +1176,11 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             is_pinned=bool(row['is_pinned']),
             is_archived=bool(row['is_archived']),
             tags=json.loads(row.get('tags') or '[]'),
+            # ADR-008: Source tracking
+            source=source,
+            archive_period=row.get('archive_period'),
+            archive_granularity=row.get('archive_granularity'),
+            archive_source_key=row.get('archive_source_key'),
         )
 
     def _dict_to_summary_result(self, data: Dict[str, Any]) -> SummaryResult:

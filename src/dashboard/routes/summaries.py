@@ -672,7 +672,7 @@ async def _get_stored_summary_repository():
     "/guilds/{guild_id}/stored-summaries",
     response_model=StoredSummaryListResponse,
     summary="List stored summaries",
-    description="Get paginated list of stored summaries for a guild (ADR-005).",
+    description="Get paginated list of stored summaries for a guild (ADR-005, ADR-008).",
     responses={
         403: {"model": ErrorResponse, "description": "No permission"},
         404: {"model": ErrorResponse, "description": "Guild not found"},
@@ -685,9 +685,17 @@ async def list_stored_summaries(
     pinned: Optional[bool] = Query(None, description="Filter by pinned status"),
     archived: bool = Query(False, description="Include archived summaries"),
     tags: Optional[str] = Query(None, description="Filter by tags (comma-separated)"),
+    source: Optional[str] = Query(
+        None,
+        description="ADR-008: Filter by source (realtime, archive, scheduled, manual, all)"
+    ),
     user: dict = Depends(get_current_user),
 ):
-    """List stored summaries for a guild."""
+    """List stored summaries for a guild.
+
+    ADR-008: Supports unified listing of both real-time and archive summaries.
+    Use source parameter to filter by summary origin.
+    """
     _check_guild_access(guild_id, user)
     _get_guild_or_404(guild_id)
 
@@ -707,6 +715,7 @@ async def list_stored_summaries(
         pinned_only=pinned is True,
         include_archived=archived,
         tags=tag_list,
+        source=source,  # ADR-008: Source filtering
     )
 
     total = await stored_repo.count_by_guild(
@@ -847,6 +856,11 @@ async def get_stored_summary(
         push_deliveries=[d.to_dict() for d in stored.push_deliveries],
         has_references=stored.has_references(),
         references=references,
+        # ADR-008: Source tracking
+        source=stored.source.value,
+        archive_period=stored.archive_period,
+        archive_granularity=stored.archive_granularity,
+        archive_source_key=stored.archive_source_key,
     )
 
 

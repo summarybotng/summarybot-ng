@@ -1,5 +1,7 @@
 /**
- * Hooks for stored summaries (ADR-005)
+ * Hooks for stored summaries (ADR-005, ADR-008)
+ *
+ * ADR-008: Extended to support unified summary experience with source filtering.
  */
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -19,12 +21,16 @@ interface StoredSummariesResponse {
   limit: number;
 }
 
+// ADR-008: Summary source types
+export type SummarySourceType = "realtime" | "scheduled" | "manual" | "archive" | "imported" | "all";
+
 interface StoredSummariesParams {
   page?: number;
   limit?: number;
   pinned?: boolean;
   archived?: boolean;
   tags?: string[];
+  source?: SummarySourceType;  // ADR-008: Filter by source
 }
 
 export function useStoredSummaries(
@@ -37,6 +43,8 @@ export function useStoredSummaries(
   if (params.pinned !== undefined) queryParams.set("pinned", params.pinned.toString());
   if (params.archived !== undefined) queryParams.set("archived", params.archived.toString());
   if (params.tags?.length) queryParams.set("tags", params.tags.join(","));
+  // ADR-008: Source filtering
+  if (params.source && params.source !== "all") queryParams.set("source", params.source);
 
   const queryString = queryParams.toString();
 

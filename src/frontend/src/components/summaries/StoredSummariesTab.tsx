@@ -1,12 +1,13 @@
 /**
- * Stored Summaries Tab Component (ADR-005)
+ * Stored Summaries Tab Component (ADR-005, ADR-008)
  *
- * Displays stored summaries from dashboard delivery destination
+ * Displays stored summaries from dashboard delivery destination.
+ * ADR-008: Extended to show unified view of both real-time and archive summaries.
  */
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel } from "@/hooks/useStoredSummaries";
+import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, type SummarySourceType } from "@/hooks/useStoredSummaries";
 import { useGuild } from "@/hooks/useGuilds";
 import { useTimezone } from "@/contexts/TimezoneContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +32,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
   Archive,
@@ -44,6 +52,7 @@ import {
   AlertCircle,
   RefreshCw,
   Link,
+  History,
 } from "lucide-react";
 import { StoredSummaryCard } from "./StoredSummaryCard";
 import { PushToChannelModal } from "./PushToChannelModal";
@@ -56,6 +65,7 @@ interface StoredSummariesTabProps {
 export function StoredSummariesTab({ guildId }: StoredSummariesTabProps) {
   const [page, setPage] = useState(1);
   const [showArchived, setShowArchived] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState<SummarySourceType>("all");  // ADR-008
   const [selectedSummary, setSelectedSummary] = useState<string | null>(null);
   const [pushModalSummary, setPushModalSummary] = useState<StoredSummary | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -66,6 +76,7 @@ export function StoredSummariesTab({ guildId }: StoredSummariesTabProps) {
     page,
     limit: 20,
     archived: showArchived,
+    source: sourceFilter,  // ADR-008: Source filtering
   });
 
   const updateMutation = useUpdateStoredSummary(guildId);
@@ -183,7 +194,24 @@ export function StoredSummariesTab({ guildId }: StoredSummariesTabProps) {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4">
+        {/* ADR-008: Source filter */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Source:</span>
+          <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as SummarySourceType)}>
+            <SelectTrigger className="w-[140px] h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Sources</SelectItem>
+              <SelectItem value="realtime">Real-time</SelectItem>
+              <SelectItem value="archive">Archive</SelectItem>
+              <SelectItem value="scheduled">Scheduled</SelectItem>
+              <SelectItem value="manual">Manual</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="flex items-center space-x-2">
           <Checkbox
             id="show-archived"

@@ -24,7 +24,7 @@ from .reference import (
 )
 from .user import User, UserPermissions
 from .task import ScheduledTask, TaskResult, TaskStatus, Destination, DestinationType
-from .stored_summary import StoredSummary, PushDelivery
+from .stored_summary import StoredSummary, PushDelivery, SummarySource
 from .webhook import WebhookRequest, WebhookResponse, WebhookDelivery
 from .feed import FeedConfig, FeedType
 from .error_log import ErrorLog, ErrorType, ErrorSeverity
@@ -79,9 +79,10 @@ __all__ = [
     'Destination',
     'DestinationType',
 
-    # Stored summary models (ADR-005)
+    # Stored summary models (ADR-005, ADR-008)
     'StoredSummary',
     'PushDelivery',
+    'SummarySource',
     
     # Webhook models
     'WebhookRequest',

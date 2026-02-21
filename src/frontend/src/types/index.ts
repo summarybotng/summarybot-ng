@@ -256,7 +256,10 @@ export interface GenerateRequest {
   options?: Partial<SummaryOptions>;
 }
 
-// ADR-005: Stored Summary types
+// ADR-005, ADR-008: Stored Summary types
+// ADR-008 adds source tracking for unified summary experience
+export type SummarySourceType = "realtime" | "scheduled" | "manual" | "archive" | "imported";
+
 export interface StoredSummary {
   id: string;
   title: string;
@@ -273,6 +276,10 @@ export interface StoredSummary {
   action_items_count: number;
   message_count: number;
   has_references: boolean;
+  // ADR-008: Source tracking
+  source: SummarySourceType;
+  archive_period?: string;
+  archive_granularity?: string;
 }
 
 export interface StoredSummaryDetail extends StoredSummary {
@@ -286,6 +293,8 @@ export interface StoredSummaryDetail extends StoredSummary {
   metadata?: SummaryMetadata;
   push_deliveries: PushDelivery[];
   references?: SummaryReference[];
+  // ADR-008: Archive-specific fields
+  archive_source_key?: string;
 }
 
 export interface PushDelivery {

@@ -670,7 +670,7 @@ class ErrorExportResponse(BaseModel):
 # ============================================================================
 
 class StoredSummaryListItem(BaseModel):
-    """Stored summary item in list."""
+    """Stored summary item in list (ADR-005, ADR-008)."""
     id: str
     title: str
     source_channel_ids: List[str]
@@ -686,6 +686,10 @@ class StoredSummaryListItem(BaseModel):
     action_items_count: int = 0
     message_count: int = 0
     has_references: bool = False
+    # ADR-008: Source tracking
+    source: str = "realtime"  # realtime, archive, scheduled, manual, imported
+    archive_period: Optional[str] = None
+    archive_granularity: Optional[str] = None
 
 
 class StoredSummaryListResponse(BaseModel):
@@ -697,7 +701,7 @@ class StoredSummaryListResponse(BaseModel):
 
 
 class StoredSummaryDetailResponse(BaseModel):
-    """Full stored summary details."""
+    """Full stored summary details (ADR-005, ADR-008)."""
     id: str
     title: str
     guild_id: str
@@ -723,6 +727,11 @@ class StoredSummaryDetailResponse(BaseModel):
     has_references: bool = False
     # ADR-004: Source references
     references: List[SummaryReferenceResponse] = Field(default_factory=list)
+    # ADR-008: Source tracking
+    source: str = "realtime"  # realtime, archive, scheduled, manual, imported
+    archive_period: Optional[str] = None
+    archive_granularity: Optional[str] = None
+    archive_source_key: Optional[str] = None
 
 
 class StoredSummaryUpdateRequest(BaseModel):

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useGuilds } from "@/hooks/useGuilds";
-import { useDefaultPrompts, type DefaultPrompt } from "@/hooks/usePrompts";
+import { useDefaultPrompts, type DefaultPrompt, type PerspectiveLength } from "@/hooks/usePrompts";
 import { Header } from "@/components/layout/Header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +23,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Users, FileText, AlertCircle, CheckCircle2, Settings, GitBranch, Eye, MessageSquare, Gavel, MessagesSquare } from "lucide-react";
+import { Users, FileText, AlertCircle, CheckCircle2, Settings, GitBranch, Eye, MessageSquare, Gavel, MessagesSquare, Code, TrendingUp, Briefcase, HeadphonesIcon } from "lucide-react";
 import type { Guild } from "@/types";
 
 function GuildCard({ guild, index }: { guild: Guild; index: number }) {
@@ -110,9 +110,30 @@ const PROMPT_ICONS: Record<string, typeof FileText> = {
   moderation: Gavel,
 };
 
+// Icon mapping for perspectives
+const PERSPECTIVE_ICONS: Record<string, typeof FileText> = {
+  general: FileText,
+  developer: Code,
+  marketing: TrendingUp,
+  executive: Briefcase,
+  support: HeadphonesIcon,
+};
+
+// Selected prompt can be either category or perspective/length
+type SelectedPrompt = {
+  type: "category";
+  prompt: DefaultPrompt;
+} | {
+  type: "perspective";
+  perspective: string;
+  length: string;
+  prompt: PerspectiveLength;
+};
+
 function DefaultPromptsCard() {
-  const { data: prompts, isLoading } = useDefaultPrompts();
-  const [selectedPrompt, setSelectedPrompt] = useState<DefaultPrompt | null>(null);
+  const { data, isLoading } = useDefaultPrompts();
+  const [selectedPrompt, setSelectedPrompt] = useState<SelectedPrompt | null>(null);
+  const [activeTab, setActiveTab] = useState("perspectives");
 
   if (isLoading) {
     return (
@@ -132,6 +153,9 @@ function DefaultPromptsCard() {
     );
   }
 
+  const perspectives = data?.perspectives || {};
+  const categories = data?.prompts || [];
+
   return (
     <>
       <Card className="border-border/50 bg-card/50">
@@ -141,28 +165,71 @@ function DefaultPromptsCard() {
             Default Prompts
           </CardTitle>
           <CardDescription>
-            View the built-in prompts that drive summary generation
+            View the built-in prompts that drive summary generation. Prompts are organized by perspective (developer, marketing, etc.) and length (brief, detailed, comprehensive).
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {prompts?.map((prompt) => {
-              const Icon = PROMPT_ICONS[prompt.category] || FileText;
-              return (
-                <Button
-                  key={prompt.name}
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedPrompt(prompt)}
-                  className="gap-2"
-                >
-                  <Icon className="h-4 w-4" />
-                  <span className="capitalize">{prompt.name}</span>
-                  <Eye className="h-3 w-3 text-muted-foreground" />
-                </Button>
-              );
-            })}
-          </div>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="mb-4">
+              <TabsTrigger value="perspectives">By Perspective</TabsTrigger>
+              <TabsTrigger value="categories">By Category</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="perspectives" className="space-y-4">
+              {Object.entries(perspectives).map(([perspectiveName, perspective]) => {
+                const Icon = PERSPECTIVE_ICONS[perspectiveName] || FileText;
+                return (
+                  <div key={perspectiveName} className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Icon className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium capitalize">{perspectiveName}</span>
+                      <span className="text-xs text-muted-foreground">— {perspective.description}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 pl-6">
+                      {Object.entries(perspective.lengths).map(([lengthName, lengthPrompt]) => (
+                        <Button
+                          key={lengthName}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedPrompt({
+                            type: "perspective",
+                            perspective: perspectiveName,
+                            length: lengthName,
+                            prompt: lengthPrompt,
+                          })}
+                          className="gap-2"
+                        >
+                          <span className="capitalize">{lengthName}</span>
+                          <Eye className="h-3 w-3 text-muted-foreground" />
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </TabsContent>
+
+            <TabsContent value="categories">
+              <div className="flex flex-wrap gap-2">
+                {categories.map((prompt) => {
+                  const Icon = PROMPT_ICONS[prompt.category] || FileText;
+                  return (
+                    <Button
+                      key={prompt.name}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedPrompt({ type: "category", prompt })}
+                      className="gap-2"
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span className="capitalize">{prompt.name}</span>
+                      <Eye className="h-3 w-3 text-muted-foreground" />
+                    </Button>
+                  );
+                })}
+              </div>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
@@ -171,23 +238,43 @@ function DefaultPromptsCard() {
         <DialogContent className="max-w-3xl max-h-[80vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 capitalize">
-              {selectedPrompt && (
+              {selectedPrompt?.type === "category" && (
                 <>
                   {(() => {
-                    const Icon = PROMPT_ICONS[selectedPrompt.category] || FileText;
+                    const Icon = PROMPT_ICONS[selectedPrompt.prompt.category] || FileText;
                     return <Icon className="h-5 w-5" />;
                   })()}
-                  {selectedPrompt.name} Prompt
+                  {selectedPrompt.prompt.name} Prompt
+                </>
+              )}
+              {selectedPrompt?.type === "perspective" && (
+                <>
+                  {(() => {
+                    const Icon = PERSPECTIVE_ICONS[selectedPrompt.perspective] || FileText;
+                    return <Icon className="h-5 w-5" />;
+                  })()}
+                  {selectedPrompt.perspective} / {selectedPrompt.length}
                 </>
               )}
             </DialogTitle>
             <DialogDescription>
-              {selectedPrompt?.description}
+              {selectedPrompt?.type === "category"
+                ? selectedPrompt.prompt.description
+                : selectedPrompt?.prompt.description}
+              {selectedPrompt && (
+                <span className="block mt-1 font-mono text-xs">
+                  {selectedPrompt.type === "category"
+                    ? selectedPrompt.prompt.file_path
+                    : selectedPrompt.prompt.file_path}
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh] pr-4">
             <pre className="text-sm bg-muted/50 p-4 rounded-lg overflow-x-auto whitespace-pre-wrap font-mono">
-              {selectedPrompt?.content}
+              {selectedPrompt?.type === "category"
+                ? selectedPrompt.prompt.content
+                : selectedPrompt?.prompt.content}
             </pre>
           </ScrollArea>
         </DialogContent>

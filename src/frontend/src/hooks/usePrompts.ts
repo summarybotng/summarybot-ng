@@ -6,19 +6,33 @@ export interface DefaultPrompt {
   category: string;
   description: string;
   content: string;
+  file_path?: string;
 }
 
-interface DefaultPromptsResponse {
+export interface PerspectiveLength {
+  name: string;
+  file_path: string;
+  content: string;
+  description: string;
+}
+
+export interface Perspective {
+  description: string;
+  lengths: Record<string, PerspectiveLength>;
+}
+
+export interface DefaultPromptsResponse {
   prompts: DefaultPrompt[];
+  perspectives: Record<string, Perspective>;
 }
 
 export function useDefaultPrompts() {
   return useQuery({
     queryKey: ["prompts", "defaults"],
     queryFn: async () => {
-      const response = await api.get<DefaultPromptsResponse>("/prompts/defaults");
       // api.get returns the JSON data directly, not an axios-style response
-      return response.prompts;
+      const response = await api.get<DefaultPromptsResponse>("/prompts/defaults");
+      return response;
     },
     staleTime: 60 * 60 * 1000, // 1 hour - prompts don't change often
   });

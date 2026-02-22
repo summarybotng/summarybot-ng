@@ -29,6 +29,7 @@ import {
   ScheduleForm,
   getInitialFormData,
   scheduleToFormData,
+  formDataToDestinations,
   type ScheduleFormData,
 } from "@/components/schedules/ScheduleForm";
 import type { Schedule } from "@/types";
@@ -83,7 +84,7 @@ export function Schedules() {
         schedule_time: formData.schedule_time,
         schedule_days: formData.schedule_type === "weekly" ? formData.schedule_days : undefined,
         timezone: formData.timezone,
-        destinations: [],
+        destinations: formDataToDestinations(formData),
         summary_options: {
           summary_length: formData.summary_length,
           perspective: formData.perspective,
@@ -129,6 +130,7 @@ export function Schedules() {
           schedule_time: formData.schedule_time,
           schedule_days: formData.schedule_type === "weekly" ? formData.schedule_days : undefined,
           timezone: formData.timezone,
+          destinations: formDataToDestinations(formData),
           summary_options: {
             summary_length: formData.summary_length,
             perspective: formData.perspective,

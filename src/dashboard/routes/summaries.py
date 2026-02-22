@@ -1162,7 +1162,7 @@ async def push_summary_to_channel(
 # ==================== Diagnostic Endpoint ====================
 
 @router.get(
-    "/guilds/{guild_id}/summaries/debug/database",
+    "/guilds/{guild_id}/_debug/summaries-db",
     summary="Database diagnostics",
     description="Check database state for debugging summary generation issues.",
     responses={

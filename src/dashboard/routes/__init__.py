@@ -54,6 +54,15 @@ async def get_summary_repository():
         return None
 
 
+async def get_stored_summary_repository():
+    """Get stored summary repository instance (ADR-005)."""
+    try:
+        from ...data.repositories import get_stored_summary_repository as _get_repo
+        return await _get_repo()
+    except RuntimeError:
+        return None
+
+
 async def get_task_repository():
     """Get task repository instance."""
     try:

@@ -269,7 +269,7 @@ async def get_generator():
     from src.archive.cost_tracker import CostTracker
     from src.archive.sources import SourceRegistry
     from src.archive.api_keys import ApiKeyResolver
-    from . import get_summarization_engine, get_summary_repository
+    from . import get_summarization_engine, get_stored_summary_repository
 
     archive_root = get_archive_root()
     cost_tracker = CostTracker(archive_root / "cost-ledger.json")
@@ -285,7 +285,7 @@ async def get_generator():
 
     # ADR-008: Get stored summary repository for database persistence
     # This is critical - without it, summaries only go to ephemeral files
-    stored_summary_repo = await get_summary_repository()
+    stored_summary_repo = await get_stored_summary_repository()
     if stored_summary_repo:
         logger.info("Archive generator initialized with database storage")
     else:

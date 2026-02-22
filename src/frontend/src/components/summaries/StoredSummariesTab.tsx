@@ -9,7 +9,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, type SummarySourceType } from "@/hooks/useStoredSummaries";
 import { useGuild } from "@/hooks/useGuilds";
-import { useTimezone } from "@/contexts/TimezoneContext";
+import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -82,7 +82,7 @@ function groupSummariesByRecency(summaries: StoredSummary[]): {
   };
 
   for (const summary of summaries) {
-    const createdAt = new Date(summary.created_at);
+    const createdAt = parseAsUTC(summary.created_at);
     if (createdAt >= today) {
       groups.today.push(summary);
     } else if (createdAt >= threeDaysAgo) {

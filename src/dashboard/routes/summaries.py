@@ -32,8 +32,9 @@ from ..models import (
     PushToChannelResponse,
     PushDeliveryResult,
 )
-from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_config_manager, get_task_scheduler
+from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_stored_summary_repository, get_config_manager, get_task_scheduler
 from ...data.base import SearchCriteria
+from ...models.stored_summary import StoredSummary, SummarySource
 
 logger = logging.getLogger(__name__)
 
@@ -566,15 +567,44 @@ async def generate_summary(
             )
             logger.info(f"[{task_id}] Summarization complete, result id: {result.id}")
 
-            # Save summary to database
-            logger.info(f"[{task_id}] Getting summary repository...")
+            # ADR-012: Save to StoredSummaryRepository (unified storage)
+            # This ensures all summaries appear in the same tab with consistent features
+            logger.info(f"[{task_id}] Getting stored summary repository...")
+            stored_repo = await get_stored_summary_repository()
+            if stored_repo:
+                # Generate descriptive title
+                channel_names = []
+                for cid in channel_ids[:3]:  # Limit to 3 channels in title
+                    ch = guild.get_channel(int(cid))
+                    if ch:
+                        channel_names.append(f"#{ch.name}")
+                if len(channel_ids) > 3:
+                    channel_names.append(f"+{len(channel_ids) - 3} more")
+                title = f"{', '.join(channel_names) or 'Summary'} — {datetime.utcnow().strftime('%b %d, %H:%M')}"
+
+                # Create StoredSummary with source=MANUAL for generate button
+                stored_summary = StoredSummary(
+                    id=result.id,
+                    guild_id=guild_id,
+                    source_channel_ids=channel_ids,
+                    summary_result=result,
+                    title=title,
+                    source=SummarySource.MANUAL,  # From Generate button
+                    created_at=datetime.utcnow(),
+                )
+
+                logger.info(f"[{task_id}] Saving to stored_summaries...")
+                await stored_repo.save(stored_summary)
+                logger.info(f"[{task_id}] Saved summary {result.id} to stored_summaries for guild {guild_id}, scope {body.scope.value}")
+            else:
+                logger.error(f"[{task_id}] Stored summary repository not available - summary {result.id} NOT saved!")
+
+            # Also save to legacy summaries table for backwards compatibility
+            logger.info(f"[{task_id}] Getting legacy summary repository...")
             summary_repo = await get_summary_repository()
             if summary_repo:
-                logger.info(f"[{task_id}] Saving summary to database...")
                 await summary_repo.save_summary(result)
-                logger.info(f"[{task_id}] Saved summary {result.id} to database for guild {guild_id}, scope {body.scope.value}")
-            else:
-                logger.error(f"[{task_id}] Summary repository not available - summary {result.id} NOT saved!")
+                logger.info(f"[{task_id}] Also saved to legacy summaries table")
 
             _generation_tasks[task_id]["status"] = "completed"
             _generation_tasks[task_id]["summary_id"] = result.id
@@ -808,13 +838,30 @@ async def get_stored_summary(
             for p in summary_result.participants
         ]
 
+        # Handle both regular and archive metadata formats
+        meta = summary_result.metadata
+
+        # Model: archive uses "model", regular uses "claude_model"
+        model_used = meta.get("claude_model") or meta.get("model_used") or meta.get("model")
+
+        # Tokens: archive uses tokens_input/tokens_output, regular uses total_tokens
+        tokens_used = meta.get("total_tokens")
+        if tokens_used is None:
+            tokens_input = meta.get("tokens_input", 0) or 0
+            tokens_output = meta.get("tokens_output", 0) or 0
+            if tokens_input or tokens_output:
+                tokens_used = tokens_input + tokens_output
+
+        # Time: archive uses duration_seconds, regular uses processing_time
+        generation_time = meta.get("processing_time") or meta.get("duration_seconds")
+
         metadata = SummaryMetadataResponse(
-            summary_length=summary_result.metadata.get("summary_length", "detailed"),
-            perspective=summary_result.metadata.get("perspective", "general"),
-            model_used=summary_result.metadata.get("claude_model"),
-            model_requested=summary_result.metadata.get("requested_model"),
-            tokens_used=summary_result.metadata.get("total_tokens"),
-            generation_time_seconds=summary_result.metadata.get("processing_time"),
+            summary_length=meta.get("summary_length") or meta.get("summary_type", "detailed"),
+            perspective=meta.get("perspective", "general"),
+            model_used=model_used,
+            model_requested=meta.get("requested_model") or meta.get("model_requested"),
+            tokens_used=tokens_used,
+            generation_time_seconds=generation_time,
         )
 
     # Build references from summary_result if available (ADR-004)
@@ -1110,3 +1157,115 @@ async def push_summary_to_channel(
             status_code=404,
             detail={"code": "NOT_FOUND", "message": str(e)},
         )
+
+
+# ==================== Diagnostic Endpoint ====================
+
+@router.get(
+    "/guilds/{guild_id}/summaries/debug/database",
+    summary="Database diagnostics",
+    description="Check database state for debugging summary generation issues.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def debug_database(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Debug endpoint to check database state.
+
+    Returns information about:
+    - Schema version
+    - Table columns (to check if migrations ran)
+    - Recent tasks
+    - Connection status
+    """
+    _check_guild_access(guild_id, user)
+
+    result = {
+        "schema_version": None,
+        "stored_summaries_columns": [],
+        "stored_summaries_count": 0,
+        "recent_tasks": [],
+        "last_errors": [],
+        "connection_ok": False,
+        "errors": [],
+    }
+
+    try:
+        # Get stored summary repository to test connection
+        stored_repo = await get_stored_summary_repository()
+        if not stored_repo:
+            result["errors"].append("Stored summary repository not available")
+            return result
+
+        result["connection_ok"] = True
+
+        # Check schema version
+        try:
+            from ...data.repositories import get_repository_factory
+            factory = get_repository_factory()
+            conn = await factory.get_connection()
+
+            # Get schema version
+            row = await conn.fetch_one(
+                "SELECT MAX(version) as version FROM schema_version"
+            )
+            if row:
+                result["schema_version"] = row.get("version")
+
+            # Get stored_summaries columns
+            columns_result = await conn.fetch_all(
+                "PRAGMA table_info(stored_summaries)"
+            )
+            result["stored_summaries_columns"] = [
+                {"name": c["name"], "type": c["type"]}
+                for c in columns_result
+            ]
+
+            # Count stored summaries for this guild
+            count_row = await conn.fetch_one(
+                "SELECT COUNT(*) as count FROM stored_summaries WHERE guild_id = ?",
+                (guild_id,)
+            )
+            if count_row:
+                result["stored_summaries_count"] = count_row.get("count", 0)
+
+            # Get recent summaries table count too
+            summaries_count = await conn.fetch_one(
+                "SELECT COUNT(*) as count FROM summaries WHERE guild_id = ?",
+                (guild_id,)
+            )
+            if summaries_count:
+                result["summaries_count"] = summaries_count.get("count", 0)
+
+        except Exception as e:
+            result["errors"].append(f"Schema check error: {str(e)}")
+
+        # Get recent in-memory tasks
+        recent_tasks = []
+        for task_id, task_data in list(_generation_tasks.items())[-10:]:
+            if task_data.get("guild_id") == guild_id:
+                recent_tasks.append({
+                    "task_id": task_id,
+                    "status": task_data.get("status"),
+                    "error": task_data.get("error"),
+                    "started_at": task_data.get("started_at").isoformat() if task_data.get("started_at") else None,
+                    "summary_id": task_data.get("summary_id"),
+                })
+        result["recent_tasks"] = recent_tasks
+
+        # Check for required columns
+        column_names = [c["name"] for c in result["stored_summaries_columns"]]
+        required_columns = ["source", "archive_period", "archive_granularity", "archive_source_key"]
+        missing_columns = [c for c in required_columns if c not in column_names]
+        if missing_columns:
+            result["errors"].append(f"Missing columns (migrations not run?): {missing_columns}")
+            result["migration_hint"] = "Run migrations 011 and 012"
+
+    except Exception as e:
+        result["errors"].append(f"Diagnostic error: {str(e)}")
+
+    return result

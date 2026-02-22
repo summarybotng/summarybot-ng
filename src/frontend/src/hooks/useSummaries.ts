@@ -75,9 +75,18 @@ export function useTaskStatus(guildId: string, taskId: string | null) {
       api.get<TaskStatus>(`/guilds/${guildId}/summaries/tasks/${taskId}`),
     enabled: !!guildId && !!taskId,
     refetchInterval: (query) => {
-      if (query.state.data?.status === "processing") return 2000;
+      const status = query.state.data?.status;
+      // Keep polling while processing
+      if (status === "processing") return 2000;
+      // Stop polling when done or failed
+      if (status === "completed" || status === "failed") return false;
+      // If no status yet (first fetch), poll quickly
+      if (!status) return 1000;
       return false;
     },
+    // Retry on error to handle transient network issues
+    retry: 3,
+    retryDelay: 1000,
   });
 }
 

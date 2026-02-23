@@ -1,11 +1,12 @@
 /**
- * Stored Summaries Tab Component (ADR-005, ADR-008)
+ * Stored Summaries Tab Component (ADR-005, ADR-008, ADR-017)
  *
  * Displays stored summaries from dashboard delivery destination.
  * ADR-008: Extended to show unified view of both real-time and archive summaries.
+ * ADR-017: Enhanced with calendar view, filtering, sorting, and integrity indicators.
  */
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, useRegenerateSummary, type SummarySourceType } from "@/hooks/useStoredSummaries";
 import { useGuild } from "@/hooks/useGuilds";
@@ -13,7 +14,6 @@ import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import {
   Sheet,
@@ -32,14 +32,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Archive,
   FileText,
@@ -57,9 +51,13 @@ import {
   ExternalLink,
   Sparkles,
   Settings2,
+  LayoutList,
+  CalendarDays,
 } from "lucide-react";
 import { StoredSummaryCard } from "./StoredSummaryCard";
 import { PushToChannelModal } from "./PushToChannelModal";
+import { SummaryFilters, type FilterState } from "./SummaryFilters";
+import { SummaryCalendar } from "./SummaryCalendar";
 import type { StoredSummary, StoredSummaryDetail } from "@/types";
 
 // Helper to group summaries by recency
@@ -104,19 +102,34 @@ interface StoredSummariesTabProps {
 
 export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTabProps) {
   const [page, setPage] = useState(1);
-  const [showArchived, setShowArchived] = useState(false);
-  const [sourceFilter, setSourceFilter] = useState<SummarySourceType>(initialSource || "all");  // ADR-008, ADR-009
+  const [viewMode, setViewMode] = useState<"list" | "calendar">("list");  // ADR-017
   const [selectedSummary, setSelectedSummary] = useState<string | null>(null);
   const [pushModalSummary, setPushModalSummary] = useState<StoredSummary | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  // ADR-017: Unified filter state
+  const [filters, setFilters] = useState<FilterState>({
+    source: initialSource || "all",
+    archived: false,
+    channelMode: "all",
+    sortBy: "created_at",
+    sortOrder: "desc",
+  });
 
   const { toast } = useToast();
   const { data: guild } = useGuild(guildId);
   const { data, isLoading, isError, refetch } = useStoredSummaries(guildId, {
     page,
     limit: 20,
-    archived: showArchived,
-    source: sourceFilter,  // ADR-008: Source filtering
+    archived: filters.archived,
+    source: filters.source,
+    createdAfter: filters.createdAfter,
+    createdBefore: filters.createdBefore,
+    archivePeriod: filters.archivePeriod,
+    channelMode: filters.channelMode,
+    hasGrounding: filters.hasGrounding,
+    sortBy: filters.sortBy,
+    sortOrder: filters.sortOrder,
   });
 
   const updateMutation = useUpdateStoredSummary(guildId);
@@ -256,126 +269,145 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / 20);
 
+  // ADR-017: Handle date selection from calendar
+  const handleDateSelect = (date: string) => {
+    setFilters(prev => ({
+      ...prev,
+      archivePeriod: date,
+      createdAfter: undefined,
+      createdBefore: undefined,
+    }));
+    setViewMode("list");
+  };
+
   return (
     <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-4">
-        {/* ADR-008: Source filter */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Source:</span>
-          <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as SummarySourceType)}>
-            <SelectTrigger className="w-[140px] h-8">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Sources</SelectItem>
-              <SelectItem value="realtime">Real-time</SelectItem>
-              <SelectItem value="archive">Archive</SelectItem>
-              <SelectItem value="scheduled">Scheduled</SelectItem>
-              <SelectItem value="manual">Manual</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id="show-archived"
-            checked={showArchived}
-            onCheckedChange={(checked) => setShowArchived(checked as boolean)}
-          />
-          <label htmlFor="show-archived" className="text-sm cursor-pointer">
-            Show archived
-          </label>
-        </div>
-        <span className="text-sm text-muted-foreground">
-          {total} stored {total === 1 ? "summary" : "summaries"}
-        </span>
+      {/* ADR-017: View mode toggle and filters */}
+      <div className="flex items-center justify-between gap-4">
+        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "list" | "calendar")} className="w-auto">
+          <TabsList className="h-8">
+            <TabsTrigger value="list" className="h-7 px-3">
+              <LayoutList className="h-4 w-4 mr-1" />
+              List
+            </TabsTrigger>
+            <TabsTrigger value="calendar" className="h-7 px-3">
+              <CalendarDays className="h-4 w-4 mr-1" />
+              Calendar
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
-      {/* Empty State */}
-      {summaries.length === 0 && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex flex-col items-center justify-center py-20"
-        >
-          <Archive className="mb-4 h-16 w-16 text-muted-foreground/30" />
-          <h2 className="mb-2 text-xl font-semibold">No stored summaries</h2>
-          <p className="text-center text-muted-foreground">
-            {showArchived
-              ? "No archived summaries found"
-              : "Create a schedule with Dashboard destination to store summaries here"}
-          </p>
-        </motion.div>
+      {/* ADR-017: Enhanced filters */}
+      {viewMode === "list" && (
+        <SummaryFilters
+          filters={filters}
+          onFiltersChange={(newFilters) => {
+            setFilters(newFilters);
+            setPage(1);  // Reset to first page when filters change
+          }}
+          totalCount={total}
+        />
       )}
 
-      {/* Summary List - Grouped by Recency */}
-      {(() => {
-        const groups = groupSummariesByRecency(summaries);
-        let globalIndex = 0;
+      {/* ADR-017: Calendar View */}
+      {viewMode === "calendar" && (
+        <SummaryCalendar
+          guildId={guildId}
+          onDateSelect={handleDateSelect}
+          selectedDate={filters.archivePeriod}
+        />
+      )}
 
-        const renderGroup = (title: string, items: StoredSummary[], icon: React.ReactNode) => {
-          if (items.length === 0) return null;
-          const startIndex = globalIndex;
-          globalIndex += items.length;
-          return (
-            <div key={title} className="space-y-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                {icon}
-                <span>{title}</span>
-                <span className="text-xs">({items.length})</span>
+      {/* List View Content */}
+      {viewMode === "list" && (
+        <>
+          {/* Empty State */}
+          {summaries.length === 0 && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-col items-center justify-center py-20"
+            >
+              <Archive className="mb-4 h-16 w-16 text-muted-foreground/30" />
+              <h2 className="mb-2 text-xl font-semibold">No stored summaries</h2>
+              <p className="text-center text-muted-foreground">
+                {filters.archived
+                  ? "No archived summaries found"
+                  : "Create a schedule with Dashboard destination to store summaries here"}
+              </p>
+            </motion.div>
+          )}
+
+          {/* Summary List - Grouped by Recency */}
+          {(() => {
+            const groups = groupSummariesByRecency(summaries);
+            let globalIndex = 0;
+
+            const renderGroup = (title: string, items: StoredSummary[], icon: React.ReactNode) => {
+              if (items.length === 0) return null;
+              const startIndex = globalIndex;
+              globalIndex += items.length;
+              return (
+                <div key={title} className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    {icon}
+                    <span>{title}</span>
+                    <span className="text-xs">({items.length})</span>
+                  </div>
+                  <div className="grid gap-3">
+                    {items.map((summary, idx) => (
+                      <StoredSummaryCard
+                        key={summary.id}
+                        summary={summary}
+                        index={startIndex + idx}
+                        onView={() => setSelectedSummary(summary.id)}
+                        onPush={() => setPushModalSummary(summary)}
+                        onPin={() => handlePin(summary)}
+                        onArchive={() => handleArchive(summary)}
+                        onDelete={() => setDeleteConfirmId(summary.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            };
+
+            return (
+              <div className="space-y-6">
+                {renderGroup("Today", groups.today, <Clock className="h-4 w-4" />)}
+                {renderGroup("Last 3 Days", groups.lastThreeDays, <Calendar className="h-4 w-4" />)}
+                {renderGroup("This Week", groups.thisWeek, <Calendar className="h-4 w-4" />)}
+                {renderGroup("Older", groups.older, <History className="h-4 w-4" />)}
               </div>
-              <div className="grid gap-3">
-                {items.map((summary, idx) => (
-                  <StoredSummaryCard
-                    key={summary.id}
-                    summary={summary}
-                    index={startIndex + idx}
-                    onView={() => setSelectedSummary(summary.id)}
-                    onPush={() => setPushModalSummary(summary)}
-                    onPin={() => handlePin(summary)}
-                    onArchive={() => handleArchive(summary)}
-                    onDelete={() => setDeleteConfirmId(summary.id)}
-                  />
-                ))}
-              </div>
+            );
+          })()}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+              >
+                Next
+              </Button>
             </div>
-          );
-        };
-
-        return (
-          <div className="space-y-6">
-            {renderGroup("Today", groups.today, <Clock className="h-4 w-4" />)}
-            {renderGroup("Last 3 Days", groups.lastThreeDays, <Calendar className="h-4 w-4" />)}
-            {renderGroup("This Week", groups.thisWeek, <Calendar className="h-4 w-4" />)}
-            {renderGroup("Older", groups.older, <History className="h-4 w-4" />)}
-          </div>
-        );
-      })()}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-          >
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-          >
-            Next
-          </Button>
-        </div>
+          )}
+        </>
       )}
 
       {/* Detail Sheet */}

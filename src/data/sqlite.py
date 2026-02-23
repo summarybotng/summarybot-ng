@@ -1036,6 +1036,14 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         include_archived: bool = False,
         tags: Optional[List[str]] = None,
         source: Optional[str] = None,  # ADR-008: Filter by source
+        # ADR-017: Enhanced filtering
+        created_after: Optional[datetime] = None,
+        created_before: Optional[datetime] = None,
+        archive_period: Optional[str] = None,
+        channel_mode: Optional[str] = None,  # "single" or "multi"
+        has_grounding: Optional[bool] = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
     ) -> List[StoredSummary]:
         """Find stored summaries for a guild.
 
@@ -1048,6 +1056,13 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             tags: Filter by any of these tags
             source: ADR-008 - Filter by source type (realtime, archive, etc.)
                     Use "all" or None for no filtering
+            created_after: ADR-017 - Filter by creation date (after)
+            created_before: ADR-017 - Filter by creation date (before)
+            archive_period: ADR-017 - Filter by archive period (e.g., "2026-01-15")
+            channel_mode: ADR-017 - "single" for single-channel, "multi" for multi-channel
+            has_grounding: ADR-017 - Filter by grounding status
+            sort_by: ADR-017 - Sort field (created_at, message_count)
+            sort_order: ADR-017 - Sort direction (asc, desc)
 
         Returns:
             List of matching StoredSummary objects
@@ -1066,12 +1081,47 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             conditions.append("source = ?")
             params.append(source)
 
+        # ADR-017: Date range filtering
+        if created_after:
+            conditions.append("created_at >= ?")
+            params.append(created_after.isoformat())
+
+        if created_before:
+            conditions.append("created_at <= ?")
+            params.append(created_before.isoformat())
+
+        # ADR-017: Archive period filtering
+        if archive_period:
+            conditions.append("archive_period = ?")
+            params.append(archive_period)
+
+        # ADR-017: Channel mode filtering (single vs multi-channel)
+        if channel_mode == "single":
+            conditions.append("json_array_length(source_channel_ids) = 1")
+        elif channel_mode == "multi":
+            conditions.append("json_array_length(source_channel_ids) > 1")
+
+        # ADR-017: Grounding filter
+        if has_grounding is True:
+            conditions.append("json_array_length(json_extract(summary_json, '$.reference_index')) > 0")
+        elif has_grounding is False:
+            conditions.append("(json_extract(summary_json, '$.reference_index') IS NULL OR json_array_length(json_extract(summary_json, '$.reference_index')) = 0)")
+
         where_clause = " AND ".join(conditions)
+
+        # ADR-017: Dynamic sorting
+        valid_sort_fields = {"created_at", "message_count", "archive_period"}
+        if sort_by not in valid_sort_fields:
+            sort_by = "created_at"
+        sort_direction = "ASC" if sort_order.lower() == "asc" else "DESC"
+
+        # Always sort pinned first, then by the selected field
+        order_clause = f"is_pinned DESC, {sort_by} {sort_direction}"
 
         query = f"""
         SELECT * FROM stored_summaries
         WHERE {where_clause}
-        ORDER BY is_pinned DESC, created_at DESC
+        ORDER BY {order_clause}
         LIMIT ? OFFSET ?
         """
 
@@ -1093,13 +1143,45 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         self,
         guild_id: str,
         include_archived: bool = False,
+        source: Optional[str] = None,
+        created_after: Optional[datetime] = None,
+        created_before: Optional[datetime] = None,
+        archive_period: Optional[str] = None,
+        channel_mode: Optional[str] = None,
+        has_grounding: Optional[bool] = None,
     ) -> int:
-        """Count stored summaries for a guild."""
+        """Count stored summaries for a guild with optional filters (ADR-017)."""
         conditions = ["guild_id = ?"]
         params: List[Any] = [guild_id]
 
         if not include_archived:
             conditions.append("is_archived = 0")
+
+        if source and source != "all":
+            conditions.append("source = ?")
+            params.append(source)
+
+        if created_after:
+            conditions.append("created_at >= ?")
+            params.append(created_after.isoformat())
+
+        if created_before:
+            conditions.append("created_at <= ?")
+            params.append(created_before.isoformat())
+
+        if archive_period:
+            conditions.append("archive_period = ?")
+            params.append(archive_period)
+
+        if channel_mode == "single":
+            conditions.append("json_array_length(source_channel_ids) = 1")
+        elif channel_mode == "multi":
+            conditions.append("json_array_length(source_channel_ids) > 1")
+
+        if has_grounding is True:
+            conditions.append("json_array_length(json_extract(summary_json, '$.reference_index')) > 0")
+        elif has_grounding is False:
+            conditions.append("(json_extract(summary_json, '$.reference_index') IS NULL OR json_array_length(json_extract(summary_json, '$.reference_index')) = 0)")
 
         where_clause = " AND ".join(conditions)
 
@@ -1107,6 +1189,53 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
 
         row = await self.connection.fetch_one(query, tuple(params))
         return row['count'] if row else 0
+
+    async def get_calendar_data(
+        self,
+        guild_id: str,
+        year: int,
+        month: int,
+        include_archived: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Get summary counts grouped by day for calendar view (ADR-017).
+
+        Returns list of dicts with: date, count, sources, has_incomplete
+        """
+        conditions = ["guild_id = ?"]
+        params: List[Any] = [guild_id]
+
+        if not include_archived:
+            conditions.append("is_archived = 0")
+
+        # Filter by year and month
+        conditions.append("strftime('%Y', created_at) = ?")
+        conditions.append("strftime('%m', created_at) = ?")
+        params.extend([str(year), f"{month:02d}"])
+
+        where_clause = " AND ".join(conditions)
+
+        query = f"""
+        SELECT
+            DATE(created_at) as date,
+            COUNT(*) as count,
+            GROUP_CONCAT(DISTINCT source) as sources,
+            SUM(CASE WHEN source_channel_ids = '[]' OR source_channel_ids IS NULL THEN 1 ELSE 0 END) as incomplete_count
+        FROM stored_summaries
+        WHERE {where_clause}
+        GROUP BY DATE(created_at)
+        ORDER BY date
+        """
+
+        rows = await self.connection.fetch_all(query, tuple(params))
+        return [
+            {
+                "date": row["date"],
+                "count": row["count"],
+                "sources": row["sources"].split(",") if row["sources"] else [],
+                "has_incomplete": row["incomplete_count"] > 0,
+            }
+            for row in rows
+        ]
 
     async def update(self, summary: StoredSummary) -> bool:
         """Update a stored summary."""

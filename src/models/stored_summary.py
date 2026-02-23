@@ -269,6 +269,24 @@ class StoredSummary(BaseModel):
             perspective = meta.get("perspective")
             model_used = meta.get("model_used") or meta.get("model")
 
+        # ADR-017: Calculate integrity status
+        has_source_channels = bool(self.source_channel_ids)
+        has_participants = bool(self.summary_result and self.summary_result.participants)
+        has_grounding = self.has_references()
+        has_time_range = bool(
+            self.summary_result and
+            self.summary_result.start_time and
+            self.summary_result.end_time
+        )
+        # Can regenerate if we have time range and channels, OR source_content
+        regen_status = self.validate_regeneration()
+        can_regenerate = regen_status["can_regenerate"]
+
+        # Get participant count
+        participant_count = 0
+        if self.summary_result and self.summary_result.participants:
+            participant_count = len(self.summary_result.participants)
+
         return {
             "id": self.id,
             "guild_id": self.guild_id,
@@ -285,7 +303,8 @@ class StoredSummary(BaseModel):
             "key_points_count": self.get_key_points_count(),
             "action_items_count": self.get_action_items_count(),
             "message_count": self.get_message_count(),
-            "has_references": self.has_references(),
+            "participant_count": participant_count,  # ADR-017
+            "has_references": has_grounding,
             # ADR-008: Source tracking
             "source": self.source.value,
             "archive_period": self.archive_period,
@@ -294,6 +313,12 @@ class StoredSummary(BaseModel):
             "summary_length": summary_length,
             "perspective": perspective,
             "model_used": model_used,
+            # ADR-017: Integrity status
+            "has_source_channels": has_source_channels,
+            "has_participants": has_participants,
+            "has_grounding": has_grounding,
+            "has_time_range": has_time_range,
+            "can_regenerate": can_regenerate,
         }
 
     def to_dict(self) -> Dict[str, Any]:

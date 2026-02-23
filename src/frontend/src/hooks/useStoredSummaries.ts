@@ -24,6 +24,13 @@ interface StoredSummariesResponse {
 // ADR-008: Summary source types
 export type SummarySourceType = "realtime" | "scheduled" | "manual" | "archive" | "imported" | "all";
 
+// ADR-017: Channel mode types
+export type ChannelModeType = "single" | "multi" | "all";
+
+// ADR-017: Sort options
+export type SortByType = "created_at" | "message_count" | "archive_period";
+export type SortOrderType = "asc" | "desc";
+
 interface StoredSummariesParams {
   page?: number;
   limit?: number;
@@ -31,6 +38,14 @@ interface StoredSummariesParams {
   archived?: boolean;
   tags?: string[];
   source?: SummarySourceType;  // ADR-008: Filter by source
+  // ADR-017: Enhanced filters
+  createdAfter?: string;  // ISO date
+  createdBefore?: string;  // ISO date
+  archivePeriod?: string;  // YYYY-MM-DD
+  channelMode?: ChannelModeType;
+  hasGrounding?: boolean;
+  sortBy?: SortByType;
+  sortOrder?: SortOrderType;
 }
 
 export function useStoredSummaries(
@@ -45,6 +60,14 @@ export function useStoredSummaries(
   if (params.tags?.length) queryParams.set("tags", params.tags.join(","));
   // ADR-008: Source filtering
   if (params.source && params.source !== "all") queryParams.set("source", params.source);
+  // ADR-017: Enhanced filters
+  if (params.createdAfter) queryParams.set("created_after", params.createdAfter);
+  if (params.createdBefore) queryParams.set("created_before", params.createdBefore);
+  if (params.archivePeriod) queryParams.set("archive_period", params.archivePeriod);
+  if (params.channelMode && params.channelMode !== "all") queryParams.set("channel_mode", params.channelMode);
+  if (params.hasGrounding !== undefined) queryParams.set("has_grounding", params.hasGrounding.toString());
+  if (params.sortBy) queryParams.set("sort_by", params.sortBy);
+  if (params.sortOrder) queryParams.set("sort_order", params.sortOrder);
 
   const queryString = queryParams.toString();
 
@@ -55,6 +78,31 @@ export function useStoredSummaries(
         `/guilds/${guildId}/stored-summaries${queryString ? `?${queryString}` : ""}`
       ),
     enabled: !!guildId,
+  });
+}
+
+// ADR-017: Calendar data hook
+interface CalendarDay {
+  date: string;
+  count: number;
+  sources: string[];
+  has_incomplete: boolean;
+}
+
+interface CalendarResponse {
+  year: number;
+  month: number;
+  days: CalendarDay[];
+}
+
+export function useSummaryCalendar(guildId: string, year: number, month: number) {
+  return useQuery({
+    queryKey: ["summary-calendar", guildId, year, month],
+    queryFn: () =>
+      api.get<CalendarResponse>(
+        `/guilds/${guildId}/stored-summaries/calendar/${year}/${month}`
+      ),
+    enabled: !!guildId && !!year && !!month,
   });
 }
 

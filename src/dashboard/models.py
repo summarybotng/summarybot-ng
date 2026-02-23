@@ -681,7 +681,7 @@ class ErrorExportResponse(BaseModel):
 # ============================================================================
 
 class StoredSummaryListItem(BaseModel):
-    """Stored summary item in list (ADR-005, ADR-008, ADR-009)."""
+    """Stored summary item in list (ADR-005, ADR-008, ADR-009, ADR-017)."""
     id: str
     title: str
     source_channel_ids: List[str]
@@ -697,6 +697,7 @@ class StoredSummaryListItem(BaseModel):
     key_points_count: int = 0
     action_items_count: int = 0
     message_count: int = 0
+    participant_count: int = 0  # ADR-017: Quick participant count
     has_references: bool = False
     # ADR-008: Source tracking
     source: str = "realtime"  # realtime, archive, scheduled, manual, imported
@@ -706,6 +707,12 @@ class StoredSummaryListItem(BaseModel):
     summary_length: Optional[str] = None  # brief, detailed, comprehensive
     perspective: Optional[str] = None  # general, developer, marketing, etc.
     model_used: Optional[str] = None  # e.g., claude-3-5-sonnet
+    # ADR-017: Data integrity status
+    has_source_channels: bool = True  # False if source_channel_ids empty
+    has_participants: bool = True  # False if participants list empty
+    has_grounding: bool = False  # True if reference_index populated
+    has_time_range: bool = True  # False if start_time/end_time missing
+    can_regenerate: bool = True  # True if enough data for regeneration
 
 
 class StoredSummaryListResponse(BaseModel):

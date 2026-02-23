@@ -715,7 +715,7 @@ async def _get_stored_summary_repository():
     "/guilds/{guild_id}/stored-summaries",
     response_model=StoredSummaryListResponse,
     summary="List stored summaries",
-    description="Get paginated list of stored summaries for a guild (ADR-005, ADR-008).",
+    description="Get paginated list of stored summaries for a guild (ADR-005, ADR-008, ADR-017).",
     responses={
         403: {"model": ErrorResponse, "description": "No permission"},
         404: {"model": ErrorResponse, "description": "Guild not found"},
@@ -732,12 +732,20 @@ async def list_stored_summaries(
         None,
         description="ADR-008: Filter by source (realtime, archive, scheduled, manual, all)"
     ),
+    # ADR-017: Enhanced filtering
+    created_after: Optional[str] = Query(None, description="Filter by creation date (ISO format)"),
+    created_before: Optional[str] = Query(None, description="Filter by creation date (ISO format)"),
+    archive_period: Optional[str] = Query(None, description="Filter by archive period (YYYY-MM-DD)"),
+    channel_mode: Optional[str] = Query(None, description="Filter by channel mode (single, multi)"),
+    has_grounding: Optional[bool] = Query(None, description="Filter by grounding status"),
+    sort_by: str = Query("created_at", description="Sort field (created_at, message_count)"),
+    sort_order: str = Query("desc", description="Sort direction (asc, desc)"),
     user: dict = Depends(get_current_user),
 ):
     """List stored summaries for a guild.
 
     ADR-008: Supports unified listing of both real-time and archive summaries.
-    Use source parameter to filter by summary origin.
+    ADR-017: Enhanced filtering by date, channel mode, grounding, and sorting.
     """
     _check_guild_access(guild_id, user)
     _get_guild_or_404(guild_id)
@@ -750,7 +758,21 @@ async def list_stored_summaries(
     if tags:
         tag_list = [t.strip() for t in tags.split(",") if t.strip()]
 
-    # Fetch stored summaries
+    # ADR-017: Parse date filters
+    created_after_dt = None
+    created_before_dt = None
+    if created_after:
+        try:
+            created_after_dt = datetime.fromisoformat(created_after.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    if created_before:
+        try:
+            created_before_dt = datetime.fromisoformat(created_before.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+
+    # Fetch stored summaries with ADR-017 filters
     summaries = await stored_repo.find_by_guild(
         guild_id=guild_id,
         limit=limit,
@@ -758,12 +780,25 @@ async def list_stored_summaries(
         pinned_only=pinned is True,
         include_archived=archived,
         tags=tag_list,
-        source=source,  # ADR-008: Source filtering
+        source=source,
+        created_after=created_after_dt,
+        created_before=created_before_dt,
+        archive_period=archive_period,
+        channel_mode=channel_mode,
+        has_grounding=has_grounding,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
 
     total = await stored_repo.count_by_guild(
         guild_id=guild_id,
         include_archived=archived,
+        source=source,
+        created_after=created_after_dt,
+        created_before=created_before_dt,
+        archive_period=archive_period,
+        channel_mode=channel_mode,
+        has_grounding=has_grounding,
     )
 
     # ADR-009: Build schedule name lookup for summaries with schedule_ids
@@ -935,6 +970,43 @@ async def get_stored_summary(
         archive_granularity=stored.archive_granularity,
         archive_source_key=stored.archive_source_key,
     )
+
+
+# ADR-017: Calendar endpoint for summary overview
+@router.get(
+    "/guilds/{guild_id}/stored-summaries/calendar/{year}/{month}",
+    summary="Get calendar data for summaries",
+    description="Get summary counts grouped by day for calendar view (ADR-017).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def get_summary_calendar(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    year: int = Path(..., ge=2020, le=2100, description="Year"),
+    month: int = Path(..., ge=1, le=12, description="Month (1-12)"),
+    archived: bool = Query(False, description="Include archived summaries"),
+    user: dict = Depends(get_current_user),
+):
+    """Get calendar data showing summary counts by day.
+
+    Returns list of days with summaries, their counts, sources, and integrity status.
+    """
+    _check_guild_access(guild_id, user)
+
+    stored_repo = await _get_stored_summary_repository()
+    calendar_data = await stored_repo.get_calendar_data(
+        guild_id=guild_id,
+        year=year,
+        month=month,
+        include_archived=archived,
+    )
+
+    return {
+        "year": year,
+        "month": month,
+        "days": calendar_data,
+    }
 
 
 @router.post(

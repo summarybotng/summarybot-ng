@@ -1,7 +1,7 @@
 # ADR-018: Bulk Summary Operations
 
 ## Status
-Proposed
+Accepted (Implemented)
 
 ## Context
 

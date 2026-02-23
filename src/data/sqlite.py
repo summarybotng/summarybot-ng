@@ -1044,6 +1044,12 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         has_grounding: Optional[bool] = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        # ADR-018: Content-based filters
+        has_key_points: Optional[bool] = None,
+        has_action_items: Optional[bool] = None,
+        has_participants: Optional[bool] = None,
+        min_message_count: Optional[int] = None,
+        max_message_count: Optional[int] = None,
     ) -> List[StoredSummary]:
         """Find stored summaries for a guild.
 
@@ -1107,6 +1113,30 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         elif has_grounding is False:
             conditions.append("(json_extract(summary_json, '$.reference_index') IS NULL OR json_array_length(json_extract(summary_json, '$.reference_index')) = 0)")
 
+        # ADR-018: Content-based filters
+        if has_key_points is True:
+            conditions.append("json_array_length(json_extract(summary_json, '$.key_points')) > 0")
+        elif has_key_points is False:
+            conditions.append("(json_extract(summary_json, '$.key_points') IS NULL OR json_array_length(json_extract(summary_json, '$.key_points')) = 0)")
+
+        if has_action_items is True:
+            conditions.append("json_array_length(json_extract(summary_json, '$.action_items')) > 0")
+        elif has_action_items is False:
+            conditions.append("(json_extract(summary_json, '$.action_items') IS NULL OR json_array_length(json_extract(summary_json, '$.action_items')) = 0)")
+
+        if has_participants is True:
+            conditions.append("json_array_length(json_extract(summary_json, '$.participants')) > 0")
+        elif has_participants is False:
+            conditions.append("(json_extract(summary_json, '$.participants') IS NULL OR json_array_length(json_extract(summary_json, '$.participants')) = 0)")
+
+        if min_message_count is not None:
+            conditions.append("message_count >= ?")
+            params.append(min_message_count)
+
+        if max_message_count is not None:
+            conditions.append("message_count <= ?")
+            params.append(max_message_count)
+
         where_clause = " AND ".join(conditions)
 
         # ADR-017: Dynamic sorting
@@ -1149,8 +1179,14 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         archive_period: Optional[str] = None,
         channel_mode: Optional[str] = None,
         has_grounding: Optional[bool] = None,
+        # ADR-018: Content-based filters
+        has_key_points: Optional[bool] = None,
+        has_action_items: Optional[bool] = None,
+        has_participants: Optional[bool] = None,
+        min_message_count: Optional[int] = None,
+        max_message_count: Optional[int] = None,
     ) -> int:
-        """Count stored summaries for a guild with optional filters (ADR-017)."""
+        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018)."""
         conditions = ["guild_id = ?"]
         params: List[Any] = [guild_id]
 
@@ -1182,6 +1218,30 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             conditions.append("json_array_length(json_extract(summary_json, '$.reference_index')) > 0")
         elif has_grounding is False:
             conditions.append("(json_extract(summary_json, '$.reference_index') IS NULL OR json_array_length(json_extract(summary_json, '$.reference_index')) = 0)")
+
+        # ADR-018: Content-based filters
+        if has_key_points is True:
+            conditions.append("json_array_length(json_extract(summary_json, '$.key_points')) > 0")
+        elif has_key_points is False:
+            conditions.append("(json_extract(summary_json, '$.key_points') IS NULL OR json_array_length(json_extract(summary_json, '$.key_points')) = 0)")
+
+        if has_action_items is True:
+            conditions.append("json_array_length(json_extract(summary_json, '$.action_items')) > 0")
+        elif has_action_items is False:
+            conditions.append("(json_extract(summary_json, '$.action_items') IS NULL OR json_array_length(json_extract(summary_json, '$.action_items')) = 0)")
+
+        if has_participants is True:
+            conditions.append("json_array_length(json_extract(summary_json, '$.participants')) > 0")
+        elif has_participants is False:
+            conditions.append("(json_extract(summary_json, '$.participants') IS NULL OR json_array_length(json_extract(summary_json, '$.participants')) = 0)")
+
+        if min_message_count is not None:
+            conditions.append("message_count >= ?")
+            params.append(min_message_count)
+
+        if max_message_count is not None:
+            conditions.append("message_count <= ?")
+            params.append(max_message_count)
 
         where_clause = " AND ".join(conditions)
 
@@ -1270,6 +1330,49 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         query = "DELETE FROM stored_summaries WHERE id = ?"
         cursor = await self.connection.execute(query, (summary_id,))
         return cursor.rowcount > 0
+
+    async def bulk_delete(self, summary_ids: List[str], guild_id: str) -> Dict[str, Any]:
+        """Delete multiple stored summaries (ADR-018).
+
+        Args:
+            summary_ids: List of summary IDs to delete
+            guild_id: Guild ID for access control
+
+        Returns:
+            Dict with deleted_count, failed_ids, errors
+        """
+        if not summary_ids:
+            return {"deleted_count": 0, "failed_ids": [], "errors": []}
+
+        deleted_count = 0
+        failed_ids = []
+        errors = []
+
+        # Delete in batches to avoid SQL parameter limits
+        batch_size = 100
+        for i in range(0, len(summary_ids), batch_size):
+            batch = summary_ids[i:i + batch_size]
+            placeholders = ",".join(["?" for _ in batch])
+
+            # Only delete summaries belonging to this guild
+            query = f"""
+            DELETE FROM stored_summaries
+            WHERE id IN ({placeholders}) AND guild_id = ?
+            """
+
+            try:
+                cursor = await self.connection.execute(query, tuple(batch) + (guild_id,))
+                deleted_count += cursor.rowcount
+            except Exception as e:
+                logger.error(f"Bulk delete batch failed: {e}")
+                failed_ids.extend(batch)
+                errors.append(str(e))
+
+        return {
+            "deleted_count": deleted_count,
+            "failed_ids": failed_ids,
+            "errors": errors,
+        }
 
     async def find_by_schedule(
         self,

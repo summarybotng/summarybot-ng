@@ -1,15 +1,16 @@
 /**
- * Summary Filters Component (ADR-017)
+ * Summary Filters Component (ADR-017, ADR-018)
  *
  * Provides filtering, sorting, and view options for the stored summaries list.
- * Includes date range, sort controls, channel mode, and integrity filters.
+ * Includes date range, sort controls, channel mode, integrity filters, and content filters.
  */
 
 import { useState } from "react";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, ArrowUpDown, Filter, X, Hash, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Calendar as CalendarIcon, ArrowUpDown, Filter, X, Hash, AlertTriangle, CheckCircle2, ListChecks, Users, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Input } from "@/components/ui/input";
 import {
   Popover,
   PopoverContent,
@@ -41,6 +42,12 @@ export interface FilterState {
   hasGrounding?: boolean;
   sortBy: SortByType;
   sortOrder: SortOrderType;
+  // ADR-018: Content filters
+  hasKeyPoints?: boolean;
+  hasActionItems?: boolean;
+  hasParticipants?: boolean;
+  minMessageCount?: number;
+  maxMessageCount?: number;
 }
 
 interface SummaryFiltersProps {
@@ -57,6 +64,12 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
     filters.createdBefore,
     filters.channelMode !== "all",
     filters.hasGrounding !== undefined,
+    // ADR-018: Content filter counts
+    filters.hasKeyPoints !== undefined,
+    filters.hasActionItems !== undefined,
+    filters.hasParticipants !== undefined,
+    filters.minMessageCount !== undefined,
+    filters.maxMessageCount !== undefined,
   ].filter(Boolean).length;
 
   const handleClearFilters = () => {
@@ -67,6 +80,12 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
       archivePeriod: undefined,
       channelMode: "all",
       hasGrounding: undefined,
+      // ADR-018: Clear content filters
+      hasKeyPoints: undefined,
+      hasActionItems: undefined,
+      hasParticipants: undefined,
+      minMessageCount: undefined,
+      maxMessageCount: undefined,
     });
   };
 
@@ -254,6 +273,88 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
                 </div>
               </div>
 
+              {/* ADR-018: Content filters */}
+              <div className="space-y-2">
+                <label className="text-sm text-muted-foreground flex items-center gap-2">
+                  <ListChecks className="h-3 w-3" />
+                  Content
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={filters.hasKeyPoints === true ? "default" : "outline"}
+                    size="sm"
+                    onClick={() =>
+                      onFiltersChange({
+                        ...filters,
+                        hasKeyPoints: filters.hasKeyPoints === true ? undefined : true,
+                      })
+                    }
+                  >
+                    Key Points
+                  </Button>
+                  <Button
+                    variant={filters.hasActionItems === true ? "default" : "outline"}
+                    size="sm"
+                    onClick={() =>
+                      onFiltersChange({
+                        ...filters,
+                        hasActionItems: filters.hasActionItems === true ? undefined : true,
+                      })
+                    }
+                  >
+                    Action Items
+                  </Button>
+                  <Button
+                    variant={filters.hasParticipants === true ? "default" : "outline"}
+                    size="sm"
+                    onClick={() =>
+                      onFiltersChange({
+                        ...filters,
+                        hasParticipants: filters.hasParticipants === true ? undefined : true,
+                      })
+                    }
+                  >
+                    <Users className="mr-1 h-3 w-3" />
+                    Participants
+                  </Button>
+                </div>
+              </div>
+
+              {/* ADR-018: Message count filter */}
+              <div className="space-y-2">
+                <label className="text-sm text-muted-foreground flex items-center gap-2">
+                  <MessageSquare className="h-3 w-3" />
+                  Message Count
+                </label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    placeholder="Min"
+                    className="w-20 h-8"
+                    value={filters.minMessageCount ?? ""}
+                    onChange={(e) =>
+                      onFiltersChange({
+                        ...filters,
+                        minMessageCount: e.target.value ? parseInt(e.target.value) : undefined,
+                      })
+                    }
+                  />
+                  <span className="text-muted-foreground">to</span>
+                  <Input
+                    type="number"
+                    placeholder="Max"
+                    className="w-20 h-8"
+                    value={filters.maxMessageCount ?? ""}
+                    onChange={(e) =>
+                      onFiltersChange({
+                        ...filters,
+                        maxMessageCount: e.target.value ? parseInt(e.target.value) : undefined,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
               {/* Clear filters */}
               {activeFilterCount > 0 && (
                 <Button
@@ -327,6 +428,51 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
               {filters.hasGrounding ? "With Grounding" : "No Grounding"}
               <button
                 onClick={() => onFiltersChange({ ...filters, hasGrounding: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {/* ADR-018: Content filter tags */}
+          {filters.hasKeyPoints === true && (
+            <Badge variant="secondary" className="gap-1">
+              Has Key Points
+              <button
+                onClick={() => onFiltersChange({ ...filters, hasKeyPoints: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {filters.hasActionItems === true && (
+            <Badge variant="secondary" className="gap-1">
+              Has Action Items
+              <button
+                onClick={() => onFiltersChange({ ...filters, hasActionItems: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {filters.hasParticipants === true && (
+            <Badge variant="secondary" className="gap-1">
+              Has Participants
+              <button
+                onClick={() => onFiltersChange({ ...filters, hasParticipants: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {(filters.minMessageCount !== undefined || filters.maxMessageCount !== undefined) && (
+            <Badge variant="secondary" className="gap-1">
+              Messages: {filters.minMessageCount ?? 0} - {filters.maxMessageCount ?? "∞"}
+              <button
+                onClick={() => onFiltersChange({ ...filters, minMessageCount: undefined, maxMessageCount: undefined })}
                 className="ml-1 hover:text-destructive"
               >
                 <X className="h-3 w-3" />

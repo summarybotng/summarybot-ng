@@ -31,6 +31,11 @@ from ..models import (
     PushToChannelRequest,
     PushToChannelResponse,
     PushDeliveryResult,
+    # ADR-018: Bulk operations
+    BulkDeleteRequest,
+    BulkDeleteResponse,
+    BulkRegenerateRequest,
+    BulkRegenerateResponse,
 )
 from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_stored_summary_repository, get_config_manager, get_task_scheduler
 from ...data.base import SearchCriteria
@@ -740,12 +745,19 @@ async def list_stored_summaries(
     has_grounding: Optional[bool] = Query(None, description="Filter by grounding status"),
     sort_by: str = Query("created_at", description="Sort field (created_at, message_count)"),
     sort_order: str = Query("desc", description="Sort direction (asc, desc)"),
+    # ADR-018: Content-based filters
+    has_key_points: Optional[bool] = Query(None, description="Filter by key points presence"),
+    has_action_items: Optional[bool] = Query(None, description="Filter by action items presence"),
+    has_participants: Optional[bool] = Query(None, description="Filter by participants presence"),
+    min_message_count: Optional[int] = Query(None, ge=0, description="Minimum message count"),
+    max_message_count: Optional[int] = Query(None, ge=0, description="Maximum message count"),
     user: dict = Depends(get_current_user),
 ):
     """List stored summaries for a guild.
 
     ADR-008: Supports unified listing of both real-time and archive summaries.
     ADR-017: Enhanced filtering by date, channel mode, grounding, and sorting.
+    ADR-018: Content-based filtering by key points, action items, participants.
     """
     _check_guild_access(guild_id, user)
     _get_guild_or_404(guild_id)
@@ -772,7 +784,7 @@ async def list_stored_summaries(
         except ValueError:
             pass
 
-    # Fetch stored summaries with ADR-017 filters
+    # Fetch stored summaries with ADR-017/ADR-018 filters
     summaries = await stored_repo.find_by_guild(
         guild_id=guild_id,
         limit=limit,
@@ -788,6 +800,12 @@ async def list_stored_summaries(
         has_grounding=has_grounding,
         sort_by=sort_by,
         sort_order=sort_order,
+        # ADR-018: Content filters
+        has_key_points=has_key_points,
+        has_action_items=has_action_items,
+        has_participants=has_participants,
+        min_message_count=min_message_count,
+        max_message_count=max_message_count,
     )
 
     total = await stored_repo.count_by_guild(
@@ -799,6 +817,12 @@ async def list_stored_summaries(
         archive_period=archive_period,
         channel_mode=channel_mode,
         has_grounding=has_grounding,
+        # ADR-018: Content filters
+        has_key_points=has_key_points,
+        has_action_items=has_action_items,
+        has_participants=has_participants,
+        min_message_count=min_message_count,
+        max_message_count=max_message_count,
     )
 
     # ADR-009: Build schedule name lookup for summaries with schedule_ids
@@ -1381,6 +1405,125 @@ async def delete_stored_summary(
     await stored_repo.delete(summary_id)
 
     return {"success": True, "message": f"Deleted stored summary {summary_id}"}
+
+
+# ADR-018: Bulk delete endpoint
+@router.post(
+    "/guilds/{guild_id}/stored-summaries/bulk-delete",
+    response_model=BulkDeleteResponse,
+    summary="Bulk delete summaries",
+    description="Delete multiple stored summaries at once (ADR-018).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def bulk_delete_summaries(
+    body: BulkDeleteRequest,
+    guild_id: str = Path(..., description="Discord guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Bulk delete stored summaries."""
+    _check_guild_access(guild_id, user)
+
+    stored_repo = await _get_stored_summary_repository()
+    result = await stored_repo.bulk_delete(body.summary_ids, guild_id)
+
+    return BulkDeleteResponse(
+        deleted_count=result["deleted_count"],
+        failed_ids=result.get("failed_ids", []),
+        errors=result.get("errors", []),
+    )
+
+
+# ADR-018: Bulk regenerate endpoint
+@router.post(
+    "/guilds/{guild_id}/stored-summaries/bulk-regenerate",
+    response_model=BulkRegenerateResponse,
+    summary="Bulk regenerate summaries",
+    description="Queue multiple summaries for regeneration with grounding (ADR-018).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def bulk_regenerate_summaries(
+    body: BulkRegenerateRequest,
+    guild_id: str = Path(..., description="Discord guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Bulk regenerate stored summaries with grounding."""
+    _check_guild_access(guild_id, user)
+
+    stored_repo = await _get_stored_summary_repository()
+
+    # Filter to summaries that can be regenerated (have source_content)
+    queued_ids = []
+    skipped_ids = []
+
+    for summary_id in body.summary_ids:
+        stored = await stored_repo.get(summary_id)
+        if not stored or stored.guild_id != guild_id:
+            skipped_ids.append(summary_id)
+            continue
+
+        # Check if regeneration is possible
+        if not stored.summary_result or not stored.summary_result.source_content:
+            skipped_ids.append(summary_id)
+            continue
+
+        # Check if already has grounding
+        if stored.has_references():
+            skipped_ids.append(summary_id)
+            continue
+
+        queued_ids.append(summary_id)
+
+    # Create bulk task
+    import secrets
+    task_id = f"bulk_regen_{secrets.token_urlsafe(8)}"
+
+    # Store task info
+    _generation_tasks[task_id] = {
+        "status": "processing",
+        "type": "bulk_regenerate",
+        "guild_id": guild_id,
+        "summary_ids": queued_ids,
+        "completed": 0,
+        "total": len(queued_ids),
+        "started_at": datetime.utcnow(),
+        "errors": [],
+    }
+
+    # Start background regeneration
+    async def run_bulk_regeneration():
+        for idx, summary_id in enumerate(queued_ids):
+            try:
+                # Trigger individual regeneration
+                stored = await stored_repo.get(summary_id)
+                if stored and stored.summary_result:
+                    # Re-use existing regeneration logic
+                    from ...summarization.adapter import SummarizationAdapter
+                    engine = get_summarization_engine()
+                    if engine:
+                        adapter = SummarizationAdapter(engine)
+                        new_result = await adapter.regenerate_with_grounding(stored.summary_result)
+                        new_result.id = summary_id
+                        stored.summary_result = new_result
+                        await stored_repo.update(stored)
+                        _generation_tasks[task_id]["completed"] = idx + 1
+            except Exception as e:
+                logger.error(f"Bulk regeneration failed for {summary_id}: {e}")
+                _generation_tasks[task_id]["errors"].append(f"{summary_id}: {str(e)}")
+
+        _generation_tasks[task_id]["status"] = "completed"
+
+    asyncio.create_task(run_bulk_regeneration())
+
+    return BulkRegenerateResponse(
+        queued_count=len(queued_ids),
+        skipped_count=len(skipped_ids),
+        skipped_ids=skipped_ids,
+        task_id=task_id,
+    )
 
 
 @router.post(

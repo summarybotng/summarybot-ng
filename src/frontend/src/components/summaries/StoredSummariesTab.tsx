@@ -58,6 +58,7 @@ import { StoredSummaryCard } from "./StoredSummaryCard";
 import { PushToChannelModal } from "./PushToChannelModal";
 import { SummaryFilters, type FilterState } from "./SummaryFilters";
 import { SummaryCalendar } from "./SummaryCalendar";
+import { BulkActionBar } from "./BulkActionBar";
 import type { StoredSummary, StoredSummaryDetail } from "@/types";
 
 // Helper to group summaries by recency
@@ -106,6 +107,8 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
   const [selectedSummary, setSelectedSummary] = useState<string | null>(null);
   const [pushModalSummary, setPushModalSummary] = useState<StoredSummary | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  // ADR-018: Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // ADR-017: Unified filter state
   const [filters, setFilters] = useState<FilterState>({
@@ -130,6 +133,12 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
     hasGrounding: filters.hasGrounding,
     sortBy: filters.sortBy,
     sortOrder: filters.sortOrder,
+    // ADR-018: Content filters
+    hasKeyPoints: filters.hasKeyPoints,
+    hasActionItems: filters.hasActionItems,
+    hasParticipants: filters.hasParticipants,
+    minMessageCount: filters.minMessageCount,
+    maxMessageCount: filters.maxMessageCount,
   });
 
   const updateMutation = useUpdateStoredSummary(guildId);
@@ -280,6 +289,29 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
     setViewMode("list");
   };
 
+  // ADR-018: Selection handlers
+  const handleToggleSelect = (summaryId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(summaryId)) {
+        next.delete(summaryId);
+      } else {
+        next.add(summaryId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    setSelectedIds(new Set(summaries.map(s => s.id)));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedIds(new Set());
+  };
+
+  const allSelected = summaries.length > 0 && summaries.every(s => selectedIds.has(s.id));
+
   return (
     <div className="space-y-4">
       {/* ADR-017: View mode toggle and filters */}
@@ -316,6 +348,18 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
           guildId={guildId}
           onDateSelect={handleDateSelect}
           selectedDate={filters.archivePeriod}
+        />
+      )}
+
+      {/* ADR-018: Bulk Action Bar */}
+      {viewMode === "list" && selectedIds.size > 0 && (
+        <BulkActionBar
+          guildId={guildId}
+          selectedIds={selectedIds}
+          onSelectAll={handleSelectAll}
+          onClearSelection={handleClearSelection}
+          totalFilteredCount={total}
+          allSelected={allSelected}
         />
       )}
 
@@ -366,6 +410,8 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
                         onPin={() => handlePin(summary)}
                         onArchive={() => handleArchive(summary)}
                         onDelete={() => setDeleteConfirmId(summary.id)}
+                        isSelected={selectedIds.has(summary.id)}
+                        onToggleSelect={() => handleToggleSelect(summary.id)}
                       />
                     ))}
                   </div>

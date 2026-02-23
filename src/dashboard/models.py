@@ -770,6 +770,32 @@ class StoredSummaryUpdateRequest(BaseModel):
     tags: Optional[List[str]] = None
 
 
+# ADR-018: Bulk operation models
+class BulkDeleteRequest(BaseModel):
+    """Request to delete multiple stored summaries (ADR-018)."""
+    summary_ids: List[str] = Field(..., min_length=1, max_length=500, description="Summary IDs to delete")
+
+
+class BulkDeleteResponse(BaseModel):
+    """Response from bulk delete operation (ADR-018)."""
+    deleted_count: int
+    failed_ids: List[str] = []
+    errors: List[str] = []
+
+
+class BulkRegenerateRequest(BaseModel):
+    """Request to regenerate multiple stored summaries (ADR-018)."""
+    summary_ids: List[str] = Field(..., min_length=1, max_length=100, description="Summary IDs to regenerate")
+
+
+class BulkRegenerateResponse(BaseModel):
+    """Response from bulk regenerate operation (ADR-018)."""
+    queued_count: int
+    skipped_count: int = 0
+    skipped_ids: List[str] = []
+    task_id: str
+
+
 class PushToChannelRequest(BaseModel):
     """Request to push a stored summary to channels."""
     channel_ids: List[str] = Field(..., min_length=1, description="Channel IDs to push to")

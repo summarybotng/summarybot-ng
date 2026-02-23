@@ -46,6 +46,12 @@ interface StoredSummariesParams {
   hasGrounding?: boolean;
   sortBy?: SortByType;
   sortOrder?: SortOrderType;
+  // ADR-018: Content-based filters
+  hasKeyPoints?: boolean;
+  hasActionItems?: boolean;
+  hasParticipants?: boolean;
+  minMessageCount?: number;
+  maxMessageCount?: number;
 }
 
 export function useStoredSummaries(
@@ -68,6 +74,12 @@ export function useStoredSummaries(
   if (params.hasGrounding !== undefined) queryParams.set("has_grounding", params.hasGrounding.toString());
   if (params.sortBy) queryParams.set("sort_by", params.sortBy);
   if (params.sortOrder) queryParams.set("sort_order", params.sortOrder);
+  // ADR-018: Content filters
+  if (params.hasKeyPoints !== undefined) queryParams.set("has_key_points", params.hasKeyPoints.toString());
+  if (params.hasActionItems !== undefined) queryParams.set("has_action_items", params.hasActionItems.toString());
+  if (params.hasParticipants !== undefined) queryParams.set("has_participants", params.hasParticipants.toString());
+  if (params.minMessageCount !== undefined) queryParams.set("min_message_count", params.minMessageCount.toString());
+  if (params.maxMessageCount !== undefined) queryParams.set("max_message_count", params.maxMessageCount.toString());
 
   const queryString = queryParams.toString();
 
@@ -199,6 +211,55 @@ export function useRegenerateSummary(guildId: string) {
           queryKey: ["stored-summary", guildId, summaryId],
         });
       }, 5000);
+    },
+  });
+}
+
+// ADR-018: Bulk delete
+interface BulkDeleteResponse {
+  deleted_count: number;
+  failed_ids: string[];
+  errors: string[];
+}
+
+export function useBulkDeleteSummaries(guildId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (summaryIds: string[]) =>
+      api.post<BulkDeleteResponse>(
+        `/guilds/${guildId}/stored-summaries/bulk-delete`,
+        { summary_ids: summaryIds }
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] });
+      queryClient.invalidateQueries({ queryKey: ["summary-calendar", guildId] });
+    },
+  });
+}
+
+// ADR-018: Bulk regenerate
+interface BulkRegenerateResponse {
+  queued_count: number;
+  skipped_count: number;
+  skipped_ids: string[];
+  task_id: string;
+}
+
+export function useBulkRegenerateSummaries(guildId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (summaryIds: string[]) =>
+      api.post<BulkRegenerateResponse>(
+        `/guilds/${guildId}/stored-summaries/bulk-regenerate`,
+        { summary_ids: summaryIds }
+      ),
+    onSuccess: () => {
+      // Invalidate after a delay to allow regeneration to complete
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] });
+      }, 10000);
     },
   });
 }

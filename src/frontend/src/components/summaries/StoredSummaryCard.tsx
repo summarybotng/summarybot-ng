@@ -1,8 +1,9 @@
 /**
- * Stored Summary Card Component (ADR-005, ADR-008, ADR-009)
+ * Stored Summary Card Component (ADR-005, ADR-008, ADR-009, ADR-018)
  *
  * ADR-008: Extended to show source badges for unified summary experience.
  * ADR-009: Extended to show schedule name with navigation.
+ * ADR-018: Extended with selection checkbox for bulk operations.
  */
 
 import { useNavigate, useParams } from "react-router-dom";
@@ -10,6 +11,7 @@ import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,6 +61,9 @@ interface StoredSummaryCardProps {
   onPin: () => void;
   onArchive: () => void;
   onDelete: () => void;
+  // ADR-018: Selection support
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 export function StoredSummaryCard({
@@ -69,6 +74,8 @@ export function StoredSummaryCard({
   onPin,
   onArchive,
   onDelete,
+  isSelected = false,
+  onToggleSelect,
 }: StoredSummaryCardProps) {
   const { id: guildId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -89,12 +96,21 @@ export function StoredSummaryCard({
       <Card
         className={`cursor-pointer border-border/50 transition-all hover:border-primary/50 hover:shadow-lg ${
           summary.is_pinned ? "border-primary/30 bg-primary/5" : ""
-        }`}
+        } ${isSelected ? "ring-2 ring-primary bg-primary/5" : ""}`}
         onClick={onView}
       >
         <CardContent className="p-5">
           <div className="mb-3 flex items-start justify-between">
             <div className="flex items-center gap-2 flex-wrap">
+              {/* ADR-018: Selection checkbox */}
+              {onToggleSelect && (
+                <Checkbox
+                  checked={isSelected}
+                  onCheckedChange={() => onToggleSelect()}
+                  onClick={(e) => e.stopPropagation()}
+                  className="mr-1"
+                />
+              )}
               {summary.is_pinned && (
                 <Pin className="h-4 w-4 text-primary" />
               )}

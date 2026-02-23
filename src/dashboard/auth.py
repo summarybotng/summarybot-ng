@@ -564,6 +564,7 @@ def get_auth() -> DashboardAuth:
 
 
 async def get_current_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> dict:
     """FastAPI dependency to get current authenticated user.
@@ -574,6 +575,22 @@ async def get_current_user(
     Raises:
         HTTPException: If not authenticated
     """
+    # Test bypass: check for X-Test-Auth-Key header matching TEST_AUTH_SECRET env var
+    test_secret = os.getenv("TEST_AUTH_SECRET")
+    if test_secret:
+        provided_key = request.headers.get("X-Test-Auth-Key")
+        if provided_key == test_secret:
+            # Return a mock user with access to test guild
+            test_guild_id = os.getenv("TEST_GUILD_ID", "1234567890")
+            return {
+                "sub": "test_user_id",
+                "username": "test_user",
+                "avatar": None,
+                "guilds": [test_guild_id],
+                "iat": datetime.utcnow(),
+                "exp": datetime.utcnow() + timedelta(hours=24),
+            }
+
     if credentials is None:
         raise HTTPException(
             status_code=401,

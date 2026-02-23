@@ -291,6 +291,21 @@ class SummaryMetadataResponse(BaseModel):
     generation_time_seconds: Optional[float] = None
     warnings: List[SummaryWarning] = []  # Any warnings during generation
     prompt_source: Optional[PromptSourceResponse] = None  # Prompt resolution info
+    # Extended metadata fields
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    generation_time_ms: Optional[float] = None  # Alias for generation_time_seconds * 1000
+    summary_type: Optional[str] = None  # Legacy alias for summary_length
+    grounded: Optional[bool] = None
+    reference_count: Optional[int] = None
+    channel_name: Optional[str] = None
+    guild_name: Optional[str] = None
+    time_span_hours: Optional[float] = None
+    total_participants: Optional[int] = None
+    api_version: Optional[str] = None
+    cache_status: Optional[str] = None
+    # Pass through any additional unknown fields
+    model_config = {"extra": "allow"}
 
 
 class SummaryReferenceResponse(BaseModel):

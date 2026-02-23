@@ -31,6 +31,7 @@ from ..models import (
     PushToChannelRequest,
     PushToChannelResponse,
     PushDeliveryResult,
+    PromptSourceResponse,
     # ADR-018: Bulk operations
     BulkDeleteRequest,
     BulkDeleteResponse,
@@ -919,14 +920,14 @@ async def get_stored_summary(
 
         # Tokens: archive uses tokens_input/tokens_output, regular uses total_tokens
         tokens_used = meta.get("total_tokens")
-        if tokens_used is None:
-            tokens_input = meta.get("tokens_input", 0) or 0
-            tokens_output = meta.get("tokens_output", 0) or 0
-            if tokens_input or tokens_output:
-                tokens_used = tokens_input + tokens_output
+        input_tokens = meta.get("input_tokens") or meta.get("tokens_input")
+        output_tokens = meta.get("output_tokens") or meta.get("tokens_output")
+        if tokens_used is None and (input_tokens or output_tokens):
+            tokens_used = (input_tokens or 0) + (output_tokens or 0)
 
         # Time: archive uses duration_seconds, regular uses processing_time
         generation_time = meta.get("processing_time") or meta.get("duration_seconds")
+        generation_time_ms = generation_time * 1000 if generation_time else None
 
         metadata = SummaryMetadataResponse(
             summary_length=meta.get("summary_length") or meta.get("summary_type", "detailed"),
@@ -935,7 +936,31 @@ async def get_stored_summary(
             model_requested=meta.get("requested_model") or meta.get("model_requested"),
             tokens_used=tokens_used,
             generation_time_seconds=generation_time,
+            # Extended fields
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            generation_time_ms=generation_time_ms,
+            summary_type=meta.get("summary_type"),
+            grounded=meta.get("grounded"),
+            reference_count=len(summary_result.reference_index) if summary_result.reference_index else 0,
+            channel_name=meta.get("channel_name"),
+            guild_name=meta.get("guild_name"),
+            time_span_hours=meta.get("time_span_hours"),
+            total_participants=meta.get("total_participants"),
+            api_version=meta.get("api_version"),
+            cache_status=meta.get("cache_status"),
         )
+
+        # Add prompt_source if available
+        if meta.get("prompt_source"):
+            ps = meta["prompt_source"]
+            metadata.prompt_source = PromptSourceResponse(
+                source=ps.get("source", "default"),
+                file_path=ps.get("file_path"),
+                github_file_url=ps.get("github_file_url"),
+                path_template=ps.get("path_template"),
+                resolved_variables=ps.get("resolved_variables"),
+            )
 
     # Build references from summary_result if available (ADR-004)
     from ..models import SummaryReferenceResponse

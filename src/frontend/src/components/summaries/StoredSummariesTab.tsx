@@ -746,7 +746,7 @@ function StoredSummaryDetailSheet({
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-base">Summary</CardTitle>
-                  <CopyButton text={summary.summary_text} label="summary" />
+                  <CopyButton text={summary.summary_text || ""} label="summary" />
                 </CardHeader>
                 <CardContent>
                   <p className="whitespace-pre-wrap text-sm leading-relaxed">
@@ -914,7 +914,7 @@ function StoredSummaryDetailSheet({
                           <span className="font-medium">{summary.metadata.output_tokens.toLocaleString()}</span>
                         </div>
                       )}
-                      {summary.metadata.generation_time_ms && (
+                      {typeof summary.metadata.generation_time_ms === "number" && (
                         <div>
                           <span className="text-muted-foreground">Generation Time:</span>{" "}
                           <span className="font-medium">{(summary.metadata.generation_time_ms / 1000).toFixed(2)}s</span>
@@ -950,7 +950,7 @@ function StoredSummaryDetailSheet({
                           <span className="font-medium">{summary.metadata.guild_name}</span>
                         </div>
                       )}
-                      {summary.metadata.time_span_hours !== undefined && (
+                      {typeof summary.metadata.time_span_hours === "number" && (
                         <div>
                           <span className="text-muted-foreground">Time Span:</span>{" "}
                           <span className="font-medium">{summary.metadata.time_span_hours.toFixed(1)}h</span>

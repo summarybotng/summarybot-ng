@@ -140,8 +140,19 @@ class TaskExecutor:
 
         elif scope == SummaryScope.GUILD:
             # Resolve all accessible text channels in guild
+            # Try fetching from API first to ensure we have all channels
+            text_channels = list(guild.text_channels)
+            if len(text_channels) <= 1:
+                # Cache may be stale, fetch from Discord API
+                try:
+                    fetched = await guild.fetch_channels()
+                    text_channels = [ch for ch in fetched if isinstance(ch, discord.TextChannel)]
+                    logger.info(f"Fetched {len(text_channels)} text channels for guild scope")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch channels, using cache: {e}")
+
             channels = [
-                ch for ch in guild.text_channels
+                ch for ch in text_channels
                 if ch.permissions_for(guild.me).read_message_history
             ]
 

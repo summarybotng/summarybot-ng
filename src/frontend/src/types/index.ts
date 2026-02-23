@@ -307,6 +307,11 @@ export interface StoredSummaryDetail extends StoredSummary {
   references?: SummaryReference[];
   // ADR-008: Archive-specific fields
   archive_source_key?: string;
+  // Generation details (prompt data) - for "View Generation Details"
+  source_content?: string;
+  prompt_system?: string;
+  prompt_user?: string;
+  prompt_template_id?: string;
 }
 
 export interface PushDelivery {

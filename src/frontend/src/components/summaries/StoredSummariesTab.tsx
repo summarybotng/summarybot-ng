@@ -732,6 +732,48 @@ function StoredSummaryDetailSheet({
                         </div>
                       </div>
                     )}
+
+                    {/* View Generation Details - Source Content and Prompts */}
+                    {(summary.source_content || summary.prompt_system || summary.prompt_user) && (
+                      <div className="pt-2 border-t border-border/50">
+                        <details className="group">
+                          <summary className="cursor-pointer text-xs text-primary hover:underline flex items-center gap-1">
+                            <FileText className="h-3 w-3" />
+                            View Generation Details
+                            <span className="text-muted-foreground ml-1">(prompts & source)</span>
+                          </summary>
+                          <div className="mt-3 space-y-3">
+                            {summary.source_content && (
+                              <div>
+                                <h5 className="text-xs font-medium mb-1">Source Messages</h5>
+                                <pre className="text-xs bg-muted p-2 rounded max-h-40 overflow-auto whitespace-pre-wrap">
+                                  {summary.source_content.slice(0, 5000)}
+                                  {summary.source_content.length > 5000 && "..."}
+                                </pre>
+                              </div>
+                            )}
+                            {summary.prompt_system && (
+                              <div>
+                                <h5 className="text-xs font-medium mb-1">System Prompt</h5>
+                                <pre className="text-xs bg-muted p-2 rounded max-h-40 overflow-auto whitespace-pre-wrap">
+                                  {summary.prompt_system.slice(0, 3000)}
+                                  {summary.prompt_system.length > 3000 && "..."}
+                                </pre>
+                              </div>
+                            )}
+                            {summary.prompt_user && (
+                              <div>
+                                <h5 className="text-xs font-medium mb-1">User Prompt</h5>
+                                <pre className="text-xs bg-muted p-2 rounded max-h-40 overflow-auto whitespace-pre-wrap">
+                                  {summary.prompt_user.slice(0, 3000)}
+                                  {summary.prompt_user.length > 3000 && "..."}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}

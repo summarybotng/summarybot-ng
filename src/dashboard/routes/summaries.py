@@ -969,6 +969,11 @@ async def get_stored_summary(
         archive_period=stored.archive_period,
         archive_granularity=stored.archive_granularity,
         archive_source_key=stored.archive_source_key,
+        # Generation details (prompt data)
+        source_content=summary_result.source_content if summary_result else None,
+        prompt_system=summary_result.prompt_system if summary_result else None,
+        prompt_user=summary_result.prompt_user if summary_result else None,
+        prompt_template_id=summary_result.prompt_template_id if summary_result else None,
     )
 
 

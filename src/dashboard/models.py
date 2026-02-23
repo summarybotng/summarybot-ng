@@ -755,6 +755,11 @@ class StoredSummaryDetailResponse(BaseModel):
     archive_period: Optional[str] = None
     archive_granularity: Optional[str] = None
     archive_source_key: Optional[str] = None
+    # Generation details (prompt data) - for "View Generation Details"
+    source_content: Optional[str] = None  # Original messages
+    prompt_system: Optional[str] = None  # System prompt used
+    prompt_user: Optional[str] = None  # User prompt sent to AI
+    prompt_template_id: Optional[str] = None  # Custom template ID if used
 
 
 class StoredSummaryUpdateRequest(BaseModel):

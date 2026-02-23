@@ -157,11 +157,13 @@ class SummarizationEngine:
                     )
 
             # Build summarization prompt
+            # ADR-014: Pass guild_id for jump link generation in references
             prompt_data = self.prompt_builder.build_summarization_prompt(
                 messages=messages,
                 options=options,
                 context=context.to_dict() if context else None,
-                custom_system_prompt=custom_prompt
+                custom_system_prompt=custom_prompt,
+                guild_id=guild_id
             )
             
             # Check if prompt is too long

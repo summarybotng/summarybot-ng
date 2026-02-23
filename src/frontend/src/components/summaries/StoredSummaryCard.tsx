@@ -99,6 +99,9 @@ export function StoredSummaryCard({
                 <Pin className="h-4 w-4 text-primary" />
               )}
               <span className="font-medium">{summary.title}</span>
+              <span className="text-xs text-muted-foreground font-mono" title={`Summary ID: ${summary.id}`}>
+                {summary.id.substring(0, 8)}
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">

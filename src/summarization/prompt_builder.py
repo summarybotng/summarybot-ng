@@ -101,7 +101,8 @@ Confidence is 0.0-1.0 indicating how well the cited messages support the claim.
                                  options: SummaryOptions,
                                  context: Optional[Dict[str, Any]] = None,
                                  custom_system_prompt: Optional[str] = None,
-                                 enable_citations: Optional[bool] = None) -> SummarizationPrompt:
+                                 enable_citations: Optional[bool] = None,
+                                 guild_id: Optional[str] = None) -> SummarizationPrompt:
         """Build a complete summarization prompt.
 
         Args:
@@ -110,6 +111,7 @@ Confidence is 0.0-1.0 indicating how well the cited messages support the claim.
             context: Additional context information
             custom_system_prompt: Optional custom system prompt (overrides default)
             enable_citations: Override instance setting for citations (ADR-004)
+            guild_id: Discord guild ID for jump link generation (ADR-014)
 
         Returns:
             Complete prompt ready for Claude API, including PositionIndex for citation resolution
@@ -127,7 +129,8 @@ Confidence is 0.0-1.0 indicating how well the cited messages support the claim.
             system_prompt = self.build_system_prompt(options, use_citations)
 
         # ADR-004: Build position index for citation resolution
-        position_index = PositionIndex(messages) if use_citations else None
+        # ADR-014: Include guild_id for jump link generation
+        position_index = PositionIndex(messages, guild_id=guild_id) if use_citations else None
 
         # Build user prompt with messages (with position numbers if citations enabled)
         user_prompt = self.build_user_prompt(messages, context, options, use_citations)

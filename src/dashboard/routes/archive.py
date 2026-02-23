@@ -158,12 +158,20 @@ class SummarizationAdapter:
         api_key: str = None,
         summary_type: str = "detailed",
         perspective: str = "general",
+        guild_id: str = "",
     ):
         """
         Generate a summary from message dictionaries.
 
         Converts message dicts to ProcessedMessage objects and calls the engine.
         Returns an object with the fields the generator expects.
+
+        Args:
+            messages: List of message dictionaries
+            api_key: Optional API key (unused, engine has its own)
+            summary_type: Type of summary (brief, detailed, comprehensive)
+            perspective: Summary perspective (general, developer, etc.)
+            guild_id: Discord guild ID for jump link generation (ADR-014)
         """
         from datetime import datetime, timezone as tz
         from src.models.message import ProcessedMessage, MessageType
@@ -221,7 +229,7 @@ class SummarizationAdapter:
 
         # Get channel/guild info from first message
         channel_id = processed_messages[0].channel_id or ""
-        guild_id = ""
+        # ADR-014: Use passed guild_id for jump link generation
 
         # Call the engine
         result = await self.engine.summarize_messages(
@@ -241,6 +249,13 @@ class SummarizationAdapter:
         response.model = result.metadata.get("claude_model", "unknown")
         response.tokens_input = result.metadata.get("input_tokens", 0)
         response.tokens_output = result.metadata.get("output_tokens", 0)
+
+        # ADR-004: Copy structured summary data for grounded citations
+        response.key_points = result.key_points
+        response.action_items = result.action_items
+        response.participants = result.participants
+        response.technical_terms = result.technical_terms
+        response.reference_index = result.reference_index
 
         # Extract prompt version and generate checksum
         prompt_source = result.metadata.get("prompt_source", {})

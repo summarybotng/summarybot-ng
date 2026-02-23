@@ -275,17 +275,30 @@ async def get_summary(
     has_prompt_data = bool(summary.prompt_system or summary.prompt_user or summary.source_content)
 
     # Convert references if available (ADR-004)
+    # Note: SummaryReference uses 'sender', 'snippet', 'position' fields
     from ..models import SummaryReferenceResponse
     references = []
     if hasattr(summary, 'reference_index') and summary.reference_index:
         for ref in summary.reference_index:
-            references.append(SummaryReferenceResponse(
-                id=ref.id if hasattr(ref, 'id') else ref.get('id', 0),
-                author=ref.author if hasattr(ref, 'author') else ref.get('author', 'Unknown'),
-                timestamp=ref.timestamp if hasattr(ref, 'timestamp') else ref.get('timestamp'),
-                content=ref.content if hasattr(ref, 'content') else ref.get('content', ''),
-                message_id=ref.message_id if hasattr(ref, 'message_id') else ref.get('message_id'),
-            ))
+            # Handle both SummaryReference objects and dict representations
+            if hasattr(ref, 'position'):
+                # SummaryReference object
+                references.append(SummaryReferenceResponse(
+                    id=ref.position,
+                    author=ref.sender,
+                    timestamp=ref.timestamp,
+                    content=ref.snippet,
+                    message_id=ref.message_id,
+                ))
+            else:
+                # Dict representation (from database JSON)
+                references.append(SummaryReferenceResponse(
+                    id=ref.get('position', 0),
+                    author=ref.get('sender', 'Unknown'),
+                    timestamp=ref.get('timestamp'),
+                    content=ref.get('snippet', ''),
+                    message_id=ref.get('message_id'),
+                ))
 
     return SummaryDetailResponse(
         id=summary.id,

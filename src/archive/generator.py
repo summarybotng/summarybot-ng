@@ -445,12 +445,14 @@ class RetrospectiveGenerator:
             )
 
             # Generate summary
+            # ADR-014: Pass guild_id for jump link generation in references
             start_time = datetime.utcnow()
             summary_result = await self.summarization_service.generate_summary(
                 messages=messages,
                 api_key=resolved_key.key,
                 summary_type=job.summary_type,
                 perspective=job.perspective,
+                guild_id=job.source.server_id or "",
             )
             duration = (datetime.utcnow() - start_time).total_seconds()
 
@@ -563,6 +565,7 @@ class RetrospectiveGenerator:
                 db_summary_result = summary_result
             else:
                 # Create minimal SummaryResult from available data
+                # ADR-004: Preserve reference_index for grounded citations
                 db_summary_result = SummaryResult(
                     id=summary_id,
                     guild_id=job.source.server_id or "",
@@ -573,8 +576,10 @@ class RetrospectiveGenerator:
                     summary_text=summary_result.content if hasattr(summary_result, 'content') else str(summary_result),
                     key_points=getattr(summary_result, 'key_points', []),
                     action_items=getattr(summary_result, 'action_items', []),
-                    participants=[],
-                    technical_terms=[],
+                    participants=getattr(summary_result, 'participants', []),
+                    technical_terms=getattr(summary_result, 'technical_terms', []),
+                    # ADR-004: Copy reference_index for grounded citations display
+                    reference_index=getattr(summary_result, 'reference_index', []),
                     metadata={
                         "summary_type": job.summary_type,
                         "perspective": job.perspective,
@@ -585,6 +590,8 @@ class RetrospectiveGenerator:
                         "tokens_output": generation.tokens_output,
                         "cost_usd": generation.cost_usd,
                         "duration_seconds": generation.duration_seconds,
+                        # ADR-004: Track grounding status
+                        "grounded": len(getattr(summary_result, 'reference_index', [])) > 0,
                     },
                 )
 

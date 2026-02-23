@@ -429,10 +429,13 @@ function StoredSummaryDetailSheet({
           <>
             <SheetHeader>
               <SheetTitle>{summary.title}</SheetTitle>
-              <SheetDescription>
-                {summary.start_time && summary.end_time
-                  ? `${formatDateTime(summary.start_time)} - ${formatDateTime(summary.end_time)}`
-                  : `Created ${formatDateTime(summary.created_at)}`}
+              <SheetDescription className="space-y-1">
+                <div>
+                  {summary.start_time && summary.end_time
+                    ? `${formatDateTime(summary.start_time)} - ${formatDateTime(summary.end_time)}`
+                    : `Created ${formatDateTime(summary.created_at)}`}
+                </div>
+                <div className="font-mono text-xs">ID: {summary.id}</div>
               </SheetDescription>
             </SheetHeader>
 

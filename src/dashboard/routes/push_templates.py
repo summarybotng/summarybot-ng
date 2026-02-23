@@ -10,7 +10,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
-from ..auth import get_current_user, User
+from ..auth import get_current_user
 from ...models.push_template import (
     PushTemplate, DEFAULT_PUSH_TEMPLATE, validate_template,
     SectionConfig,
@@ -78,7 +78,7 @@ class PreviewRequest(BaseModel):
 @router.get("", response_model=PushTemplateResponse)
 async def get_push_template(
     guild_id: str,
-    user: User = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ) -> PushTemplateResponse:
     """Get the push template for a guild.
 
@@ -112,7 +112,7 @@ async def get_push_template(
 async def set_push_template(
     guild_id: str,
     request: PushTemplateRequest,
-    user: User = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ) -> PushTemplateResponse:
     """Set a custom push template for a guild."""
     # Check user has access to guild
@@ -175,7 +175,7 @@ async def set_push_template(
 @router.delete("")
 async def delete_push_template(
     guild_id: str,
-    user: User = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Delete guild's custom template (reverts to default)."""
     # Check user has access to guild
@@ -195,7 +195,7 @@ async def delete_push_template(
 async def preview_push_template(
     guild_id: str,
     request: PreviewRequest,
-    user: User = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Preview what a push would look like with the template.
 

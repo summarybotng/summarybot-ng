@@ -419,10 +419,15 @@ class SummaryBotApp:
         # Create task persistence for surviving restarts
         task_persistence = TaskPersistence(storage_path="data/tasks")
 
-        # Create task scheduler with persistence
+        # Get task repository for database-backed persistence
+        from .data import get_task_repository
+        task_repository = await get_task_repository()
+
+        # Create task scheduler with persistence (database preferred, files as fallback)
         self.task_scheduler = TaskScheduler(
             task_executor=task_executor,
-            persistence=task_persistence
+            persistence=task_persistence,
+            task_repository=task_repository
         )
 
         # Initialize schedule command handler and add to bot services

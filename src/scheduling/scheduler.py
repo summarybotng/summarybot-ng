@@ -29,16 +29,19 @@ class TaskScheduler:
     def __init__(self,
                  task_executor: TaskExecutor,
                  persistence: Optional[TaskPersistence] = None,
+                 task_repository=None,
                  timezone: str = "UTC"):
         """Initialize task scheduler.
 
         Args:
             task_executor: Task executor instance
-            persistence: Optional task persistence layer
+            persistence: Optional task persistence layer (file-based, legacy)
+            task_repository: Optional database task repository (preferred)
             timezone: Timezone for scheduling (default: UTC)
         """
         self.executor = task_executor
         self.persistence = persistence
+        self.task_repository = task_repository
         self.timezone = timezone
 
         # APScheduler instance
@@ -155,9 +158,13 @@ class TaskScheduler:
             self.active_tasks[task.id] = task
             self.task_metadata[task.id] = metadata
 
-            # Persist if available
-            if self.persistence:
+            # Persist to database (preferred) or file-based storage
+            if self.task_repository:
+                await self.task_repository.save(task)
+                logger.debug(f"Saved task {task.id} to database")
+            elif self.persistence:
                 await self.persistence.save_task(task)
+                logger.debug(f"Saved task {task.id} to file")
 
             logger.info(f"Scheduled task {task.id}: {task.get_schedule_description()}")
 
@@ -191,8 +198,7 @@ class TaskScheduler:
                 task.is_active = False
 
                 # Persist change
-                if self.persistence:
-                    await self.persistence.update_task(task)
+                await self._persist_task(task)
 
                 # Remove from tracking
                 del self.active_tasks[task_id]
@@ -478,8 +484,7 @@ class TaskScheduler:
                 metadata.next_execution = task.next_run
 
             # Persist updated task
-            if self.persistence:
-                await self.persistence.update_task(task)
+            await self._persist_task(task)
 
         except Exception as e:
             logger.exception(f"Exception executing task {task_id}: {e}")
@@ -492,8 +497,7 @@ class TaskScheduler:
                 metadata.update_execution(duration, failed=True)
 
             # Persist failure
-            if self.persistence:
-                await self.persistence.update_task(task)
+            await self._persist_task(task)
 
             # Notify about failure
             await self.executor.handle_task_failure(
@@ -502,33 +506,59 @@ class TaskScheduler:
             )
 
     async def _load_persisted_tasks(self) -> None:
-        """Load persisted tasks from storage."""
-        if not self.persistence:
+        """Load persisted tasks from storage (database preferred, then files)."""
+        tasks = []
+
+        # Try database first
+        if self.task_repository:
+            try:
+                tasks = await self.task_repository.get_active_tasks()
+                logger.info(f"Loading {len(tasks)} tasks from database")
+            except Exception as e:
+                logger.error(f"Failed to load tasks from database: {e}")
+
+        # Fall back to file-based persistence
+        if not tasks and self.persistence:
+            try:
+                tasks = await self.persistence.load_all_tasks()
+                logger.info(f"Loading {len(tasks)} tasks from files")
+            except Exception as e:
+                logger.error(f"Failed to load tasks from files: {e}")
+
+        if not tasks:
+            logger.info("No persisted tasks to load")
             return
 
+        # Schedule each active task
+        loaded_count = 0
+        for task in tasks:
+            if task.is_active:
+                try:
+                    await self.schedule_task(task)
+                    loaded_count += 1
+                except Exception as e:
+                    logger.error(f"Failed to restore task {task.id}: {e}")
+
+        logger.info(f"Restored {loaded_count} active tasks from {len(tasks)} total")
+
+    async def _persist_task(self, task: ScheduledTask) -> None:
+        """Persist a single task to storage (database preferred)."""
         try:
-            tasks = await self.persistence.load_all_tasks()
-
-            for task in tasks:
-                if task.is_active:
-                    try:
-                        await self.schedule_task(task)
-                    except Exception as e:
-                        logger.error(f"Failed to restore task {task.id}: {e}")
-
-            logger.info(f"Loaded {len(tasks)} persisted tasks")
-
+            if self.task_repository:
+                await self.task_repository.save(task)
+            elif self.persistence:
+                await self.persistence.update_task(task)
         except Exception as e:
-            logger.error(f"Failed to load persisted tasks: {e}")
+            logger.error(f"Failed to persist task {task.id}: {e}")
 
     async def _persist_all_tasks(self) -> None:
         """Persist all active tasks to storage."""
-        if not self.persistence:
+        if not self.task_repository and not self.persistence:
             return
 
         try:
             for task in self.active_tasks.values():
-                await self.persistence.update_task(task)
+                await self._persist_task(task)
 
             logger.info(f"Persisted {len(self.active_tasks)} tasks")
 

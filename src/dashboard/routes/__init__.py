@@ -101,6 +101,7 @@ from .feeds import router as feeds_router
 from .errors import router as errors_router
 from .archive import router as archive_router
 from .prompts import router as prompts_router
+from .push_templates import router as push_templates_router
 
 __all__ = [
     "auth_router",
@@ -113,6 +114,7 @@ __all__ = [
     "errors_router",
     "archive_router",
     "prompts_router",
+    "push_templates_router",
     "set_services",
     "get_discord_bot",
     "get_summarization_engine",

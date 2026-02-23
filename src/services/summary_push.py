@@ -1,5 +1,6 @@
 """
 Summary Push Service for ADR-005: Summary Delivery Destinations.
+Extended by ADR-014: Discord Push Templates with Thread Support.
 
 This service handles pushing stored summaries to Discord channels on demand.
 """
@@ -14,8 +15,12 @@ import discord
 from ..models.stored_summary import StoredSummary
 from ..models.summary import SummaryResult
 from ..models.error_log import ErrorType, ErrorSeverity
+from ..models.push_template import PushTemplate, DEFAULT_PUSH_TEMPLATE
 from ..data.repositories import get_stored_summary_repository, get_summary_repository
 from ..logging.error_tracker import get_error_tracker
+from .push_message_builder import (
+    PushMessageBuilder, PushContext, send_with_template, extract_push_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -683,3 +688,200 @@ class SummaryPushService:
             )
         except Exception as e:
             logger.warning(f"Failed to track push error: {e}")
+
+    # =========================================================================
+    # ADR-014: Template-based push with thread support
+    # =========================================================================
+
+    async def push_with_template(
+        self,
+        summary_id: str,
+        channel_id: str,
+        template: Optional[PushTemplate] = None,
+        user_id: Optional[str] = None,
+    ) -> PushResult:
+        """Push a stored summary using template-based formatting.
+
+        ADR-014: Discord Push Templates with Thread Support.
+
+        This method creates a thread (if permitted) and sends structured
+        messages based on the template configuration.
+
+        Args:
+            summary_id: ID of the stored summary to push
+            channel_id: Discord channel ID to push to
+            template: Push template (defaults to guild template or DEFAULT)
+            user_id: ID of user performing the push (for audit)
+
+        Returns:
+            PushResult with success status and message IDs
+        """
+        if not self.discord_client:
+            return PushResult(
+                channel_id=channel_id,
+                success=False,
+                error="Discord client not available"
+            )
+
+        # Load stored summary
+        stored_summary_repo = await get_stored_summary_repository()
+        stored_summary = await stored_summary_repo.get(summary_id)
+
+        if not stored_summary:
+            return PushResult(
+                channel_id=channel_id,
+                success=False,
+                error=f"Summary {summary_id} not found"
+            )
+
+        if not stored_summary.summary_result:
+            return PushResult(
+                channel_id=channel_id,
+                success=False,
+                error=f"Summary {summary_id} has no content"
+            )
+
+        # Get template (could load from guild_push_templates table in future)
+        template = template or DEFAULT_PUSH_TEMPLATE
+
+        try:
+            # Get channel
+            channel = self.discord_client.get_channel(int(channel_id))
+            if not channel:
+                try:
+                    channel = await self.discord_client.fetch_channel(int(channel_id))
+                except discord.NotFound:
+                    return PushResult(
+                        channel_id=channel_id,
+                        success=False,
+                        error="Channel not found"
+                    )
+
+            # Build push context
+            context = extract_push_context(
+                stored_summary=stored_summary,
+                summary_result=stored_summary.summary_result,
+            )
+
+            # Send using template
+            result = await send_with_template(
+                channel=channel,
+                summary=stored_summary.summary_result,
+                context=context,
+                template=template,
+                discord_client=self.discord_client,
+            )
+
+            if result["success"]:
+                # Track delivery
+                message_id = result["message_ids"][0] if result["message_ids"] else None
+                stored_summary.add_push_delivery(
+                    channel_id=channel_id,
+                    message_id=message_id,
+                    success=True,
+                )
+                await stored_summary_repo.update(stored_summary)
+
+                logger.info(
+                    f"Pushed summary {summary_id} to channel {channel_id} "
+                    f"(thread={result['thread_created']}) by user {user_id}"
+                )
+
+                return PushResult(
+                    channel_id=channel_id,
+                    success=True,
+                    message_id=message_id,
+                )
+            else:
+                # Track error
+                stored_summary.add_push_delivery(
+                    channel_id=channel_id,
+                    success=False,
+                    error=result["error"],
+                )
+                await stored_summary_repo.update(stored_summary)
+
+                await self._track_push_error(
+                    guild_id=stored_summary.guild_id,
+                    channel_id=channel_id,
+                    summary_id=summary_id,
+                    error_message=result["error"] or "Unknown error",
+                    user_id=user_id,
+                )
+
+                return PushResult(
+                    channel_id=channel_id,
+                    success=False,
+                    error=result["error"],
+                )
+
+        except discord.Forbidden:
+            error = "Missing permission to send messages"
+            await self._track_push_error(
+                guild_id=stored_summary.guild_id,
+                channel_id=channel_id,
+                summary_id=summary_id,
+                error_message=error,
+                user_id=user_id,
+            )
+            return PushResult(
+                channel_id=channel_id,
+                success=False,
+                error=error,
+            )
+        except Exception as e:
+            logger.exception(f"Failed to push with template: {e}")
+            await self._track_push_error(
+                guild_id=stored_summary.guild_id,
+                channel_id=channel_id,
+                summary_id=summary_id,
+                error_message=str(e),
+                user_id=user_id,
+            )
+            return PushResult(
+                channel_id=channel_id,
+                success=False,
+                error=str(e),
+            )
+
+    async def push_to_channels_with_template(
+        self,
+        summary_id: str,
+        channel_ids: List[str],
+        template: Optional[PushTemplate] = None,
+        user_id: Optional[str] = None,
+    ) -> PushToChannelsResult:
+        """Push a stored summary to multiple channels using template formatting.
+
+        ADR-014: Discord Push Templates with Thread Support.
+
+        Args:
+            summary_id: ID of the stored summary to push
+            channel_ids: List of Discord channel IDs to push to
+            template: Push template (defaults to guild template or DEFAULT)
+            user_id: ID of user performing the push (for audit)
+
+        Returns:
+            Result of the push operation
+        """
+        deliveries = []
+        successful_count = 0
+
+        for channel_id in channel_ids:
+            result = await self.push_with_template(
+                summary_id=summary_id,
+                channel_id=channel_id,
+                template=template,
+                user_id=user_id,
+            )
+            deliveries.append(result)
+            if result.success:
+                successful_count += 1
+
+        return PushToChannelsResult(
+            summary_id=summary_id,
+            success=successful_count > 0,
+            total_channels=len(channel_ids),
+            successful_channels=successful_count,
+            deliveries=deliveries,
+        )

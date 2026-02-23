@@ -3,6 +3,8 @@ Reference models for grounded summary citations (ADR-004).
 
 These models enable message-level citations in summaries, allowing users to trace
 claims back to specific source messages.
+
+ADR-014 extends this with channel_id, guild_id, and source_type for jump links.
 """
 
 from dataclasses import dataclass, field
@@ -21,12 +23,18 @@ class SummaryReference(BaseModel):
 
     This is distinct from MessageReference (in message.py) which represents
     Discord reply/quote references. SummaryReference is for summary citations.
+
+    ADR-014: Extended with channel_id, guild_id, source_type for Discord jump links.
     """
     message_id: str
     sender: str
     timestamp: datetime
     snippet: str  # Max 200 chars of the relevant message content
     position: int  # 1-based position in the conversation window
+    # ADR-014: Additional fields for jump links
+    channel_id: Optional[str] = None
+    guild_id: Optional[str] = None
+    source_type: str = "discord"  # "discord", "whatsapp", "slack", etc.
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization."""
@@ -35,8 +43,28 @@ class SummaryReference(BaseModel):
             "sender": self.sender,
             "timestamp": self.timestamp.isoformat(),
             "snippet": self.snippet,
-            "position": self.position
+            "position": self.position,
+            "channel_id": self.channel_id,
+            "guild_id": self.guild_id,
+            "source_type": self.source_type,
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'SummaryReference':
+        """Create from dictionary."""
+        timestamp = data.get("timestamp")
+        if isinstance(timestamp, str):
+            timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        return cls(
+            message_id=data["message_id"],
+            sender=data["sender"],
+            timestamp=timestamp,
+            snippet=data["snippet"],
+            position=data["position"],
+            channel_id=data.get("channel_id"),
+            guild_id=data.get("guild_id"),
+            source_type=data.get("source_type", "discord"),
+        )
 
     def to_footnote(self) -> str:
         """Format as a footnote entry for markdown output."""
@@ -47,6 +75,39 @@ class SummaryReference(BaseModel):
         """Format as inline citation for plain text output."""
         time_str = self.timestamp.strftime("%H:%M")
         return f"({self.sender}, {time_str})"
+
+    def to_jump_link(self) -> Optional[str]:
+        """Generate Discord jump link, or None if not applicable.
+
+        ADR-014: Jump links only work for Discord sources with full context.
+        """
+        if self.source_type != "discord":
+            return None
+        if not all([self.guild_id, self.channel_id, self.message_id]):
+            return None
+        return f"https://discord.com/channels/{self.guild_id}/{self.channel_id}/{self.message_id}"
+
+    def to_discord_source_line(self, include_jump_link: bool = True) -> str:
+        """Format as a source line for Discord push output.
+
+        ADR-014: Used in the Sources section of pushed summaries.
+        """
+        time_str = self.timestamp.strftime("%H:%M")
+        # Truncate snippet for Discord display
+        snippet = self.snippet
+        if len(snippet) > 50:
+            snippet = snippet[:47] + "..."
+        # Escape quotes in snippet
+        snippet = snippet.replace('"', "'")
+
+        base = f"[{self.position}] {self.sender} ({time_str}): \"{snippet}\""
+
+        if include_jump_link:
+            jump_link = self.to_jump_link()
+            if jump_link:
+                return f"{base} [Jump]({jump_link})"
+
+        return base
 
 
 @dataclass
@@ -106,16 +167,20 @@ class PositionIndex:
 
     Built during prompt formatting and used during response parsing
     to resolve position numbers back to full SummaryReference objects.
+
+    ADR-014: Now captures channel_id, guild_id, and source_type for jump links.
     """
 
-    def __init__(self, messages: List['ProcessedMessage']):
+    def __init__(self, messages: List['ProcessedMessage'], guild_id: Optional[str] = None):
         """Initialize the position index from a list of messages.
 
         Args:
             messages: List of processed messages in conversation order
+            guild_id: Discord guild ID for jump link generation (ADR-014)
         """
         self._index: Dict[int, 'ProcessedMessage'] = {}
         self._position_to_msg: Dict[int, 'ProcessedMessage'] = {}
+        self._guild_id = guild_id
 
         for i, msg in enumerate(messages, start=1):
             self._index[i] = msg
@@ -139,12 +204,21 @@ class PositionIndex:
         if len(snippet) > 200:
             snippet = snippet[:197] + "..."
 
+        # ADR-014: Include channel context for jump links
+        # Get source_type as string
+        source_type = "discord"
+        if hasattr(msg, 'source_type') and msg.source_type:
+            source_type = msg.source_type.value if hasattr(msg.source_type, 'value') else str(msg.source_type)
+
         return SummaryReference(
             message_id=msg.id,
             sender=msg.author_name,
             timestamp=msg.timestamp,
             snippet=snippet,
             position=position,
+            channel_id=getattr(msg, 'channel_id', None),
+            guild_id=self._guild_id,
+            source_type=source_type,
         )
 
     def resolve_many(self, positions: List[int]) -> List[SummaryReference]:

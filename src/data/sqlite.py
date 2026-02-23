@@ -1298,9 +1298,14 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         ]
 
     async def update(self, summary: StoredSummary) -> bool:
-        """Update a stored summary."""
+        """Update a stored summary.
+
+        Note: This also updates summary_json to support regeneration where
+        the summary_result is replaced with new content.
+        """
         query = """
         UPDATE stored_summaries SET
+            summary_json = ?,
             viewed_at = ?,
             pushed_at = ?,
             push_deliveries = ?,
@@ -1312,6 +1317,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         """
 
         params = (
+            json.dumps(summary.summary_result.to_dict() if summary.summary_result else {}),
             summary.viewed_at.isoformat() if summary.viewed_at else None,
             summary.pushed_at.isoformat() if summary.pushed_at else None,
             json.dumps([d.to_dict() for d in summary.push_deliveries]),

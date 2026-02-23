@@ -90,6 +90,15 @@ async def get_feed_repository():
         return None
 
 
+async def get_config_repository():
+    """Get config repository instance (database-backed)."""
+    try:
+        from ...data import get_config_repository as _get_repo
+        return await _get_repo()
+    except RuntimeError:
+        return None
+
+
 # Import routers
 from .auth import router as auth_router
 from .guilds import router as guilds_router
@@ -120,4 +129,5 @@ __all__ = [
     "get_summarization_engine",
     "get_task_scheduler",
     "get_config_manager",
+    "get_config_repository",
 ]

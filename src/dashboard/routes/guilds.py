@@ -24,7 +24,7 @@ from ..models import (
     ConfigStatus,
     ErrorResponse,
 )
-from . import get_discord_bot, get_config_manager, get_summary_repository, get_task_repository
+from . import get_discord_bot, get_config_manager, get_config_repository, get_summary_repository, get_task_repository
 from ...data.base import SearchCriteria
 
 logger = logging.getLogger(__name__)
@@ -69,6 +69,7 @@ def _check_guild_access(guild_id: str, user: dict):
 async def list_guilds(user: dict = Depends(get_current_user)):
     """List guilds user can manage."""
     bot = get_discord_bot()
+    config_repo = await get_config_repository()
     config_manager = get_config_manager()
     summary_repo = await get_summary_repository()
 
@@ -78,14 +79,20 @@ async def list_guilds(user: dict = Depends(get_current_user)):
         if not guild:
             continue
 
-        # Get config status
+        # Get config status - check database first, then in-memory
         config_status = ConfigStatus.NEEDS_SETUP
-        if config_manager:
+        guild_config = None
+
+        if config_repo:
+            guild_config = await config_repo.get_guild_config(guild_id)
+
+        if not guild_config and config_manager:
             current_config = config_manager.get_current_config()
             if current_config:
                 guild_config = current_config.guild_configs.get(guild_id)
-                if guild_config and guild_config.enabled_channels:
-                    config_status = ConfigStatus.CONFIGURED
+
+        if guild_config and guild_config.enabled_channels:
+            config_status = ConfigStatus.CONFIGURED
 
         # Get actual summary count and last summary from database
         summary_count = 0
@@ -130,11 +137,16 @@ async def get_guild(
     """Get guild details."""
     _check_guild_access(guild_id, user)
     guild = _get_guild_or_404(guild_id)
+
+    # Get guild config from database first, then in-memory
+    config_repo = await get_config_repository()
     config_manager = get_config_manager()
 
-    # Get guild config
     guild_config = None
-    if config_manager:
+    if config_repo:
+        guild_config = await config_repo.get_guild_config(guild_id)
+
+    if not guild_config and config_manager:
         current_config = config_manager.get_current_config()
         if current_config:
             guild_config = current_config.guild_configs.get(guild_id)
@@ -273,22 +285,26 @@ async def update_config(
     """Update guild configuration."""
     _check_guild_access(guild_id, user)
     _get_guild_or_404(guild_id)  # Verify guild exists
+
+    from ...config.settings import GuildConfig, SummaryLength
+
+    # Get config repository (database-backed) and config manager (in-memory)
+    config_repo = await get_config_repository()
     config_manager = get_config_manager()
 
-    if not config_manager:
-        raise HTTPException(
-            status_code=503,
-            detail={"code": "CONFIG_UNAVAILABLE", "message": "Configuration manager not available"},
-        )
+    # Try to get existing guild config from database first, then in-memory
+    guild_config = None
+    if config_repo:
+        guild_config = await config_repo.get_guild_config(guild_id)
 
-    # Get or create guild config
-    current_config = config_manager.get_current_config()
-    if not current_config:
-        raise HTTPException(
-            status_code=503,
-            detail={"code": "CONFIG_UNAVAILABLE", "message": "Configuration not loaded"},
-        )
-    guild_config = current_config.get_guild_config(guild_id)
+    if not guild_config and config_manager:
+        current_config = config_manager.get_current_config()
+        if current_config:
+            guild_config = current_config.get_guild_config(guild_id)
+
+    # Create new config if none exists
+    if not guild_config:
+        guild_config = GuildConfig(guild_id=guild_id)
 
     # Update fields
     if body.enabled_channels is not None:
@@ -298,13 +314,22 @@ async def update_config(
         guild_config.excluded_channels = body.excluded_channels
 
     if body.default_options is not None:
-        from ...config.settings import SummaryLength
         guild_config.default_summary_options.summary_length = SummaryLength(body.default_options.summary_length)
         guild_config.default_summary_options.extract_action_items = body.default_options.include_action_items
         guild_config.default_summary_options.extract_technical_terms = body.default_options.include_technical_terms
 
-    # Save config
-    await config_manager.save_config(current_config)
+    # Save to database (primary storage)
+    if config_repo:
+        await config_repo.save_guild_config(guild_config)
+        logger.info(f"Saved guild config for {guild_id} to database")
+    else:
+        logger.warning(f"No config repository available, config not persisted for {guild_id}")
+
+    # Also update in-memory config if available (for immediate effect)
+    if config_manager:
+        current_config = config_manager.get_current_config()
+        if current_config:
+            current_config.guild_configs[guild_id] = guild_config
 
     # Return updated config
     return GuildConfigResponse(
@@ -336,14 +361,20 @@ async def sync_channels(
     """Sync channels from Discord."""
     _check_guild_access(guild_id, user)
     guild = _get_guild_or_404(guild_id)
+
+    # Get config from database first, then in-memory
+    config_repo = await get_config_repository()
     config_manager = get_config_manager()
 
-    # Get current enabled channels
     guild_config = None
-    if config_manager:
+    if config_repo:
+        guild_config = await config_repo.get_guild_config(guild_id)
+
+    if not guild_config and config_manager:
         current_config = config_manager.get_current_config()
         if current_config:
             guild_config = current_config.guild_configs.get(guild_id)
+
     enabled_channels = set(guild_config.enabled_channels if guild_config else [])
 
     # Build current channel list - always fetch to ensure fresh data
@@ -364,8 +395,14 @@ async def sync_channels(
     # Update enabled channels to remove non-existent ones
     if guild_config and removed:
         guild_config.enabled_channels = [c for c in guild_config.enabled_channels if c not in removed]
-        if config_manager and current_config:
-            await config_manager.save_config(current_config)
+        # Save to database
+        if config_repo:
+            await config_repo.save_guild_config(guild_config)
+        # Update in-memory
+        if config_manager:
+            current_config = config_manager.get_current_config()
+            if current_config:
+                current_config.guild_configs[guild_id] = guild_config
 
     # Build channel response
     channels = []

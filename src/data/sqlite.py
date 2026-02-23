@@ -6,12 +6,15 @@ transactions, and async database operations.
 """
 
 import json
+import logging
 import aiosqlite
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pathlib import Path
 import asyncio
 from contextlib import asynccontextmanager
+
+logger = logging.getLogger(__name__)
 
 from .base import (
     SummaryRepository,
@@ -968,6 +971,19 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
 
     async def save(self, summary: StoredSummary) -> str:
         """Save a stored summary to the database."""
+        # ADR-016: Validate regeneration capability and log warnings
+        regen_status = summary.validate_regeneration()
+        if not regen_status["can_regenerate"]:
+            logger.warning(
+                f"Storing summary {summary.id} without regeneration capability: "
+                f"{', '.join(regen_status['issues'])}"
+            )
+        elif regen_status["issues"]:
+            logger.info(
+                f"Summary {summary.id} can regenerate via {regen_status['method']}, "
+                f"but has issues: {', '.join(regen_status['issues'])}"
+            )
+
         query = """
         INSERT OR REPLACE INTO stored_summaries (
             id, guild_id, source_channel_ids, schedule_id,

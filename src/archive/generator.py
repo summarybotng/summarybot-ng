@@ -566,6 +566,7 @@ class RetrospectiveGenerator:
             else:
                 # Create minimal SummaryResult from available data
                 # ADR-004: Preserve reference_index for grounded citations
+                # ADR-016: Preserve source_content for regeneration fallback
                 db_summary_result = SummaryResult(
                     id=summary_id,
                     guild_id=job.source.server_id or "",
@@ -580,6 +581,10 @@ class RetrospectiveGenerator:
                     technical_terms=getattr(summary_result, 'technical_terms', []),
                     # ADR-004: Copy reference_index for grounded citations display
                     reference_index=getattr(summary_result, 'reference_index', []),
+                    # ADR-016: Copy source_content for regeneration fallback
+                    source_content=getattr(summary_result, 'source_content', None),
+                    prompt_system=getattr(summary_result, 'prompt_system', None),
+                    prompt_user=getattr(summary_result, 'prompt_user', None),
                     metadata={
                         "summary_type": job.summary_type,
                         "perspective": job.perspective,

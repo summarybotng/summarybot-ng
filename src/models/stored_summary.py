@@ -192,6 +192,71 @@ class StoredSummary(BaseModel):
             return self.summary_result.has_references()
         return False
 
+    def validate_regeneration(self) -> Dict[str, Any]:
+        """
+        ADR-016: Check if summary can be regenerated and identify issues.
+
+        Returns dict with:
+            - can_regenerate: bool
+            - method: "discord" | "source_content" | "none"
+            - issues: list of problems found
+        """
+        issues = []
+
+        # Check Discord regeneration requirements
+        has_channels = bool(self.source_channel_ids)
+        has_time_range = bool(
+            self.summary_result and
+            self.summary_result.start_time and
+            self.summary_result.end_time
+        )
+        has_archive_period = bool(self.archive_period)
+
+        # Check source_content fallback
+        has_source_content = bool(
+            self.summary_result and
+            self.summary_result.source_content
+        )
+
+        # Record specific issues
+        if not has_channels:
+            if self.archive_source_key:
+                issues.append("missing source_channel_ids (may extract from archive_source_key)")
+            else:
+                issues.append("missing source_channel_ids")
+
+        if not has_time_range:
+            if has_archive_period:
+                issues.append("missing time range (may infer from archive_period)")
+            else:
+                issues.append("missing time range")
+
+        if not has_source_content:
+            issues.append("no source_content fallback")
+
+        # Determine capability
+        can_discord = has_channels and (has_time_range or has_archive_period)
+        can_source = has_source_content
+
+        if can_discord:
+            return {
+                "can_regenerate": True,
+                "method": "discord",
+                "issues": issues,
+            }
+        elif can_source:
+            return {
+                "can_regenerate": True,
+                "method": "source_content",
+                "issues": issues,
+            }
+        else:
+            return {
+                "can_regenerate": False,
+                "method": "none",
+                "issues": issues,
+            }
+
     def to_list_item_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for list display (minimal data)."""
         # Extract generation details from metadata

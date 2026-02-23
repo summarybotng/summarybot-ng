@@ -959,6 +959,8 @@ async def regenerate_stored_summary(
     This fetches the original messages and re-runs summarization with
     citation/grounding enabled (ADR-004). Useful for summaries created
     before grounding was implemented.
+
+    ADR-016: Includes repair logic for missing metadata.
     """
     _check_guild_access(guild_id, user)
 
@@ -972,38 +974,97 @@ async def regenerate_stored_summary(
             detail={"code": "NOT_FOUND", "message": "Stored summary not found"},
         )
 
-    # Validate we have time range and channels
     summary_result = stored.summary_result
-    if not summary_result or not summary_result.start_time or not summary_result.end_time:
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "MISSING_TIME_RANGE", "message": "Summary missing time range, cannot regenerate"},
-        )
+    repairs_made = []
 
-    if not stored.source_channel_ids:
+    # ADR-016: Try to repair missing data
+    start_time = None
+    end_time = None
+    channel_ids = stored.source_channel_ids or []
+
+    # Try to get time range
+    if summary_result and summary_result.start_time and summary_result.end_time:
+        start_time = summary_result.start_time
+        end_time = summary_result.end_time
+    else:
+        # Repair: infer from archive_period or created_at
+        if stored.archive_period:
+            # archive_period is like "2024-02-22"
+            try:
+                from datetime import timezone as tz
+                period_date = datetime.strptime(stored.archive_period, "%Y-%m-%d")
+                start_time = period_date.replace(hour=0, minute=0, second=0, tzinfo=tz.utc)
+                end_time = period_date.replace(hour=23, minute=59, second=59, tzinfo=tz.utc)
+                repairs_made.append(f"inferred time range from archive_period: {stored.archive_period}")
+            except Exception as e:
+                logger.warning(f"Failed to parse archive_period: {e}")
+
+        if not start_time and stored.created_at:
+            # Fall back to 24 hours before created_at
+            start_time = stored.created_at - timedelta(hours=24)
+            end_time = stored.created_at
+            repairs_made.append("inferred time range from created_at (24h window)")
+
+    # Try to get channel IDs
+    if not channel_ids:
+        # Repair: extract from archive_source_key
+        if stored.archive_source_key:
+            # Format: "discord/guild_id/channel_id" or similar
+            parts = stored.archive_source_key.split("/")
+            if len(parts) >= 3:
+                channel_ids = [parts[2]]
+                repairs_made.append(f"extracted channel from archive_source_key: {parts[2]}")
+
+    # Check if we can use source_content as fallback
+    has_source_content = summary_result and summary_result.source_content
+    can_use_discord = bool(start_time and end_time and channel_ids)
+
+    if not can_use_discord and not has_source_content:
+        issues = []
+        if not start_time or not end_time:
+            issues.append("no time range")
+        if not channel_ids:
+            issues.append("no source channels")
+        if not has_source_content:
+            issues.append("no source_content fallback")
         raise HTTPException(
             status_code=400,
-            detail={"code": "MISSING_CHANNELS", "message": "Summary missing source channels, cannot regenerate"},
+            detail={
+                "code": "CANNOT_REGENERATE",
+                "message": f"Cannot regenerate: {', '.join(issues)}",
+                "repairs_attempted": repairs_made,
+            },
         )
 
     # Get dependencies
-    guild = _get_guild_or_404(guild_id)
-    bot = get_discord_bot()
     engine = get_summarization_engine()
-
     if not engine:
         raise HTTPException(
             status_code=503,
             detail={"code": "ENGINE_UNAVAILABLE", "message": "Summarization engine not available"},
         )
 
+    # For Discord fetch, we need the guild and bot
+    guild = None
+    bot = None
+    if can_use_discord:
+        try:
+            guild = _get_guild_or_404(guild_id)
+            bot = get_discord_bot()
+        except:
+            can_use_discord = False
+            if not has_source_content:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"code": "NO_DISCORD_ACCESS", "message": "Cannot access Discord and no source_content fallback"},
+                )
+
     # Create task ID
     import secrets
     task_id = f"regen_{secrets.token_urlsafe(16)}"
 
-    start_time = summary_result.start_time
-    end_time = summary_result.end_time
-    channel_ids = stored.source_channel_ids
+    # Determine regeneration method
+    regen_method = "discord" if can_use_discord else "source_content"
 
     # Store task info
     _generation_tasks[task_id] = {
@@ -1014,64 +1075,117 @@ async def regenerate_stored_summary(
         "summary_id": summary_id,
         "error": None,
         "regenerate": True,
+        "method": regen_method,
+        "repairs": repairs_made,
     }
 
     async def run_regeneration():
         logger.info(f"[{task_id}] Starting regeneration for summary {summary_id}")
-        logger.info(f"[{task_id}] Time range: {start_time} to {end_time}")
-        logger.info(f"[{task_id}] Channels: {channel_ids}")
+        logger.info(f"[{task_id}] Method: {regen_method}, Repairs: {repairs_made}")
 
         try:
             from ...message_processing import MessageProcessor
             from ...models.summary import SummaryOptions, SummaryLength, SummarizationContext
+            from ...models.message import ProcessedMessage, MessageType
 
-            # Collect messages from all channels
-            all_messages = []
-            for channel_id in channel_ids:
-                channel = guild.get_channel(int(channel_id))
-                if channel:
-                    try:
-                        async for message in channel.history(
-                            after=start_time,
-                            before=end_time,
-                            limit=1000,
-                        ):
-                            all_messages.append(message)
-                    except Exception as e:
-                        logger.warning(f"[{task_id}] Error fetching from channel {channel_id}: {e}")
+            processed = []
 
-            logger.info(f"[{task_id}] Fetched {len(all_messages)} messages")
+            if regen_method == "discord" and can_use_discord:
+                logger.info(f"[{task_id}] Fetching from Discord: {start_time} to {end_time}")
+                logger.info(f"[{task_id}] Channels: {channel_ids}")
 
-            if not all_messages:
+                # Collect messages from all channels
+                all_messages = []
+                for channel_id in channel_ids:
+                    channel = guild.get_channel(int(channel_id))
+                    if channel:
+                        try:
+                            async for message in channel.history(
+                                after=start_time,
+                                before=end_time,
+                                limit=1000,
+                            ):
+                                all_messages.append(message)
+                        except Exception as e:
+                            logger.warning(f"[{task_id}] Error fetching from channel {channel_id}: {e}")
+
+                logger.info(f"[{task_id}] Fetched {len(all_messages)} messages from Discord")
+
+                if all_messages:
+                    processor = MessageProcessor(bot.client)
+                    processed = await processor.process_messages(all_messages, SummaryOptions(min_messages=1))
+
+            # Fallback to source_content if Discord fetch failed or returned no messages
+            if not processed and has_source_content:
+                logger.info(f"[{task_id}] Using source_content fallback")
+                # Parse source_content back to messages
+                lines = summary_result.source_content.strip().split('\n')
+                i = 0
+                for line in lines:
+                    if line.startswith('[') and '] ' in line:
+                        try:
+                            bracket_end = line.index('] ')
+                            timestamp_str = line[1:bracket_end]
+                            rest = line[bracket_end + 2:]
+
+                            if ': ' in rest:
+                                author, content = rest.split(': ', 1)
+                            else:
+                                author = "Unknown"
+                                content = rest
+
+                            try:
+                                timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M')
+                            except:
+                                timestamp = stored.created_at or datetime.utcnow()
+
+                            processed.append(ProcessedMessage(
+                                id=f"src_{i}",
+                                author_name=author,
+                                author_id=f"user_{i}",
+                                content=content,
+                                timestamp=timestamp,
+                                message_type=MessageType.DEFAULT,
+                                channel_id=channel_ids[0] if channel_ids else None,
+                            ))
+                            i += 1
+                        except Exception as e:
+                            logger.debug(f"[{task_id}] Could not parse line: {e}")
+
+                logger.info(f"[{task_id}] Parsed {len(processed)} messages from source_content")
+
+            if not processed:
                 _generation_tasks[task_id]["status"] = "failed"
-                _generation_tasks[task_id]["error"] = "No messages found in original time range"
+                _generation_tasks[task_id]["error"] = "No messages found (Discord fetch failed and no valid source_content)"
                 return
-
-            # Process messages
-            processor = MessageProcessor(bot.client)
-            processed = await processor.process_messages(all_messages, SummaryOptions(min_messages=1))
-            logger.info(f"[{task_id}] Processed {len(processed)} messages")
 
             # Get original options from metadata
             meta = summary_result.metadata or {}
-            summary_length = meta.get("summary_length", "detailed")
+            summary_length_str = meta.get("summary_length", meta.get("summary_type", "detailed"))
             perspective = meta.get("perspective", "general")
 
             options = SummaryOptions(
-                summary_length=SummaryLength(summary_length),
+                summary_length=SummaryLength(summary_length_str),
                 perspective=perspective,
                 min_messages=1,
             )
 
-            # Build context
-            primary_channel = guild.get_channel(int(channel_ids[0]))
-            channel_name = primary_channel.name if primary_channel else "unknown"
-            time_span_hours = (end_time - start_time).total_seconds() / 3600
+            # Build context (handle case where guild might be None for source_content regen)
+            channel_name = "regenerated"
+            guild_name = ""
+            if guild and channel_ids:
+                primary_channel = guild.get_channel(int(channel_ids[0]))
+                channel_name = primary_channel.name if primary_channel else "unknown"
+                guild_name = guild.name
+
+            actual_start = start_time or (stored.created_at - timedelta(hours=24))
+            actual_end = end_time or stored.created_at
+            time_span_hours = (actual_end - actual_start).total_seconds() / 3600
             unique_authors = {msg.author_id for msg in processed}
 
             context = SummarizationContext(
-                channel_name=channel_name if len(channel_ids) == 1 else f"{len(channel_ids)} channels",
-                guild_name=guild.name,
+                channel_name=channel_name if len(channel_ids) <= 1 else f"{len(channel_ids)} channels",
+                guild_name=guild_name,
                 total_participants=len(unique_authors),
                 time_span_hours=time_span_hours,
             )
@@ -1083,7 +1197,7 @@ async def regenerate_stored_summary(
                 options=options,
                 context=context,
                 guild_id=guild_id,
-                channel_id=channel_ids[0],
+                channel_id=channel_ids[0] if channel_ids else "",
             )
 
             # Check grounding

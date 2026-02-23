@@ -257,6 +257,11 @@ class SummarizationAdapter:
         response.technical_terms = result.technical_terms
         response.reference_index = result.reference_index
 
+        # ADR-016: Copy source_content for regeneration fallback
+        response.source_content = result.source_content
+        response.prompt_system = result.prompt_system
+        response.prompt_user = result.prompt_user
+
         # Extract prompt version and generate checksum
         prompt_source = result.metadata.get("prompt_source", {})
         if isinstance(prompt_source, dict):

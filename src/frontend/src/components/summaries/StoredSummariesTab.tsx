@@ -8,7 +8,7 @@
 
 import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
-import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, useRegenerateSummary, type SummarySourceType } from "@/hooks/useStoredSummaries";
+import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, useRegenerateSummary, type SummarySourceType, type RegenerateOptions } from "@/hooks/useStoredSummaries";
 import { useGuild } from "@/hooks/useGuilds";
 import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,7 +53,26 @@ import {
   Settings2,
   LayoutList,
   CalendarDays,
+  Copy,
+  Check,
+  ChevronDown,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { StoredSummaryCard } from "./StoredSummaryCard";
 import { PushToChannelModal } from "./PushToChannelModal";
 import { SummaryFilters, type FilterState } from "./SummaryFilters";
@@ -202,13 +221,20 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
     }
   };
 
-  // ADR-004: Regenerate summary with grounding
-  const handleRegenerate = async (summaryId: string) => {
+  // ADR-004: Regenerate summary with grounding (with optional custom options)
+  const handleRegenerate = async (summaryId: string, options?: RegenerateOptions) => {
     try {
-      await regenerateMutation.mutateAsync(summaryId);
+      await regenerateMutation.mutateAsync({ summaryId, options });
+      const optionsDesc = options
+        ? ` with ${[
+            options.model && `model: ${options.model}`,
+            options.summary_length && `length: ${options.summary_length}`,
+            options.perspective && `perspective: ${options.perspective}`,
+          ].filter(Boolean).join(", ")}`
+        : "";
       toast({
         title: "Regenerating",
-        description: "Summary is being regenerated with grounded references. This may take a moment.",
+        description: `Summary is being regenerated${optionsDesc}. This may take a moment.`,
       });
     } catch (error: unknown) {
       // Extract error message from API response
@@ -503,6 +529,61 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
   );
 }
 
+// Copy button component
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-7 px-2 text-xs"
+      onClick={handleCopy}
+      title={`Copy ${label}`}
+    >
+      {copied ? (
+        <>
+          <Check className="h-3 w-3 mr-1" />
+          Copied
+        </>
+      ) : (
+        <>
+          <Copy className="h-3 w-3 mr-1" />
+          Copy
+        </>
+      )}
+    </Button>
+  );
+}
+
+// Available models for regeneration
+const AVAILABLE_MODELS = [
+  { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
+  { value: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet" },
+  { value: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku" },
+];
+
+const SUMMARY_LENGTHS = [
+  { value: "brief", label: "Brief" },
+  { value: "detailed", label: "Detailed" },
+  { value: "comprehensive", label: "Comprehensive" },
+];
+
+const PERSPECTIVES = [
+  { value: "general", label: "General" },
+  { value: "developer", label: "Developer" },
+  { value: "marketing", label: "Marketing" },
+  { value: "executive", label: "Executive" },
+  { value: "support", label: "Support" },
+];
+
 // Detail Sheet Component
 function StoredSummaryDetailSheet({
   guildId,
@@ -518,11 +599,13 @@ function StoredSummaryDetailSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPush: (summaryId: string) => void;
-  onRegenerate: (summaryId: string) => void;
+  onRegenerate: (summaryId: string, options?: RegenerateOptions) => void;
   isRegenerating: boolean;
 }) {
   const { data: summary, isLoading } = useStoredSummary(guildId, summaryId || "");
   const { formatDateTime, formatTime } = useTimezone();
+  const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
+  const [regenerateOptions, setRegenerateOptions] = useState<RegenerateOptions>({});
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -567,24 +650,103 @@ function StoredSummaryDetailSheet({
                   <Send className="mr-2 h-4 w-4" />
                   Push to Channel
                 </Button>
-                {/* ADR-004: Regenerate button for summaries without grounding */}
-                {!summary.has_references && (
-                  <Button
-                    variant="outline"
-                    onClick={() => onRegenerate(summary.id)}
-                    disabled={isRegenerating}
-                    className="w-full sm:w-auto"
-                  >
-                    <RefreshCw className={`mr-2 h-4 w-4 ${isRegenerating ? 'animate-spin' : ''}`} />
-                    {isRegenerating ? 'Regenerating...' : 'Regenerate with Grounding'}
-                  </Button>
-                )}
+                {/* ADR-004: Regenerate button - now always available with options */}
+                <Button
+                  variant="outline"
+                  onClick={() => setRegenerateDialogOpen(true)}
+                  disabled={isRegenerating}
+                  className="w-full sm:w-auto"
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${isRegenerating ? 'animate-spin' : ''}`} />
+                  {isRegenerating ? 'Regenerating...' : 'Regenerate'}
+                  <ChevronDown className="ml-1 h-3 w-3" />
+                </Button>
               </div>
+
+              {/* Regenerate Options Dialog */}
+              <Dialog open={regenerateDialogOpen} onOpenChange={setRegenerateDialogOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Regenerate Summary</DialogTitle>
+                    <DialogDescription>
+                      Customize regeneration settings or use defaults to add grounding references.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                      <Label>Model</Label>
+                      <Select
+                        value={regenerateOptions.model || ""}
+                        onValueChange={(v) => setRegenerateOptions(prev => ({ ...prev, model: v || undefined }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Use original model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {AVAILABLE_MODELS.map(m => (
+                            <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Summary Length</Label>
+                      <Select
+                        value={regenerateOptions.summary_length || ""}
+                        onValueChange={(v) => setRegenerateOptions(prev => ({ ...prev, summary_length: v || undefined }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Use original length" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SUMMARY_LENGTHS.map(l => (
+                            <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Perspective</Label>
+                      <Select
+                        value={regenerateOptions.perspective || ""}
+                        onValueChange={(v) => setRegenerateOptions(prev => ({ ...prev, perspective: v || undefined }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Use original perspective" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PERSPECTIVES.map(p => (
+                            <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setRegenerateDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        const hasOptions = Object.values(regenerateOptions).some(v => v);
+                        onRegenerate(summary.id, hasOptions ? regenerateOptions : undefined);
+                        setRegenerateDialogOpen(false);
+                        setRegenerateOptions({});
+                      }}
+                      disabled={isRegenerating}
+                    >
+                      <RefreshCw className={`mr-2 h-4 w-4 ${isRegenerating ? 'animate-spin' : ''}`} />
+                      Regenerate
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
 
               {/* Summary Text */}
               <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-base">Summary</CardTitle>
+                  <CopyButton text={summary.summary_text} label="summary" />
                 </CardHeader>
                 <CardContent>
                   <p className="whitespace-pre-wrap text-sm leading-relaxed">
@@ -596,8 +758,12 @@ function StoredSummaryDetailSheet({
               {/* Key Points */}
               {summary.key_points && summary.key_points.length > 0 && (
                 <Card>
-                  <CardHeader>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-base">Key Points</CardTitle>
+                    <CopyButton
+                      text={summary.key_points.map((p, i) => `${i + 1}. ${p}`).join("\n")}
+                      label="key points"
+                    />
                   </CardHeader>
                   <CardContent>
                     <ul className="list-inside list-disc space-y-2 text-sm">
@@ -612,8 +778,14 @@ function StoredSummaryDetailSheet({
               {/* Action Items */}
               {summary.action_items && summary.action_items.length > 0 && (
                 <Card>
-                  <CardHeader>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-base">Action Items</CardTitle>
+                    <CopyButton
+                      text={summary.action_items.map((item, i) =>
+                        `${i + 1}. [${item.priority.toUpperCase()}] ${item.text}${item.assignee ? ` (${item.assignee})` : ""}`
+                      ).join("\n")}
+                      label="action items"
+                    />
                   </CardHeader>
                   <CardContent>
                     <ul className="space-y-3">
@@ -649,11 +821,17 @@ function StoredSummaryDetailSheet({
               {/* References (ADR-004) */}
               {summary.references && summary.references.length > 0 && (
                 <Card>
-                  <CardHeader>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-base flex items-center gap-2">
                       <Link className="h-4 w-4" />
                       References
                     </CardTitle>
+                    <CopyButton
+                      text={summary.references.map(ref =>
+                        `[${ref.id}] ${ref.author} (${ref.timestamp}): ${ref.content}`
+                      ).join("\n")}
+                      label="references"
+                    />
                   </CardHeader>
                   <CardContent>
                     <div className="overflow-x-auto">
@@ -684,7 +862,7 @@ function StoredSummaryDetailSheet({
                 </Card>
               )}
 
-              {/* ADR-010: How This Summary Was Generated */}
+              {/* ADR-010: How This Summary Was Generated - ALL METADATA */}
               {summary.metadata && (
                 <Card className="bg-muted/30">
                   <CardHeader className="pb-2">
@@ -695,6 +873,7 @@ function StoredSummaryDetailSheet({
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="grid grid-cols-2 gap-3 text-sm">
+                      {/* Core generation settings */}
                       {(summary.metadata.model_used || summary.metadata.model) && (
                         <div>
                           <span className="text-muted-foreground">Model:</span>{" "}
@@ -722,7 +901,109 @@ function StoredSummaryDetailSheet({
                           <span className="font-medium">{summary.metadata.tokens_used.toLocaleString()}</span>
                         </div>
                       )}
+                      {/* Extended metadata fields */}
+                      {typeof summary.metadata.input_tokens === "number" && (
+                        <div>
+                          <span className="text-muted-foreground">Input Tokens:</span>{" "}
+                          <span className="font-medium">{summary.metadata.input_tokens.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {typeof summary.metadata.output_tokens === "number" && (
+                        <div>
+                          <span className="text-muted-foreground">Output Tokens:</span>{" "}
+                          <span className="font-medium">{summary.metadata.output_tokens.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {summary.metadata.generation_time_ms && (
+                        <div>
+                          <span className="text-muted-foreground">Generation Time:</span>{" "}
+                          <span className="font-medium">{(summary.metadata.generation_time_ms / 1000).toFixed(2)}s</span>
+                        </div>
+                      )}
+                      {summary.metadata.summary_type && (
+                        <div>
+                          <span className="text-muted-foreground">Type:</span>{" "}
+                          <span className="font-medium capitalize">{summary.metadata.summary_type}</span>
+                        </div>
+                      )}
+                      {summary.metadata.grounded !== undefined && (
+                        <div>
+                          <span className="text-muted-foreground">Grounded:</span>{" "}
+                          <span className="font-medium">{summary.metadata.grounded ? "Yes" : "No"}</span>
+                        </div>
+                      )}
+                      {typeof summary.metadata.reference_count === "number" && (
+                        <div>
+                          <span className="text-muted-foreground">References:</span>{" "}
+                          <span className="font-medium">{summary.metadata.reference_count}</span>
+                        </div>
+                      )}
+                      {summary.metadata.channel_name && (
+                        <div>
+                          <span className="text-muted-foreground">Channel:</span>{" "}
+                          <span className="font-medium">#{summary.metadata.channel_name}</span>
+                        </div>
+                      )}
+                      {summary.metadata.guild_name && (
+                        <div>
+                          <span className="text-muted-foreground">Server:</span>{" "}
+                          <span className="font-medium">{summary.metadata.guild_name}</span>
+                        </div>
+                      )}
+                      {summary.metadata.time_span_hours !== undefined && (
+                        <div>
+                          <span className="text-muted-foreground">Time Span:</span>{" "}
+                          <span className="font-medium">{summary.metadata.time_span_hours.toFixed(1)}h</span>
+                        </div>
+                      )}
+                      {typeof summary.metadata.total_participants === "number" && (
+                        <div>
+                          <span className="text-muted-foreground">Participants:</span>{" "}
+                          <span className="font-medium">{summary.metadata.total_participants}</span>
+                        </div>
+                      )}
+                      {summary.metadata.api_version && (
+                        <div>
+                          <span className="text-muted-foreground">API Version:</span>{" "}
+                          <span className="font-medium">{summary.metadata.api_version}</span>
+                        </div>
+                      )}
+                      {summary.metadata.cache_status && (
+                        <div>
+                          <span className="text-muted-foreground">Cache:</span>{" "}
+                          <span className="font-medium capitalize">{summary.metadata.cache_status}</span>
+                        </div>
+                      )}
                     </div>
+
+                    {/* Show any additional unknown metadata fields */}
+                    {(() => {
+                      const knownKeys = new Set([
+                        "model", "model_used", "summary_length", "perspective", "tokens_used",
+                        "input_tokens", "output_tokens", "generation_time_ms", "summary_type",
+                        "grounded", "reference_count", "channel_name", "guild_name",
+                        "time_span_hours", "total_participants", "api_version", "cache_status",
+                        "prompt_source", // handled separately
+                      ]);
+                      const extraFields = Object.entries(summary.metadata)
+                        .filter(([key, value]) => !knownKeys.has(key) && value !== null && value !== undefined && key !== "prompt_source");
+                      if (extraFields.length === 0) return null;
+                      return (
+                        <div className="pt-2 border-t border-border/50">
+                          <p className="text-xs font-medium text-muted-foreground mb-2">Additional Metadata</p>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            {extraFields.map(([key, value]) => (
+                              <div key={key}>
+                                <span className="text-muted-foreground">{key.replace(/_/g, " ")}:</span>{" "}
+                                <span className="font-medium">
+                                  {typeof value === "object" ? JSON.stringify(value) : String(value)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* ADR-010: Prompt Source */}
                     {summary.metadata.prompt_source && (

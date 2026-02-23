@@ -195,15 +195,23 @@ interface RegenerateResponse {
   status: string;
 }
 
+// Regenerate options
+export interface RegenerateOptions {
+  model?: string;
+  summary_length?: string;
+  perspective?: string;
+}
+
 export function useRegenerateSummary(guildId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (summaryId: string) =>
+    mutationFn: ({ summaryId, options }: { summaryId: string; options?: RegenerateOptions }) =>
       api.post<RegenerateResponse>(
-        `/guilds/${guildId}/stored-summaries/${summaryId}/regenerate`
+        `/guilds/${guildId}/stored-summaries/${summaryId}/regenerate`,
+        options || undefined
       ),
-    onSuccess: (_, summaryId) => {
+    onSuccess: (_, { summaryId }) => {
       // Invalidate after a delay to allow regeneration to complete
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] });

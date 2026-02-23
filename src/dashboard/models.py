@@ -783,6 +783,13 @@ class BulkDeleteResponse(BaseModel):
     errors: List[str] = []
 
 
+class RegenerateOptionsRequest(BaseModel):
+    """Optional settings for regenerating a stored summary."""
+    model: Optional[str] = Field(None, description="Model to use (e.g., claude-3-5-sonnet-20241022)")
+    summary_length: Optional[str] = Field(None, description="Length: brief, detailed, comprehensive")
+    perspective: Optional[str] = Field(None, description="Perspective: general, developer, marketing, executive, support")
+
+
 class BulkRegenerateRequest(BaseModel):
     """Request to regenerate multiple stored summaries (ADR-018)."""
     summary_ids: List[str] = Field(..., min_length=1, max_length=100, description="Summary IDs to regenerate")

@@ -36,6 +36,7 @@ from ..models import (
     BulkDeleteResponse,
     BulkRegenerateRequest,
     BulkRegenerateResponse,
+    RegenerateOptionsRequest,
 )
 from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_stored_summary_repository, get_config_manager, get_task_scheduler
 from ...data.base import SearchCriteria
@@ -1042,7 +1043,7 @@ async def get_summary_calendar(
     "/guilds/{guild_id}/stored-summaries/{summary_id}/regenerate",
     response_model=GenerateSummaryResponse,
     summary="Regenerate stored summary",
-    description="Regenerate a stored summary with updated grounding/references (ADR-004).",
+    description="Regenerate a stored summary with updated grounding/references and optional model/perspective changes.",
     responses={
         403: {"model": ErrorResponse, "description": "No permission"},
         404: {"model": ErrorResponse, "description": "Summary not found"},
@@ -1052,16 +1053,18 @@ async def get_summary_calendar(
 async def regenerate_stored_summary(
     guild_id: str = Path(..., description="Discord guild ID"),
     summary_id: str = Path(..., description="Stored summary ID"),
+    body: Optional[RegenerateOptionsRequest] = None,
     user: dict = Depends(get_current_user),
 ):
     """
-    Regenerate a stored summary to add grounded references.
+    Regenerate a stored summary with optional new settings.
 
-    This fetches the original messages and re-runs summarization with
-    citation/grounding enabled (ADR-004). Useful for summaries created
-    before grounding was implemented.
+    Options:
+    - model: Use a different Claude model
+    - summary_length: brief, detailed, or comprehensive
+    - perspective: general, developer, marketing, executive, support
 
-    ADR-016: Includes repair logic for missing metadata.
+    Also adds grounded references (ADR-004) and repairs missing metadata (ADR-016).
     """
     _check_guild_access(guild_id, user)
 
@@ -1260,16 +1263,33 @@ async def regenerate_stored_summary(
                 _generation_tasks[task_id]["error"] = "No messages found (Discord fetch failed and no valid source_content)"
                 return
 
-            # Get original options from metadata
+            # Get options from request body or fall back to original metadata
             meta = summary_result.metadata or {}
-            summary_length_str = meta.get("summary_length", meta.get("summary_type", "detailed"))
-            perspective = meta.get("perspective", "general")
+
+            # Use body options if provided, otherwise fall back to original
+            if body and body.summary_length:
+                summary_length_str = body.summary_length
+            else:
+                summary_length_str = meta.get("summary_length", meta.get("summary_type", "detailed"))
+
+            if body and body.perspective:
+                perspective = body.perspective
+            else:
+                perspective = meta.get("perspective", "general")
+
+            # Model override from body
+            model_override = body.model if body and body.model else None
 
             options = SummaryOptions(
                 summary_length=SummaryLength(summary_length_str),
                 perspective=perspective,
                 min_messages=1,
             )
+
+            # Apply model override if specified
+            if model_override:
+                options.summarization_model = model_override
+                logger.info(f"[{task_id}] Using custom model: {model_override}")
 
             # Build context (handle case where guild might be None for source_content regen)
             channel_name = "regenerated"

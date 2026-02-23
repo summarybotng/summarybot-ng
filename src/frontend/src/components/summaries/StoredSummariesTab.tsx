@@ -188,10 +188,17 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
         title: "Regenerating",
         description: "Summary is being regenerated with grounded references. This may take a moment.",
       });
-    } catch {
+    } catch (error: unknown) {
+      // Extract error message from API response
+      const errorMessage = error && typeof error === 'object' && 'detail' in error
+        ? (error as { detail?: { message?: string } | string }).detail
+        : null;
+      const message = typeof errorMessage === 'string'
+        ? errorMessage
+        : errorMessage?.message || "Failed to start regeneration";
       toast({
         title: "Error",
-        description: "Failed to start regeneration",
+        description: message,
         variant: "destructive",
       });
     }

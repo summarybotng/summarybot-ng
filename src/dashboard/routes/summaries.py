@@ -937,6 +937,186 @@ async def get_stored_summary(
     )
 
 
+@router.post(
+    "/guilds/{guild_id}/stored-summaries/{summary_id}/regenerate",
+    response_model=GenerateSummaryResponse,
+    summary="Regenerate stored summary",
+    description="Regenerate a stored summary with updated grounding/references (ADR-004).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Summary not found"},
+        503: {"model": ErrorResponse, "description": "Engine unavailable"},
+    },
+)
+async def regenerate_stored_summary(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    summary_id: str = Path(..., description="Stored summary ID"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Regenerate a stored summary to add grounded references.
+
+    This fetches the original messages and re-runs summarization with
+    citation/grounding enabled (ADR-004). Useful for summaries created
+    before grounding was implemented.
+    """
+    _check_guild_access(guild_id, user)
+
+    # Get stored summary
+    stored_repo = await _get_stored_summary_repository()
+    stored = await stored_repo.get(summary_id)
+
+    if not stored or stored.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Stored summary not found"},
+        )
+
+    # Validate we have time range and channels
+    summary_result = stored.summary_result
+    if not summary_result or not summary_result.start_time or not summary_result.end_time:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "MISSING_TIME_RANGE", "message": "Summary missing time range, cannot regenerate"},
+        )
+
+    if not stored.source_channel_ids:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "MISSING_CHANNELS", "message": "Summary missing source channels, cannot regenerate"},
+        )
+
+    # Get dependencies
+    guild = _get_guild_or_404(guild_id)
+    bot = get_discord_bot()
+    engine = get_summarization_engine()
+
+    if not engine:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "ENGINE_UNAVAILABLE", "message": "Summarization engine not available"},
+        )
+
+    # Create task ID
+    import secrets
+    task_id = f"regen_{secrets.token_urlsafe(16)}"
+
+    start_time = summary_result.start_time
+    end_time = summary_result.end_time
+    channel_ids = stored.source_channel_ids
+
+    # Store task info
+    _generation_tasks[task_id] = {
+        "status": "processing",
+        "guild_id": guild_id,
+        "channel_ids": channel_ids,
+        "started_at": datetime.utcnow(),
+        "summary_id": summary_id,
+        "error": None,
+        "regenerate": True,
+    }
+
+    async def run_regeneration():
+        logger.info(f"[{task_id}] Starting regeneration for summary {summary_id}")
+        logger.info(f"[{task_id}] Time range: {start_time} to {end_time}")
+        logger.info(f"[{task_id}] Channels: {channel_ids}")
+
+        try:
+            from ...message_processing import MessageProcessor
+            from ...models.summary import SummaryOptions, SummaryLength, SummarizationContext
+
+            # Collect messages from all channels
+            all_messages = []
+            for channel_id in channel_ids:
+                channel = guild.get_channel(int(channel_id))
+                if channel:
+                    try:
+                        async for message in channel.history(
+                            after=start_time,
+                            before=end_time,
+                            limit=1000,
+                        ):
+                            all_messages.append(message)
+                    except Exception as e:
+                        logger.warning(f"[{task_id}] Error fetching from channel {channel_id}: {e}")
+
+            logger.info(f"[{task_id}] Fetched {len(all_messages)} messages")
+
+            if not all_messages:
+                _generation_tasks[task_id]["status"] = "failed"
+                _generation_tasks[task_id]["error"] = "No messages found in original time range"
+                return
+
+            # Process messages
+            processor = MessageProcessor(bot.client)
+            processed = await processor.process_messages(all_messages, SummaryOptions(min_messages=1))
+            logger.info(f"[{task_id}] Processed {len(processed)} messages")
+
+            # Get original options from metadata
+            meta = summary_result.metadata or {}
+            summary_length = meta.get("summary_length", "detailed")
+            perspective = meta.get("perspective", "general")
+
+            options = SummaryOptions(
+                summary_length=SummaryLength(summary_length),
+                perspective=perspective,
+                min_messages=1,
+            )
+
+            # Build context
+            primary_channel = guild.get_channel(int(channel_ids[0]))
+            channel_name = primary_channel.name if primary_channel else "unknown"
+            time_span_hours = (end_time - start_time).total_seconds() / 3600
+            unique_authors = {msg.author_id for msg in processed}
+
+            context = SummarizationContext(
+                channel_name=channel_name if len(channel_ids) == 1 else f"{len(channel_ids)} channels",
+                guild_name=guild.name,
+                total_participants=len(unique_authors),
+                time_span_hours=time_span_hours,
+            )
+
+            # Generate new summary with grounding
+            logger.info(f"[{task_id}] Generating summary with grounding...")
+            new_result = await engine.summarize_messages(
+                messages=processed,
+                options=options,
+                context=context,
+                guild_id=guild_id,
+                channel_id=channel_ids[0],
+            )
+
+            # Check grounding
+            has_refs = bool(new_result.reference_index)
+            logger.info(f"[{task_id}] New summary has {len(new_result.reference_index)} references, grounded={has_refs}")
+
+            # Preserve original ID but update the summary_result
+            new_result.id = summary_id
+
+            # Update the stored summary
+            stored.summary_result = new_result
+            await stored_repo.update(stored)
+
+            _generation_tasks[task_id]["status"] = "completed"
+            _generation_tasks[task_id]["summary_id"] = summary_id
+            _generation_tasks[task_id]["grounded"] = has_refs
+            _generation_tasks[task_id]["reference_count"] = len(new_result.reference_index)
+            logger.info(f"[{task_id}] Regeneration complete")
+
+        except Exception as e:
+            logger.error(f"[{task_id}] Regeneration failed: {e}", exc_info=True)
+            _generation_tasks[task_id]["status"] = "failed"
+            _generation_tasks[task_id]["error"] = str(e)
+
+    # Start background task
+    asyncio.create_task(run_regeneration())
+
+    return GenerateSummaryResponse(
+        task_id=task_id,
+        status="processing",
+    )
+
+
 @router.patch(
     "/guilds/{guild_id}/stored-summaries/{summary_id}",
     response_model=StoredSummaryDetailResponse,

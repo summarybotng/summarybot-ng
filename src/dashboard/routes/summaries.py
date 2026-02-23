@@ -1311,7 +1311,7 @@ async def regenerate_stored_summary(
                 time_span_hours=time_span_hours,
             )
 
-            # Generate new summary with grounding
+            # Generate new summary with grounding (skip cache for regeneration)
             logger.info(f"[{task_id}] Generating summary with grounding...")
             new_result = await engine.summarize_messages(
                 messages=processed,
@@ -1319,6 +1319,7 @@ async def regenerate_stored_summary(
                 context=context,
                 guild_id=guild_id,
                 channel_id=channel_ids[0] if channel_ids else "",
+                skip_cache=True,  # Always generate fresh for regeneration
             )
 
             # Check grounding

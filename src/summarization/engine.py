@@ -67,7 +67,8 @@ class SummarizationEngine:
                                options: SummaryOptions,
                                context: SummarizationContext,
                                channel_id: str = "",
-                               guild_id: str = "") -> SummaryResult:
+                               guild_id: str = "",
+                               skip_cache: bool = False) -> SummaryResult:
         """Summarize a list of messages.
 
         Args:
@@ -76,6 +77,7 @@ class SummarizationEngine:
             context: Context information
             channel_id: Discord channel ID
             guild_id: Discord guild ID
+            skip_cache: If True, bypass cache lookup (used for regeneration)
 
         Returns:
             Complete summary result
@@ -108,18 +110,18 @@ class SummarizationEngine:
                 )
             )
         
-        # Check cache if available
-        if self.cache:
+        # Check cache if available (skip for regeneration)
+        if self.cache and not skip_cache:
             start_time = min(msg.timestamp for msg in messages)
             end_time = max(msg.timestamp for msg in messages)
-            
+
             cached_summary = await self.cache.get_cached_summary(
                 channel_id=channel_id,
                 start_time=start_time,
                 end_time=end_time,
                 options_hash=self._hash_options(options)
             )
-            
+
             if cached_summary:
                 return cached_summary
         
@@ -507,7 +509,8 @@ class SummarizationEngine:
         """Create hash of options for caching."""
         import hashlib
 
-        options_str = f"{options.summary_length.value}-{options.summarization_model}-{options.temperature}-{options.max_tokens}"
+        # Include all options that affect output: length, model, perspective, temperature, max_tokens
+        options_str = f"{options.summary_length.value}-{options.summarization_model}-{options.perspective}-{options.temperature}-{options.max_tokens}"
         return hashlib.md5(options_str.encode()).hexdigest()[:16]
 
     def _format_source_content(self, messages: List[ProcessedMessage]) -> str:

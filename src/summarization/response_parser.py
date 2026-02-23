@@ -512,46 +512,58 @@ class ResponseParser:
                                      context: Optional[SummarizationContext]) -> ParsedSummary:
         """Enhance parsed summary with analysis of original messages."""
         # Count actual participants from messages
-        participant_counts = {}
-        participant_contributions = {}
-        
+        # ADR-017: Track both name and ID for proper participant data
+        participant_data = {}  # author_name -> {id, count, contributions}
+
         for message in messages:
             author = message.author_name
-            participant_counts[author] = participant_counts.get(author, 0) + 1
-            
+            author_id = getattr(message, 'author_id', '') or ''
+
+            if author not in participant_data:
+                participant_data[author] = {
+                    'id': author_id,
+                    'count': 0,
+                    'contributions': []
+                }
+
+            participant_data[author]['count'] += 1
+            # Use first non-empty author_id we find
+            if author_id and not participant_data[author]['id']:
+                participant_data[author]['id'] = author_id
+
             if message.has_substantial_content():
-                if author not in participant_contributions:
-                    participant_contributions[author] = []
-                
                 # Add substantial messages as contributions
                 content_summary = message.get_content_summary(50)
                 if content_summary and content_summary != "[Empty message]":
-                    participant_contributions[author].append(content_summary)
-        
+                    participant_data[author]['contributions'].append(content_summary)
+
         # Update or create participant objects
         updated_participants = []
         existing_names = {p.display_name.lower(): p for p in parsed.participants}
-        
-        for author, count in participant_counts.items():
+
+        for author, data in participant_data.items():
             if author.lower() in existing_names:
                 # Update existing participant
                 participant = existing_names[author.lower()]
-                participant.message_count = count
-                if author in participant_contributions:
-                    participant.key_contributions = participant_contributions[author][:3]  # Top 3
+                participant.message_count = data['count']
+                # Update user_id if we have it and participant doesn't
+                if data['id'] and not participant.user_id:
+                    participant.user_id = data['id']
+                if data['contributions']:
+                    participant.key_contributions = data['contributions'][:3]  # Top 3
                 updated_participants.append(participant)
             else:
-                # Create new participant
+                # Create new participant with Discord user ID
                 updated_participants.append(Participant(
-                    user_id="",  # Would need Discord API to resolve
+                    user_id=data['id'],
                     display_name=author,
-                    message_count=count,
-                    key_contributions=participant_contributions.get(author, [])[:3]
+                    message_count=data['count'],
+                    key_contributions=data['contributions'][:3]
                 ))
-        
+
         # Sort by message count
         updated_participants.sort(key=lambda p: p.message_count, reverse=True)
-        
+
         parsed.participants = updated_participants
         return parsed
     

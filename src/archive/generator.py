@@ -600,11 +600,20 @@ class RetrospectiveGenerator:
                     },
                 )
 
+            # ADR-017: Build source_channel_ids from all available channel info
+            source_channel_ids = []
+            if job.source.channel_ids:
+                # Multiple channels (GUILD/CATEGORY scope)
+                source_channel_ids = job.source.channel_ids
+            elif job.source.channel_id:
+                # Single channel (CHANNEL scope)
+                source_channel_ids = [job.source.channel_id]
+
             # Create StoredSummary with archive source
             stored = StoredSummary(
                 id=summary_id,
                 guild_id=job.source.server_id or "",
-                source_channel_ids=[job.source.channel_id] if job.source.channel_id else [],
+                source_channel_ids=source_channel_ids,
                 summary_result=db_summary_result,
                 title=f"{job.source.channel_name or job.source.server_name} - {period.start.strftime('%Y-%m-%d')}",
                 # ADR-008: Archive-specific metadata

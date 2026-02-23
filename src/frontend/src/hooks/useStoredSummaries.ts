@@ -128,3 +128,29 @@ export function usePushToChannel(guildId: string) {
     },
   });
 }
+
+// ADR-004: Regenerate summary with grounding
+interface RegenerateResponse {
+  task_id: string;
+  status: string;
+}
+
+export function useRegenerateSummary(guildId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (summaryId: string) =>
+      api.post<RegenerateResponse>(
+        `/guilds/${guildId}/stored-summaries/${summaryId}/regenerate`
+      ),
+    onSuccess: (_, summaryId) => {
+      // Invalidate after a delay to allow regeneration to complete
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] });
+        queryClient.invalidateQueries({
+          queryKey: ["stored-summary", guildId, summaryId],
+        });
+      }, 5000);
+    },
+  });
+}

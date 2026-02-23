@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, type SummarySourceType } from "@/hooks/useStoredSummaries";
+import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, useRegenerateSummary, type SummarySourceType } from "@/hooks/useStoredSummaries";
 import { useGuild } from "@/hooks/useGuilds";
 import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -122,6 +122,7 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
   const updateMutation = useUpdateStoredSummary(guildId);
   const deleteMutation = useDeleteStoredSummary(guildId);
   const pushMutation = usePushToChannel(guildId);
+  const regenerateMutation = useRegenerateSummary(guildId);
 
   const handlePin = async (summary: StoredSummary) => {
     try {
@@ -174,6 +175,23 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
       toast({
         title: "Error",
         description: "Failed to delete summary",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // ADR-004: Regenerate summary with grounding
+  const handleRegenerate = async (summaryId: string) => {
+    try {
+      await regenerateMutation.mutateAsync(summaryId);
+      toast({
+        title: "Regenerating",
+        description: "Summary is being regenerated with grounded references. This may take a moment.",
+      });
+    } catch {
+      toast({
+        title: "Error",
+        description: "Failed to start regeneration",
         variant: "destructive",
       });
     }
@@ -365,6 +383,8 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
             setPushModalSummary(summary);
           }
         }}
+        onRegenerate={handleRegenerate}
+        isRegenerating={regenerateMutation.isPending}
       />
 
       {/* Push Modal */}
@@ -405,12 +425,16 @@ function StoredSummaryDetailSheet({
   open,
   onOpenChange,
   onPush,
+  onRegenerate,
+  isRegenerating,
 }: {
   guildId: string;
   summaryId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPush: (summaryId: string) => void;
+  onRegenerate: (summaryId: string) => void;
+  isRegenerating: boolean;
 }) {
   const { data: summary, isLoading } = useStoredSummary(guildId, summaryId || "");
   const { formatDateTime, formatTime } = useTimezone();
@@ -452,11 +476,25 @@ function StoredSummaryDetailSheet({
                 </div>
               </div>
 
-              {/* Push Button */}
-              <Button onClick={() => onPush(summary.id)} className="w-full sm:w-auto">
-                <Send className="mr-2 h-4 w-4" />
-                Push to Channel
-              </Button>
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => onPush(summary.id)} className="w-full sm:w-auto">
+                  <Send className="mr-2 h-4 w-4" />
+                  Push to Channel
+                </Button>
+                {/* ADR-004: Regenerate button for summaries without grounding */}
+                {!summary.has_references && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onRegenerate(summary.id)}
+                    disabled={isRegenerating}
+                    className="w-full sm:w-auto"
+                  >
+                    <RefreshCw className={`mr-2 h-4 w-4 ${isRegenerating ? 'animate-spin' : ''}`} />
+                    {isRegenerating ? 'Regenerating...' : 'Regenerate with Grounding'}
+                  </Button>
+                )}
+              </div>
 
               {/* Summary Text */}
               <Card>

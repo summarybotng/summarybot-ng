@@ -1,7 +1,7 @@
 # ADR-020: Summary Navigation and Search
 
 ## Status
-Proposed
+Accepted (Implemented 2026-02-24)
 
 ## Date
 2026-02-24

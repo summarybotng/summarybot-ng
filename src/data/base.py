@@ -823,6 +823,86 @@ class StoredSummaryRepository(ABC):
         """
         pass
 
+    # ADR-020: Navigation and Search
+
+    @abstractmethod
+    async def get_navigation(
+        self,
+        summary_id: str,
+        guild_id: str,
+        source: Optional[str] = None,
+    ) -> Dict[str, Optional[str]]:
+        """
+        Get previous/next summary IDs for navigation.
+
+        Args:
+            summary_id: Current summary ID
+            guild_id: Guild to scope navigation within
+            source: Optional source filter (archive, realtime, etc.)
+
+        Returns:
+            Dict with keys: previous_id, previous_date, next_id, next_date
+        """
+        pass
+
+    @abstractmethod
+    async def search(
+        self,
+        guild_id: str,
+        query: str,
+        fields: Optional[List[str]] = None,
+        source: Optional[str] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """
+        Full-text search across summary content.
+
+        Args:
+            guild_id: Guild to search within
+            query: Search query (supports FTS5 syntax)
+            fields: Fields to search (summary_text, key_points, action_items, participants, technical_terms)
+            source: Filter by source type
+            date_from: Start date filter
+            date_to: End date filter
+            limit: Max results
+            offset: Pagination offset
+
+        Returns:
+            Dict with keys: query, total, items (list of search results with highlights)
+        """
+        pass
+
+    @abstractmethod
+    async def search_by_participant(
+        self,
+        guild_id: str,
+        user_id: Optional[str] = None,
+        display_name: Optional[str] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """
+        Find summaries by participant.
+
+        Args:
+            guild_id: Guild to search within
+            user_id: Discord user ID
+            display_name: Partial name match
+            date_from: Start date filter
+            date_to: End date filter
+            limit: Max results
+            offset: Pagination offset
+
+        Returns:
+            Dict with participant info and matching summaries
+        """
+        pass
+
 
 class SummaryJobRepository(ABC):
     """Abstract repository for summary job tracking (ADR-013)."""

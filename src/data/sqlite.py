@@ -1486,6 +1486,275 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             reference_index=data.get('reference_index', []),
         )
 
+    # ADR-020: Navigation and Search
+
+    async def get_navigation(
+        self,
+        summary_id: str,
+        guild_id: str,
+        source: Optional[str] = None,
+    ) -> Dict[str, Optional[str]]:
+        """Get previous/next summary IDs for navigation."""
+        # First, get the current summary's created_at
+        current_query = "SELECT created_at FROM stored_summaries WHERE id = ? AND guild_id = ?"
+        current_row = await self.connection.fetch_one(current_query, (summary_id, guild_id))
+
+        if not current_row:
+            return {"previous_id": None, "previous_date": None, "next_id": None, "next_date": None}
+
+        current_time = current_row["created_at"]
+
+        # Build conditions
+        base_conditions = ["guild_id = ?"]
+        params_base: List[Any] = [guild_id]
+
+        if source and source != "all":
+            base_conditions.append("source = ?")
+            params_base.append(source)
+
+        base_where = " AND ".join(base_conditions)
+
+        # Get previous (older) summary
+        prev_query = f"""
+        SELECT id, archive_period, created_at
+        FROM stored_summaries
+        WHERE {base_where} AND created_at < ?
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+        prev_row = await self.connection.fetch_one(
+            prev_query, tuple(params_base) + (current_time,)
+        )
+
+        # Get next (newer) summary
+        next_query = f"""
+        SELECT id, archive_period, created_at
+        FROM stored_summaries
+        WHERE {base_where} AND created_at > ?
+        ORDER BY created_at ASC
+        LIMIT 1
+        """
+        next_row = await self.connection.fetch_one(
+            next_query, tuple(params_base) + (current_time,)
+        )
+
+        return {
+            "previous_id": prev_row["id"] if prev_row else None,
+            "previous_date": prev_row["archive_period"] or prev_row["created_at"][:10] if prev_row else None,
+            "next_id": next_row["id"] if next_row else None,
+            "next_date": next_row["archive_period"] or next_row["created_at"][:10] if next_row else None,
+        }
+
+    async def search(
+        self,
+        guild_id: str,
+        query: str,
+        fields: Optional[List[str]] = None,
+        source: Optional[str] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Full-text search across summary content using FTS5."""
+        # Build the FTS query with optional field restrictions
+        if fields:
+            # Search specific fields: {field1 field2}: query
+            field_spec = " ".join(fields)
+            fts_match = f"{{summary_text key_points action_items participants technical_terms}}: {query}"
+            if all(f in ["summary_text", "key_points", "action_items", "participants", "technical_terms"] for f in fields):
+                fts_match = f"{{{field_spec}}}: {query}"
+        else:
+            fts_match = query
+
+        # Build the main query with joins
+        conditions = ["fts.guild_id = ?"]
+        params: List[Any] = [guild_id]
+
+        if source and source != "all":
+            conditions.append("s.source = ?")
+            params.append(source)
+
+        if date_from:
+            conditions.append("s.created_at >= ?")
+            params.append(date_from.isoformat())
+
+        if date_to:
+            conditions.append("s.created_at <= ?")
+            params.append(date_to.isoformat())
+
+        where_clause = " AND ".join(conditions)
+
+        # Count total matches
+        count_query = f"""
+        SELECT COUNT(*) as total
+        FROM summary_fts fts
+        JOIN stored_summaries s ON fts.summary_id = s.id
+        WHERE fts MATCH ? AND {where_clause}
+        """
+        count_row = await self.connection.fetch_one(count_query, (fts_match,) + tuple(params))
+        total = count_row["total"] if count_row else 0
+
+        # Get matching results with snippets
+        search_query = f"""
+        SELECT
+            s.id,
+            s.title,
+            s.archive_period,
+            s.created_at,
+            s.source,
+            bm25(fts) as relevance_score,
+            snippet(fts, 1, '<mark>', '</mark>', '...', 32) as summary_snippet,
+            snippet(fts, 2, '<mark>', '</mark>', '...', 32) as key_points_snippet,
+            snippet(fts, 3, '<mark>', '</mark>', '...', 32) as action_items_snippet
+        FROM summary_fts fts
+        JOIN stored_summaries s ON fts.summary_id = s.id
+        WHERE fts MATCH ? AND {where_clause}
+        ORDER BY relevance_score
+        LIMIT ? OFFSET ?
+        """
+        params.extend([limit, offset])
+        rows = await self.connection.fetch_all(search_query, (fts_match,) + tuple(params))
+
+        items = []
+        for row in rows:
+            highlights = []
+            if row["summary_snippet"] and "<mark>" in row["summary_snippet"]:
+                highlights.append({"field": "summary_text", "snippet": row["summary_snippet"]})
+            if row["key_points_snippet"] and "<mark>" in row["key_points_snippet"]:
+                highlights.append({"field": "key_points", "snippet": row["key_points_snippet"]})
+            if row["action_items_snippet"] and "<mark>" in row["action_items_snippet"]:
+                highlights.append({"field": "action_items", "snippet": row["action_items_snippet"]})
+
+            items.append({
+                "id": row["id"],
+                "title": row["title"],
+                "archive_period": row["archive_period"],
+                "created_at": row["created_at"],
+                "source": row["source"],
+                "relevance_score": abs(row["relevance_score"]),  # bm25 returns negative values
+                "highlights": highlights,
+            })
+
+        return {
+            "query": query,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": items,
+        }
+
+    async def search_by_participant(
+        self,
+        guild_id: str,
+        user_id: Optional[str] = None,
+        display_name: Optional[str] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Find summaries by participant."""
+        conditions = ["guild_id = ?"]
+        params: List[Any] = [guild_id]
+
+        # Build participant search condition
+        participant_conditions = []
+        if user_id:
+            participant_conditions.append(
+                "EXISTS (SELECT 1 FROM json_each(json_extract(summary_json, '$.participants')) "
+                "WHERE json_extract(value, '$.user_id') = ?)"
+            )
+            params.append(user_id)
+
+        if display_name:
+            participant_conditions.append(
+                "EXISTS (SELECT 1 FROM json_each(json_extract(summary_json, '$.participants')) "
+                "WHERE json_extract(value, '$.display_name') LIKE ?)"
+            )
+            params.append(f"%{display_name}%")
+
+        if participant_conditions:
+            conditions.append(f"({' OR '.join(participant_conditions)})")
+
+        if date_from:
+            conditions.append("created_at >= ?")
+            params.append(date_from.isoformat())
+
+        if date_to:
+            conditions.append("created_at <= ?")
+            params.append(date_to.isoformat())
+
+        where_clause = " AND ".join(conditions)
+
+        # Count total
+        count_query = f"SELECT COUNT(*) as total FROM stored_summaries WHERE {where_clause}"
+        count_row = await self.connection.fetch_one(count_query, tuple(params))
+        total = count_row["total"] if count_row else 0
+
+        # Get matching summaries
+        search_query = f"""
+        SELECT id, title, archive_period, created_at, source,
+               json_extract(summary_json, '$.participants') as participants,
+               json_extract(summary_json, '$.message_count') as message_count
+        FROM stored_summaries
+        WHERE {where_clause}
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+        """
+        params.extend([limit, offset])
+        rows = await self.connection.fetch_all(search_query, tuple(params))
+
+        # Build participant info from first result if searching by user_id
+        participant_info = None
+        if user_id and rows:
+            # Aggregate participant stats across all matching summaries
+            total_messages = 0
+            found_name = None
+            for row in rows:
+                participants = json.loads(row["participants"] or "[]")
+                for p in participants:
+                    if p.get("user_id") == user_id:
+                        found_name = found_name or p.get("display_name")
+                        total_messages += p.get("message_count", 0)
+
+            participant_info = {
+                "user_id": user_id,
+                "display_name": found_name or display_name or "Unknown",
+                "total_summaries": total,
+                "total_messages": total_messages,
+            }
+
+        items = []
+        for row in rows:
+            participants = json.loads(row["participants"] or "[]")
+
+            # Find key contributions from matching participant
+            contributions = []
+            for p in participants:
+                if (user_id and p.get("user_id") == user_id) or \
+                   (display_name and display_name.lower() in (p.get("display_name") or "").lower()):
+                    contributions = p.get("contributions", [])[:3] if p.get("contributions") else []
+                    break
+
+            items.append({
+                "id": row["id"],
+                "title": row["title"],
+                "archive_period": row["archive_period"],
+                "created_at": row["created_at"],
+                "source": row["source"],
+                "message_count": row["message_count"] or 0,
+                "key_contributions": contributions,
+            })
+
+        return {
+            "participant": participant_info,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "summaries": items,
+        }
+
 
 class SQLiteIngestRepository(IngestRepository):
     """SQLite implementation of ingest repository (ADR-002)."""

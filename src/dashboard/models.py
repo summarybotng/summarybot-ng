@@ -775,6 +775,8 @@ class StoredSummaryDetailResponse(BaseModel):
     prompt_system: Optional[str] = None  # System prompt used
     prompt_user: Optional[str] = None  # User prompt sent to AI
     prompt_template_id: Optional[str] = None  # Custom template ID if used
+    # ADR-020: Navigation
+    navigation: Optional[Dict[str, Optional[str]]] = None  # prev/next summary IDs
 
 
 class StoredSummaryUpdateRequest(BaseModel):

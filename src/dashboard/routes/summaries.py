@@ -991,6 +991,13 @@ async def get_stored_summary(
                     message_id=ref.get('message_id'),
                 ))
 
+    # ADR-020: Get navigation (prev/next)
+    navigation = await stored_repo.get_navigation(
+        summary_id=summary_id,
+        guild_id=guild_id,
+        source=stored.source.value if stored.source else None,
+    )
+
     return StoredSummaryDetailResponse(
         id=stored.id,
         title=stored.title,
@@ -1024,6 +1031,8 @@ async def get_stored_summary(
         prompt_system=summary_result.prompt_system if summary_result else None,
         prompt_user=summary_result.prompt_user if summary_result else None,
         prompt_template_id=summary_result.prompt_template_id if summary_result else None,
+        # ADR-020: Navigation
+        navigation=navigation,
     )
 
 
@@ -1062,6 +1071,198 @@ async def get_summary_calendar(
         "month": month,
         "days": calendar_data,
     }
+
+
+# ADR-020: Navigation and Search
+
+@router.get(
+    "/guilds/{guild_id}/stored-summaries/{summary_id}/navigation",
+    summary="Get summary navigation",
+    description="Get previous/next summary IDs for navigation (ADR-020).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Summary not found"},
+    },
+)
+async def get_summary_navigation(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    summary_id: str = Path(..., description="Stored summary ID"),
+    source: Optional[str] = Query(None, description="Filter navigation by source type"),
+    user: dict = Depends(get_current_user),
+):
+    """Get previous/next summary links for navigation.
+
+    Returns IDs and dates of adjacent summaries for chronological browsing.
+    """
+    _check_guild_access(guild_id, user)
+
+    stored_repo = await _get_stored_summary_repository()
+
+    # Verify summary exists and belongs to guild
+    stored = await stored_repo.get(summary_id)
+    if not stored or stored.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Stored summary not found"},
+        )
+
+    navigation = await stored_repo.get_navigation(
+        summary_id=summary_id,
+        guild_id=guild_id,
+        source=source,
+    )
+
+    return {
+        "summary_id": summary_id,
+        "navigation": navigation,
+    }
+
+
+@router.get(
+    "/guilds/{guild_id}/stored-summaries/search",
+    summary="Search summaries",
+    description="Full-text search across summary content (ADR-020).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        400: {"model": ErrorResponse, "description": "Invalid query"},
+    },
+)
+async def search_summaries(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    q: str = Query(..., min_length=2, description="Search query"),
+    fields: Optional[str] = Query(
+        None,
+        description="Comma-separated fields to search (summary_text, key_points, action_items, participants, technical_terms)"
+    ),
+    source: Optional[str] = Query(None, description="Filter by source type"),
+    date_from: Optional[str] = Query(None, description="Start date (ISO format)"),
+    date_to: Optional[str] = Query(None, description="End date (ISO format)"),
+    limit: int = Query(20, ge=1, le=100, description="Max results"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    user: dict = Depends(get_current_user),
+):
+    """Search summaries by content, keywords, or participants.
+
+    Supports FTS5 query syntax:
+    - Simple terms: `authentication`
+    - Phrases: `"user login"`
+    - Boolean: `authentication AND bug`
+    - Prefix: `auth*`
+    """
+    _check_guild_access(guild_id, user)
+
+    stored_repo = await _get_stored_summary_repository()
+
+    # Parse fields
+    field_list = None
+    if fields:
+        field_list = [f.strip() for f in fields.split(",") if f.strip()]
+        valid_fields = {"summary_text", "key_points", "action_items", "participants", "technical_terms"}
+        invalid_fields = set(field_list) - valid_fields
+        if invalid_fields:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_FIELDS", "message": f"Invalid fields: {invalid_fields}"},
+            )
+
+    # Parse dates
+    date_from_dt = None
+    date_to_dt = None
+    if date_from:
+        try:
+            date_from_dt = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_DATE", "message": "Invalid date_from format"},
+            )
+    if date_to:
+        try:
+            date_to_dt = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_DATE", "message": "Invalid date_to format"},
+            )
+
+    try:
+        results = await stored_repo.search(
+            guild_id=guild_id,
+            query=q,
+            fields=field_list,
+            source=source,
+            date_from=date_from_dt,
+            date_to=date_to_dt,
+            limit=limit,
+            offset=offset,
+        )
+        return results
+    except Exception as e:
+        # FTS query errors
+        logger.warning(f"Search error for query '{q}': {e}")
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "SEARCH_ERROR", "message": f"Invalid search query: {str(e)}"},
+        )
+
+
+@router.get(
+    "/guilds/{guild_id}/stored-summaries/by-participant",
+    summary="Search by participant",
+    description="Find summaries mentioning specific participants (ADR-020).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def search_by_participant(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    user_id: Optional[str] = Query(None, description="Discord user ID"),
+    display_name: Optional[str] = Query(None, description="Partial name match"),
+    date_from: Optional[str] = Query(None, description="Start date (ISO format)"),
+    date_to: Optional[str] = Query(None, description="End date (ISO format)"),
+    limit: int = Query(20, ge=1, le=100, description="Max results"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    user: dict = Depends(get_current_user),
+):
+    """Find all summaries mentioning a specific participant.
+
+    Returns participant stats and matching summaries with key contributions.
+    """
+    _check_guild_access(guild_id, user)
+
+    if not user_id and not display_name:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "MISSING_PARAM", "message": "Provide user_id or display_name"},
+        )
+
+    stored_repo = await _get_stored_summary_repository()
+
+    # Parse dates
+    date_from_dt = None
+    date_to_dt = None
+    if date_from:
+        try:
+            date_from_dt = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            date_to_dt = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+
+    results = await stored_repo.search_by_participant(
+        guild_id=guild_id,
+        user_id=user_id,
+        display_name=display_name,
+        date_from=date_from_dt,
+        date_to=date_to_dt,
+        limit=limit,
+        offset=offset,
+    )
+
+    return results
 
 
 @router.post(

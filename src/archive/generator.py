@@ -170,6 +170,7 @@ class RetrospectiveGenerator:
         lock_manager: Optional[LockManager] = None,
         max_concurrent: int = 3,
         stored_summary_repository: Optional['StoredSummaryRepository'] = None,
+        summary_job_repository: Optional[Any] = None,  # ADR-013
     ):
         """
         Initialize retrospective generator.
@@ -183,6 +184,7 @@ class RetrospectiveGenerator:
             lock_manager: Lock manager (created if not provided)
             max_concurrent: Maximum concurrent generations
             stored_summary_repository: ADR-008 - Repository for saving to database
+            summary_job_repository: ADR-013 - Repository for persistent job tracking
         """
         self.archive_root = archive_root
         self.summarization_service = summarization_service
@@ -193,6 +195,7 @@ class RetrospectiveGenerator:
         self.writer = SummaryWriter(archive_root)
         self.max_concurrent = max_concurrent
         self.stored_summary_repository = stored_summary_repository
+        self.summary_job_repository = summary_job_repository  # ADR-013
 
         self._jobs: Dict[str, GenerationJob] = {}
         self._semaphore = asyncio.Semaphore(max_concurrent)
@@ -266,7 +269,57 @@ class RetrospectiveGenerator:
         self._jobs[job_id] = job
         logger.info(f"Created job {job_id} for {source.source_key}: {len(periods)} periods")
 
+        # ADR-013: Persist job to database
+        await self._persist_job(job)
+
         return job
+
+    async def _persist_job(self, job: 'GenerationJob') -> None:
+        """ADR-013: Save job to database for persistence across restarts."""
+        if not self.summary_job_repository:
+            return
+
+        try:
+            from ..models.summary_job import SummaryJob, JobType, JobStatus as DBJobStatus
+
+            # Convert internal job to database model
+            start_date, end_date = job.date_range
+            db_job = SummaryJob(
+                id=job.job_id,
+                guild_id=job.source.server_id,
+                job_type=JobType.RETROSPECTIVE,
+                status=DBJobStatus(job.status.value),
+                scope="guild",
+                date_range_start=start_date,
+                date_range_end=end_date,
+                granularity=job.granularity,
+                summary_type=job.summary_type,
+                perspective=job.perspective,
+                force_regenerate=job.force_regenerate,
+                progress_current=job.progress.completed + job.progress.failed + job.progress.skipped,
+                progress_total=job.progress.total_periods,
+                current_period=job.progress.current_period,
+                cost_usd=job.cost.cost_usd,
+                tokens_input=job.cost.tokens_input,
+                tokens_output=job.cost.tokens_output,
+                error=job.error,
+                pause_reason=job.pause_reason,
+                created_at=job.created_at,
+                started_at=job.started_at,
+                completed_at=job.completed_at,
+                source_key=job.source.source_key,
+                server_name=job.source.server_name,
+            )
+
+            # Check if job exists
+            existing = await self.summary_job_repository.get(job.job_id)
+            if existing:
+                await self.summary_job_repository.update(db_job)
+            else:
+                await self.summary_job_repository.save(db_job)
+
+        except Exception as e:
+            logger.warning(f"Failed to persist job {job.job_id} to database: {e}")
 
     async def run_job(
         self,
@@ -291,6 +344,7 @@ class RetrospectiveGenerator:
 
         job.status = JobStatus.RUNNING
         job.started_at = datetime.utcnow()
+        await self._persist_job(job)  # ADR-013
 
         try:
             start_date, end_date = job.date_range
@@ -335,6 +389,10 @@ class RetrospectiveGenerator:
                 if progress_callback:
                     await progress_callback(job)
 
+                # ADR-013: Persist progress periodically (every 5 periods)
+                if (job.progress.completed + job.progress.skipped + job.progress.failed) % 5 == 0:
+                    await self._persist_job(job)
+
             # Mark complete if not paused/cancelled
             if job.status == JobStatus.RUNNING:
                 job.status = JobStatus.COMPLETED
@@ -343,10 +401,15 @@ class RetrospectiveGenerator:
                 # Trigger sync if configured
                 await self._trigger_sync(job)
 
+            # ADR-013: Persist final state
+            await self._persist_job(job)
+
         except Exception as e:
             job.status = JobStatus.FAILED
             job.error = str(e)
+            job.completed_at = datetime.utcnow()
             logger.error(f"Job {job_id} failed: {e}")
+            await self._persist_job(job)  # ADR-013
 
         return job
 
@@ -703,8 +766,23 @@ class RetrospectiveGenerator:
             logger.info(f"Deleted existing summary file for {target_date}")
 
     def get_job(self, job_id: str) -> Optional[GenerationJob]:
-        """Get a job by ID."""
-        return self._jobs.get(job_id)
+        """Get a job by ID (checks memory first, then database)."""
+        # Check in-memory first
+        if job_id in self._jobs:
+            return self._jobs[job_id]
+        return None
+
+    async def get_job_from_db(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """ADR-013: Get job from database (for jobs from previous sessions)."""
+        if not self.summary_job_repository:
+            return None
+        try:
+            db_job = await self.summary_job_repository.get(job_id)
+            if db_job:
+                return db_job.to_dict()
+        except Exception as e:
+            logger.warning(f"Failed to get job {job_id} from database: {e}")
+        return None
 
     def list_jobs(self, status: Optional[JobStatus] = None) -> List[GenerationJob]:
         """List jobs, optionally filtered by status."""

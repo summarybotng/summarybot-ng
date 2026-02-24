@@ -292,6 +292,7 @@ async def get_generator():
     from src.archive.sources import SourceRegistry
     from src.archive.api_keys import ApiKeyResolver
     from . import get_summarization_engine, get_stored_summary_repository
+    from ...data.repositories import get_summary_job_repository
 
     archive_root = get_archive_root()
     cost_tracker = CostTracker(archive_root / "cost-ledger.json")
@@ -313,6 +314,14 @@ async def get_generator():
     else:
         logger.warning("Archive generator initialized WITHOUT database storage - summaries will only be written to files")
 
+    # ADR-013: Get job repository for persistent job tracking
+    try:
+        job_repo = await get_summary_job_repository()
+        logger.info("Archive generator initialized with job tracking")
+    except Exception as e:
+        logger.warning(f"Job tracking not available: {e}")
+        job_repo = None
+
     _generator_instance = RetrospectiveGenerator(
         archive_root=archive_root,
         summarization_service=summarization_adapter,
@@ -320,6 +329,7 @@ async def get_generator():
         cost_tracker=cost_tracker,
         api_key_resolver=api_key_resolver,
         stored_summary_repository=stored_summary_repo,
+        summary_job_repository=job_repo,
     )
 
     return _generator_instance
@@ -644,10 +654,15 @@ async def get_generation_status(job_id: str):
     generator = await get_generator()
     job = generator.get_job(job_id)
 
-    if not job:
-        raise HTTPException(404, f"Job not found: {job_id}")
+    if job:
+        return JobResponse(**job.to_dict())
 
-    return JobResponse(**job.to_dict())
+    # ADR-013: Check database for jobs from previous sessions
+    db_job = await generator.get_job_from_db(job_id)
+    if db_job:
+        return JobResponse(**db_job)
+
+    raise HTTPException(404, f"Job not found: {job_id}")
 
 
 @router.post("/generate/{job_id}/cancel")
@@ -667,13 +682,14 @@ async def list_all_jobs(
     limit: int = 50,
 ):
     """
-    List all generation jobs.
+    List all generation jobs (ADR-013: from memory and database).
 
     Args:
         status: Filter by status (pending, running, completed, failed, cancelled)
         limit: Maximum number of jobs to return
     """
     from src.archive.generator import JobStatus
+    from ...data.repositories import get_summary_job_repository
 
     generator = await get_generator()
 
@@ -685,15 +701,34 @@ async def list_all_jobs(
         except ValueError:
             raise HTTPException(400, f"Invalid status: {status}")
 
+    # Get in-memory jobs
     jobs = generator.list_jobs(status=status_filter)
+    job_dicts = [j.to_dict() for j in jobs]
+    seen_ids = {j.job_id for j in jobs}
+
+    # ADR-013: Also get jobs from database
+    try:
+        job_repo = await get_summary_job_repository()
+        db_jobs = await job_repo.find_by_guild(
+            guild_id="",  # Empty to get all
+            status=status if status else None,
+            job_type="retrospective",
+            limit=limit,
+        )
+        # Add DB jobs that aren't in memory
+        for db_job in db_jobs:
+            if db_job.id not in seen_ids:
+                job_dicts.append(db_job.to_dict())
+    except Exception as e:
+        logger.warning(f"Failed to fetch jobs from database: {e}")
 
     # Sort by created_at descending (newest first)
-    jobs.sort(key=lambda j: j.created_at, reverse=True)
+    job_dicts.sort(key=lambda j: j.get("created_at", ""), reverse=True)
 
     # Apply limit
-    jobs = jobs[:limit]
+    job_dicts = job_dicts[:limit]
 
-    return [JobResponse(**j.to_dict()) for j in jobs]
+    return [JobResponse(**j) for j in job_dicts]
 
 
 @router.post("/jobs/{job_id}/pause")

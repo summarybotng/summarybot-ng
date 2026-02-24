@@ -24,6 +24,7 @@ from .base import (
     WebhookRepository,
     ErrorRepository,
     StoredSummaryRepository,
+    SummaryJobRepository,
     IngestRepository,
     DatabaseConnection,
     Transaction,
@@ -42,6 +43,7 @@ from ..models.summary import (
     SummaryLength,
     SummaryWarning
 )
+from ..models.summary_job import SummaryJob, JobType, JobStatus
 from ..models.task import (
     ScheduledTask,
     TaskResult,
@@ -1760,3 +1762,206 @@ class SQLiteIngestRepository(IngestRepository):
         query = "DELETE FROM ingest_batches WHERE id = ?"
         cursor = await self.connection.execute(query, (batch_id,))
         return cursor.rowcount > 0
+
+
+class SQLiteSummaryJobRepository(SummaryJobRepository):
+    """SQLite implementation of summary job repository (ADR-013)."""
+
+    def __init__(self, connection: SQLiteConnection):
+        self.connection = connection
+
+    async def save(self, job: SummaryJob) -> str:
+        """Save a job to the database."""
+        query = """
+        INSERT INTO summary_jobs (
+            id, guild_id, job_type, status, scope, channel_ids, category_id,
+            schedule_id, period_start, period_end, date_range_start, date_range_end,
+            granularity, summary_type, perspective, force_regenerate,
+            progress_current, progress_total, progress_message, current_period,
+            cost_usd, tokens_input, tokens_output, summary_id, summary_ids,
+            error, pause_reason, created_at, started_at, completed_at,
+            created_by, source_key, server_name, metadata
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+
+        params = (
+            job.id,
+            job.guild_id,
+            job.job_type.value,
+            job.status.value,
+            job.scope,
+            json.dumps(job.channel_ids) if job.channel_ids else None,
+            job.category_id,
+            job.schedule_id,
+            job.period_start.isoformat() if job.period_start else None,
+            job.period_end.isoformat() if job.period_end else None,
+            job.date_range_start.isoformat() if job.date_range_start else None,
+            job.date_range_end.isoformat() if job.date_range_end else None,
+            job.granularity,
+            job.summary_type,
+            job.perspective,
+            1 if job.force_regenerate else 0,
+            job.progress_current,
+            job.progress_total,
+            job.progress_message,
+            job.current_period,
+            job.cost_usd,
+            job.tokens_input,
+            job.tokens_output,
+            job.summary_id,
+            json.dumps(job.summary_ids) if job.summary_ids else None,
+            job.error,
+            job.pause_reason,
+            job.created_at.isoformat(),
+            job.started_at.isoformat() if job.started_at else None,
+            job.completed_at.isoformat() if job.completed_at else None,
+            job.created_by,
+            job.source_key,
+            job.server_name,
+            json.dumps(job.metadata) if job.metadata else None,
+        )
+
+        await self.connection.execute(query, params)
+        return job.id
+
+    async def get(self, job_id: str) -> Optional[SummaryJob]:
+        """Get a job by ID."""
+        query = "SELECT * FROM summary_jobs WHERE id = ?"
+        row = await self.connection.fetch_one(query, (job_id,))
+        if not row:
+            return None
+        return SummaryJob.from_dict(dict(row))
+
+    async def update(self, job: SummaryJob) -> bool:
+        """Update an existing job."""
+        query = """
+        UPDATE summary_jobs SET
+            status = ?,
+            progress_current = ?,
+            progress_total = ?,
+            progress_message = ?,
+            current_period = ?,
+            cost_usd = ?,
+            tokens_input = ?,
+            tokens_output = ?,
+            summary_id = ?,
+            summary_ids = ?,
+            error = ?,
+            pause_reason = ?,
+            started_at = ?,
+            completed_at = ?
+        WHERE id = ?
+        """
+
+        params = (
+            job.status.value,
+            job.progress_current,
+            job.progress_total,
+            job.progress_message,
+            job.current_period,
+            job.cost_usd,
+            job.tokens_input,
+            job.tokens_output,
+            job.summary_id,
+            json.dumps(job.summary_ids) if job.summary_ids else None,
+            job.error,
+            job.pause_reason,
+            job.started_at.isoformat() if job.started_at else None,
+            job.completed_at.isoformat() if job.completed_at else None,
+            job.id,
+        )
+
+        cursor = await self.connection.execute(query, params)
+        return cursor.rowcount > 0
+
+    async def find_by_guild(
+        self,
+        guild_id: str,
+        status: Optional[str] = None,
+        job_type: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[SummaryJob]:
+        """Find jobs for a guild with optional filters."""
+        conditions = ["guild_id = ?"]
+        params = [guild_id]
+
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+
+        if job_type:
+            conditions.append("job_type = ?")
+            params.append(job_type)
+
+        query = f"""
+        SELECT * FROM summary_jobs
+        WHERE {' AND '.join(conditions)}
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+        """
+        params.extend([limit, offset])
+
+        rows = await self.connection.fetch_all(query, tuple(params))
+        return [SummaryJob.from_dict(dict(row)) for row in rows]
+
+    async def find_active(self, guild_id: Optional[str] = None) -> List[SummaryJob]:
+        """Find all active (pending/running) jobs."""
+        if guild_id:
+            query = """
+            SELECT * FROM summary_jobs
+            WHERE guild_id = ? AND status IN ('pending', 'running', 'paused')
+            ORDER BY created_at DESC
+            """
+            rows = await self.connection.fetch_all(query, (guild_id,))
+        else:
+            query = """
+            SELECT * FROM summary_jobs
+            WHERE status IN ('pending', 'running', 'paused')
+            ORDER BY created_at DESC
+            """
+            rows = await self.connection.fetch_all(query, ())
+
+        return [SummaryJob.from_dict(dict(row)) for row in rows]
+
+    async def delete(self, job_id: str) -> bool:
+        """Delete a job by ID."""
+        query = "DELETE FROM summary_jobs WHERE id = ?"
+        cursor = await self.connection.execute(query, (job_id,))
+        return cursor.rowcount > 0
+
+    async def cleanup_old(self, days: int = 7) -> int:
+        """Delete jobs older than specified days."""
+        query = """
+        DELETE FROM summary_jobs
+        WHERE completed_at IS NOT NULL
+        AND completed_at < datetime('now', '-' || ? || ' days')
+        """
+        cursor = await self.connection.execute(query, (days,))
+        return cursor.rowcount
+
+    async def count_by_guild(
+        self,
+        guild_id: str,
+        status: Optional[str] = None,
+        job_type: Optional[str] = None,
+    ) -> int:
+        """Count jobs for a guild."""
+        conditions = ["guild_id = ?"]
+        params = [guild_id]
+
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+
+        if job_type:
+            conditions.append("job_type = ?")
+            params.append(job_type)
+
+        query = f"""
+        SELECT COUNT(*) as count FROM summary_jobs
+        WHERE {' AND '.join(conditions)}
+        """
+
+        row = await self.connection.fetch_one(query, tuple(params))
+        return row['count'] if row else 0

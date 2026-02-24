@@ -16,6 +16,7 @@ from ..models.error_log import ErrorLog, ErrorType, ErrorSeverity
 from ..models.stored_summary import StoredSummary
 from ..models.ingest import IngestDocument, IngestBatch
 from ..models.message import ProcessedMessage
+from ..models.summary_job import SummaryJob
 from ..config.settings import GuildConfig
 
 
@@ -820,6 +821,52 @@ class StoredSummaryRepository(ABC):
         Returns:
             List of stored summaries from the schedule
         """
+        pass
+
+
+class SummaryJobRepository(ABC):
+    """Abstract repository for summary job tracking (ADR-013)."""
+
+    @abstractmethod
+    async def save(self, job: "SummaryJob") -> str:
+        """Save a job to the database."""
+        pass
+
+    @abstractmethod
+    async def get(self, job_id: str) -> Optional["SummaryJob"]:
+        """Get a job by ID."""
+        pass
+
+    @abstractmethod
+    async def update(self, job: "SummaryJob") -> bool:
+        """Update an existing job."""
+        pass
+
+    @abstractmethod
+    async def find_by_guild(
+        self,
+        guild_id: str,
+        status: Optional[str] = None,
+        job_type: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List["SummaryJob"]:
+        """Find jobs for a guild with optional filters."""
+        pass
+
+    @abstractmethod
+    async def find_active(self, guild_id: Optional[str] = None) -> List["SummaryJob"]:
+        """Find all active (pending/running) jobs."""
+        pass
+
+    @abstractmethod
+    async def delete(self, job_id: str) -> bool:
+        """Delete a job by ID."""
+        pass
+
+    @abstractmethod
+    async def cleanup_old(self, days: int = 7) -> int:
+        """Delete jobs older than specified days. Returns count deleted."""
         pass
 
 

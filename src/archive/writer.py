@@ -363,9 +363,10 @@ def delete_summary_file(
     target_date: date,
 ) -> bool:
     """
-    Delete a summary file from disk.
+    Delete a summary file and its metadata from disk.
 
     ADR-019: Called when deleting from database to keep disk in sync.
+    Also deletes the .meta.json file to allow lock acquisition for regeneration.
 
     Args:
         archive_root: Root path of the archive
@@ -376,7 +377,17 @@ def delete_summary_file(
         True if file was deleted, False if it didn't exist
     """
     md_path = get_summary_path(archive_root, source, target_date)
+    meta_path = md_path.with_suffix(".meta.json")
+    deleted = False
+
+    # Delete markdown file
     if md_path.exists():
         md_path.unlink()
-        return True
-    return False
+        deleted = True
+
+    # Delete metadata file (critical for force_regenerate - allows lock acquisition)
+    if meta_path.exists():
+        meta_path.unlink()
+        deleted = True
+
+    return deleted

@@ -32,7 +32,7 @@ from .models import (
 from .sources import SourceRegistry
 from .cost_tracker import CostTracker, PricingTable
 from .locking import LockManager
-from .writer import SummaryWriter, summary_exists
+from .writer import SummaryWriter, summary_exists, summary_exists_in_db
 from .api_keys import ApiKeyResolver
 
 # ADR-008: Import for database storage
@@ -106,6 +106,7 @@ class GenerationJob:
     skip_existing: bool = True
     regenerate_outdated: bool = False
     regenerate_failed: bool = True
+    force_regenerate: bool = False  # ADR-019: Delete existing and regenerate
     max_cost_usd: Optional[float] = None
     dry_run: bool = False
     # Summary options
@@ -206,6 +207,7 @@ class RetrospectiveGenerator:
         skip_existing: bool = True,
         regenerate_outdated: bool = False,
         regenerate_failed: bool = True,
+        force_regenerate: bool = False,
         max_cost_usd: Optional[float] = None,
         dry_run: bool = False,
         summary_type: str = "detailed",
@@ -251,6 +253,7 @@ class RetrospectiveGenerator:
             skip_existing=skip_existing,
             regenerate_outdated=regenerate_outdated,
             regenerate_failed=regenerate_failed,
+            force_regenerate=force_regenerate,
             max_cost_usd=max_cost_usd,
             dry_run=dry_run,
             summary_type=summary_type,
@@ -388,9 +391,12 @@ class RetrospectiveGenerator:
     ) -> str:
         """Generate summary for a single period."""
 
-        # Check if summary exists
-        if job.skip_existing and summary_exists(self.archive_root, job.source, period_start):
-            logger.debug(f"Skipping existing: {period_start}")
+        # ADR-019: force_regenerate deletes existing and regenerates
+        if job.force_regenerate:
+            await self._delete_existing(job.source, period_start)
+        # ADR-019: Check database for existing summary (not disk)
+        elif job.skip_existing and await summary_exists_in_db(job.source, period_start):
+            logger.debug(f"Skipping existing (in DB): {period_start}")
             return "skipped"
 
         # Create period info with UTC timezone-aware datetimes
@@ -669,6 +675,32 @@ class RetrospectiveGenerator:
         """Get metadata path for a date."""
         summary_dir = source.get_archive_path(self.archive_root)
         return summary_dir / str(target_date.year) / f"{target_date.month:02d}" / f"{target_date.isoformat()}_daily.meta.json"
+
+    async def _delete_existing(self, source: ArchiveSource, target_date: date) -> None:
+        """
+        ADR-019: Delete existing summary from both database and disk.
+
+        Called when force_regenerate is True to ensure clean regeneration.
+        """
+        from .writer import delete_summary_file
+
+        # Delete from database
+        try:
+            if self.stored_summary_repository:
+                existing = await self.stored_summary_repository.find_by_guild(
+                    guild_id=source.server_id,
+                    limit=1,
+                    archive_period=target_date.isoformat(),
+                )
+                for summary in existing:
+                    await self.stored_summary_repository.delete(summary.id)
+                    logger.info(f"Deleted existing summary from DB: {summary.id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete from DB: {e}")
+
+        # Delete from disk
+        if delete_summary_file(self.archive_root, source, target_date):
+            logger.info(f"Deleted existing summary file for {target_date}")
 
     def get_job(self, job_id: str) -> Optional[GenerationJob]:
         """Get a job by ID."""

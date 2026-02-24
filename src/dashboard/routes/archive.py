@@ -62,6 +62,8 @@ class GenerateRequest(BaseModel):
     skip_existing: bool = True
     regenerate_outdated: bool = False
     regenerate_failed: bool = True
+    # ADR-019: Force regeneration (delete existing and regenerate)
+    force_regenerate: bool = False
     max_cost_usd: Optional[float] = None
     dry_run: bool = False
     model: Optional[str] = None  # If not set, auto-selected based on summary_type
@@ -620,6 +622,7 @@ async def generate_retrospective(request: GenerateRequest):
         skip_existing=request.skip_existing if request.skip_existing is not None else True,
         regenerate_outdated=request.regenerate_outdated or False,
         regenerate_failed=request.regenerate_failed if request.regenerate_failed is not None else True,
+        force_regenerate=request.force_regenerate or False,
         max_cost_usd=request.max_cost_usd,
         dry_run=request.dry_run or False,
         summary_type=request.summary_type or "detailed",

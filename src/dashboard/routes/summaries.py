@@ -1425,7 +1425,7 @@ async def update_stored_summary(
 @router.delete(
     "/guilds/{guild_id}/stored-summaries/{summary_id}",
     summary="Delete stored summary",
-    description="Delete a stored summary (ADR-005).",
+    description="Delete a stored summary (ADR-005, ADR-019).",
     responses={
         403: {"model": ErrorResponse, "description": "No permission"},
         404: {"model": ErrorResponse, "description": "Summary not found"},
@@ -1436,7 +1436,10 @@ async def delete_stored_summary(
     summary_id: str = Path(..., description="Stored summary ID"),
     user: dict = Depends(get_current_user),
 ):
-    """Delete a stored summary."""
+    """Delete a stored summary.
+
+    ADR-019: Also deletes the corresponding disk file to keep storage in sync.
+    """
     _check_guild_access(guild_id, user)
 
     stored_repo = await _get_stored_summary_repository()
@@ -1448,9 +1451,41 @@ async def delete_stored_summary(
             detail={"code": "NOT_FOUND", "message": "Stored summary not found"},
         )
 
+    # ADR-019: Delete disk file if this is an archive summary
+    disk_deleted = False
+    if stored.source == SummarySource.ARCHIVE and stored.archive_period:
+        try:
+            from datetime import datetime as dt
+            from pathlib import Path
+            import os
+            from ...archive.writer import delete_summary_file
+            from ...archive.models import SourceType, ArchiveSource
+
+            # Parse archive_period to date
+            period_date = dt.strptime(stored.archive_period, "%Y-%m-%d").date()
+
+            # Create ArchiveSource from stored summary data
+            source = ArchiveSource(
+                source_type=SourceType.DISCORD,
+                server_id=guild_id,
+                server_name=guild_id,  # Name not needed for path
+            )
+
+            archive_root = Path(os.environ.get("ARCHIVE_ROOT", "./summarybot-archive"))
+            disk_deleted = delete_summary_file(archive_root, source, period_date)
+            if disk_deleted:
+                logger.info(f"Deleted disk file for archive summary {summary_id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete disk file for {summary_id}: {e}")
+
+    # Delete from database (authoritative)
     await stored_repo.delete(summary_id)
 
-    return {"success": True, "message": f"Deleted stored summary {summary_id}"}
+    return {
+        "success": True,
+        "message": f"Deleted stored summary {summary_id}",
+        "disk_deleted": disk_deleted,
+    }
 
 
 # ADR-018: Bulk delete endpoint

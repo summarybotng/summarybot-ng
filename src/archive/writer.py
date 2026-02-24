@@ -303,7 +303,10 @@ def summary_exists(
     target_date: date,
 ) -> bool:
     """
-    Check if a summary exists for a date.
+    Check if a summary exists on disk for a date.
+
+    DEPRECATED: Use summary_exists_in_db() instead (ADR-019).
+    This function checks disk files, but the database is now authoritative.
 
     Args:
         archive_root: Root path of the archive
@@ -311,7 +314,69 @@ def summary_exists(
         target_date: Date to check
 
     Returns:
-        True if summary exists
+        True if summary file exists on disk
     """
     md_path = get_summary_path(archive_root, source, target_date)
     return md_path.exists()
+
+
+async def summary_exists_in_db(
+    source: ArchiveSource,
+    target_date: date,
+) -> bool:
+    """
+    Check if a summary exists in the database for a date.
+
+    ADR-019: Database is the authoritative source for archive summaries.
+    This should be used instead of summary_exists() for skip checks.
+
+    Args:
+        source: Source information
+        target_date: Date to check
+
+    Returns:
+        True if summary exists in database
+    """
+    try:
+        from ..data.repositories import get_stored_summary_repository
+        repo = await get_stored_summary_repository()
+        if not repo:
+            # Fall back to disk check if DB unavailable
+            return False
+
+        # Query by guild_id and archive_period
+        existing = await repo.find_by_guild(
+            guild_id=source.server_id,
+            limit=1,
+            archive_period=target_date.isoformat(),
+        )
+        return len(existing) > 0
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"DB check failed, assuming not exists: {e}")
+        return False
+
+
+def delete_summary_file(
+    archive_root: Path,
+    source: ArchiveSource,
+    target_date: date,
+) -> bool:
+    """
+    Delete a summary file from disk.
+
+    ADR-019: Called when deleting from database to keep disk in sync.
+
+    Args:
+        archive_root: Root path of the archive
+        source: Source information
+        target_date: Date of the summary
+
+    Returns:
+        True if file was deleted, False if it didn't exist
+    """
+    md_path = get_summary_path(archive_root, source, target_date)
+    if md_path.exists():
+        md_path.unlink()
+        return True
+    return False

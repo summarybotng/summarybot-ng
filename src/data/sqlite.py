@@ -405,6 +405,11 @@ class SQLiteConfigRepository(ConfigRepository):
 
         # Convert summary options
         options_data['summary_length'] = SummaryLength(options_data['summary_length'])
+
+        # Handle legacy field name: claude_model -> summarization_model
+        if 'claude_model' in options_data:
+            options_data['summarization_model'] = options_data.pop('claude_model')
+
         summary_options = SummaryOptions(**options_data)
 
         # Convert permission settings

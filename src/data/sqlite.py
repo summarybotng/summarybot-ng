@@ -1022,7 +1022,48 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         )
 
         await self.connection.execute(query, params)
+
+        # ADR-020: Populate FTS table for search
+        await self._update_fts(summary)
+
         return summary.id
+
+    async def _update_fts(self, summary: StoredSummary) -> None:
+        """Update FTS index for a summary (ADR-020)."""
+        try:
+            # Delete existing FTS entry
+            await self.connection.execute(
+                "DELETE FROM summary_fts WHERE summary_id = ?",
+                (summary.id,)
+            )
+
+            # Extract searchable content
+            sr = summary.summary_result
+            if not sr:
+                return
+
+            summary_text = sr.summary_text or ""
+            key_points = " ".join(sr.key_points) if sr.key_points else ""
+            action_items = " ".join(
+                item.description for item in sr.action_items
+            ) if sr.action_items else ""
+            participants = " ".join(
+                f"{p.display_name} {p.user_id}" for p in sr.participants
+            ) if sr.participants else ""
+            technical_terms = " ".join(
+                term.term for term in sr.technical_terms
+            ) if sr.technical_terms else ""
+
+            # Insert into FTS
+            await self.connection.execute(
+                """INSERT INTO summary_fts
+                   (summary_id, guild_id, summary_text, key_points, action_items, participants, technical_terms)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (summary.id, summary.guild_id, summary_text, key_points, action_items, participants, technical_terms)
+            )
+        except Exception as e:
+            # FTS is optional - don't fail the save if FTS update fails
+            logger.warning(f"Failed to update FTS for summary {summary.id}: {e}")
 
     async def get(self, summary_id: str) -> Optional[StoredSummary]:
         """Retrieve a stored summary by its ID."""
@@ -1336,10 +1377,24 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         )
 
         cursor = await self.connection.execute(query, params)
+
+        # ADR-020: Update FTS index
+        if cursor.rowcount > 0:
+            await self._update_fts(summary)
+
         return cursor.rowcount > 0
 
     async def delete(self, summary_id: str) -> bool:
         """Delete a stored summary."""
+        # ADR-020: Delete from FTS first
+        try:
+            await self.connection.execute(
+                "DELETE FROM summary_fts WHERE summary_id = ?",
+                (summary_id,)
+            )
+        except Exception:
+            pass  # FTS table might not exist yet
+
         query = "DELETE FROM stored_summaries WHERE id = ?"
         cursor = await self.connection.execute(query, (summary_id,))
         return cursor.rowcount > 0

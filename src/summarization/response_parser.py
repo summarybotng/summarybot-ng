@@ -471,6 +471,7 @@ class ResponseParser:
         summary_text = cleaned_content.strip()
 
         # If nothing left after stripping, extract text before any JSON
+        is_fallback_message = False
         if not summary_text:
             logger.warning("Content was entirely code/JSON, extracting text before JSON")
             # Try to get any text before the first { or ```
@@ -478,23 +479,55 @@ class ResponseParser:
             if match and match.group(1).strip():
                 summary_text = match.group(1).strip()
             else:
-                # Last resort: use a generic message
-                summary_text = "[Summary content was in an unrecognized format]"
+                # Try to extract any readable text from the raw content
+                # Look for text outside of JSON structures
+                text_chunks = []
+                in_json = 0
+                current_chunk = []
+                for char in content:
+                    if char == '{':
+                        in_json += 1
+                    elif char == '}':
+                        in_json = max(0, in_json - 1)
+                    elif in_json == 0 and char not in '[]':
+                        current_chunk.append(char)
+                    elif in_json == 0 and current_chunk:
+                        chunk_text = ''.join(current_chunk).strip()
+                        if chunk_text and len(chunk_text) > 20:
+                            text_chunks.append(chunk_text)
+                        current_chunk = []
+
+                if current_chunk:
+                    chunk_text = ''.join(current_chunk).strip()
+                    if chunk_text and len(chunk_text) > 20:
+                        text_chunks.append(chunk_text)
+
+                if text_chunks:
+                    summary_text = ' '.join(text_chunks)
+                else:
+                    # Last resort: show truncated raw content so user sees something
+                    raw_preview = content[:500].strip()
+                    if len(content) > 500:
+                        raw_preview += "..."
+                    summary_text = f"[Unable to parse summary format. Raw content preview:]\n\n{raw_preview}"
+                    is_fallback_message = True
 
         # Try to extract some structure with simple heuristics
         lines = summary_text.split('\n')
         key_points = []
 
-        for line in lines:
-            line = line.strip()
-            # Look for bullet points or numbered lists
-            if re.match(r'^[-*•]\s+|^\d+\.\s+', line):
-                key_points.append(re.sub(r'^[-*•]\s+|^\d+\.\s+', '', line))
+        # Don't extract key points from fallback error messages
+        if not is_fallback_message:
+            for line in lines:
+                line = line.strip()
+                # Look for bullet points or numbered lists
+                if re.match(r'^[-*•]\s+|^\d+\.\s+', line):
+                    key_points.append(re.sub(r'^[-*•]\s+|^\d+\.\s+', '', line))
 
-        # If no bullet points found, split summary into sentences as key points
-        if not key_points and summary_text:
-            sentences = re.split(r'[.!?]+', summary_text)
-            key_points = [s.strip() for s in sentences if len(s.strip()) > 10][:5]
+            # If no bullet points found, split summary into sentences as key points
+            if not key_points and summary_text:
+                sentences = re.split(r'[.!?]+', summary_text)
+                key_points = [s.strip() for s in sentences if len(s.strip()) > 10][:5]
 
         return ParsedSummary(
             summary_text=summary_text,

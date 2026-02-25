@@ -1710,7 +1710,10 @@ class SyncResponse(BaseModel):
 
 
 @router.post("/sync-to-database/{server_id}", response_model=SyncResponse)
-async def sync_archive_to_database(server_id: str):
+async def sync_archive_to_database(
+    server_id: str,
+    force: bool = Query(False, description="Force re-sync by deleting existing archive summaries first"),
+):
     """
     Sync archive summaries from disk to database.
 
@@ -1730,7 +1733,16 @@ async def sync_archive_to_database(server_id: str):
     synced = 0
     skipped = 0
     failed = 0
+    deleted = 0
     errors = []
+
+    # If force=True, delete existing archive summaries for this server first
+    if force:
+        existing = await stored_repo.find_by_guild(server_id, source="archive", limit=10000)
+        for summary in existing:
+            await stored_repo.delete(summary.id)
+            deleted += 1
+        logger.info(f"Force sync: deleted {deleted} existing archive summaries for {server_id}")
 
     # Scan archive directory directly for this server_id
     # Archive structure: sources/discord/{name}_{server_id}/summaries/YYYY/MM/*.meta.json
@@ -1823,7 +1835,8 @@ async def sync_archive_to_database(server_id: str):
                     },
                 )
 
-                # Create StoredSummary
+                # Create StoredSummary with created_at set to the archive period
+                # so it appears on the correct date in the calendar
                 stored = StoredSummary(
                     id=summary_id,
                     guild_id=server_id,
@@ -1834,6 +1847,7 @@ async def sync_archive_to_database(server_id: str):
                     archive_period=archive_period,
                     archive_granularity=period.get("granularity", "daily"),
                     archive_source_key=source_key,
+                    created_at=start_time or datetime.now(),  # Use archive date for calendar
                 )
 
                 await stored_repo.save(stored)

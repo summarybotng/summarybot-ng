@@ -33,6 +33,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Archive,
@@ -424,6 +425,42 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
                   : "Create a schedule with Dashboard destination to store summaries here"}
               </p>
             </motion.div>
+          )}
+
+          {/* ADR-018: Selection header - always visible when summaries exist */}
+          {summaries.length > 0 && (
+            <div className="flex items-center gap-3 py-2 px-1 border-b">
+              <Checkbox
+                checked={allSelected && summaries.length > 0}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    handleSelectAll();
+                  } else {
+                    handleClearSelection();
+                  }
+                }}
+                aria-label="Select all on page"
+              />
+              <span className="text-sm text-muted-foreground">
+                {selectedIds.size === 0 ? (
+                  `${total} summaries`
+                ) : allSelected ? (
+                  <span className="text-foreground font-medium">All {summaries.length} on this page selected</span>
+                ) : (
+                  <span className="text-foreground">{selectedIds.size} selected</span>
+                )}
+              </span>
+              {selectedIds.size > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearSelection}
+                  className="h-6 px-2 text-xs"
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
           )}
 
           {/* Summary List - Grouped by Recency */}

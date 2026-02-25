@@ -1697,3 +1697,146 @@ async def list_drive_folders(
     except Exception as e:
         logger.error(f"Unexpected error listing folders: {e}")
         raise HTTPException(500, f"Failed to list folders: {e}")
+
+
+# ==================== Archive Sync ====================
+
+class SyncResponse(BaseModel):
+    """Response for archive sync operation."""
+    synced: int = 0
+    skipped: int = 0
+    failed: int = 0
+    errors: List[str] = []
+
+
+@router.post("/sync-to-database/{server_id}", response_model=SyncResponse)
+async def sync_archive_to_database(server_id: str):
+    """
+    Sync archive summaries from disk to database.
+
+    Scans the archive directory for summaries and ensures they exist
+    in the stored_summaries database table for calendar view and navigation.
+    """
+    from . import get_stored_summary_repository
+    from ...models.stored_summary import StoredSummary, SummarySource
+    from ...models.summary import SummaryResult
+
+    archive_root = get_archive_root()
+    stored_repo = await get_stored_summary_repository()
+
+    if not stored_repo:
+        raise HTTPException(503, "Database not available")
+
+    synced = 0
+    skipped = 0
+    failed = 0
+    errors = []
+
+    # Find all sources for this server
+    source_registry = get_source_registry()
+    sources = await source_registry.list_sources()
+
+    for source in sources:
+        if source.server_id != server_id:
+            continue
+
+        archive_path = source.get_archive_path(archive_root)
+        if not archive_path.exists():
+            continue
+
+        # Scan for meta.json files
+        for meta_path in archive_path.glob("**/*.meta.json"):
+            try:
+                with open(meta_path, "r") as f:
+                    metadata = json.load(f)
+
+                summary_id = metadata.get("summary_id")
+                if not summary_id:
+                    # Generate from path if not in metadata
+                    summary_id = f"sum_{meta_path.stem.replace('.meta', '')}"
+
+                # Check if already in database
+                existing = await stored_repo.get(summary_id)
+                if existing:
+                    skipped += 1
+                    continue
+
+                # Read the markdown content
+                md_path = meta_path.with_suffix("").with_suffix(".md")
+                content = ""
+                if md_path.exists():
+                    with open(md_path, "r") as f:
+                        content = f.read()
+
+                # Parse metadata
+                stats = metadata.get("statistics", {})
+                generation = metadata.get("generation", {})
+                period = metadata.get("period", {})
+
+                # Parse dates
+                start_time = None
+                end_time = None
+                archive_period = None
+                if period.get("start"):
+                    start_time = datetime.fromisoformat(period["start"].replace("Z", "+00:00"))
+                    archive_period = start_time.strftime("%Y-%m-%d")
+                if period.get("end"):
+                    end_time = datetime.fromisoformat(period["end"].replace("Z", "+00:00"))
+
+                # Create SummaryResult
+                summary_result = SummaryResult(
+                    id=summary_id,
+                    guild_id=server_id,
+                    channel_id=source.channel_id or "",
+                    start_time=start_time or datetime.now(),
+                    end_time=end_time or datetime.now(),
+                    message_count=stats.get("message_count", 0),
+                    summary_text=content,
+                    key_points=[],
+                    action_items=[],
+                    participants=[],
+                    technical_terms=[],
+                    metadata={
+                        "summary_type": generation.get("options", {}).get("summary_type", "detailed"),
+                        "perspective": generation.get("options", {}).get("perspective", "general"),
+                        "model": generation.get("model"),
+                        "tokens_input": generation.get("tokens_input", 0),
+                        "tokens_output": generation.get("tokens_output", 0),
+                        "cost_usd": generation.get("cost_usd", 0),
+                    },
+                )
+
+                # Create StoredSummary
+                channel_ids = []
+                if source.channel_ids:
+                    channel_ids = source.channel_ids
+                elif source.channel_id:
+                    channel_ids = [source.channel_id]
+
+                stored = StoredSummary(
+                    id=summary_id,
+                    guild_id=server_id,
+                    source_channel_ids=channel_ids,
+                    summary_result=summary_result,
+                    title=f"{source.channel_name or source.server_name} - {archive_period or 'Unknown'}",
+                    source=SummarySource.ARCHIVE,
+                    archive_period=archive_period,
+                    archive_granularity=period.get("granularity", "daily"),
+                    archive_source_key=source.source_key,
+                )
+
+                await stored_repo.save(stored)
+                synced += 1
+                logger.info(f"Synced archive summary to database: {summary_id}")
+
+            except Exception as e:
+                failed += 1
+                errors.append(f"{meta_path.name}: {str(e)}")
+                logger.warning(f"Failed to sync {meta_path}: {e}")
+
+    return SyncResponse(
+        synced=synced,
+        skipped=skipped,
+        failed=failed,
+        errors=errors[:10],  # Limit error messages
+    )

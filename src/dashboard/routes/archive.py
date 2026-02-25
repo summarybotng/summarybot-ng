@@ -1102,6 +1102,20 @@ async def get_archive_summary(
             stats = metadata.get("statistics", {})
             generation = metadata.get("generation", {})
 
+            # ADR-020: Get navigation from database
+            navigation = None
+            try:
+                stored_repo = await get_stored_summary_repository()
+                if stored_repo:
+                    # Find this summary in DB by archive_period
+                    navigation = await stored_repo.get_navigation(
+                        summary_id=summary_id,
+                        guild_id=server_id,
+                        source="archive",
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to get navigation for {summary_id}: {e}")
+
             return {
                 "id": summary_id,
                 "source_key": f"discord:{server_id}",
@@ -1114,6 +1128,7 @@ async def get_archive_summary(
                 "summary_length": generation.get("options", {}).get("summary_type", "detailed"),
                 "is_archive": True,
                 "metadata": metadata,
+                "navigation": navigation,  # ADR-020
             }
 
     raise HTTPException(404, f"Server not found: {server_id}")

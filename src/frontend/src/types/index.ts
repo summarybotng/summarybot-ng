@@ -294,6 +294,14 @@ export interface StoredSummary {
   model_used?: string;  // e.g., claude-3-5-sonnet
 }
 
+// ADR-020: Navigation for prev/next summary
+export interface SummaryNavigation {
+  previous_id: string | null;
+  previous_date: string | null;
+  next_id: string | null;
+  next_date: string | null;
+}
+
 export interface StoredSummaryDetail extends StoredSummary {
   guild_id: string;
   summary_text: string;
@@ -312,6 +320,8 @@ export interface StoredSummaryDetail extends StoredSummary {
   prompt_system?: string;
   prompt_user?: string;
   prompt_template_id?: string;
+  // ADR-020: Navigation
+  navigation?: SummaryNavigation;
 }
 
 export interface PushDelivery {

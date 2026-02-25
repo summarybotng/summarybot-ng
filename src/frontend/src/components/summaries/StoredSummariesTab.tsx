@@ -56,6 +56,8 @@ import {
   Copy,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   Select,
@@ -496,6 +498,7 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
         }}
         onRegenerate={handleRegenerate}
         isRegenerating={regenerateMutation.isPending}
+        onNavigate={(newSummaryId) => setSelectedSummary(newSummaryId)}
       />
 
       {/* Push Modal */}
@@ -593,6 +596,7 @@ function StoredSummaryDetailSheet({
   onPush,
   onRegenerate,
   isRegenerating,
+  onNavigate,
 }: {
   guildId: string;
   summaryId: string | null;
@@ -601,6 +605,7 @@ function StoredSummaryDetailSheet({
   onPush: (summaryId: string) => void;
   onRegenerate: (summaryId: string, options?: RegenerateOptions) => void;
   isRegenerating: boolean;
+  onNavigate?: (summaryId: string) => void;
 }) {
   const { data: summary, isLoading } = useStoredSummary(guildId, summaryId || "");
   const { formatDateTime, formatTime } = useTimezone();
@@ -620,7 +625,34 @@ function StoredSummaryDetailSheet({
         ) : summary ? (
           <>
             <SheetHeader>
-              <SheetTitle>{summary.title}</SheetTitle>
+              <div className="flex items-center justify-between gap-2">
+                <SheetTitle className="flex-1">{summary.title}</SheetTitle>
+                {/* ADR-020: Navigation buttons */}
+                {summary.navigation && onNavigate && (
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => summary.navigation?.previous_id && onNavigate(summary.navigation.previous_id)}
+                      disabled={!summary.navigation.previous_id}
+                      title={summary.navigation.previous_date ? `Previous: ${summary.navigation.previous_date}` : "No previous summary"}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      <span className="sr-only">Previous</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => summary.navigation?.next_id && onNavigate(summary.navigation.next_id)}
+                      disabled={!summary.navigation.next_id}
+                      title={summary.navigation.next_date ? `Next: ${summary.navigation.next_date}` : "No next summary"}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                      <span className="sr-only">Next</span>
+                    </Button>
+                  </div>
+                )}
+              </div>
               <SheetDescription className="space-y-1">
                 <div>
                   {summary.start_time && summary.end_time

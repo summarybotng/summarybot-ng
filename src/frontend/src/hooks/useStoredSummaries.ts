@@ -230,14 +230,41 @@ interface BulkDeleteResponse {
   errors: string[];
 }
 
+// ADR-018 Enhancement: Filters for bulk operations
+export interface BulkFilters {
+  source?: SummarySourceType;
+  archived?: boolean;
+  created_after?: string;
+  created_before?: string;
+  archive_period?: string;
+  channel_mode?: ChannelModeType;
+  has_grounding?: boolean;
+  has_key_points?: boolean;
+  has_action_items?: boolean;
+  has_participants?: boolean;
+  min_message_count?: number;
+  max_message_count?: number;
+}
+
+// Request type for bulk operations - either IDs or filters
+export interface BulkDeleteRequest {
+  summary_ids?: string[];
+  filters?: BulkFilters;
+}
+
+export interface BulkRegenerateRequest {
+  summary_ids?: string[];
+  filters?: BulkFilters;
+}
+
 export function useBulkDeleteSummaries(guildId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (summaryIds: string[]) =>
+    mutationFn: (request: BulkDeleteRequest) =>
       api.post<BulkDeleteResponse>(
         `/guilds/${guildId}/stored-summaries/bulk-delete`,
-        { summary_ids: summaryIds }
+        request
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] });
@@ -258,10 +285,10 @@ export function useBulkRegenerateSummaries(guildId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (summaryIds: string[]) =>
+    mutationFn: (request: BulkRegenerateRequest) =>
       api.post<BulkRegenerateResponse>(
         `/guilds/${guildId}/stored-summaries/bulk-regenerate`,
-        { summary_ids: summaryIds }
+        request
       ),
     onSuccess: () => {
       // Invalidate after a delay to allow regeneration to complete

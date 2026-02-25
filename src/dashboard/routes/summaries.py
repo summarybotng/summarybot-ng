@@ -1694,7 +1694,7 @@ async def delete_stored_summary(
     "/guilds/{guild_id}/stored-summaries/bulk-delete",
     response_model=BulkDeleteResponse,
     summary="Bulk delete summaries",
-    description="Delete multiple stored summaries at once (ADR-018).",
+    description="Delete multiple stored summaries at once (ADR-018). Provide either summary_ids or filters.",
     responses={
         403: {"model": ErrorResponse, "description": "No permission"},
     },
@@ -1704,11 +1704,57 @@ async def bulk_delete_summaries(
     guild_id: str = Path(..., description="Discord guild ID"),
     user: dict = Depends(get_current_user),
 ):
-    """Bulk delete stored summaries."""
+    """Bulk delete stored summaries.
+
+    ADR-018 Enhancement: Supports filter-based selection for "select all matching" functionality.
+    """
     _check_guild_access(guild_id, user)
 
     stored_repo = await _get_stored_summary_repository()
-    result = await stored_repo.bulk_delete(body.summary_ids, guild_id)
+
+    # If filters provided, resolve to IDs first
+    if body.filters:
+        # Parse date filters
+        created_after_dt = None
+        created_before_dt = None
+        if body.filters.created_after:
+            try:
+                created_after_dt = datetime.fromisoformat(body.filters.created_after.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+        if body.filters.created_before:
+            try:
+                created_before_dt = datetime.fromisoformat(body.filters.created_before.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+
+        # Get all IDs matching filters (no pagination limit)
+        summaries = await stored_repo.find_by_guild(
+            guild_id=guild_id,
+            limit=10000,  # High limit for bulk operations
+            offset=0,
+            include_archived=body.filters.archived if body.filters.archived else False,
+            source=body.filters.source,
+            created_after=created_after_dt,
+            created_before=created_before_dt,
+            archive_period=body.filters.archive_period,
+            channel_mode=body.filters.channel_mode,
+            has_grounding=body.filters.has_grounding,
+            has_key_points=body.filters.has_key_points,
+            has_action_items=body.filters.has_action_items,
+            has_participants=body.filters.has_participants,
+            min_message_count=body.filters.min_message_count,
+            max_message_count=body.filters.max_message_count,
+        )
+        summary_ids = [s.id for s in summaries]
+        logger.info(f"Bulk delete: resolved {len(summary_ids)} IDs from filters")
+    else:
+        summary_ids = body.summary_ids
+
+    if not summary_ids:
+        return BulkDeleteResponse(deleted_count=0, failed_ids=[], errors=["No summaries matched the criteria"])
+
+    result = await stored_repo.bulk_delete(summary_ids, guild_id)
 
     return BulkDeleteResponse(
         deleted_count=result["deleted_count"],
@@ -1722,7 +1768,7 @@ async def bulk_delete_summaries(
     "/guilds/{guild_id}/stored-summaries/bulk-regenerate",
     response_model=BulkRegenerateResponse,
     summary="Bulk regenerate summaries",
-    description="Queue multiple summaries for regeneration with grounding (ADR-018).",
+    description="Queue multiple summaries for regeneration with grounding (ADR-018). Provide either summary_ids or filters.",
     responses={
         403: {"model": ErrorResponse, "description": "No permission"},
     },
@@ -1732,16 +1778,66 @@ async def bulk_regenerate_summaries(
     guild_id: str = Path(..., description="Discord guild ID"),
     user: dict = Depends(get_current_user),
 ):
-    """Bulk regenerate stored summaries with grounding."""
+    """Bulk regenerate stored summaries with grounding.
+
+    ADR-018 Enhancement: Supports filter-based selection for "select all matching" functionality.
+    """
     _check_guild_access(guild_id, user)
 
     stored_repo = await _get_stored_summary_repository()
+
+    # If filters provided, resolve to IDs first
+    if body.filters:
+        # Parse date filters
+        created_after_dt = None
+        created_before_dt = None
+        if body.filters.created_after:
+            try:
+                created_after_dt = datetime.fromisoformat(body.filters.created_after.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+        if body.filters.created_before:
+            try:
+                created_before_dt = datetime.fromisoformat(body.filters.created_before.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+
+        # Get all IDs matching filters (no pagination limit)
+        summaries = await stored_repo.find_by_guild(
+            guild_id=guild_id,
+            limit=1000,  # Limit for regeneration (expensive operation)
+            offset=0,
+            include_archived=body.filters.archived if body.filters.archived else False,
+            source=body.filters.source,
+            created_after=created_after_dt,
+            created_before=created_before_dt,
+            archive_period=body.filters.archive_period,
+            channel_mode=body.filters.channel_mode,
+            has_grounding=body.filters.has_grounding,
+            has_key_points=body.filters.has_key_points,
+            has_action_items=body.filters.has_action_items,
+            has_participants=body.filters.has_participants,
+            min_message_count=body.filters.min_message_count,
+            max_message_count=body.filters.max_message_count,
+        )
+        summary_ids = [s.id for s in summaries]
+        logger.info(f"Bulk regenerate: resolved {len(summary_ids)} IDs from filters")
+    else:
+        summary_ids = body.summary_ids
+
+    if not summary_ids:
+        return BulkRegenerateResponse(
+            queued_count=0,
+            skipped_count=0,
+            skipped_ids=[],
+            task_id="none",
+        )
 
     # Filter to summaries that can be regenerated (have source_content)
     queued_ids = []
     skipped_ids = []
 
-    for summary_id in body.summary_ids:
+    for summary_id in summary_ids:
         stored = await stored_repo.get(summary_id)
         if not stored or stored.guild_id != guild_id:
             skipped_ids.append(summary_id)

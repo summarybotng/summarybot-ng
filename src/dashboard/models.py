@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ============================================================================
@@ -788,9 +788,41 @@ class StoredSummaryUpdateRequest(BaseModel):
 
 
 # ADR-018: Bulk operation models
+
+class BulkFilters(BaseModel):
+    """Filters for bulk operations - alternative to specifying IDs (ADR-018 enhancement)."""
+    source: Optional[str] = Field(None, description="Filter by source (realtime, archive, scheduled, manual)")
+    archived: Optional[bool] = Field(None, description="Filter by archived status")
+    created_after: Optional[str] = Field(None, description="Created after (ISO date)")
+    created_before: Optional[str] = Field(None, description="Created before (ISO date)")
+    archive_period: Optional[str] = Field(None, description="Filter by archive period (YYYY-MM-DD)")
+    channel_mode: Optional[str] = Field(None, description="Filter by channel mode (single, multi)")
+    has_grounding: Optional[bool] = Field(None, description="Filter by grounding status")
+    has_key_points: Optional[bool] = Field(None, description="Filter by key points presence")
+    has_action_items: Optional[bool] = Field(None, description="Filter by action items presence")
+    has_participants: Optional[bool] = Field(None, description="Filter by participants presence")
+    min_message_count: Optional[int] = Field(None, description="Minimum message count")
+    max_message_count: Optional[int] = Field(None, description="Maximum message count")
+
+
 class BulkDeleteRequest(BaseModel):
-    """Request to delete multiple stored summaries (ADR-018)."""
-    summary_ids: List[str] = Field(..., min_length=1, max_length=500, description="Summary IDs to delete")
+    """Request to delete multiple stored summaries (ADR-018).
+
+    Either summary_ids OR filters must be provided (not both).
+    When using filters, all summaries matching the filters will be deleted.
+    """
+    summary_ids: Optional[List[str]] = Field(None, max_length=500, description="Summary IDs to delete")
+    filters: Optional[BulkFilters] = Field(None, description="Filters to select summaries for deletion")
+
+    @model_validator(mode='after')
+    def validate_ids_or_filters(self):
+        if not self.summary_ids and not self.filters:
+            raise ValueError("Either summary_ids or filters must be provided")
+        if self.summary_ids and self.filters:
+            raise ValueError("Provide either summary_ids or filters, not both")
+        if self.summary_ids and len(self.summary_ids) == 0:
+            raise ValueError("summary_ids cannot be empty if provided")
+        return self
 
 
 class BulkDeleteResponse(BaseModel):
@@ -808,8 +840,23 @@ class RegenerateOptionsRequest(BaseModel):
 
 
 class BulkRegenerateRequest(BaseModel):
-    """Request to regenerate multiple stored summaries (ADR-018)."""
-    summary_ids: List[str] = Field(..., min_length=1, max_length=100, description="Summary IDs to regenerate")
+    """Request to regenerate multiple stored summaries (ADR-018).
+
+    Either summary_ids OR filters must be provided (not both).
+    When using filters, all summaries matching the filters will be queued for regeneration.
+    """
+    summary_ids: Optional[List[str]] = Field(None, max_length=100, description="Summary IDs to regenerate")
+    filters: Optional[BulkFilters] = Field(None, description="Filters to select summaries for regeneration")
+
+    @model_validator(mode='after')
+    def validate_ids_or_filters(self):
+        if not self.summary_ids and not self.filters:
+            raise ValueError("Either summary_ids or filters must be provided")
+        if self.summary_ids and self.filters:
+            raise ValueError("Provide either summary_ids or filters, not both")
+        if self.summary_ids and len(self.summary_ids) == 0:
+            raise ValueError("summary_ids cannot be empty if provided")
+        return self
 
 
 class BulkRegenerateResponse(BaseModel):

@@ -388,6 +388,21 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
           onClearSelection={handleClearSelection}
           totalFilteredCount={total}
           allSelected={allSelected}
+          pageSize={20}
+          currentFilters={{
+            source: filters.source !== "all" ? filters.source : undefined,
+            archived: filters.archived,
+            created_after: filters.createdAfter,
+            created_before: filters.createdBefore,
+            archive_period: filters.archivePeriod,
+            channel_mode: filters.channelMode !== "all" ? filters.channelMode : undefined,
+            has_grounding: filters.hasGrounding,
+            has_key_points: filters.hasKeyPoints,
+            has_action_items: filters.hasActionItems,
+            has_participants: filters.hasParticipants,
+            min_message_count: filters.minMessageCount,
+            max_message_count: filters.maxMessageCount,
+          }}
         />
       )}
 

@@ -1732,20 +1732,28 @@ async def sync_archive_to_database(server_id: str):
     failed = 0
     errors = []
 
-    # Find all sources for this server
-    source_registry = get_source_registry()
-    sources = await source_registry.list_sources()
+    # Scan archive directory directly for this server_id
+    # Archive structure: sources/discord/{name}_{server_id}/summaries/YYYY/MM/*.meta.json
+    sources_dir = archive_root / "sources" / "discord"
+    if not sources_dir.exists():
+        return SyncResponse(synced=0, skipped=0, failed=0, errors=["No archive sources directory"])
 
-    for source in sources:
-        if source.server_id != server_id:
+    # Find all source directories for this server
+    for source_dir in sources_dir.iterdir():
+        if not source_dir.is_dir():
+            continue
+        # Extract server_id from directory name (format: name_serverid)
+        dir_name = source_dir.name
+        if not dir_name.endswith(f"_{server_id}"):
             continue
 
-        archive_path = source.get_archive_path(archive_root)
-        if not archive_path.exists():
+        source_name = dir_name.rsplit("_", 1)[0] if "_" in dir_name else dir_name
+        summaries_dir = source_dir / "summaries"
+        if not summaries_dir.exists():
             continue
 
         # Scan for meta.json files
-        for meta_path in archive_path.glob("**/*.meta.json"):
+        for meta_path in summaries_dir.glob("**/*.meta.json"):
             try:
                 with open(meta_path, "r") as f:
                     metadata = json.load(f)
@@ -1783,11 +1791,20 @@ async def sync_archive_to_database(server_id: str):
                 if period.get("end"):
                     end_time = datetime.fromisoformat(period["end"].replace("Z", "+00:00"))
 
+                # Extract source info from metadata
+                source_info = metadata.get("source", {})
+                channel_id = source_info.get("channel_id", "")
+                channel_name = source_info.get("channel_name", source_name)
+                channel_ids = source_info.get("channel_ids", [])
+                if not channel_ids and channel_id:
+                    channel_ids = [channel_id]
+                source_key = f"discord:{server_id}"
+
                 # Create SummaryResult
                 summary_result = SummaryResult(
                     id=summary_id,
                     guild_id=server_id,
-                    channel_id=source.channel_id or "",
+                    channel_id=channel_id,
                     start_time=start_time or datetime.now(),
                     end_time=end_time or datetime.now(),
                     message_count=stats.get("message_count", 0),
@@ -1807,22 +1824,16 @@ async def sync_archive_to_database(server_id: str):
                 )
 
                 # Create StoredSummary
-                channel_ids = []
-                if source.channel_ids:
-                    channel_ids = source.channel_ids
-                elif source.channel_id:
-                    channel_ids = [source.channel_id]
-
                 stored = StoredSummary(
                     id=summary_id,
                     guild_id=server_id,
                     source_channel_ids=channel_ids,
                     summary_result=summary_result,
-                    title=f"{source.channel_name or source.server_name} - {archive_period or 'Unknown'}",
+                    title=f"{channel_name} - {archive_period or 'Unknown'}",
                     source=SummarySource.ARCHIVE,
                     archive_period=archive_period,
                     archive_granularity=period.get("granularity", "daily"),
-                    archive_source_key=source.source_key,
+                    archive_source_key=source_key,
                 )
 
                 await stored_repo.save(stored)

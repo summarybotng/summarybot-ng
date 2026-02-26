@@ -175,11 +175,17 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      // Use refetchQueries to force immediate refetch, not just invalidate
-      // This ensures both views are updated even if not currently mounted
+      // Use refetchQueries with type: 'all' to refetch both active AND inactive queries
+      // This ensures calendar data is refreshed even when calendar view isn't mounted
       await Promise.all([
-        queryClient.refetchQueries({ queryKey: ["stored-summaries", guildId] }),
-        queryClient.refetchQueries({ queryKey: ["summary-calendar", guildId] }),
+        queryClient.refetchQueries({
+          queryKey: ["stored-summaries", guildId],
+          type: 'all',
+        }),
+        queryClient.refetchQueries({
+          queryKey: ["summary-calendar", guildId],
+          type: 'all',
+        }),
       ]);
       toast({
         title: "Refreshed",

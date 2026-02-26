@@ -580,13 +580,23 @@ async def get_current_user(
     if test_secret:
         provided_key = request.headers.get("X-Test-Auth-Key")
         if provided_key == test_secret:
-            # Return a mock user with access to test guild
-            test_guild_id = os.getenv("TEST_GUILD_ID", "1234567890")
+            # Return a mock user - TEST_GUILD_ID can be comma-separated list or "*" for all
+            test_guild_config = os.getenv("TEST_GUILD_ID", "*")
+            if test_guild_config == "*":
+                # Extract guild_id from path if present, allow all access
+                path_parts = request.url.path.split("/")
+                guilds = []
+                for i, part in enumerate(path_parts):
+                    if part == "guilds" and i + 1 < len(path_parts):
+                        guilds.append(path_parts[i + 1])
+                        break
+            else:
+                guilds = [g.strip() for g in test_guild_config.split(",")]
             return {
                 "sub": "test_user_id",
                 "username": "test_user",
                 "avatar": None,
-                "guilds": [test_guild_id],
+                "guilds": guilds,
                 "iat": datetime.utcnow(),
                 "exp": datetime.utcnow() + timedelta(hours=24),
             }

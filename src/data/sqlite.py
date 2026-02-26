@@ -1307,7 +1307,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
     ) -> List[Dict[str, Any]]:
         """Get summary counts grouped by day for calendar view (ADR-017).
 
-        Returns list of dicts with: date, count, sources, has_incomplete
+        Returns list of dicts with: date, count, sources, has_incomplete.
+        Uses archive_period for archive summaries, created_at for others.
         """
         conditions = ["guild_id = ?"]
         params: List[Any] = [guild_id]
@@ -1315,22 +1316,26 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         if not include_archived:
             conditions.append("is_archived = 0")
 
-        # Filter by year and month
-        conditions.append("strftime('%Y', created_at) = ?")
-        conditions.append("strftime('%m', created_at) = ?")
+        # Use archive_period for archive summaries, created_at for others
+        # This ensures archive summaries appear on their content date, not generation date
+        date_expr = "COALESCE(archive_period, DATE(created_at))"
+
+        # Filter by year and month using the effective date
+        conditions.append(f"strftime('%Y', {date_expr}) = ?")
+        conditions.append(f"strftime('%m', {date_expr}) = ?")
         params.extend([str(year), f"{month:02d}"])
 
         where_clause = " AND ".join(conditions)
 
         query = f"""
         SELECT
-            DATE(created_at) as date,
+            {date_expr} as date,
             COUNT(*) as count,
             GROUP_CONCAT(DISTINCT source) as sources,
             SUM(CASE WHEN source_channel_ids = '[]' OR source_channel_ids IS NULL THEN 1 ELSE 0 END) as incomplete_count
         FROM stored_summaries
         WHERE {where_clause}
-        GROUP BY DATE(created_at)
+        GROUP BY {date_expr}
         ORDER BY date
         """
 

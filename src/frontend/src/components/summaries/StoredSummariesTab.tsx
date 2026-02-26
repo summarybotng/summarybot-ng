@@ -174,15 +174,26 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
   // Refresh both list and calendar views
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] }),
-      queryClient.invalidateQueries({ queryKey: ["summary-calendar", guildId] }),
-    ]);
-    setIsRefreshing(false);
-    toast({
-      title: "Refreshed",
-      description: "Summary list and calendar synced",
-    });
+    try {
+      // Use refetchQueries to force immediate refetch, not just invalidate
+      // This ensures both views are updated even if not currently mounted
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ["stored-summaries", guildId] }),
+        queryClient.refetchQueries({ queryKey: ["summary-calendar", guildId] }),
+      ]);
+      toast({
+        title: "Refreshed",
+        description: "Summary list and calendar synced",
+      });
+    } catch {
+      toast({
+        title: "Refresh failed",
+        description: "Could not refresh data",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   const handlePin = async (summary: StoredSummary) => {

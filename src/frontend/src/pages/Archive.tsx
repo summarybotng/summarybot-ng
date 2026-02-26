@@ -561,6 +561,7 @@ function GenerateDialog({
   const [perspective, setPerspective] = useState<"general" | "developer" | "marketing" | "product" | "finance" | "executive" | "support">("general");
   const [skipExisting, setSkipExisting] = useState(true);
   const [regenerateFailed, setRegenerateFailed] = useState(true);
+  const [forceRegenerate, setForceRegenerate] = useState(false);
   const [maxCost, setMaxCost] = useState<string>("");
   const [estimate, setEstimate] = useState<{ periods: number; estimated_cost_usd: number; estimated_tokens: number; model: string } | null>(null);
   const [estimating, setEstimating] = useState(false);
@@ -577,8 +578,9 @@ function GenerateDialog({
       model,
       summary_type: summaryType,
       perspective,
-      skip_existing: skipExisting,
+      skip_existing: forceRegenerate ? false : skipExisting,  // Force overrides skip
       regenerate_failed: regenerateFailed,
+      force_regenerate: forceRegenerate,
       dry_run: dryRun,
     };
 
@@ -737,6 +739,17 @@ function GenerateDialog({
               id="regenerate-failed"
               checked={regenerateFailed}
               onCheckedChange={setRegenerateFailed}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="force-regenerate">Force regenerate</Label>
+              <p className="text-xs text-muted-foreground">Delete existing and regenerate all</p>
+            </div>
+            <Switch
+              id="force-regenerate"
+              checked={forceRegenerate}
+              onCheckedChange={setForceRegenerate}
             />
           </div>
         </div>

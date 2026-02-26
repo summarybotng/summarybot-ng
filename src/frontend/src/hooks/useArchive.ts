@@ -60,6 +60,7 @@ export interface GenerateRequest {
   skip_existing?: boolean;
   regenerate_outdated?: boolean;
   regenerate_failed?: boolean;
+  force_regenerate?: boolean;  // Delete existing and regenerate (ADR-019)
   max_cost_usd?: number;
   dry_run?: boolean;
   model?: string;

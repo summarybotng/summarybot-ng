@@ -164,6 +164,13 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
     hasParticipants: filters.hasParticipants,
     minMessageCount: filters.minMessageCount,
     maxMessageCount: filters.maxMessageCount,
+    // ADR-021: Content count filters
+    minKeyPoints: filters.minKeyPoints,
+    maxKeyPoints: filters.maxKeyPoints,
+    minActionItems: filters.minActionItems,
+    maxActionItems: filters.maxActionItems,
+    minParticipants: filters.minParticipants,
+    maxParticipants: filters.maxParticipants,
   });
 
   const updateMutation = useUpdateStoredSummary(guildId);

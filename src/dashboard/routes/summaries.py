@@ -753,6 +753,13 @@ async def list_stored_summaries(
     has_participants: Optional[bool] = Query(None, description="Filter by participants presence"),
     min_message_count: Optional[int] = Query(None, ge=0, description="Minimum message count"),
     max_message_count: Optional[int] = Query(None, ge=0, description="Maximum message count"),
+    # ADR-021: Content count filters
+    min_key_points: Optional[int] = Query(None, ge=0, description="Minimum number of key points"),
+    max_key_points: Optional[int] = Query(None, ge=0, description="Maximum number of key points"),
+    min_action_items: Optional[int] = Query(None, ge=0, description="Minimum number of action items"),
+    max_action_items: Optional[int] = Query(None, ge=0, description="Maximum number of action items"),
+    min_participants: Optional[int] = Query(None, ge=0, description="Minimum number of participants"),
+    max_participants: Optional[int] = Query(None, ge=0, description="Maximum number of participants"),
     user: dict = Depends(get_current_user),
 ):
     """List stored summaries for a guild.
@@ -808,6 +815,13 @@ async def list_stored_summaries(
         has_participants=has_participants,
         min_message_count=min_message_count,
         max_message_count=max_message_count,
+        # ADR-021: Content count filters
+        min_key_points=min_key_points,
+        max_key_points=max_key_points,
+        min_action_items=min_action_items,
+        max_action_items=max_action_items,
+        min_participants=min_participants,
+        max_participants=max_participants,
     )
 
     total = await stored_repo.count_by_guild(
@@ -825,6 +839,13 @@ async def list_stored_summaries(
         has_participants=has_participants,
         min_message_count=min_message_count,
         max_message_count=max_message_count,
+        # ADR-021: Content count filters
+        min_key_points=min_key_points,
+        max_key_points=max_key_points,
+        min_action_items=min_action_items,
+        max_action_items=max_action_items,
+        min_participants=min_participants,
+        max_participants=max_participants,
     )
 
     # ADR-009: Build schedule name lookup for summaries with schedule_ids

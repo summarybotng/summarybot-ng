@@ -1098,6 +1098,13 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         has_participants: Optional[bool] = None,
         min_message_count: Optional[int] = None,
         max_message_count: Optional[int] = None,
+        # ADR-021: Content count filters
+        min_key_points: Optional[int] = None,
+        max_key_points: Optional[int] = None,
+        min_action_items: Optional[int] = None,
+        max_action_items: Optional[int] = None,
+        min_participants: Optional[int] = None,
+        max_participants: Optional[int] = None,
     ) -> List[StoredSummary]:
         """Find stored summaries for a guild.
 
@@ -1185,6 +1192,31 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             conditions.append("message_count <= ?")
             params.append(max_message_count)
 
+        # ADR-021: Content count filters
+        if min_key_points is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.key_points')), 0) >= ?")
+            params.append(min_key_points)
+
+        if max_key_points is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.key_points')), 0) <= ?")
+            params.append(max_key_points)
+
+        if min_action_items is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.action_items')), 0) >= ?")
+            params.append(min_action_items)
+
+        if max_action_items is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.action_items')), 0) <= ?")
+            params.append(max_action_items)
+
+        if min_participants is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.participants')), 0) >= ?")
+            params.append(min_participants)
+
+        if max_participants is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.participants')), 0) <= ?")
+            params.append(max_participants)
+
         where_clause = " AND ".join(conditions)
 
         # ADR-017: Dynamic sorting
@@ -1233,8 +1265,15 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         has_participants: Optional[bool] = None,
         min_message_count: Optional[int] = None,
         max_message_count: Optional[int] = None,
+        # ADR-021: Content count filters
+        min_key_points: Optional[int] = None,
+        max_key_points: Optional[int] = None,
+        min_action_items: Optional[int] = None,
+        max_action_items: Optional[int] = None,
+        min_participants: Optional[int] = None,
+        max_participants: Optional[int] = None,
     ) -> int:
-        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018)."""
+        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021)."""
         conditions = ["guild_id = ?"]
         params: List[Any] = [guild_id]
 
@@ -1290,6 +1329,31 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         if max_message_count is not None:
             conditions.append("message_count <= ?")
             params.append(max_message_count)
+
+        # ADR-021: Content count filters
+        if min_key_points is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.key_points')), 0) >= ?")
+            params.append(min_key_points)
+
+        if max_key_points is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.key_points')), 0) <= ?")
+            params.append(max_key_points)
+
+        if min_action_items is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.action_items')), 0) >= ?")
+            params.append(min_action_items)
+
+        if max_action_items is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.action_items')), 0) <= ?")
+            params.append(max_action_items)
+
+        if min_participants is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.participants')), 0) >= ?")
+            params.append(min_participants)
+
+        if max_participants is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.participants')), 0) <= ?")
+            params.append(max_participants)
 
         where_clause = " AND ".join(conditions)
 

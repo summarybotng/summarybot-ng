@@ -48,6 +48,13 @@ export interface FilterState {
   hasParticipants?: boolean;
   minMessageCount?: number;
   maxMessageCount?: number;
+  // ADR-021: Content count filters
+  minKeyPoints?: number;
+  maxKeyPoints?: number;
+  minActionItems?: number;
+  maxActionItems?: number;
+  minParticipants?: number;
+  maxParticipants?: number;
 }
 
 interface SummaryFiltersProps {
@@ -71,6 +78,10 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
     filters.hasParticipants !== undefined,
     filters.minMessageCount !== undefined,
     filters.maxMessageCount !== undefined,
+    // ADR-021: Content count filter counts
+    filters.minKeyPoints !== undefined || filters.maxKeyPoints !== undefined,
+    filters.minActionItems !== undefined || filters.maxActionItems !== undefined,
+    filters.minParticipants !== undefined || filters.maxParticipants !== undefined,
   ].filter(Boolean).length;
 
   const handleClearFilters = () => {
@@ -87,6 +98,13 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
       hasParticipants: undefined,
       minMessageCount: undefined,
       maxMessageCount: undefined,
+      // ADR-021: Clear content count filters
+      minKeyPoints: undefined,
+      maxKeyPoints: undefined,
+      minActionItems: undefined,
+      maxActionItems: undefined,
+      minParticipants: undefined,
+      maxParticipants: undefined,
     });
   };
 
@@ -356,6 +374,113 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
                 </div>
               </div>
 
+              {/* ADR-021: Content count filters */}
+              <div className="space-y-3 border-t pt-3">
+                <label className="text-sm text-muted-foreground">Content Counts</label>
+
+                {/* Key Points count */}
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Key Points</label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      placeholder="Min"
+                      className="w-16 h-7 text-xs"
+                      min={0}
+                      value={filters.minKeyPoints ?? ""}
+                      onChange={(e) =>
+                        onFiltersChange({
+                          ...filters,
+                          minKeyPoints: e.target.value ? parseInt(e.target.value) : undefined,
+                        })
+                      }
+                    />
+                    <span className="text-xs text-muted-foreground">-</span>
+                    <Input
+                      type="number"
+                      placeholder="Max"
+                      className="w-16 h-7 text-xs"
+                      min={0}
+                      value={filters.maxKeyPoints ?? ""}
+                      onChange={(e) =>
+                        onFiltersChange({
+                          ...filters,
+                          maxKeyPoints: e.target.value ? parseInt(e.target.value) : undefined,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                {/* Action Items count */}
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Action Items</label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      placeholder="Min"
+                      className="w-16 h-7 text-xs"
+                      min={0}
+                      value={filters.minActionItems ?? ""}
+                      onChange={(e) =>
+                        onFiltersChange({
+                          ...filters,
+                          minActionItems: e.target.value ? parseInt(e.target.value) : undefined,
+                        })
+                      }
+                    />
+                    <span className="text-xs text-muted-foreground">-</span>
+                    <Input
+                      type="number"
+                      placeholder="Max"
+                      className="w-16 h-7 text-xs"
+                      min={0}
+                      value={filters.maxActionItems ?? ""}
+                      onChange={(e) =>
+                        onFiltersChange({
+                          ...filters,
+                          maxActionItems: e.target.value ? parseInt(e.target.value) : undefined,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                {/* Participants count */}
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Participants</label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      placeholder="Min"
+                      className="w-16 h-7 text-xs"
+                      min={0}
+                      value={filters.minParticipants ?? ""}
+                      onChange={(e) =>
+                        onFiltersChange({
+                          ...filters,
+                          minParticipants: e.target.value ? parseInt(e.target.value) : undefined,
+                        })
+                      }
+                    />
+                    <span className="text-xs text-muted-foreground">-</span>
+                    <Input
+                      type="number"
+                      placeholder="Max"
+                      className="w-16 h-7 text-xs"
+                      min={0}
+                      value={filters.maxParticipants ?? ""}
+                      onChange={(e) =>
+                        onFiltersChange({
+                          ...filters,
+                          maxParticipants: e.target.value ? parseInt(e.target.value) : undefined,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* Clear filters */}
               {activeFilterCount > 0 && (
                 <Button
@@ -486,6 +611,40 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
               Messages: {filters.minMessageCount ?? 0} - {filters.maxMessageCount ?? "∞"}
               <button
                 onClick={() => onFiltersChange({ ...filters, minMessageCount: undefined, maxMessageCount: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {/* ADR-021: Content count filter badges */}
+          {(filters.minKeyPoints !== undefined || filters.maxKeyPoints !== undefined) && (
+            <Badge variant="secondary" className="gap-1">
+              Key Points: {filters.minKeyPoints ?? 0} - {filters.maxKeyPoints ?? "∞"}
+              <button
+                onClick={() => onFiltersChange({ ...filters, minKeyPoints: undefined, maxKeyPoints: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {(filters.minActionItems !== undefined || filters.maxActionItems !== undefined) && (
+            <Badge variant="secondary" className="gap-1">
+              Action Items: {filters.minActionItems ?? 0} - {filters.maxActionItems ?? "∞"}
+              <button
+                onClick={() => onFiltersChange({ ...filters, minActionItems: undefined, maxActionItems: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {(filters.minParticipants !== undefined || filters.maxParticipants !== undefined) && (
+            <Badge variant="secondary" className="gap-1">
+              Participants: {filters.minParticipants ?? 0} - {filters.maxParticipants ?? "∞"}
+              <button
+                onClick={() => onFiltersChange({ ...filters, minParticipants: undefined, maxParticipants: undefined })}
                 className="ml-1 hover:text-destructive"
               >
                 <X className="h-3 w-3" />

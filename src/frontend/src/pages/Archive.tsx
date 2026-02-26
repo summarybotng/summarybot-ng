@@ -1181,7 +1181,20 @@ function JobsView({ guildId }: { guildId: string }) {
                         <span className="capitalize">{job.granularity}</span>
                       )}
                     </div>
-                    <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
+                      <span
+                        className="font-mono bg-muted px-1.5 py-0.5 rounded cursor-pointer hover:bg-muted/80"
+                        title="Click to copy job ID"
+                        onClick={() => {
+                          navigator.clipboard.writeText(job.job_id);
+                          toast({
+                            title: "Copied",
+                            description: `Job ID ${job.job_id} copied to clipboard`,
+                          });
+                        }}
+                      >
+                        {job.job_id}
+                      </span>
                       <span>
                         Created: {new Date(job.created_at).toLocaleString()}
                       </span>
@@ -1197,7 +1210,7 @@ function JobsView({ guildId }: { guildId: string }) {
                       )}
                     </div>
 
-                    {/* Progress */}
+                    {/* Progress for running/paused jobs */}
                     {(job.status === "running" || job.status === "paused") && (
                       <div className="mt-3">
                         <div className="flex justify-between text-xs mb-1">
@@ -1221,6 +1234,31 @@ function JobsView({ guildId }: { guildId: string }) {
                           value={(job.progress.completed / job.progress.total) * 100}
                           className="h-1.5"
                         />
+                      </div>
+                    )}
+
+                    {/* Final results for completed jobs */}
+                    {job.status === "completed" && job.progress.total > 0 && (
+                      <div className="mt-2 flex items-center gap-3 text-xs">
+                        <span className="flex items-center gap-1 text-green-600">
+                          <CheckCircle2 className="h-3 w-3" />
+                          {job.progress.completed} generated
+                        </span>
+                        {job.progress.skipped > 0 && (
+                          <span className="flex items-center gap-1 text-muted-foreground">
+                            <Clock className="h-3 w-3" />
+                            {job.progress.skipped} skipped
+                          </span>
+                        )}
+                        {job.progress.failed > 0 && (
+                          <span className="flex items-center gap-1 text-red-500">
+                            <XCircle className="h-3 w-3" />
+                            {job.progress.failed} failed
+                          </span>
+                        )}
+                        <span className="text-muted-foreground">
+                          ({job.progress.total} total)
+                        </span>
                       </div>
                     )}
 

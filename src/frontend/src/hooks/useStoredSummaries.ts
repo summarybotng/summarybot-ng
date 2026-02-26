@@ -52,6 +52,13 @@ interface StoredSummariesParams {
   hasParticipants?: boolean;
   minMessageCount?: number;
   maxMessageCount?: number;
+  // ADR-021: Content count filters
+  minKeyPoints?: number;
+  maxKeyPoints?: number;
+  minActionItems?: number;
+  maxActionItems?: number;
+  minParticipants?: number;
+  maxParticipants?: number;
 }
 
 export function useStoredSummaries(
@@ -80,6 +87,13 @@ export function useStoredSummaries(
   if (params.hasParticipants !== undefined) queryParams.set("has_participants", params.hasParticipants.toString());
   if (params.minMessageCount !== undefined) queryParams.set("min_message_count", params.minMessageCount.toString());
   if (params.maxMessageCount !== undefined) queryParams.set("max_message_count", params.maxMessageCount.toString());
+  // ADR-021: Content count filters
+  if (params.minKeyPoints !== undefined) queryParams.set("min_key_points", params.minKeyPoints.toString());
+  if (params.maxKeyPoints !== undefined) queryParams.set("max_key_points", params.maxKeyPoints.toString());
+  if (params.minActionItems !== undefined) queryParams.set("min_action_items", params.minActionItems.toString());
+  if (params.maxActionItems !== undefined) queryParams.set("max_action_items", params.maxActionItems.toString());
+  if (params.minParticipants !== undefined) queryParams.set("min_participants", params.minParticipants.toString());
+  if (params.maxParticipants !== undefined) queryParams.set("max_participants", params.maxParticipants.toString());
 
   const queryString = queryParams.toString();
 

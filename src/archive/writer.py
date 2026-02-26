@@ -323,6 +323,7 @@ def summary_exists(
 async def summary_exists_in_db(
     source: ArchiveSource,
     target_date: date,
+    require_complete: bool = True,
 ) -> bool:
     """
     Check if a summary exists in the database for a date.
@@ -333,6 +334,9 @@ async def summary_exists_in_db(
     Args:
         source: Source information
         target_date: Date to check
+        require_complete: If True, only count summaries with actual content
+                         (non-empty summary_text and message_count > 0).
+                         This prevents incomplete markers from blocking regeneration.
 
     Returns:
         True if summary exists in database
@@ -350,7 +354,34 @@ async def summary_exists_in_db(
             limit=1,
             archive_period=target_date.isoformat(),
         )
-        return len(existing) > 0
+
+        if not existing:
+            return False
+
+        if require_complete:
+            # Check if the summary is actually complete (has content)
+            summary = existing[0]
+            summary_result = summary.summary_result
+
+            # A complete summary should have:
+            # 1. Non-empty summary_text
+            # 2. message_count > 0 (or at least some content)
+            if not summary_result:
+                return False
+
+            summary_text = summary_result.summary_text or ""
+            message_count = summary_result.message_count or 0
+
+            # Consider incomplete if no summary text or no messages
+            if len(summary_text.strip()) < 50 or message_count == 0:
+                logger.info(
+                    f"Found incomplete summary for {target_date} "
+                    f"(text_len={len(summary_text)}, messages={message_count}), "
+                    f"allowing regeneration"
+                )
+                return False
+
+        return True
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning(f"DB check failed, assuming not exists: {e}")

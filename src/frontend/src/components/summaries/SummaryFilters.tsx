@@ -60,6 +60,7 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
 
   const activeFilterCount = [
+    filters.archivePeriod,  // Calendar date selection
     filters.createdAfter,
     filters.createdBefore,
     filters.channelMode !== "all",
@@ -390,6 +391,18 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
       {/* Active filters tags */}
       {activeFilterCount > 0 && (
         <div className="flex flex-wrap gap-2">
+          {filters.archivePeriod && (
+            <Badge variant="default" className="gap-1">
+              <CalendarIcon className="h-3 w-3 mr-1" />
+              {format(new Date(filters.archivePeriod), "MMM d, yyyy")}
+              <button
+                onClick={() => onFiltersChange({ ...filters, archivePeriod: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
           {filters.createdAfter && (
             <Badge variant="secondary" className="gap-1">
               After: {format(new Date(filters.createdAfter), "MMM d, yyyy")}

@@ -556,7 +556,6 @@ function GenerateDialog({
   const [sourceType, setSourceType] = useState("discord");
   const [startDate, setStartDate] = useState(format(subDays(new Date(), 30), "yyyy-MM-dd"));
   const [endDate, setEndDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [model, setModel] = useState("anthropic/claude-3-haiku");
   const [summaryType, setSummaryType] = useState<"brief" | "detailed" | "comprehensive">("detailed");
   const [perspective, setPerspective] = useState<"general" | "developer" | "marketing" | "product" | "finance" | "executive" | "support">("general");
   const [skipExisting, setSkipExisting] = useState(true);
@@ -575,7 +574,6 @@ function GenerateDialog({
       server_id: guildId,
       scope: scopeValue.scope,
       date_range: { start: startDate, end: endDate },
-      model,
       summary_type: summaryType,
       perspective,
       skip_existing: forceRegenerate ? false : skipExisting,  // Force overrides skip
@@ -677,20 +675,6 @@ function GenerateDialog({
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label>Model</Label>
-          <Select value={model} onValueChange={setModel}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="anthropic/claude-3-haiku">Claude 3 Haiku (fastest, cheapest)</SelectItem>
-              <SelectItem value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet (balanced)</SelectItem>
-              <SelectItem value="anthropic/claude-3-opus">Claude 3 Opus (best quality)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Summary Type</Label>
@@ -699,9 +683,9 @@ function GenerateDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="brief">Brief</SelectItem>
-                <SelectItem value="detailed">Detailed</SelectItem>
-                <SelectItem value="comprehensive">Comprehensive</SelectItem>
+                <SelectItem value="brief">Brief (Haiku)</SelectItem>
+                <SelectItem value="detailed">Detailed (Sonnet)</SelectItem>
+                <SelectItem value="comprehensive">Comprehensive (Sonnet)</SelectItem>
               </SelectContent>
             </Select>
           </div>

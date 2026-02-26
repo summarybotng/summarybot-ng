@@ -54,14 +54,17 @@ Response includes:
 - Optionally filter by same source (archive vs realtime) or channel
 - Order by created_at to get adjacent summaries
 
-### 2. Full-Text Search
+### 2. Full-Text Search and ID Lookup
 
-Add search endpoint for finding summaries by content:
+Add search endpoint for finding summaries by content or ID:
 
 ```
 GET /guilds/{guild_id}/stored-summaries/search
 Query params:
-  - q: Search query (required)
+  - q: Search query (required) - supports:
+    - Free text search across all fields
+    - Summary ID lookup: prefix with "id:" (e.g., "id:sum_154594fdc70b")
+    - Partial ID match: "id:sum_1545*" or just paste a partial ID
   - fields: Comma-separated fields to search (default: all)
     - summary_text
     - key_points
@@ -74,6 +77,11 @@ Query params:
   - limit: Results per page (default: 20)
   - offset: Pagination offset
 ```
+
+**ID Search Behavior:**
+- Detects summary ID patterns (e.g., "sum_" prefix or 12-char hex)
+- Supports partial ID matching for quick lookup
+- Returns exact match if full ID provided, fuzzy matches for partial
 
 **Response:**
 ```json

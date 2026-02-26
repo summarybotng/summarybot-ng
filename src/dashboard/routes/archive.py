@@ -1770,6 +1770,13 @@ async def sync_archive_to_database(
                 with open(meta_path, "r") as f:
                     metadata = json.load(f)
 
+                # Skip incomplete markers - these are placeholders for days with no messages
+                # and should not be synced to the database (they would block regeneration)
+                if metadata.get("status") == "incomplete":
+                    skipped += 1
+                    logger.debug(f"Skipping incomplete marker: {meta_path.name}")
+                    continue
+
                 summary_id = metadata.get("summary_id")
                 if not summary_id:
                     # Generate from path if not in metadata
@@ -1787,6 +1794,12 @@ async def sync_archive_to_database(
                 if md_path.exists():
                     with open(md_path, "r") as f:
                         content = f.read()
+
+                # Skip if no actual content (another way to detect incomplete summaries)
+                if not content.strip():
+                    skipped += 1
+                    logger.debug(f"Skipping empty summary: {meta_path.name}")
+                    continue
 
                 # Parse metadata
                 stats = metadata.get("statistics", {})

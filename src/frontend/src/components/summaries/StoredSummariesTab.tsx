@@ -8,6 +8,7 @@
 
 import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
+import { useQueryClient } from "@tanstack/react-query";
 import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, useRegenerateSummary, type SummarySourceType, type RegenerateOptions } from "@/hooks/useStoredSummaries";
 import { useGuild } from "@/hooks/useGuilds";
 import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
@@ -131,6 +132,7 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   // ADR-018: Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // ADR-017: Unified filter state
   const [filters, setFilters] = useState<FilterState>({
@@ -142,6 +144,7 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
   });
 
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { data: guild } = useGuild(guildId);
   const { data, isLoading, isError, refetch } = useStoredSummaries(guildId, {
     page,
@@ -167,6 +170,20 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
   const deleteMutation = useDeleteStoredSummary(guildId);
   const pushMutation = usePushToChannel(guildId);
   const regenerateMutation = useRegenerateSummary(guildId);
+
+  // Refresh both list and calendar views
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] }),
+      queryClient.invalidateQueries({ queryKey: ["summary-calendar", guildId] }),
+    ]);
+    setIsRefreshing(false);
+    toast({
+      title: "Refreshed",
+      description: "Summary list and calendar synced",
+    });
+  };
 
   const handlePin = async (summary: StoredSummary) => {
     try {
@@ -357,6 +374,15 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
             </TabsTrigger>
           </TabsList>
         </Tabs>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          title="Refresh list and calendar"
+        >
+          <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+        </Button>
       </div>
 
       {/* ADR-017: Enhanced filters */}

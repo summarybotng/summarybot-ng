@@ -146,6 +146,7 @@ export function useUpdateStoredSummary(guildId: string) {
       ),
     onSuccess: (_, { summaryId }) => {
       queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] });
+      queryClient.invalidateQueries({ queryKey: ["summary-calendar", guildId] });
       queryClient.invalidateQueries({
         queryKey: ["stored-summary", guildId, summaryId],
       });
@@ -161,6 +162,7 @@ export function useDeleteStoredSummary(guildId: string) {
       api.delete(`/guilds/${guildId}/stored-summaries/${summaryId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] });
+      queryClient.invalidateQueries({ queryKey: ["summary-calendar", guildId] });
     },
   });
 }
@@ -215,6 +217,7 @@ export function useRegenerateSummary(guildId: string) {
       // Invalidate after a delay to allow regeneration to complete
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] });
+        queryClient.invalidateQueries({ queryKey: ["summary-calendar", guildId] });
         queryClient.invalidateQueries({
           queryKey: ["stored-summary", guildId, summaryId],
         });
@@ -294,6 +297,7 @@ export function useBulkRegenerateSummaries(guildId: string) {
       // Invalidate after a delay to allow regeneration to complete
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] });
+        queryClient.invalidateQueries({ queryKey: ["summary-calendar", guildId] });
       }, 10000);
     },
   });

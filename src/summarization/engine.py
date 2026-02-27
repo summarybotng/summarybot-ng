@@ -208,7 +208,15 @@ class SummarizationEngine:
                 options=claude_options
             )
 
-            logger.info(f"Claude API response: input_tokens={response.input_tokens}, output_tokens={response.output_tokens}, content_length={len(response.content)}")
+            logger.info(f"Claude API response: input_tokens={response.input_tokens}, output_tokens={response.output_tokens}, content_length={len(response.content)}, stop_reason={response.stop_reason}")
+
+            # Check for truncated response (hit max_tokens limit)
+            if not response.is_complete():
+                logger.warning(
+                    f"Response was truncated (stop_reason={response.stop_reason}). "
+                    f"Output tokens: {response.output_tokens}, max_tokens: {claude_options.max_tokens}. "
+                    f"Consider using a longer summary_length or reducing input messages."
+                )
 
             # Parse response (ADR-004: pass position_index for citation resolution)
             parsed_summary = self.response_parser.parse_summary_response(

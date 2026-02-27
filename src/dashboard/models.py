@@ -189,6 +189,11 @@ class GuildStatsResponse(BaseModel):
     summaries_this_week: int
     active_schedules: int
     last_summary_at: Optional[datetime]
+    # Breakdown by source type
+    realtime_count: int = 0
+    archive_count: int = 0
+    scheduled_count: int = 0
+    manual_count: int = 0
 
 
 class GuildDetailResponse(BaseModel):

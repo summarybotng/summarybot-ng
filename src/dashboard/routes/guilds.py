@@ -240,10 +240,28 @@ async def get_guild(
     active_schedules = 0
     last_summary_at = None
 
+    # Breakdown by source type
+    realtime_count = 0
+    archive_count = 0
+    scheduled_count = 0
+    manual_count = 0
+
     if stored_repo:
         # Get total count of all summaries (realtime + archive)
         all_summaries = await stored_repo.find_by_guild(guild_id=guild_id, limit=10000)
         total_summaries = len(all_summaries)
+
+        # Count by source type
+        from ..models.stored_summary import SummarySource
+        for s in all_summaries:
+            if s.source == SummarySource.ARCHIVE:
+                archive_count += 1
+            elif s.source == SummarySource.SCHEDULED:
+                scheduled_count += 1
+            elif s.source == SummarySource.MANUAL:
+                manual_count += 1
+            else:  # REALTIME or others
+                realtime_count += 1
 
         # Get summaries this week
         week_ago = datetime.utcnow() - timedelta(days=7)
@@ -273,6 +291,10 @@ async def get_guild(
         summaries_this_week=summaries_this_week,
         active_schedules=active_schedules,
         last_summary_at=last_summary_at,
+        realtime_count=realtime_count,
+        archive_count=archive_count,
+        scheduled_count=scheduled_count,
+        manual_count=manual_count,
     )
 
     return GuildDetailResponse(

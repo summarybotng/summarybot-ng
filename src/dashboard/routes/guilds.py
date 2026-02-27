@@ -252,7 +252,7 @@ async def get_guild(
         total_summaries = len(all_summaries)
 
         # Count by source type
-        from ..models.stored_summary import SummarySource
+        from ...models.stored_summary import SummarySource
         for s in all_summaries:
             if s.source == SummarySource.ARCHIVE:
                 archive_count += 1

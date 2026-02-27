@@ -191,9 +191,10 @@ class SummarizationEngine:
                 prompt_data.user_prompt = optimized_user_prompt
             
             # Configure Claude options
+            initial_max_tokens = options.get_max_tokens_for_length()
             claude_options = ClaudeOptions(
                 model=options.get_model_for_length(),
-                max_tokens=options.get_max_tokens_for_length(),
+                max_tokens=initial_max_tokens,
                 temperature=options.temperature
             )
 
@@ -210,13 +211,40 @@ class SummarizationEngine:
 
             logger.info(f"Claude API response: input_tokens={response.input_tokens}, output_tokens={response.output_tokens}, content_length={len(response.content)}, stop_reason={response.stop_reason}")
 
-            # Check for truncated response (hit max_tokens limit)
-            if not response.is_complete():
+            # Auto-retry with higher max_tokens if response was truncated
+            MAX_RETRY_TOKENS = 16000  # Cap for retry attempts
+            if not response.is_complete() and claude_options.max_tokens < MAX_RETRY_TOKENS:
+                # Escalate: double the tokens, capped at MAX_RETRY_TOKENS
+                retry_max_tokens = min(claude_options.max_tokens * 2, MAX_RETRY_TOKENS)
                 logger.warning(
-                    f"Response was truncated (stop_reason={response.stop_reason}). "
-                    f"Output tokens: {response.output_tokens}, max_tokens: {claude_options.max_tokens}. "
-                    f"Consider using a longer summary_length or reducing input messages."
+                    f"Response truncated (stop_reason={response.stop_reason}, "
+                    f"used {response.output_tokens}/{claude_options.max_tokens} tokens). "
+                    f"Auto-retrying with max_tokens={retry_max_tokens}..."
                 )
+
+                retry_options = ClaudeOptions(
+                    model=claude_options.model,
+                    max_tokens=retry_max_tokens,
+                    temperature=claude_options.temperature
+                )
+
+                response = await self.claude_client.create_summary_with_fallback(
+                    prompt=prompt_data.user_prompt,
+                    system_prompt=prompt_data.system_prompt,
+                    options=retry_options
+                )
+
+                logger.info(f"Retry response: input_tokens={response.input_tokens}, output_tokens={response.output_tokens}, stop_reason={response.stop_reason}")
+
+                # Update options for metadata
+                claude_options = retry_options
+
+                # If still truncated, warn but continue with what we have
+                if not response.is_complete():
+                    logger.warning(
+                        f"Response still truncated after retry with {retry_max_tokens} tokens. "
+                        f"Consider reducing input messages or using comprehensive summary length."
+                    )
 
             # Parse response (ADR-004: pass position_index for citation resolution)
             parsed_summary = self.response_parser.parse_summary_response(

@@ -984,10 +984,10 @@ async def list_archive_summaries(
         summary_text = summary.summary_result.summary_text if summary.summary_result else ""
         preview = summary_text[:200] + "..." if len(summary_text) > 200 else summary_text
 
-        # Get channel name from context
+        # Get channel name from context (context is inside summary_result)
         channel_name = "Unknown"
-        if summary.context and summary.context.channel_name:
-            channel_name = summary.context.channel_name
+        if summary.summary_result and summary.summary_result.context:
+            channel_name = summary.summary_result.context.channel_name or "Unknown"
 
         # Get message count
         message_count = summary.summary_result.message_count if summary.summary_result else 0
@@ -995,24 +995,25 @@ async def list_archive_summaries(
         if summary.summary_result and summary.summary_result.participants:
             participant_count = len(summary.summary_result.participants)
 
-        # Get summary length from metadata
+        # Get summary length from metadata (metadata is inside summary_result)
         summary_length = "detailed"
-        if summary.metadata:
-            summary_length = summary.metadata.get("summary_length", "detailed")
+        metadata = summary.summary_result.metadata if summary.summary_result else None
+        if metadata:
+            summary_length = metadata.get("summary_length", "detailed")
 
         # Build generation metadata from summary metadata
         gen_meta = None
-        if summary.metadata:
+        if metadata:
             gen_meta = ArchiveGenerationMetadata(
-                model=summary.metadata.get("model"),
-                prompt_version=summary.metadata.get("prompt_version"),
-                prompt_checksum=summary.metadata.get("prompt_checksum"),
-                tokens_input=summary.metadata.get("tokens_input", 0),
-                tokens_output=summary.metadata.get("tokens_output", 0),
-                cost_usd=summary.metadata.get("cost_usd", 0.0),
-                duration_seconds=summary.metadata.get("duration_seconds"),
-                has_prompt_data=bool(summary.metadata.get("model")),
-                perspective=summary.metadata.get("perspective", "general"),
+                model=metadata.get("model"),
+                prompt_version=metadata.get("prompt_version"),
+                prompt_checksum=metadata.get("prompt_checksum"),
+                tokens_input=metadata.get("tokens_input", 0),
+                tokens_output=metadata.get("tokens_output", 0),
+                cost_usd=metadata.get("cost_usd", 0.0),
+                duration_seconds=metadata.get("duration_seconds"),
+                has_prompt_data=bool(metadata.get("model")),
+                perspective=metadata.get("perspective", "general"),
             )
 
         summaries.append(ArchiveSummaryResponse(
@@ -1085,10 +1086,10 @@ async def get_archive_summary(
     date_str = summary.archive_period or ""
     summary_text = summary.summary_result.summary_text if summary.summary_result else ""
 
-    # Get channel name
+    # Get channel name (context is inside summary_result)
     channel_name = "Unknown"
-    if summary.context and summary.context.channel_name:
-        channel_name = summary.context.channel_name
+    if summary.summary_result and summary.summary_result.context:
+        channel_name = summary.summary_result.context.channel_name or "Unknown"
 
     # Get counts
     message_count = summary.summary_result.message_count if summary.summary_result else 0
@@ -1096,10 +1097,11 @@ async def get_archive_summary(
     if summary.summary_result and summary.summary_result.participants:
         participant_count = len(summary.summary_result.participants)
 
-    # Get summary length
+    # Get summary length (metadata is inside summary_result)
     summary_length = "detailed"
-    if summary.metadata:
-        summary_length = summary.metadata.get("summary_length", "detailed")
+    metadata = summary.summary_result.metadata if summary.summary_result else None
+    if metadata:
+        summary_length = metadata.get("summary_length", "detailed")
 
     # ADR-020: Get navigation
     navigation = None
@@ -1123,7 +1125,7 @@ async def get_archive_summary(
         "created_at": summary.created_at.isoformat() if summary.created_at else date_str,
         "summary_length": summary_length,
         "is_archive": True,
-        "metadata": summary.metadata or {},
+        "metadata": metadata or {},
         "navigation": navigation,
     }
 

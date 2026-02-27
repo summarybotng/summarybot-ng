@@ -71,7 +71,9 @@ async def list_guilds(user: dict = Depends(get_current_user)):
     bot = get_discord_bot()
     config_repo = await get_config_repository()
     config_manager = get_config_manager()
-    summary_repo = await get_summary_repository()
+    # Use stored_summary_repository which includes both realtime and archive summaries
+    from . import get_stored_summary_repository
+    stored_repo = await get_stored_summary_repository()
 
     guild_items = []
     for guild_id in user.get("guilds", []):
@@ -94,14 +96,21 @@ async def list_guilds(user: dict = Depends(get_current_user)):
         if guild_config and guild_config.enabled_channels:
             config_status = ConfigStatus.CONFIGURED
 
-        # Get actual summary count and last summary from database
+        # Get actual summary count and last summary from stored summaries
+        # This includes both realtime and archive summaries
         summary_count = 0
         last_summary_at = None
-        if summary_repo:
-            criteria = SearchCriteria(guild_id=guild_id, limit=1)
-            summary_count = await summary_repo.count_summaries(criteria)
+        if stored_repo:
+            all_summaries = await stored_repo.find_by_guild(guild_id=guild_id, limit=10000)
+            summary_count = len(all_summaries)
             if summary_count > 0:
-                recent = await summary_repo.find_summaries(criteria)
+                # Get most recent by created_at
+                recent = await stored_repo.find_by_guild(
+                    guild_id=guild_id,
+                    limit=1,
+                    sort_by="created_at",
+                    sort_order="desc",
+                )
                 if recent:
                     last_summary_at = recent[0].created_at
 
@@ -221,7 +230,9 @@ async def get_guild(
     )
 
     # Get actual stats from database
-    summary_repo = await get_summary_repository()
+    # Use stored_summary_repository which includes both realtime and archive summaries
+    from . import get_stored_summary_repository
+    stored_repo = await get_stored_summary_repository()
     task_repo = await get_task_repository()
 
     total_summaries = 0
@@ -229,18 +240,27 @@ async def get_guild(
     active_schedules = 0
     last_summary_at = None
 
-    if summary_repo:
-        criteria = SearchCriteria(guild_id=guild_id)
-        total_summaries = await summary_repo.count_summaries(criteria)
+    if stored_repo:
+        # Get total count of all summaries (realtime + archive)
+        all_summaries = await stored_repo.find_by_guild(guild_id=guild_id, limit=10000)
+        total_summaries = len(all_summaries)
 
         # Get summaries this week
         week_ago = datetime.utcnow() - timedelta(days=7)
-        week_criteria = SearchCriteria(guild_id=guild_id, start_time=week_ago)
-        summaries_this_week = await summary_repo.count_summaries(week_criteria)
+        week_summaries = await stored_repo.find_by_guild(
+            guild_id=guild_id,
+            created_after=week_ago,
+            limit=10000,
+        )
+        summaries_this_week = len(week_summaries)
 
         # Get last summary
-        recent_criteria = SearchCriteria(guild_id=guild_id, limit=1)
-        recent = await summary_repo.find_summaries(recent_criteria)
+        recent = await stored_repo.find_by_guild(
+            guild_id=guild_id,
+            limit=1,
+            sort_by="created_at",
+            sort_order="desc",
+        )
         if recent:
             last_summary_at = recent[0].created_at
 

@@ -947,99 +947,88 @@ async def list_archive_summaries(
 
     Returns summaries from the archive that can be displayed alongside
     regular summaries in the UI.
+
+    ADR-019: Now queries database instead of disk files.
     """
-    archive_root = get_archive_root()
-    sources_dir = archive_root / "sources" / "discord"
+    from . import get_stored_summary_repository
+
+    repo = await get_stored_summary_repository()
+    if not repo:
+        logger.warning(f"Stored summary repository not available for server {server_id}")
+        return ArchiveSummariesListResponse(summaries=[], total=0)
+
+    # Query database for archive summaries (source="archive")
+    db_summaries = await repo.find_by_guild(
+        guild_id=server_id,
+        source="archive",
+        limit=limit,
+        offset=offset,
+        sort_by="archive_period",
+        sort_order="desc",
+    )
+
+    # Get total count
+    all_archive = await repo.find_by_guild(
+        guild_id=server_id,
+        source="archive",
+        limit=10000,  # Get all for count
+    )
+    total = len(all_archive)
 
     summaries = []
+    for summary in db_summaries:
+        # Extract archive period as date
+        date_str = summary.archive_period or ""
 
-    if sources_dir.exists():
-        # Find the server directory
-        for server_dir in sources_dir.iterdir():
-            if server_dir.is_dir() and server_dir.name.endswith(f"_{server_id}"):
-                # Found the server, now read all summaries
-                server_name = server_dir.name.rsplit("_", 1)[0]
+        # Build preview
+        summary_text = summary.summary_result.summary_text if summary.summary_result else ""
+        preview = summary_text[:200] + "..." if len(summary_text) > 200 else summary_text
 
-                # Find all markdown files
-                md_files = sorted(server_dir.glob("**/*.md"), reverse=True)
+        # Get channel name from context
+        channel_name = "Unknown"
+        if summary.context and summary.context.channel_name:
+            channel_name = summary.context.channel_name
 
-                for md_path in md_files:
-                    # Skip non-summary files
-                    if md_path.name.startswith(".") or "incomplete" in md_path.name:
-                        continue
+        # Get message count
+        message_count = summary.summary_result.message_count if summary.summary_result else 0
+        participant_count = 0
+        if summary.summary_result and summary.summary_result.participants:
+            participant_count = len(summary.summary_result.participants)
 
-                    try:
-                        # Read metadata file
-                        meta_path = md_path.with_suffix(".meta.json")
-                        metadata = {}
-                        if meta_path.exists():
-                            import json
-                            with open(meta_path) as f:
-                                metadata = json.load(f)
+        # Get summary length from metadata
+        summary_length = "detailed"
+        if summary.metadata:
+            summary_length = summary.metadata.get("summary_length", "detailed")
 
-                        # Read summary content
-                        content = md_path.read_text()
+        # Build generation metadata from summary metadata
+        gen_meta = None
+        if summary.metadata:
+            gen_meta = ArchiveGenerationMetadata(
+                model=summary.metadata.get("model"),
+                prompt_version=summary.metadata.get("prompt_version"),
+                prompt_checksum=summary.metadata.get("prompt_checksum"),
+                tokens_input=summary.metadata.get("tokens_input", 0),
+                tokens_output=summary.metadata.get("tokens_output", 0),
+                cost_usd=summary.metadata.get("cost_usd", 0.0),
+                duration_seconds=summary.metadata.get("duration_seconds"),
+                has_prompt_data=bool(summary.metadata.get("model")),
+                perspective=summary.metadata.get("perspective", "general"),
+            )
 
-                        # Extract date from filename (e.g., 2026-01-20_daily.md)
-                        date_str = md_path.stem.split("_")[0]
-
-                        # Create preview (first ~200 chars after title)
-                        lines = content.split("\n")
-                        preview_lines = []
-                        in_content = False
-                        for line in lines:
-                            if line.startswith("## ") and not in_content:
-                                in_content = True
-                                continue
-                            if in_content and line.strip():
-                                preview_lines.append(line.strip())
-                                if len(" ".join(preview_lines)) > 200:
-                                    break
-                        preview = " ".join(preview_lines)[:200]
-                        if len(preview) == 200:
-                            preview += "..."
-
-                        # Get stats from metadata
-                        stats = metadata.get("statistics", {})
-                        generation_data = metadata.get("generation", {})
-                        options = generation_data.get("options", {})
-
-                        # Build generation metadata
-                        gen_meta = ArchiveGenerationMetadata(
-                            model=generation_data.get("model"),
-                            prompt_version=generation_data.get("prompt_version"),
-                            prompt_checksum=generation_data.get("prompt_checksum"),
-                            tokens_input=generation_data.get("tokens_input", 0),
-                            tokens_output=generation_data.get("tokens_output", 0),
-                            cost_usd=generation_data.get("cost_usd", 0.0),
-                            duration_seconds=generation_data.get("duration_seconds"),
-                            has_prompt_data=bool(generation_data),
-                            perspective=options.get("perspective", "general"),
-                        )
-
-                        summaries.append(ArchiveSummaryResponse(
-                            id=f"archive_{date_str}_{server_id}",
-                            source_key=f"discord:{server_id}",
-                            date=date_str,
-                            channel_name=server_name,  # Use server name as channel
-                            summary_text=content,
-                            message_count=stats.get("message_count", 0),
-                            participant_count=stats.get("participant_count", 0),
-                            created_at=metadata.get("created_at", date_str),
-                            summary_length=options.get("summary_type", "detailed"),
-                            preview=preview,
-                            is_archive=True,
-                            generation=gen_meta,
-                        ))
-                    except Exception as e:
-                        logger.warning(f"Failed to read archive summary {md_path}: {e}")
-                        continue
-
-                break  # Found the server, no need to continue
-
-    # Apply pagination
-    total = len(summaries)
-    summaries = summaries[offset:offset + limit]
+        summaries.append(ArchiveSummaryResponse(
+            id=summary.id,
+            source_key=f"discord:{server_id}",
+            date=date_str,
+            channel_name=channel_name,
+            summary_text=summary_text,
+            message_count=message_count,
+            participant_count=participant_count,
+            created_at=summary.created_at.isoformat() if summary.created_at else date_str,
+            summary_length=summary_length,
+            preview=preview,
+            is_archive=True,
+            generation=gen_meta,
+        ))
 
     return ArchiveSummariesListResponse(
         summaries=summaries,
@@ -1055,83 +1044,88 @@ async def get_archive_summary(
     """
     Get a specific archive summary by ID.
 
-    The summary_id format is: archive_{date}_{server_id}
+    ADR-019: Now queries database instead of disk files.
+    Supports both UUID format (new) and archive_{date}_{server_id} format (legacy).
     """
-    # Parse the summary ID
-    parts = summary_id.split("_")
-    if len(parts) < 3 or parts[0] != "archive":
-        raise HTTPException(400, "Invalid archive summary ID format")
+    from . import get_stored_summary_repository
 
-    date_str = parts[1]
+    repo = await get_stored_summary_repository()
+    if not repo:
+        raise HTTPException(500, "Repository not available")
 
-    archive_root = get_archive_root()
-    sources_dir = archive_root / "sources" / "discord"
+    summary = None
+    date_str = None
 
-    if not sources_dir.exists():
-        raise HTTPException(404, "Archive not found")
+    # Try to get by UUID first (new format)
+    summary = await repo.get(summary_id)
 
-    # Find the server directory
-    for server_dir in sources_dir.iterdir():
-        if server_dir.is_dir() and server_dir.name.endswith(f"_{server_id}"):
-            server_name = server_dir.name.rsplit("_", 1)[0]
+    # If not found, try legacy format: archive_{date}_{server_id}
+    if not summary and summary_id.startswith("archive_"):
+        parts = summary_id.split("_")
+        if len(parts) >= 3:
+            date_str = parts[1]
+            # Look up by archive_period
+            results = await repo.find_by_guild(
+                guild_id=server_id,
+                source="archive",
+                archive_period=date_str,
+                limit=1,
+            )
+            if results:
+                summary = results[0]
 
-            # Parse date to find file path
-            try:
-                from datetime import datetime as dt
-                target_date = dt.strptime(date_str, "%Y-%m-%d")
-                year = target_date.strftime("%Y")
-                month = target_date.strftime("%m")
-            except ValueError:
-                raise HTTPException(400, "Invalid date format in summary ID")
+    if not summary:
+        raise HTTPException(404, f"Summary not found: {summary_id}")
 
-            # Look for the file
-            md_path = server_dir / year / month / f"{date_str}_daily.md"
-            meta_path = md_path.with_suffix(".meta.json")
+    # Verify it belongs to the requested server
+    if summary.guild_id != server_id:
+        raise HTTPException(404, f"Summary not found for server: {server_id}")
 
-            if not md_path.exists():
-                raise HTTPException(404, f"Summary not found: {summary_id}")
+    # Extract data
+    date_str = summary.archive_period or ""
+    summary_text = summary.summary_result.summary_text if summary.summary_result else ""
 
-            # Read content and metadata
-            content = md_path.read_text()
-            metadata = {}
-            if meta_path.exists():
-                import json
-                with open(meta_path) as f:
-                    metadata = json.load(f)
+    # Get channel name
+    channel_name = "Unknown"
+    if summary.context and summary.context.channel_name:
+        channel_name = summary.context.channel_name
 
-            stats = metadata.get("statistics", {})
-            generation = metadata.get("generation", {})
+    # Get counts
+    message_count = summary.summary_result.message_count if summary.summary_result else 0
+    participant_count = 0
+    if summary.summary_result and summary.summary_result.participants:
+        participant_count = len(summary.summary_result.participants)
 
-            # ADR-020: Get navigation from database
-            navigation = None
-            try:
-                stored_repo = await get_stored_summary_repository()
-                if stored_repo:
-                    # Find this summary in DB by archive_period
-                    navigation = await stored_repo.get_navigation(
-                        summary_id=summary_id,
-                        guild_id=server_id,
-                        source="archive",
-                    )
-            except Exception as e:
-                logger.warning(f"Failed to get navigation for {summary_id}: {e}")
+    # Get summary length
+    summary_length = "detailed"
+    if summary.metadata:
+        summary_length = summary.metadata.get("summary_length", "detailed")
 
-            return {
-                "id": summary_id,
-                "source_key": f"discord:{server_id}",
-                "date": date_str,
-                "channel_name": server_name,
-                "summary_text": content,
-                "message_count": stats.get("message_count", 0),
-                "participant_count": stats.get("participant_count", 0),
-                "created_at": metadata.get("created_at", date_str),
-                "summary_length": generation.get("options", {}).get("summary_type", "detailed"),
-                "is_archive": True,
-                "metadata": metadata,
-                "navigation": navigation,  # ADR-020
-            }
+    # ADR-020: Get navigation
+    navigation = None
+    try:
+        navigation = await repo.get_navigation(
+            summary_id=summary.id,
+            guild_id=server_id,
+            source="archive",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to get navigation for {summary_id}: {e}")
 
-    raise HTTPException(404, f"Server not found: {server_id}")
+    return {
+        "id": summary.id,
+        "source_key": f"discord:{server_id}",
+        "date": date_str,
+        "channel_name": channel_name,
+        "summary_text": summary_text,
+        "message_count": message_count,
+        "participant_count": participant_count,
+        "created_at": summary.created_at.isoformat() if summary.created_at else date_str,
+        "summary_length": summary_length,
+        "is_archive": True,
+        "metadata": summary.metadata or {},
+        "navigation": navigation,
+    }
 
 
 # ==================== Sync Endpoints (ADR-007) ====================

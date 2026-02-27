@@ -247,13 +247,71 @@ class SummarizationEngine:
                     )
 
             # Parse response (ADR-004: pass position_index for citation resolution)
+            # ADR-023: Track if we need to retry due to JSON parse errors
+            json_retry_attempted = False
+
             parsed_summary = self.response_parser.parse_summary_response(
                 response_content=response.content,
                 original_messages=messages,
                 context=context,
                 position_index=prompt_data.position_index
             )
-            
+
+            # ADR-023: Check if parsing had recoverable JSON errors that warrant API retry
+            parsing_recovery = parsed_summary.parsing_metadata.get("parsing_recovery")
+            if (parsing_recovery and
+                parsing_recovery.get("successful_step") == "freeform_fallback" and
+                not json_retry_attempted):
+                # Freeform fallback was used - try API retry with JSON reminder
+                json_retry_attempted = True
+                logger.warning(
+                    f"JSON parsing fell back to freeform. Retrying API with explicit JSON instruction..."
+                )
+
+                # Add explicit JSON reminder to system prompt
+                json_reminder = (
+                    "\n\nCRITICAL: Your response MUST be valid JSON. "
+                    "Ensure all strings are properly escaped (use \\\" for quotes inside strings, "
+                    "\\n for newlines). Do not include any text before or after the JSON object."
+                )
+                retry_system_prompt = prompt_data.system_prompt + json_reminder
+
+                response = await self.claude_client.create_summary_with_fallback(
+                    prompt=prompt_data.user_prompt,
+                    system_prompt=retry_system_prompt,
+                    options=claude_options
+                )
+
+                logger.info(f"JSON retry response: input_tokens={response.input_tokens}, output_tokens={response.output_tokens}")
+
+                # Re-parse with retry flag
+                retry_parsed = self.response_parser.parse_summary_response(
+                    response_content=response.content,
+                    original_messages=messages,
+                    context=context,
+                    position_index=prompt_data.position_index
+                )
+
+                # Check if retry was successful (not freeform fallback)
+                retry_recovery = retry_parsed.parsing_metadata.get("parsing_recovery")
+                if not retry_recovery or retry_recovery.get("successful_step") != "freeform_fallback":
+                    # Retry succeeded - use the new parsed result
+                    parsed_summary = retry_parsed
+                    # Update recovery tracking to show api_retry worked
+                    if parsing_recovery:
+                        parsing_recovery["recovery_steps"].append("api_retry")
+                        parsing_recovery["successful_step"] = "api_retry"
+                        parsed_summary.parsing_metadata["parsing_recovery"] = parsing_recovery
+                    logger.info("JSON retry successful - using retried response")
+                else:
+                    # Retry also fell back to freeform - use original
+                    logger.warning("JSON retry also fell back to freeform - using original response")
+                    # Update original recovery to show api_retry was attempted
+                    if parsing_recovery:
+                        parsing_recovery["recovery_steps"].append("api_retry")
+                        parsing_recovery["total_attempts"] = parsing_recovery.get("total_attempts", 1) + 1
+                        parsed_summary.parsing_metadata["parsing_recovery"] = parsing_recovery
+
             # Create final summary result
             start_time = min(msg.timestamp for msg in messages) if messages else datetime.utcnow()
             end_time = max(msg.timestamp for msg in messages) if messages else datetime.utcnow()

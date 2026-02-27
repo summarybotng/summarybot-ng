@@ -1,4 +1,4 @@
-# ADR-023: Handling Invalid JSON Responses from LLM
+t# ADR-023: Handling Invalid JSON Responses from LLM
 
 ## Status
 Proposed

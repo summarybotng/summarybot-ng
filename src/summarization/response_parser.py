@@ -2,14 +2,24 @@
 Claude response parsing and processing.
 
 Includes ADR-004 support for parsing message-level citations.
+Includes ADR-023 support for JSON parse error recovery with tracking.
 """
 
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+
+# ADR-023: JSON repair for malformed LLM responses
+try:
+    from json_repair import repair_json
+    JSON_REPAIR_AVAILABLE = True
+except ImportError:
+    JSON_REPAIR_AVAILABLE = False
+    repair_json = None
 
 from ..models.summary import (
     SummaryResult, ActionItem, TechnicalTerm, Participant,
@@ -24,6 +34,23 @@ from ..models.reference import (
 from ..exceptions import SummarizationError
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ParsingRecovery:
+    """ADR-023: Tracks parsing difficulty and recovery steps for a summary."""
+    had_errors: bool = False
+    initial_error: Optional[str] = None
+    recovery_steps: List[str] = field(default_factory=list)
+    successful_step: Optional[str] = None
+    total_attempts: int = 1
+    recovery_latency_ms: int = 0
+
+    def to_dict(self) -> Optional[Dict[str, Any]]:
+        """Convert to dict for metadata storage. Returns None if no errors occurred."""
+        if not self.had_errors:
+            return None
+        return asdict(self)
 
 
 @dataclass
@@ -166,8 +193,14 @@ class ResponseParser:
             content: Raw response content
             metadata: Parsing metadata dict to update
             position_index: Optional PositionIndex for resolving citations (ADR-004)
+
+        ADR-023: Includes JSON repair recovery step with tracking.
         """
         metadata["parsing_method"] = "json"
+
+        # ADR-023: Initialize recovery tracking
+        recovery = ParsingRecovery()
+        recovery_start = None
 
         # Extract JSON from response (handle code blocks)
         # First try to find JSON within code blocks
@@ -183,200 +216,235 @@ class ResponseParser:
 
         logger.debug(f"Extracted JSON string (length={len(json_str)})")
 
+        # Step 1: Try normal JSON parsing
+        data = None
         try:
             data = json.loads(json_str)
             logger.debug(f"Successfully parsed JSON with {len(data)} top-level keys")
-
-            # Extract components - support multiple format variations
-            summary_text = (
-                data.get("summary_text", "") or
-                data.get("summary", "") or
-                data.get("overview", "") or  # camelCase format
-                data.get("🎯 Overview", "") or
-                data.get("Overview", "")
-            )
-
-            # ADR-004: Track referenced claims
-            referenced_key_points: List[ReferencedClaim] = []
-            referenced_action_items: List[ReferencedClaim] = []
-            referenced_decisions: List[ReferencedClaim] = []
-
-            # Extract key points from various formats
-            key_points_raw = (
-                data.get("key_points", []) or
-                data.get("mainTopics", []) or  # camelCase format
-                data.get("💡 Key Technical Points", []) or
-                data.get("Key Technical Points", []) or
-                []
-            )
-
-            # Flatten key points if they're in dict format
-            key_points = []
-            if isinstance(key_points_raw, list):
-                for item in key_points_raw:
-                    if isinstance(item, dict):
-                        # ADR-004: Handle referenced format {"text": "...", "references": [1,2]}
-                        if "text" in item and "references" in item and position_index:
-                            refs = position_index.resolve_many(item.get("references", []))
-                            confidence = item.get("confidence", 1.0)
-                            referenced_key_points.append(ReferencedClaim(
-                                text=item["text"],
-                                references=refs,
-                                confidence=confidence
-                            ))
-                            key_points.append(item["text"])  # Also add flat version
-                        # Handle nested topic/points format: {"topic": "...", "points": [...]}
-                        elif "topic" in item and "points" in item:
-                            # Extract all points from this topic
-                            if isinstance(item["points"], list):
-                                key_points.extend(item["points"])
-                        else:
-                            # Extract values from simple dict (e.g., {"Point 1": "...", "Point 2": "..."})
-                            for key, value in item.items():
-                                if isinstance(value, str) and not key.startswith('_'):
-                                    key_points.append(value)
-                    elif isinstance(item, str):
-                        key_points.append(item)
-            elif isinstance(key_points_raw, str):
-                key_points = [key_points_raw]
-
-            # ADR-004: Parse decisions (new field)
-            decisions_raw = data.get("decisions", [])
-            for item in decisions_raw:
-                if isinstance(item, dict) and "text" in item and position_index:
-                    refs = position_index.resolve_many(item.get("references", []))
-                    confidence = item.get("confidence", 1.0)
-                    referenced_decisions.append(ReferencedClaim(
-                        text=item["text"],
-                        references=refs,
-                        confidence=confidence
-                    ))
-
-            # Parse action items - support custom emoji format
-            action_items_raw = (
-                data.get("action_items", []) or
-                data.get("🔧 Action Items", []) or
-                data.get("Action Items", []) or
-                []
-            )
-            action_items = []
-            for item_data in action_items_raw:
-                if isinstance(item_data, dict):
-                    priority = Priority.MEDIUM  # default
-                    if "priority" in item_data:
-                        try:
-                            priority = Priority(item_data["priority"].lower())
-                        except ValueError:
-                            pass
-
-                    # ADR-004: Handle referenced action items
-                    description = item_data.get("description", "") or item_data.get("text", "")
-                    action_items.append(ActionItem(
-                        description=description,
-                        assignee=item_data.get("assignee"),
-                        priority=priority
-                    ))
-
-                    # Create referenced version if references present
-                    if "references" in item_data and position_index:
-                        refs = position_index.resolve_many(item_data.get("references", []))
-                        referenced_action_items.append(ReferencedClaim(
-                            text=description,
-                            references=refs,
-                            confidence=item_data.get("confidence", 1.0)
-                        ))
-                elif isinstance(item_data, str):
-                    action_items.append(ActionItem(description=item_data))
-
-            # Parse technical terms
-            technical_terms = []
-            for term_data in data.get("technical_terms", []):
-                if isinstance(term_data, dict):
-                    technical_terms.append(TechnicalTerm(
-                        term=term_data.get("term", ""),
-                        definition=term_data.get("definition", ""),
-                        context=term_data.get("context", ""),
-                        source_message_id=""  # Will be filled later if possible
-                    ))
-
-            # Parse participants (with ADR-004 support for referenced contributions)
-            participants = []
-            for participant_data in data.get("participants", []):
-                if isinstance(participant_data, dict):
-                    # Handle referenced contributions
-                    referenced_contributions = []
-                    key_contributions_raw = participant_data.get("key_contributions", [])
-
-                    flat_contributions = []
-                    if isinstance(key_contributions_raw, list):
-                        for contrib in key_contributions_raw:
-                            if isinstance(contrib, dict) and "text" in contrib and position_index:
-                                # Referenced contribution
-                                refs = position_index.resolve_many(contrib.get("references", []))
-                                referenced_contributions.append(ReferencedClaim(
-                                    text=contrib["text"],
-                                    references=refs,
-                                    confidence=contrib.get("confidence", 1.0)
-                                ))
-                                flat_contributions.append(contrib["text"])
-                            elif isinstance(contrib, str):
-                                flat_contributions.append(contrib)
-                    elif isinstance(key_contributions_raw, str):
-                        flat_contributions = [key_contributions_raw]
-
-                    # Also check old format field
-                    if not flat_contributions:
-                        flat_contributions = self._ensure_list(participant_data.get("key_contribution", []))
-
-                    participants.append(Participant(
-                        user_id="",  # Will be filled from message analysis
-                        display_name=participant_data.get("name", ""),
-                        message_count=participant_data.get("message_count", 0),
-                        key_contributions=flat_contributions,
-                        referenced_contributions=referenced_contributions
-                    ))
-
-            # ADR-004: Build deduped reference index
-            reference_index = []
-            if position_index:
-                reference_index = build_deduped_reference_index(
-                    referenced_key_points,
-                    referenced_action_items,
-                    referenced_decisions
-                )
-
-            metadata["extraction_stats"] = {
-                "key_points": len(key_points),
-                "action_items": len(action_items),
-                "technical_terms": len(technical_terms),
-                "participants": len(participants),
-                "referenced_key_points": len(referenced_key_points),
-                "referenced_decisions": len(referenced_decisions),
-                "reference_count": len(reference_index)
-            }
-
-            return ParsedSummary(
-                summary_text=summary_text,
-                key_points=key_points,
-                action_items=action_items,
-                technical_terms=technical_terms,
-                participants=participants,
-                raw_response=content,
-                parsing_metadata=metadata.copy(),
-                referenced_key_points=referenced_key_points,
-                referenced_action_items=referenced_action_items,
-                referenced_decisions=referenced_decisions,
-                reference_index=reference_index
-            )
-
+            # Clean parse - no recovery needed
+            metadata["parsing_recovery"] = recovery.to_dict()
         except json.JSONDecodeError as e:
-            logger.error(f"JSON parse error: {str(e)}")
-            logger.error(f"Failed JSON string (first 500 chars): {json_str[:500]}")
-            logger.error(f"Failed JSON string (last 500 chars): {json_str[-500:]}")
-            metadata["warnings"].append(f"JSON parse error: {str(e)}")
-            metadata["json_extract_length"] = len(json_str)
-            metadata["json_preview"] = json_str[:200]
+            # ADR-023: Start recovery tracking
+            recovery.had_errors = True
+            recovery.initial_error = str(e)
+            recovery.total_attempts = 1
+            recovery_start = time.monotonic()
+
+            logger.warning(f"JSON parse error: {str(e)}. Attempting recovery...")
+            logger.debug(f"Failed JSON string (first 500 chars): {json_str[:500]}")
+
+            # Step 2: Try JSON repair (ADR-023)
+            if JSON_REPAIR_AVAILABLE:
+                recovery.recovery_steps.append("json_repair")
+                recovery.total_attempts += 1
+                try:
+                    repaired_str = repair_json(json_str)
+                    data = json.loads(repaired_str)
+                    recovery.successful_step = "json_repair"
+                    recovery.recovery_latency_ms = int((time.monotonic() - recovery_start) * 1000)
+                    metadata["parsing_recovery"] = recovery.to_dict()
+                    metadata["json_repaired"] = True
+                    logger.info(f"JSON repair successful (latency={recovery.recovery_latency_ms}ms)")
+                except Exception as repair_error:
+                    logger.warning(f"JSON repair failed: {repair_error}")
+                    metadata["warnings"].append(f"JSON repair failed: {repair_error}")
+            else:
+                logger.warning("json-repair library not available, skipping repair step")
+
+            # If still no data, signal for potential API retry
+            if data is None:
+                recovery.recovery_steps.append("api_retry")
+                metadata["json_extract_length"] = len(json_str)
+                metadata["json_preview"] = json_str[:200]
+                # Store recovery state for engine to potentially retry
+                metadata["_parsing_recovery_pending"] = recovery
+                metadata["_recovery_start"] = recovery_start
+                return None
+
+        if data is None:
             return None
+
+        # Extract components - support multiple format variations
+        summary_text = (
+            data.get("summary_text", "") or
+            data.get("summary", "") or
+            data.get("overview", "") or  # camelCase format
+            data.get("🎯 Overview", "") or
+            data.get("Overview", "")
+        )
+
+        # ADR-004: Track referenced claims
+        referenced_key_points: List[ReferencedClaim] = []
+        referenced_action_items: List[ReferencedClaim] = []
+        referenced_decisions: List[ReferencedClaim] = []
+
+        # Extract key points from various formats
+        key_points_raw = (
+            data.get("key_points", []) or
+            data.get("mainTopics", []) or  # camelCase format
+            data.get("💡 Key Technical Points", []) or
+            data.get("Key Technical Points", []) or
+            []
+        )
+
+        # Flatten key points if they're in dict format
+        key_points = []
+        if isinstance(key_points_raw, list):
+            for item in key_points_raw:
+                if isinstance(item, dict):
+                    # ADR-004: Handle referenced format {"text": "...", "references": [1,2]}
+                    if "text" in item and "references" in item and position_index:
+                        refs = position_index.resolve_many(item.get("references", []))
+                        confidence = item.get("confidence", 1.0)
+                        referenced_key_points.append(ReferencedClaim(
+                            text=item["text"],
+                            references=refs,
+                            confidence=confidence
+                        ))
+                        key_points.append(item["text"])  # Also add flat version
+                    # Handle nested topic/points format: {"topic": "...", "points": [...]}
+                    elif "topic" in item and "points" in item:
+                        # Extract all points from this topic
+                        if isinstance(item["points"], list):
+                            key_points.extend(item["points"])
+                    else:
+                        # Extract values from simple dict (e.g., {"Point 1": "...", "Point 2": "..."})
+                        for key, value in item.items():
+                            if isinstance(value, str) and not key.startswith('_'):
+                                key_points.append(value)
+                elif isinstance(item, str):
+                    key_points.append(item)
+        elif isinstance(key_points_raw, str):
+            key_points = [key_points_raw]
+
+        # ADR-004: Parse decisions (new field)
+        decisions_raw = data.get("decisions", [])
+        for item in decisions_raw:
+            if isinstance(item, dict) and "text" in item and position_index:
+                refs = position_index.resolve_many(item.get("references", []))
+                confidence = item.get("confidence", 1.0)
+                referenced_decisions.append(ReferencedClaim(
+                    text=item["text"],
+                    references=refs,
+                    confidence=confidence
+                ))
+
+        # Parse action items - support custom emoji format
+        action_items_raw = (
+            data.get("action_items", []) or
+            data.get("🔧 Action Items", []) or
+            data.get("Action Items", []) or
+            []
+        )
+        action_items = []
+        for item_data in action_items_raw:
+            if isinstance(item_data, dict):
+                priority = Priority.MEDIUM  # default
+                if "priority" in item_data:
+                    try:
+                        priority = Priority(item_data["priority"].lower())
+                    except ValueError:
+                        pass
+
+                # ADR-004: Handle referenced action items
+                description = item_data.get("description", "") or item_data.get("text", "")
+                action_items.append(ActionItem(
+                    description=description,
+                    assignee=item_data.get("assignee"),
+                    priority=priority
+                ))
+
+                # Create referenced version if references present
+                if "references" in item_data and position_index:
+                    refs = position_index.resolve_many(item_data.get("references", []))
+                    referenced_action_items.append(ReferencedClaim(
+                        text=description,
+                        references=refs,
+                        confidence=item_data.get("confidence", 1.0)
+                    ))
+            elif isinstance(item_data, str):
+                action_items.append(ActionItem(description=item_data))
+
+        # Parse technical terms
+        technical_terms = []
+        for term_data in data.get("technical_terms", []):
+            if isinstance(term_data, dict):
+                technical_terms.append(TechnicalTerm(
+                    term=term_data.get("term", ""),
+                    definition=term_data.get("definition", ""),
+                    context=term_data.get("context", ""),
+                    source_message_id=""  # Will be filled later if possible
+                ))
+
+        # Parse participants (with ADR-004 support for referenced contributions)
+        participants = []
+        for participant_data in data.get("participants", []):
+            if isinstance(participant_data, dict):
+                # Handle referenced contributions
+                referenced_contributions = []
+                key_contributions_raw = participant_data.get("key_contributions", [])
+
+                flat_contributions = []
+                if isinstance(key_contributions_raw, list):
+                    for contrib in key_contributions_raw:
+                        if isinstance(contrib, dict) and "text" in contrib and position_index:
+                            # Referenced contribution
+                            refs = position_index.resolve_many(contrib.get("references", []))
+                            referenced_contributions.append(ReferencedClaim(
+                                text=contrib["text"],
+                                references=refs,
+                                confidence=contrib.get("confidence", 1.0)
+                            ))
+                            flat_contributions.append(contrib["text"])
+                        elif isinstance(contrib, str):
+                            flat_contributions.append(contrib)
+                elif isinstance(key_contributions_raw, str):
+                    flat_contributions = [key_contributions_raw]
+
+                # Also check old format field
+                if not flat_contributions:
+                    flat_contributions = self._ensure_list(participant_data.get("key_contribution", []))
+
+                participants.append(Participant(
+                    user_id="",  # Will be filled from message analysis
+                    display_name=participant_data.get("name", ""),
+                    message_count=participant_data.get("message_count", 0),
+                    key_contributions=flat_contributions,
+                    referenced_contributions=referenced_contributions
+                ))
+
+        # ADR-004: Build deduped reference index
+        reference_index = []
+        if position_index:
+            reference_index = build_deduped_reference_index(
+                referenced_key_points,
+                referenced_action_items,
+                referenced_decisions
+            )
+
+        metadata["extraction_stats"] = {
+            "key_points": len(key_points),
+            "action_items": len(action_items),
+            "technical_terms": len(technical_terms),
+            "participants": len(participants),
+            "referenced_key_points": len(referenced_key_points),
+            "referenced_decisions": len(referenced_decisions),
+            "reference_count": len(reference_index)
+        }
+
+        return ParsedSummary(
+            summary_text=summary_text,
+            key_points=key_points,
+            action_items=action_items,
+            technical_terms=technical_terms,
+            participants=participants,
+            raw_response=content,
+            parsing_metadata=metadata.copy(),
+            referenced_key_points=referenced_key_points,
+            referenced_action_items=referenced_action_items,
+            referenced_decisions=referenced_decisions,
+            reference_index=reference_index
+        )
     
     def _parse_markdown_response(self, content: str, metadata: Dict[str, Any]) -> Optional[ParsedSummary]:
         """Parse markdown-formatted response."""
@@ -436,6 +504,18 @@ class ResponseParser:
         """Parse freeform text response as fallback."""
         metadata["parsing_method"] = "freeform"
         logger.warning("Falling back to freeform parser - JSON/Markdown parsing failed")
+
+        # ADR-023: Finalize recovery tracking if we're falling back due to JSON errors
+        pending_recovery = metadata.pop("_parsing_recovery_pending", None)
+        recovery_start = metadata.pop("_recovery_start", None)
+        if pending_recovery:
+            pending_recovery.recovery_steps.append("freeform_fallback")
+            pending_recovery.successful_step = "freeform_fallback"
+            pending_recovery.total_attempts += 1
+            if recovery_start:
+                pending_recovery.recovery_latency_ms = int((time.monotonic() - recovery_start) * 1000)
+            metadata["parsing_recovery"] = pending_recovery.to_dict()
+            logger.info(f"JSON recovery fell back to freeform (latency={pending_recovery.recovery_latency_ms}ms)")
 
         # Strip code blocks to avoid embedding raw JSON/code
         # Remove ```json ... ``` or ``` ... ``` blocks (complete blocks)

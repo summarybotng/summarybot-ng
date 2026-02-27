@@ -324,6 +324,32 @@ Message 4: Write "file.js"
 
 Remember: **Claude Flow coordinates, Claude Code creates!**
 
+# SummaryBot-NG Project Info
+
+## Production Environment
+- **URL**: https://summarybot-ng.fly.dev
+- **API Base**: /api/v1
+- **Auth Bypass Header**: `X-Test-Auth-Key: 7eb27c608c2e5269ea02d3faa9eca15e577645598eb11e58399f4e9375be4d20`
+- **Primary Guild ID**: 1283874310720716890
+
+## Useful API Endpoints
+```bash
+# List archive summaries
+curl -H "X-Test-Auth-Key: $KEY" "https://summarybot-ng.fly.dev/api/v1/archive/summaries/{guild_id}?limit=10"
+
+# Get specific summary
+curl -H "X-Test-Auth-Key: $KEY" "https://summarybot-ng.fly.dev/api/v1/archive/summaries/{guild_id}/{summary_id}"
+
+# Guild details with stats
+curl -H "X-Test-Auth-Key: $KEY" "https://summarybot-ng.fly.dev/api/v1/guilds/{guild_id}"
+```
+
+## Database
+- Two tables: `summaries` (legacy, 47 records) and `stored_summaries` (174+ records with archive support)
+- Use `StoredSummaryRepository` for current work
+
+---
+
 # important-instruction-reminders
 Do what has been asked; nothing more, nothing less.
 NEVER create files unless they're absolutely necessary for achieving your goal.

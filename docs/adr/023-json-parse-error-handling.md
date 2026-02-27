@@ -246,6 +246,115 @@ The hybrid approach provides defense in depth:
 2. **Phase 2:** Add retry-on-parse-error (similar to ADR-022 truncation retry)
 3. **Phase 3 (Future):** Evaluate migration to tool_use for guaranteed structure
 
+### Parsing Difficulty Tracking
+
+Store parsing metadata on each summary to enable monitoring, debugging, and identifying problematic content patterns.
+
+**New metadata field: `parsing_recovery`**
+
+```json
+{
+  "metadata": {
+    "parsing_recovery": {
+      "had_errors": true,
+      "initial_error": "Expecting ',' delimiter: line 9 column 89",
+      "recovery_steps": ["json_repair", "api_retry"],
+      "successful_step": "json_repair",
+      "total_attempts": 2,
+      "recovery_latency_ms": 45
+    }
+  }
+}
+```
+
+**Field Definitions:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `had_errors` | boolean | Whether any parsing errors occurred |
+| `initial_error` | string | First error message encountered |
+| `recovery_steps` | string[] | Steps attempted: `json_repair`, `api_retry`, `freeform_fallback` |
+| `successful_step` | string | Which step ultimately succeeded (or `none` if all failed) |
+| `total_attempts` | int | Number of parse attempts made |
+| `recovery_latency_ms` | int | Time spent in recovery (excludes initial parse) |
+
+**Example Values:**
+
+Clean parse (no issues):
+```json
+{"parsing_recovery": null}
+```
+
+Repaired successfully:
+```json
+{
+  "parsing_recovery": {
+    "had_errors": true,
+    "initial_error": "Expecting ',' delimiter: line 12 column 45",
+    "recovery_steps": ["json_repair"],
+    "successful_step": "json_repair",
+    "total_attempts": 2,
+    "recovery_latency_ms": 8
+  }
+}
+```
+
+Required API retry:
+```json
+{
+  "parsing_recovery": {
+    "had_errors": true,
+    "initial_error": "Unterminated string starting at: line 5",
+    "recovery_steps": ["json_repair", "api_retry"],
+    "successful_step": "api_retry",
+    "total_attempts": 3,
+    "recovery_latency_ms": 4250
+  }
+}
+```
+
+Fell back to freeform:
+```json
+{
+  "parsing_recovery": {
+    "had_errors": true,
+    "initial_error": "Invalid control character at: line 3",
+    "recovery_steps": ["json_repair", "api_retry", "freeform_fallback"],
+    "successful_step": "freeform_fallback",
+    "total_attempts": 4,
+    "recovery_latency_ms": 5102
+  }
+}
+```
+
+**Queryable Patterns:**
+
+```sql
+-- Find all summaries that required recovery
+SELECT * FROM stored_summaries
+WHERE metadata->'parsing_recovery'->>'had_errors' = 'true';
+
+-- Count by recovery step
+SELECT
+  metadata->'parsing_recovery'->>'successful_step' as recovery_method,
+  COUNT(*)
+FROM stored_summaries
+WHERE metadata->'parsing_recovery' IS NOT NULL
+GROUP BY 1;
+
+-- Find summaries that fell back to freeform (degraded quality)
+SELECT * FROM stored_summaries
+WHERE metadata->'parsing_recovery'->>'successful_step' = 'freeform_fallback';
+
+-- Average recovery latency by step
+SELECT
+  metadata->'parsing_recovery'->>'successful_step' as method,
+  AVG((metadata->'parsing_recovery'->>'recovery_latency_ms')::int) as avg_latency_ms
+FROM stored_summaries
+WHERE metadata->'parsing_recovery'->>'had_errors' = 'true'
+GROUP BY 1;
+```
+
 ## Consequences
 
 ### Positive
@@ -253,6 +362,11 @@ The hybrid approach provides defense in depth:
 - Multiple recovery mechanisms
 - Maintains citation features (ADR-004)
 - Logged for monitoring and debugging
+- `parsing_recovery` metadata enables:
+  - Identifying problematic content patterns
+  - Measuring recovery success rates
+  - Tracking degraded summaries (freeform fallback)
+  - Cost analysis of API retries
 
 ### Negative
 - New dependency (`json-repair`)
@@ -266,9 +380,82 @@ The hybrid approach provides defense in depth:
 ## Implementation
 
 ### Files to Change
-- `src/summarization/response_parser.py` - Add repair step and retry signal
-- `src/summarization/engine.py` - Handle retry signal for JSON errors
+- `src/summarization/response_parser.py` - Add repair step, retry signal, and `parsing_recovery` tracking
+- `src/summarization/engine.py` - Handle retry signal for JSON errors, populate recovery metadata
+- `src/models/summary.py` - Add `ParsingRecovery` dataclass (optional, can use dict)
 - `requirements.txt` - Add `json-repair` dependency
+
+### Updated Implementation with Tracking
+
+```python
+import time
+from json_repair import repair_json
+from dataclasses import dataclass, asdict
+from typing import Optional, List
+
+@dataclass
+class ParsingRecovery:
+    """Tracks parsing difficulty for a summary."""
+    had_errors: bool = False
+    initial_error: Optional[str] = None
+    recovery_steps: List[str] = None
+    successful_step: Optional[str] = None
+    total_attempts: int = 1
+    recovery_latency_ms: int = 0
+
+    def __post_init__(self):
+        if self.recovery_steps is None:
+            self.recovery_steps = []
+
+    def to_dict(self) -> dict:
+        return asdict(self) if self.had_errors else None
+
+
+async def parse_response_with_tracking(content: str, metadata: dict) -> ParsedSummary:
+    recovery = ParsingRecovery()
+    recovery_start = None
+
+    # Step 1: Try normal parse
+    json_str = extract_json(content)
+    try:
+        data = json.loads(json_str)
+        metadata["parsing_recovery"] = recovery.to_dict()  # None for clean parse
+        return build_summary(data)
+    except JSONDecodeError as e:
+        recovery.had_errors = True
+        recovery.initial_error = str(e)
+        recovery.total_attempts = 1
+        recovery_start = time.monotonic()
+
+    # Step 2: Try repair
+    recovery.recovery_steps.append("json_repair")
+    recovery.total_attempts += 1
+    try:
+        repaired = repair_json(json_str)
+        data = json.loads(repaired)
+        recovery.successful_step = "json_repair"
+        recovery.recovery_latency_ms = int((time.monotonic() - recovery_start) * 1000)
+        metadata["parsing_recovery"] = recovery.to_dict()
+        metadata["json_repaired"] = True
+        return build_summary(data)
+    except Exception as e:
+        metadata["warnings"].append(f"JSON repair failed: {e}")
+
+    # Step 3: Signal retry needed (engine handles actual retry)
+    if not metadata.get("json_retry_attempted"):
+        recovery.recovery_steps.append("api_retry")
+        recovery.total_attempts += 1
+        metadata["parsing_recovery_pending"] = recovery  # Pass to engine
+        return None  # Signal retry
+
+    # Step 4: Freeform fallback
+    recovery.recovery_steps.append("freeform_fallback")
+    recovery.successful_step = "freeform_fallback"
+    recovery.total_attempts += 1
+    recovery.recovery_latency_ms = int((time.monotonic() - recovery_start) * 1000)
+    metadata["parsing_recovery"] = recovery.to_dict()
+    return parse_freeform(content)
+```
 
 ### Monitoring
 

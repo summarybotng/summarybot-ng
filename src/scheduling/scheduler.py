@@ -252,8 +252,14 @@ class TaskScheduler:
         if task.id not in self.active_tasks:
             return False
 
-        # Cancel existing job
+        # Preserve is_active from the updated task (cancel_task would set it to False)
+        preserve_active = task.is_active
+
+        # Cancel existing job (this sets is_active to False)
         await self.cancel_task(task.id)
+
+        # Restore the intended is_active value
+        task.is_active = preserve_active
 
         # Re-schedule with new settings
         await self.schedule_task(task)

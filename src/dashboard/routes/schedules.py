@@ -394,14 +394,25 @@ async def update_schedule(
 
     if body.destinations is not None:
         from ...models.task import Destination, DestinationType
-        task.destinations = [
-            Destination(
-                type=DestinationType(d.type),
-                target=d.target,
-                format=d.format,
+        new_destinations = []
+        for d in body.destinations:
+            # Handle destination type - could be string or enum
+            dest_type = d.type
+            if isinstance(dest_type, str):
+                try:
+                    dest_type = DestinationType(dest_type)
+                except ValueError:
+                    # Try matching by name if value doesn't work
+                    dest_type = DestinationType[dest_type.upper()]
+            new_destinations.append(
+                Destination(
+                    type=dest_type,
+                    target=d.target,
+                    format=d.format,
+                    enabled=True,
+                )
             )
-            for d in body.destinations
-        ]
+        task.destinations = new_destinations
 
     if body.summary_options is not None:
         from ...models.summary import SummaryLength

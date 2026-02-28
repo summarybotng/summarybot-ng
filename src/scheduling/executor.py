@@ -771,13 +771,15 @@ class TaskExecutor:
 
             title = f"{', '.join(channel_names)} — {datetime.utcnow().strftime('%b %d, %H:%M')}"
 
-            # Create stored summary
+            # Create stored summary with SCHEDULED source
+            from ..models.stored_summary import SummarySource
             stored_summary = StoredSummary(
                 guild_id=task.guild_id,
                 source_channel_ids=channel_ids,
                 schedule_id=task.scheduled_task.id,
                 summary_result=summary,
                 title=title,
+                source=SummarySource.SCHEDULED,
             )
 
             # Persist to database

@@ -50,7 +50,8 @@ from ..models.task import (
     Destination,
     TaskStatus,
     ScheduleType,
-    DestinationType
+    DestinationType,
+    SummaryScope
 )
 from ..models.feed import FeedConfig, FeedType
 from ..models.error_log import ErrorLog, ErrorType, ErrorSeverity
@@ -436,14 +437,21 @@ class SQLiteTaskRepository(TaskRepository):
 
     async def save_task(self, task: ScheduledTask) -> str:
         """Save or update a scheduled task."""
+        # Get scope value safely
+        scope_value = None
+        if hasattr(task, 'scope') and task.scope is not None:
+            scope_value = task.scope.value if hasattr(task.scope, 'value') else str(task.scope)
+
         query = """
         INSERT OR REPLACE INTO scheduled_tasks (
             id, name, channel_id, guild_id, schedule_type,
             schedule_time, schedule_days, cron_expression,
             destinations, summary_options, is_active,
             created_at, created_by, last_run, next_run,
-            run_count, failure_count, max_failures, retry_delay_minutes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            run_count, failure_count, max_failures, retry_delay_minutes,
+            scope, channel_ids, category_id, excluded_channel_ids,
+            resolve_category_at_runtime, timezone
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -465,7 +473,13 @@ class SQLiteTaskRepository(TaskRepository):
             task.run_count,
             task.failure_count,
             task.max_failures,
-            task.retry_delay_minutes
+            task.retry_delay_minutes,
+            scope_value,
+            json.dumps(getattr(task, 'channel_ids', [])),
+            getattr(task, 'category_id', None),
+            json.dumps(getattr(task, 'excluded_channel_ids', [])),
+            1 if getattr(task, 'resolve_category_at_runtime', False) else 0,
+            getattr(task, 'timezone', 'UTC')
         )
 
         await self.connection.execute(query, params)
@@ -549,10 +563,31 @@ class SQLiteTaskRepository(TaskRepository):
         options_data['summary_length'] = SummaryLength(options_data['summary_length'])
         summary_options = SummaryOptions(**options_data)
 
+        # Parse scope (ADR-011)
+        scope_str = row.get('scope')
+        scope = None
+        if scope_str:
+            try:
+                scope = SummaryScope(scope_str)
+            except (ValueError, KeyError):
+                scope = SummaryScope.CHANNEL
+
+        # Parse channel_ids and excluded_channel_ids
+        channel_ids_str = row.get('channel_ids', '[]')
+        channel_ids = json.loads(channel_ids_str) if channel_ids_str else []
+
+        excluded_str = row.get('excluded_channel_ids', '[]')
+        excluded_channel_ids = json.loads(excluded_str) if excluded_str else []
+
         return ScheduledTask(
             id=row['id'],
             name=row['name'],
             channel_id=row['channel_id'],
+            channel_ids=channel_ids,
+            category_id=row.get('category_id'),
+            excluded_channel_ids=excluded_channel_ids,
+            scope=scope,
+            resolve_category_at_runtime=bool(row.get('resolve_category_at_runtime', 0)),
             guild_id=row['guild_id'],
             schedule_type=ScheduleType(row['schedule_type']),
             schedule_time=row['schedule_time'],
@@ -561,6 +596,7 @@ class SQLiteTaskRepository(TaskRepository):
             destinations=destinations,
             summary_options=summary_options,
             is_active=bool(row['is_active']),
+            timezone=row.get('timezone', 'UTC'),
             created_at=datetime.fromisoformat(row['created_at']),
             created_by=row['created_by'],
             last_run=datetime.fromisoformat(row['last_run']) if row['last_run'] else None,

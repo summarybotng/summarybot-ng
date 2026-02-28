@@ -61,9 +61,11 @@ def _task_to_response(task, category_name: str = None) -> ScheduleListItem:
     """Convert ScheduledTask to API response."""
     destinations = []
     for dest in task.destinations:
+        # Handle both enum and string types (from database persistence)
+        dest_type = dest.type.value if hasattr(dest.type, 'value') else str(dest.type)
         destinations.append(
             DestinationResponse(
-                type=dest.type.value,
+                type=dest_type,
                 target=dest.target,
                 format=dest.format,
             )

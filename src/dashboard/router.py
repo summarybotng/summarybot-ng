@@ -9,7 +9,7 @@ from fastapi import APIRouter, FastAPI
 from cryptography.fernet import Fernet
 
 from .auth import DashboardAuth, set_auth_instance
-from .routes import auth_router, guilds_router, summaries_router, schedules_router, webhooks_router, events_router, feeds_router, errors_router, archive_router, prompts_router, push_templates_router
+from .routes import auth_router, guilds_router, summaries_router, schedules_router, webhooks_router, events_router, feeds_router, errors_router, archive_router, prompts_router, push_templates_router, health_router
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +116,9 @@ def setup_dashboard_api(
         config_manager=config_manager,
     )
     app.include_router(router)
+
+    # ADR-024: Health check endpoints at root level (not under /api/v1)
+    app.include_router(health_router)
     logger.info("Dashboard API routes added to application")
 
     # Initialize error tracker on startup

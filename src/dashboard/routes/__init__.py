@@ -111,6 +111,7 @@ from .errors import router as errors_router
 from .archive import router as archive_router
 from .prompts import router as prompts_router
 from .push_templates import router as push_templates_router
+from .health import router as health_router  # ADR-024
 
 __all__ = [
     "auth_router",
@@ -124,6 +125,7 @@ __all__ = [
     "archive_router",
     "prompts_router",
     "push_templates_router",
+    "health_router",
     "set_services",
     "get_discord_bot",
     "get_summarization_engine",

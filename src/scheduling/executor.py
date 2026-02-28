@@ -295,24 +295,34 @@ class TaskExecutor:
             Task execution result
         """
         channel_ids = task.get_all_channel_ids()
-        logger.info(f"Executing combined mode for {len(channel_ids)} channel(s): {channel_ids}")
+        is_multi_channel = len(channel_ids) > 1
+        logger.info(f"Executing combined mode for {len(channel_ids)} channel(s): {channel_ids[:5]}{'...' if len(channel_ids) > 5 else ''}")
 
         try:
             # Get time range for messages
             start_msg_time, end_msg_time = task.get_time_range()
 
             # Fetch and process messages from all channels
+            # For multi-channel, skip per-channel min check and do aggregate check later
             all_messages = []
             channel_names = []
 
             for channel_id in channel_ids:
-                channel_messages = await self.message_processor.process_channel_messages(
-                    channel_id=channel_id,
-                    start_time=start_msg_time,
-                    end_time=end_msg_time,
-                    options=task.summary_options
-                )
-                all_messages.extend(channel_messages)
+                try:
+                    channel_messages = await self.message_processor.process_channel_messages(
+                        channel_id=channel_id,
+                        start_time=start_msg_time,
+                        end_time=end_msg_time,
+                        options=task.summary_options,
+                        skip_min_check=is_multi_channel  # Skip per-channel check for multi-channel
+                    )
+                    all_messages.extend(channel_messages)
+                except InsufficientContentError:
+                    # For single channel, re-raise; for multi-channel, continue to next channel
+                    if not is_multi_channel:
+                        raise
+                    # Multi-channel: this channel had no messages, continue to others
+                    logger.debug(f"Channel {channel_id} had no messages, continuing to next channel")
 
                 # Try to get channel name from Discord client
                 if self.discord_client:
@@ -329,6 +339,13 @@ class TaskExecutor:
 
             # Sort messages by timestamp
             all_messages.sort(key=lambda m: m.timestamp)
+
+            # For multi-channel, do aggregate min_messages check here
+            if is_multi_channel and len(all_messages) < task.summary_options.min_messages:
+                raise InsufficientContentError(
+                    message_count=len(all_messages),
+                    min_required=task.summary_options.min_messages
+                )
 
             logger.info(f"Fetched {len(all_messages)} total messages from {len(channel_ids)} channel(s)")
 

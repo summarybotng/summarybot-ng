@@ -33,16 +33,18 @@ class MessageProcessor:
                                      start_time: datetime,
                                      end_time: datetime,
                                      options: SummaryOptions,
-                                     limit: Optional[int] = None) -> List[ProcessedMessage]:
+                                     limit: Optional[int] = None,
+                                     skip_min_check: bool = False) -> List[ProcessedMessage]:
         """Process messages from a channel for summarization.
-        
+
         Args:
             channel_id: Discord channel ID
             start_time: Start of time range
             end_time: End of time range
             options: Summary options for filtering
             limit: Optional message limit
-            
+            skip_min_check: If True, skip min_messages validation (for multi-channel aggregation)
+
         Returns:
             List of processed messages ready for summarization
         """
@@ -53,9 +55,9 @@ class MessageProcessor:
             end_time=end_time,
             limit=limit
         )
-        
+
         # Process messages through pipeline
-        return await self._process_message_pipeline(raw_messages, options)
+        return await self._process_message_pipeline(raw_messages, options, skip_min_check=skip_min_check)
     
     async def process_thread_messages(self,
                                     thread_id: str,
@@ -92,32 +94,42 @@ class MessageProcessor:
 
     async def _process_message_pipeline(self,
                                       raw_messages: List[discord.Message],
-                                      options: SummaryOptions) -> List[ProcessedMessage]:
-        """Process messages through the complete pipeline."""
+                                      options: SummaryOptions,
+                                      skip_min_check: bool = False) -> List[ProcessedMessage]:
+        """Process messages through the complete pipeline.
+
+        Args:
+            raw_messages: Raw Discord messages to process
+            options: Summary options for filtering
+            skip_min_check: If True, skip min_messages validation (for multi-channel aggregation)
+
+        Returns:
+            List of processed messages
+        """
         # Filter messages
         filtered_messages = self.filter.filter_messages(raw_messages, options)
-        
+
         # Clean and extract information from each message
         processed_messages = []
         for message in filtered_messages:
             try:
                 processed = self.cleaner.clean_message(message)
                 processed = self.extractor.extract_information(processed, message)
-                
+
                 # Validate processed message
                 if self.validator.is_valid_message(processed):
                     processed_messages.append(processed)
-                    
+
             except Exception as e:
                 # Log error but continue processing other messages
                 print(f"Error processing message {message.id}: {e}")
                 continue
-        
-        # Final validation
-        if len(processed_messages) < options.min_messages:
+
+        # Final validation (skip for multi-channel aggregation where caller checks aggregate)
+        if not skip_min_check and len(processed_messages) < options.min_messages:
             raise InsufficientContentError(
                 message_count=len(processed_messages),
                 min_required=options.min_messages
             )
-        
+
         return processed_messages

@@ -120,6 +120,8 @@ class SQLiteConnection(DatabaseConnection):
                 await conn.execute("PRAGMA journal_mode=WAL")
                 # Enable foreign keys
                 await conn.execute("PRAGMA foreign_keys=ON")
+                # Set busy timeout to wait for locks (5 seconds)
+                await conn.execute("PRAGMA busy_timeout=5000")
                 self._connections.append(conn)
                 await self._available.put(conn)
 
@@ -150,12 +152,32 @@ class SQLiteConnection(DatabaseConnection):
         finally:
             await self._available.put(conn)
 
-    async def execute(self, query: str, params: Optional[tuple] = None) -> Any:
-        """Execute a database query."""
-        async with self._get_connection() as conn:
-            cursor = await conn.execute(query, params or ())
-            await conn.commit()
-            return cursor
+    async def execute(self, query: str, params: Optional[tuple] = None, max_retries: int = 3) -> Any:
+        """Execute a database query with retry for lock errors.
+
+        Args:
+            query: SQL query to execute
+            params: Query parameters
+            max_retries: Maximum retry attempts for transient errors
+        """
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                async with self._get_connection() as conn:
+                    cursor = await conn.execute(query, params or ())
+                    await conn.commit()
+                    return cursor
+            except Exception as e:
+                error_str = str(e).lower()
+                if 'locked' in error_str or 'busy' in error_str:
+                    last_error = e
+                    wait_time = 0.1 * (2 ** attempt)  # Exponential backoff: 0.1s, 0.2s, 0.4s
+                    logger.warning(f"Database locked, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(wait_time)
+                else:
+                    raise
+        # All retries failed
+        raise last_error
 
     async def fetch_one(self, query: str, params: Optional[tuple] = None) -> Optional[Dict[str, Any]]:
         """Fetch a single row from the database."""

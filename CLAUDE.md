@@ -329,11 +329,13 @@ Remember: **Claude Flow coordinates, Claude Code creates!**
 ## Production Environment
 - **URL**: https://summarybot-ng.fly.dev
 - **API Base**: /api/v1
-- **Auth Bypass Header**: `X-Test-Auth-Key: 7eb27c608c2e5269ea02d3faa9eca15e577645598eb11e58399f4e9375be4d20`
+- **Auth Bypass Header**: `X-Test-Auth-Key: <see TEST_AUTH_SECRET in .env>`
 - **Primary Guild ID**: 1283874310720716890
 
 ## Useful API Endpoints
 ```bash
+# Set KEY from .env first: KEY=$(grep TEST_AUTH_SECRET .env | cut -d= -f2)
+
 # List archive summaries
 curl -H "X-Test-Auth-Key: $KEY" "https://summarybot-ng.fly.dev/api/v1/archive/summaries/{guild_id}?limit=10"
 

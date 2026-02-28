@@ -1,7 +1,7 @@
 # ADR-024: Service Resilience and Availability
 
 ## Status
-Proposed
+Partially Implemented (Phase 1 complete)
 
 ## Date
 2026-02-28

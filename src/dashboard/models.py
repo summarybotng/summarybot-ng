@@ -145,6 +145,9 @@ class GuildListItem(BaseModel):
     summary_count: int
     last_summary_at: Optional[datetime]
     config_status: ConfigStatus
+    schedule_count: int = 0
+    webhook_count: int = 0
+    feed_count: int = 0
 
 
 class GuildsResponse(BaseModel):

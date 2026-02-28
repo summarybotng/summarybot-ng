@@ -160,7 +160,7 @@ class TaskScheduler:
 
             # Persist to database (preferred) or file-based storage
             if self.task_repository:
-                await self.task_repository.save(task)
+                await self.task_repository.save_task(task)
                 logger.debug(f"Saved task {task.id} to database")
             elif self.persistence:
                 await self.persistence.save_task(task)
@@ -545,7 +545,7 @@ class TaskScheduler:
         """Persist a single task to storage (database preferred)."""
         try:
             if self.task_repository:
-                await self.task_repository.save(task)
+                await self.task_repository.save_task(task)
             elif self.persistence:
                 await self.persistence.update_task(task)
         except Exception as e:

@@ -24,7 +24,7 @@ from ..models import (
     ConfigStatus,
     ErrorResponse,
 )
-from . import get_discord_bot, get_config_manager, get_config_repository, get_summary_repository, get_task_repository
+from . import get_discord_bot, get_config_manager, get_config_repository, get_summary_repository, get_task_repository, get_webhook_repository, get_feed_repository
 from ...data.base import SearchCriteria
 
 logger = logging.getLogger(__name__)
@@ -75,6 +75,11 @@ async def list_guilds(user: dict = Depends(get_current_user)):
     from . import get_stored_summary_repository
     stored_repo = await get_stored_summary_repository()
 
+    # Get repositories for counts
+    task_repo = await get_task_repository()
+    webhook_repo = await get_webhook_repository()
+    feed_repo = await get_feed_repository()
+
     guild_items = []
     for guild_id in user.get("guilds", []):
         guild = bot.client.get_guild(int(guild_id)) if bot and bot.client else None
@@ -114,6 +119,33 @@ async def list_guilds(user: dict = Depends(get_current_user)):
                 if recent:
                     last_summary_at = recent[0].created_at
 
+        # Get schedule count (active schedules only)
+        schedule_count = 0
+        if task_repo:
+            try:
+                tasks = await task_repo.get_tasks_by_guild(guild_id)
+                schedule_count = len([t for t in tasks if t.is_active])
+            except Exception as e:
+                logger.warning(f"Failed to get schedules for guild {guild_id}: {e}")
+
+        # Get webhook count
+        webhook_count = 0
+        if webhook_repo:
+            try:
+                webhooks = await webhook_repo.get_webhooks_by_guild(guild_id)
+                webhook_count = len(webhooks)
+            except Exception as e:
+                logger.warning(f"Failed to get webhooks for guild {guild_id}: {e}")
+
+        # Get feed count
+        feed_count = 0
+        if feed_repo:
+            try:
+                feeds = await feed_repo.get_feeds_by_guild(guild_id)
+                feed_count = len(feeds)
+            except Exception as e:
+                logger.warning(f"Failed to get feeds for guild {guild_id}: {e}")
+
         guild_items.append(
             GuildListItem(
                 id=str(guild.id),
@@ -123,6 +155,9 @@ async def list_guilds(user: dict = Depends(get_current_user)):
                 summary_count=summary_count,
                 last_summary_at=last_summary_at,
                 config_status=config_status,
+                schedule_count=schedule_count,
+                webhook_count=webhook_count,
+                feed_count=feed_count,
             )
         )
 

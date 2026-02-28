@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 
-from ..models.task import ScheduledTask, ScheduleType, Destination, DestinationType
+from ..models.task import ScheduledTask, ScheduleType, Destination, DestinationType, SummaryScope
 from ..models.summary import SummaryOptions, SummaryLength
 from ..config.constants import DEFAULT_SUMMARIZATION_MODEL
 from ..exceptions import ConfigurationError, create_error_context
@@ -161,10 +161,20 @@ class TaskPersistence:
         Returns:
             Serialized task data
         """
+        # Get scope value safely (handle both enum and string)
+        scope_value = None
+        if hasattr(task, 'scope') and task.scope is not None:
+            scope_value = task.scope.value if hasattr(task.scope, 'value') else str(task.scope)
+
         return {
             "id": task.id,
             "name": task.name,
             "channel_id": task.channel_id,
+            "channel_ids": getattr(task, 'channel_ids', []),
+            "category_id": getattr(task, 'category_id', None),
+            "excluded_channel_ids": getattr(task, 'excluded_channel_ids', []),
+            "scope": scope_value,
+            "resolve_category_at_runtime": getattr(task, 'resolve_category_at_runtime', False),
             "guild_id": task.guild_id,
             "schedule_type": task.schedule_type.value,
             "schedule_time": task.schedule_time,
@@ -247,10 +257,24 @@ class TaskPersistence:
         last_run = datetime.fromisoformat(data["last_run"]) if data.get("last_run") else None
         next_run = datetime.fromisoformat(data["next_run"]) if data.get("next_run") else None
 
+        # Parse scope (ADR-011)
+        scope_str = data.get("scope")
+        scope = None
+        if scope_str:
+            try:
+                scope = SummaryScope(scope_str)
+            except (ValueError, KeyError):
+                scope = SummaryScope.CHANNEL
+
         return ScheduledTask(
             id=data["id"],
             name=data.get("name", ""),
             channel_id=data["channel_id"],
+            channel_ids=data.get("channel_ids", []),
+            category_id=data.get("category_id"),
+            excluded_channel_ids=data.get("excluded_channel_ids", []),
+            scope=scope,
+            resolve_category_at_runtime=data.get("resolve_category_at_runtime", False),
             guild_id=data["guild_id"],
             schedule_type=ScheduleType(data["schedule_type"]),
             schedule_time=data.get("schedule_time"),

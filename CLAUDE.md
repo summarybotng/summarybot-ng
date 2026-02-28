@@ -327,23 +327,28 @@ Remember: **Claude Flow coordinates, Claude Code creates!**
 # SummaryBot-NG Project Info
 
 ## Production Environment
+
+See `.env.production` (gitignored) for secrets. Key values:
 - **URL**: https://summarybot-ng.fly.dev
 - **API Base**: /api/v1
-- **Auth Bypass Header**: `X-Test-Auth-Key: <see TEST_AUTH_SECRET in .env>`
-- **Primary Guild ID**: 1283874310720716890
+- **Auth Header**: `X-Test-Auth-Key: <TEST_AUTH_SECRET from .env.production>`
 
 ## Useful API Endpoints
 ```bash
-# Set KEY from .env first: KEY=$(grep TEST_AUTH_SECRET .env | cut -d= -f2)
+# Load production secrets
+source .env.production 2>/dev/null || export TEST_AUTH_SECRET=$(grep TEST_AUTH_SECRET .env.production | cut -d= -f2)
 
 # List archive summaries
-curl -H "X-Test-Auth-Key: $KEY" "https://summarybot-ng.fly.dev/api/v1/archive/summaries/{guild_id}?limit=10"
+curl -H "X-Test-Auth-Key: $TEST_AUTH_SECRET" "https://summarybot-ng.fly.dev/api/v1/archive/summaries/$PRIMARY_GUILD_ID?limit=10"
 
 # Get specific summary
-curl -H "X-Test-Auth-Key: $KEY" "https://summarybot-ng.fly.dev/api/v1/archive/summaries/{guild_id}/{summary_id}"
+curl -H "X-Test-Auth-Key: $TEST_AUTH_SECRET" "https://summarybot-ng.fly.dev/api/v1/archive/summaries/$PRIMARY_GUILD_ID/{summary_id}"
 
 # Guild details with stats
-curl -H "X-Test-Auth-Key: $KEY" "https://summarybot-ng.fly.dev/api/v1/guilds/{guild_id}"
+curl -H "X-Test-Auth-Key: $TEST_AUTH_SECRET" "https://summarybot-ng.fly.dev/api/v1/guilds/$PRIMARY_GUILD_ID"
+
+# Health check
+curl "https://summarybot-ng.fly.dev/health"
 ```
 
 ## Database

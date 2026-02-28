@@ -213,24 +213,60 @@ class TaskScheduler:
             logger.error(f"Failed to cancel task {task_id}: {e}")
             return False
 
-    async def get_scheduled_tasks(self, guild_id: Optional[str] = None) -> List[ScheduledTask]:
+    async def get_scheduled_tasks(self, guild_id: Optional[str] = None, include_inactive: bool = True) -> List[ScheduledTask]:
         """Get all scheduled tasks, optionally filtered by guild.
 
         Args:
             guild_id: Optional guild ID to filter by
+            include_inactive: Include inactive tasks from persistence (default True)
 
         Returns:
             List of scheduled tasks
         """
-        tasks = list(self.active_tasks.values())
+        # Start with active tasks
+        tasks_by_id = {task.id: task for task in self.active_tasks.values()}
+
+        # Include inactive tasks from persistence
+        if include_inactive and self.persistence:
+            try:
+                all_persisted = await self.persistence.load_all_tasks()
+                for task in all_persisted:
+                    if task.id not in tasks_by_id:
+                        tasks_by_id[task.id] = task
+            except Exception as e:
+                logger.warning(f"Failed to load inactive tasks: {e}")
+
+        tasks = list(tasks_by_id.values())
 
         if guild_id:
             tasks = [task for task in tasks if task.guild_id == guild_id]
 
         return tasks
 
+    async def get_task_async(self, task_id: str) -> Optional[ScheduledTask]:
+        """Get a single task by ID (async, includes inactive tasks).
+
+        Args:
+            task_id: Task ID
+
+        Returns:
+            ScheduledTask or None if not found
+        """
+        # Check active tasks first
+        if task_id in self.active_tasks:
+            return self.active_tasks[task_id]
+
+        # Check persistence for inactive tasks
+        if self.persistence:
+            try:
+                return await self.persistence.load_task(task_id)
+            except Exception as e:
+                logger.warning(f"Failed to load task {task_id} from persistence: {e}")
+
+        return None
+
     def get_task(self, task_id: str) -> Optional[ScheduledTask]:
-        """Get a single task by ID.
+        """Get a single task by ID (sync, active tasks only).
 
         Args:
             task_id: Task ID
@@ -249,20 +285,24 @@ class TaskScheduler:
         Returns:
             True if updated successfully
         """
-        if task.id not in self.active_tasks:
-            return False
-
-        # Preserve is_active from the updated task (cancel_task would set it to False)
+        # Preserve is_active from the updated task
         preserve_active = task.is_active
 
-        # Cancel existing job (this sets is_active to False)
-        await self.cancel_task(task.id)
+        # Cancel existing job if active (this sets is_active to False)
+        if task.id in self.active_tasks:
+            await self.cancel_task(task.id)
 
         # Restore the intended is_active value
         task.is_active = preserve_active
 
-        # Re-schedule with new settings
-        await self.schedule_task(task)
+        # Re-schedule with new settings (or just persist if inactive)
+        if task.is_active:
+            await self.schedule_task(task)
+        else:
+            # Just persist the updated inactive task
+            if self.persistence:
+                await self.persistence.save_task(task)
+
         return True
 
     async def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:

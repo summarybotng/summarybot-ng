@@ -278,7 +278,7 @@ async def get_schedule(
             detail={"code": "NOT_FOUND", "message": "Schedule not found"},
         )
 
-    task = scheduler.get_task(schedule_id)
+    task = await scheduler.get_task_async(schedule_id)
     if not task or task.guild_id != guild_id:
         raise HTTPException(
             status_code=404,
@@ -325,7 +325,7 @@ async def update_schedule(
             detail={"code": "NOT_FOUND", "message": "Schedule not found"},
         )
 
-    task = scheduler.get_task(schedule_id)
+    task = await scheduler.get_task_async(schedule_id)
     if not task or task.guild_id != guild_id:
         raise HTTPException(
             status_code=404,
@@ -442,7 +442,7 @@ async def delete_schedule(
             detail={"code": "NOT_FOUND", "message": "Schedule not found"},
         )
 
-    task = scheduler.get_task(schedule_id)
+    task = await scheduler.get_task_async(schedule_id)
     if not task or task.guild_id != guild_id:
         raise HTTPException(
             status_code=404,
@@ -479,7 +479,7 @@ async def run_schedule(
             detail={"code": "NOT_FOUND", "message": "Schedule not found"},
         )
 
-    task = scheduler.get_task(schedule_id)
+    task = await scheduler.get_task_async(schedule_id)
     if not task or task.guild_id != guild_id:
         raise HTTPException(
             status_code=404,
@@ -525,7 +525,7 @@ async def get_execution_history(
             detail={"code": "NOT_FOUND", "message": "Schedule not found"},
         )
 
-    task = scheduler.get_task(schedule_id)
+    task = await scheduler.get_task_async(schedule_id)
     if not task or task.guild_id != guild_id:
         raise HTTPException(
             status_code=404,

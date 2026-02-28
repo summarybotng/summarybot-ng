@@ -7,11 +7,18 @@ Provides:
 - /health/ready - Readiness probe for load balancer
 """
 
-import psutil
 import logging
 from datetime import datetime
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+
+# psutil is optional - graceful degradation if not installed
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    psutil = None
+    PSUTIL_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +35,19 @@ async def health_check():
 
     Returns 200 if healthy, 503 if degraded.
     """
-    memory = psutil.virtual_memory()
-
     checks = {
-        "memory_percent": round(memory.percent, 1),
-        "memory_available_mb": memory.available // (1024 * 1024),
         "uptime_seconds": int((datetime.utcnow() - _start_time).total_seconds()),
     }
+
+    # Memory checks (optional - requires psutil)
+    if PSUTIL_AVAILABLE:
+        memory = psutil.virtual_memory()
+        checks["memory_percent"] = round(memory.percent, 1)
+        checks["memory_available_mb"] = memory.available // (1024 * 1024)
+    else:
+        checks["memory_percent"] = None
+        checks["memory_available_mb"] = None
+        checks["psutil_available"] = False
 
     # Check database
     try:
@@ -74,8 +87,9 @@ async def health_check():
         checks["summarization_engine"] = f"error: {type(e).__name__}"
 
     # Determine overall health
+    memory_ok = checks["memory_percent"] is None or checks["memory_percent"] < 90
     is_healthy = (
-        checks["memory_percent"] < 90 and
+        memory_ok and
         checks["database"] in ("ok", "not_initialized") and
         checks["discord"] in ("connected", "connecting", "not_configured")
     )
@@ -123,10 +137,11 @@ async def readiness():
     except Exception as e:
         errors.append(f"database_error: {type(e).__name__}")
 
-    # Check memory isn't critically low
-    memory = psutil.virtual_memory()
-    if memory.percent > 95:
-        errors.append(f"memory_critical: {memory.percent}%")
+    # Check memory isn't critically low (if psutil available)
+    if PSUTIL_AVAILABLE:
+        memory = psutil.virtual_memory()
+        if memory.percent > 95:
+            errors.append(f"memory_critical: {memory.percent}%")
 
     if errors:
         return JSONResponse(

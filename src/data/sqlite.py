@@ -101,6 +101,7 @@ class SQLiteConnection(DatabaseConnection):
         self._connections: List[aiosqlite.Connection] = []
         self._available: asyncio.Queue = asyncio.Queue(maxsize=pool_size)
         self._lock = asyncio.Lock()
+        self._write_lock = asyncio.Lock()  # Serialize all writes to avoid SQLite locking issues
         self._initialized = False
 
     async def connect(self) -> None:
@@ -152,26 +153,43 @@ class SQLiteConnection(DatabaseConnection):
         finally:
             await self._available.put(conn)
 
-    async def execute(self, query: str, params: Optional[tuple] = None, max_retries: int = 3) -> Any:
+    async def execute(self, query: str, params: Optional[tuple] = None, max_retries: int = 5) -> Any:
         """Execute a database query with retry for lock errors.
+
+        Uses a write lock to serialize write operations (INSERT, UPDATE, DELETE)
+        to prevent SQLite locking issues with concurrent writes.
 
         Args:
             query: SQL query to execute
             params: Query parameters
             max_retries: Maximum retry attempts for transient errors
         """
+        # Check if this is a write operation
+        query_upper = query.strip().upper()
+        is_write = query_upper.startswith(('INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'CREATE', 'DROP', 'ALTER'))
+
         last_error = None
         for attempt in range(max_retries):
             try:
-                async with self._get_connection() as conn:
-                    cursor = await conn.execute(query, params or ())
-                    await conn.commit()
-                    return cursor
+                if is_write:
+                    # Serialize writes to prevent concurrent write conflicts
+                    async with self._write_lock:
+                        async with self._get_connection() as conn:
+                            cursor = await conn.execute(query, params or ())
+                            await conn.commit()
+                            return cursor
+                else:
+                    # Reads can proceed concurrently
+                    async with self._get_connection() as conn:
+                        cursor = await conn.execute(query, params or ())
+                        await conn.commit()
+                        return cursor
             except Exception as e:
                 error_str = str(e).lower()
                 if 'locked' in error_str or 'busy' in error_str:
                     last_error = e
-                    wait_time = 0.1 * (2 ** attempt)  # Exponential backoff: 0.1s, 0.2s, 0.4s
+                    # Longer waits: 0.5s, 1s, 2s, 4s, 8s = 15.5s total
+                    wait_time = 0.5 * (2 ** attempt)
                     logger.warning(f"Database locked, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
                     await asyncio.sleep(wait_time)
                 else:

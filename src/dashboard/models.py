@@ -876,9 +876,16 @@ class BulkRegenerateResponse(BaseModel):
 
 
 class PushToChannelRequest(BaseModel):
-    """Request to push a stored summary to channels."""
+    """Request to push a stored summary to channels.
+
+    ADR-014: Template format is now the default, which creates a thread
+    and sends content across multiple messages to avoid Discord limits.
+    """
     channel_ids: List[str] = Field(..., min_length=1, description="Channel IDs to push to")
-    format: str = Field("embed", description="Format: embed, markdown, or plain")
+    format: str = Field(
+        "template",
+        description="Format: template (thread with full content), embed, markdown, or plain"
+    )
     include_references: bool = Field(True, description="Include ADR-004 source references")
     custom_message: Optional[str] = Field(None, description="Optional intro message")
     # Section toggles - which parts to include in the push
@@ -886,6 +893,8 @@ class PushToChannelRequest(BaseModel):
     include_action_items: bool = Field(True, description="Include action items section")
     include_participants: bool = Field(True, description="Include participants section")
     include_technical_terms: bool = Field(True, description="Include technical terms section")
+    # Thread options (for template format)
+    use_thread: bool = Field(True, description="Create a thread for the summary (template format)")
 
 
 class PushDeliveryResult(BaseModel):

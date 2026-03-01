@@ -168,36 +168,55 @@ class SummaryResult(BaseModel):
         ))
 
     def to_embed_dict(self) -> Dict[str, Any]:
-        """Convert to Discord embed dictionary."""
+        """Convert to Discord embed dictionary.
+
+        Discord embed limits:
+        - Total: 6000 characters
+        - Title: 256 characters
+        - Description: 4096 characters
+        - Field name: 256 characters
+        - Field value: 1024 characters
+        - Fields: max 25
+        - Footer text: 2048 characters
+        """
+        # Ensure description is never empty (Discord rejects empty descriptions)
+        description = (self.summary_text or "").strip()[:2048]
+        if not description:
+            description = "*Summary generated - see details below*"
+
         embed = {
-            "title": f"📋 Summary for #{self.context.channel_name if self.context else 'Unknown Channel'}",
-            "description": self.summary_text[:2048],  # Discord embed description limit
+            "title": f"📋 Summary for #{self.context.channel_name if self.context else 'Unknown Channel'}"[:256],
+            "description": description,
             "color": 0x4A90E2,  # Blue color
             "timestamp": self.created_at.isoformat(),
             "fields": []
         }
-        
+
         # Add key points field - fit as many as possible within 1024 char limit
         if self.key_points:
             key_points_lines = []
             total_len = 0
             included_count = 0
             for point in self.key_points:
-                line = f"• {point}"
+                point_text = (point or "").strip()
+                if not point_text:
+                    continue
+                line = f"• {point_text}"
                 if total_len + len(line) + 1 < 950:  # Leave room for "and X more"
                     key_points_lines.append(line)
                     total_len += len(line) + 1
                     included_count += 1
                 else:
                     break
-            key_points_text = "\n".join(key_points_lines)
-            if included_count < len(self.key_points):
-                key_points_text += f"\n*...and {len(self.key_points) - included_count} more*"
-            embed["fields"].append({
-                "name": f"🎯 Key Points ({len(self.key_points)})",
-                "value": key_points_text,
-                "inline": False
-            })
+            if key_points_lines:  # Only add field if we have content
+                key_points_text = "\n".join(key_points_lines)
+                if included_count < len(self.key_points):
+                    key_points_text += f"\n*...and {len(self.key_points) - included_count} more*"
+                embed["fields"].append({
+                    "name": f"🎯 Key Points ({len(self.key_points)})",
+                    "value": key_points_text[:1024],
+                    "inline": False
+                })
 
         # Add action items field - fit as many as possible within 1024 char limit
         if self.action_items:
@@ -206,46 +225,58 @@ class SummaryResult(BaseModel):
             included_count = 0
             for item in self.action_items:
                 line = item.to_markdown()
+                if not line.strip():
+                    continue
                 if total_len + len(line) + 1 < 950:  # Leave room for "and X more"
                     action_lines.append(line)
                     total_len += len(line) + 1
                     included_count += 1
                 else:
                     break
-            action_text = "\n".join(action_lines)
-            if included_count < len(self.action_items):
-                action_text += f"\n*...and {len(self.action_items) - included_count} more*"
-            embed["fields"].append({
-                "name": f"📝 Action Items ({len(self.action_items)})",
-                "value": action_text,
-                "inline": False
-            })
+            if action_lines:  # Only add field if we have content
+                action_text = "\n".join(action_lines)
+                if included_count < len(self.action_items):
+                    action_text += f"\n*...and {len(self.action_items) - included_count} more*"
+                embed["fields"].append({
+                    "name": f"📝 Action Items ({len(self.action_items)})",
+                    "value": action_text[:1024],
+                    "inline": False
+                })
         
         # Add participants field
         if self.participants:
             top_participants = sorted(self.participants, key=lambda p: p.message_count, reverse=True)[:5]
-            participants_text = "\n".join([
-                f"• {p.display_name} ({p.message_count} messages)" 
-                for p in top_participants
-            ])
-            embed["fields"].append({
-                "name": "👥 Top Participants",
-                "value": participants_text,
-                "inline": True
-            })
-        
+            participant_lines = []
+            for p in top_participants:
+                name = (p.display_name or f"User {p.user_id}").strip()
+                if name:
+                    participant_lines.append(f"• {name} ({p.message_count} messages)")
+            if participant_lines:  # Only add field if we have content
+                participants_text = "\n".join(participant_lines)
+                embed["fields"].append({
+                    "name": "👥 Top Participants",
+                    "value": participants_text[:1024],
+                    "inline": True
+                })
+
         # Add technical terms field
         if self.technical_terms:
-            terms_text = "\n".join([
-                f"• **{term.term}**: {term.definition[:50]}..." 
-                if len(term.definition) > 50 else f"• **{term.term}**: {term.definition}"
-                for term in self.technical_terms[:3]
-            ])
-            embed["fields"].append({
-                "name": "🔧 Technical Terms",
-                "value": terms_text,
-                "inline": True
-            })
+            term_lines = []
+            for term in self.technical_terms[:3]:
+                term_name = (term.term or "").strip()
+                term_def = (term.definition or "").strip()
+                if term_name and term_def:
+                    if len(term_def) > 50:
+                        term_lines.append(f"• **{term_name}**: {term_def[:50]}...")
+                    else:
+                        term_lines.append(f"• **{term_name}**: {term_def}")
+            if term_lines:  # Only add field if we have content
+                terms_text = "\n".join(term_lines)
+                embed["fields"].append({
+                    "name": "🔧 Technical Terms",
+                    "value": terms_text[:1024],
+                    "inline": True
+                })
         
         # Add summary statistics
         stats_text = (

@@ -315,9 +315,85 @@ class SummaryPushService:
                 filtered_fields.append(field)
             embed_dict["fields"] = filtered_fields
 
+        # Validate embed before sending
+        embed_dict = self._validate_embed_dict(embed_dict)
+
         embed = discord.Embed.from_dict(embed_dict)
         message = await channel.send(embed=embed)
         return str(message.id)
+
+    def _validate_embed_dict(self, embed_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and fix embed dict to comply with Discord limits.
+
+        Discord embed limits:
+        - Total: 6000 characters
+        - Title: 256 characters
+        - Description: 4096 characters
+        - Field name: 256 characters
+        - Field value: 1024 characters (non-empty)
+        - Fields: max 25
+
+        Args:
+            embed_dict: Embed dictionary to validate
+
+        Returns:
+            Validated embed dictionary
+        """
+        # Ensure description is non-empty
+        description = embed_dict.get("description", "")
+        if not description or not description.strip():
+            embed_dict["description"] = "*Summary generated*"
+        else:
+            embed_dict["description"] = description[:4096]
+
+        # Truncate title
+        if "title" in embed_dict:
+            embed_dict["title"] = embed_dict["title"][:256]
+
+        # Validate fields
+        valid_fields = []
+        for field in embed_dict.get("fields", [])[:25]:  # Max 25 fields
+            name = field.get("name", "").strip()
+            value = field.get("value", "").strip()
+            # Skip fields with empty name or value
+            if not name or not value:
+                continue
+            valid_fields.append({
+                "name": name[:256],
+                "value": value[:1024],
+                "inline": field.get("inline", False),
+            })
+        embed_dict["fields"] = valid_fields
+
+        # Truncate footer
+        if "footer" in embed_dict and "text" in embed_dict["footer"]:
+            embed_dict["footer"]["text"] = embed_dict["footer"]["text"][:2048]
+
+        # Check total size (6000 char limit)
+        total_size = self._calculate_embed_size(embed_dict)
+        if total_size > 6000:
+            # Truncate description to fit
+            excess = total_size - 6000
+            current_desc_len = len(embed_dict["description"])
+            new_desc_len = max(100, current_desc_len - excess - 50)  # Leave buffer
+            embed_dict["description"] = embed_dict["description"][:new_desc_len] + "..."
+            logger.warning(f"Truncated embed description: {total_size} chars -> ~{6000 - excess} chars")
+
+        return embed_dict
+
+    def _calculate_embed_size(self, embed_dict: Dict[str, Any]) -> int:
+        """Calculate total character count of embed."""
+        total = 0
+        total += len(embed_dict.get("title", ""))
+        total += len(embed_dict.get("description", ""))
+        for field in embed_dict.get("fields", []):
+            total += len(field.get("name", ""))
+            total += len(field.get("value", ""))
+        if "footer" in embed_dict:
+            total += len(embed_dict["footer"].get("text", ""))
+        if "author" in embed_dict:
+            total += len(embed_dict["author"].get("name", ""))
+        return total
 
     async def _send_markdown(
         self,

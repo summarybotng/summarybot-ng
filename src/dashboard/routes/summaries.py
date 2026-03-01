@@ -1970,18 +1970,27 @@ async def push_to_channel(
     push_service = SummaryPushService(discord_client=bot.client)
 
     try:
-        result = await push_service.push_to_channels(
-            summary_id=summary_id,
-            channel_ids=body.channel_ids,
-            format=body.format,
-            include_references=body.include_references,
-            custom_message=body.custom_message,
-            user_id=user.get("id"),
-            include_key_points=body.include_key_points,
-            include_action_items=body.include_action_items,
-            include_participants=body.include_participants,
-            include_technical_terms=body.include_technical_terms,
-        )
+        # ADR-014: Use template-based push for full content with threads
+        if body.format in ("template", "thread"):
+            result = await push_service.push_to_channels_with_template(
+                summary_id=summary_id,
+                channel_ids=body.channel_ids,
+                user_id=user.get("id"),
+            )
+        else:
+            # Legacy embed/markdown/plain formats
+            result = await push_service.push_to_channels(
+                summary_id=summary_id,
+                channel_ids=body.channel_ids,
+                format=body.format,
+                include_references=body.include_references,
+                custom_message=body.custom_message,
+                user_id=user.get("id"),
+                include_key_points=body.include_key_points,
+                include_action_items=body.include_action_items,
+                include_participants=body.include_participants,
+                include_technical_terms=body.include_technical_terms,
+            )
 
         return PushToChannelResponse(
             success=result.success,

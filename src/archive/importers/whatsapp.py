@@ -86,7 +86,10 @@ class WhatsAppImporter:
     # Regex patterns for WhatsApp text export
     # Format: [DD/MM/YYYY, HH:MM:SS] Sender: Message
     # or: DD/MM/YYYY, HH:MM - Sender: Message
+    # or: YYYY-MM-DD, HH:MM a.m./p.m. - Sender: Message (Canadian/ISO format)
     DATETIME_PATTERNS = [
+        # YYYY-MM-DD, HH:MM a.m./p.m. - (Canadian/ISO format with periods in am/pm)
+        r'(\d{4}-\d{2}-\d{2}),\s*(\d{1,2}:\d{2}(?:\s*[ap]\.m\.)?)\s*-',
         # [DD/MM/YYYY, HH:MM:SS]
         r'\[(\d{1,2}/\d{1,2}/\d{2,4}),\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?)\]',
         # DD/MM/YYYY, HH:MM -
@@ -105,6 +108,8 @@ class WhatsAppImporter:
         r"left$",
         r"was removed$",
         r"joined using this group's invite link",
+        r"security code.*changed",
+        r"Tap to learn more",
     ]
 
     def __init__(self, archive_root: Path):
@@ -339,18 +344,20 @@ class WhatsAppImporter:
         # Parse date
         parts = date_str.split('/')
         if len(parts) == 3:
-            # Try DD/MM/YYYY first
             try:
-                if len(parts[2]) == 4:
+                # Check for YYYY/MM/DD format (year first - 4 digit first part)
+                if len(parts[0]) == 4:
+                    year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+                # DD/MM/YYYY or MM/DD/YYYY format
+                elif len(parts[2]) == 4:
                     day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
                 elif len(parts[2]) == 2:
                     day, month, year = int(parts[0]), int(parts[1]), 2000 + int(parts[2])
                 else:
                     raise ValueError("Unknown year format")
 
-                # Validate
+                # Validate month (swap if needed for MM/DD/YYYY)
                 if month > 12:
-                    # Probably MM/DD/YYYY
                     day, month = month, day
 
             except ValueError:
@@ -359,11 +366,14 @@ class WhatsAppImporter:
         else:
             raise ValueError(f"Cannot parse date: {date_str}")
 
-        # Parse time
+        # Parse time - handle both "AM/PM" and "a.m./p.m." formats
         time_str = time_str.strip()
-        is_pm = 'PM' in time_str.upper()
-        is_am = 'AM' in time_str.upper()
-        time_str = re.sub(r'\s*[AP]M', '', time_str, flags=re.IGNORECASE)
+        # Normalize a.m./p.m. to AM/PM
+        time_str_upper = time_str.upper().replace('.', '')
+        is_pm = 'PM' in time_str_upper
+        is_am = 'AM' in time_str_upper
+        # Remove AM/PM variants (with or without periods)
+        time_str = re.sub(r'\s*[ap]\.?m\.?', '', time_str, flags=re.IGNORECASE)
 
         time_parts = time_str.split(':')
         hour = int(time_parts[0])
@@ -474,13 +484,20 @@ class WhatsAppImporter:
 
         # Load all messages from all imports
         all_messages = []
+
+        # Convert start/end to naive datetimes for comparison (WhatsApp messages are naive)
+        start_naive = start.replace(tzinfo=None) if start.tzinfo else start
+        end_naive = end.replace(tzinfo=None) if end.tzinfo else end
+
         for msg_file in imports_dir.glob("*_messages.json"):
             with open(msg_file, 'r') as f:
                 messages = json.load(f)
 
             for msg in messages:
                 msg_time = datetime.fromisoformat(msg["timestamp"])
-                if start <= msg_time <= end:
+                # Also strip timezone from parsed time if present
+                msg_time_naive = msg_time.replace(tzinfo=None) if msg_time.tzinfo else msg_time
+                if start_naive <= msg_time_naive <= end_naive:
                     all_messages.append({
                         "id": msg["message_id"],
                         "author_id": msg["sender"],

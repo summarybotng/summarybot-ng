@@ -347,6 +347,34 @@ def get_source_registry():
     return SourceRegistry(get_archive_root())
 
 
+def create_whatsapp_message_fetcher(archive_root: Path, group_id: str):
+    """
+    Create a message fetcher callback for WhatsApp sources.
+
+    This fetches messages from imported WhatsApp chat files.
+    """
+    from src.archive.importers.whatsapp import WhatsAppImporter
+
+    importer = WhatsAppImporter(archive_root)
+
+    async def fetch_messages(source, start_time, end_time):
+        """Fetch messages for a period from imported WhatsApp data."""
+        messages = await importer.get_messages_for_period(
+            group_id=group_id,
+            start=start_time,
+            end=end_time,
+        )
+
+        logger.info(
+            f"Fetched {len(messages)} WhatsApp messages for {group_id} "
+            f"from {start_time.isoformat()} to {end_time.isoformat()}"
+        )
+
+        return messages
+
+    return fetch_messages
+
+
 def create_message_fetcher(channel_ids: Optional[List[str]] = None):
     """
     Create a message fetcher callback for the generator.
@@ -571,9 +599,11 @@ async def generate_retrospective(request: GenerateRequest):
         f"scope={request.scope}"
     )
 
-    # Check if Discord bot is available for non-dry-run requests
+    # Check if Discord bot is available for Discord sources (not needed for WhatsApp)
     bot = get_discord_bot()
-    if not request.dry_run:
+    is_whatsapp = request.source_type == "whatsapp"
+
+    if not request.dry_run and not is_whatsapp:
         if not bot:
             raise HTTPException(
                 503,
@@ -586,7 +616,15 @@ async def generate_retrospective(request: GenerateRequest):
     category_name = None
     server_name = request.server_id
 
-    if bot and bot.client:
+    if is_whatsapp:
+        # For WhatsApp, get server name from source registry
+        registry = get_source_registry()
+        registry.discover_sources()
+        source_key = f"whatsapp:{request.server_id}"
+        existing_source = registry.get_source(source_key)
+        if existing_source:
+            server_name = existing_source.server_name
+    elif bot and bot.client:
         guild = bot.client.get_guild(int(request.server_id))
         if guild:
             server_name = guild.name
@@ -642,7 +680,16 @@ async def generate_retrospective(request: GenerateRequest):
     # Start job in background if not dry run
     if not request.dry_run:
         import asyncio
-        message_fetcher = create_message_fetcher(resolved_channel_ids)
+
+        # Use appropriate message fetcher based on source type
+        if is_whatsapp:
+            message_fetcher = create_whatsapp_message_fetcher(
+                archive_root=get_archive_root(),
+                group_id=request.server_id,
+            )
+        else:
+            message_fetcher = create_message_fetcher(resolved_channel_ids)
+
         asyncio.create_task(generator.run_job(job.job_id, message_fetcher=message_fetcher))
 
     return JobResponse(**job.to_dict())

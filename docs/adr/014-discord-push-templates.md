@@ -1,6 +1,6 @@
 # ADR-014: Discord Push Templates with Thread Support
 
-**Status:** Proposed
+**Status:** Implemented
 **Date:** 2026-02-22
 **Depends on:** ADR-004 (Grounded References), ADR-005 (Summary Delivery Destinations)
 **Amends:** ADR-004 (adds `channel_id` to `SummaryReference`)

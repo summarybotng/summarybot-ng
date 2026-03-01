@@ -95,7 +95,13 @@ class Destination(BaseModel):
     """Delivery destination for scheduled summaries."""
     type: DestinationType
     target: str  # Channel ID, webhook URL, email address, file path, or "default" for dashboard
-    format: str = "embed"  # embed, markdown, json
+    # Format options:
+    #   embed    - Discord embed (default)
+    #   markdown - Plain markdown text
+    #   template - ADR-014 template-based with threads and sections
+    #   thread   - Alias for template (creates thread with structured messages)
+    #   json     - JSON format (for webhooks)
+    format: str = "embed"
     enabled: bool = True
     # ADR-005: Dashboard-specific options
     auto_archive_days: Optional[int] = None  # Auto-archive after N days

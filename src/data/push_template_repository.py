@@ -183,7 +183,8 @@ async def get_push_template_repository() -> PushTemplateRepository:
     """Get the global push template repository instance."""
     global _push_template_repository
     if _push_template_repository is None:
-        from .sqlite import get_connection
-        conn = await get_connection()
+        from .repositories import get_repository_factory
+        factory = get_repository_factory()
+        conn = await factory.get_connection()
         _push_template_repository = PushTemplateRepository(conn)
     return _push_template_repository

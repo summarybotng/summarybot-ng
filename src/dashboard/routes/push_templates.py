@@ -85,7 +85,7 @@ async def get_push_template(
     Returns the guild's custom template if configured, otherwise the default.
     """
     # Check user has access to guild
-    if guild_id not in [g["id"] for g in user.guilds]:
+    if guild_id not in user.get("guilds", []):
         raise HTTPException(status_code=403, detail="Access denied to this guild")
 
     repo = await get_push_template_repository()
@@ -116,7 +116,7 @@ async def set_push_template(
 ) -> PushTemplateResponse:
     """Set a custom push template for a guild."""
     # Check user has access to guild
-    if guild_id not in [g["id"] for g in user.guilds]:
+    if guild_id not in user.get("guilds", []):
         raise HTTPException(status_code=403, detail="Access denied to this guild")
 
     # Convert request to PushTemplate
@@ -155,7 +155,7 @@ async def set_push_template(
 
     # Save
     repo = await get_push_template_repository()
-    success = await repo.set_template(guild_id, template, user_id=user.id)
+    success = await repo.set_template(guild_id, template, user_id=user.get("id"))
 
     if not success:
         raise HTTPException(status_code=500, detail="Failed to save template")
@@ -179,7 +179,7 @@ async def delete_push_template(
 ) -> Dict[str, Any]:
     """Delete guild's custom template (reverts to default)."""
     # Check user has access to guild
-    if guild_id not in [g["id"] for g in user.guilds]:
+    if guild_id not in user.get("guilds", []):
         raise HTTPException(status_code=403, detail="Access denied to this guild")
 
     repo = await get_push_template_repository()
@@ -202,7 +202,7 @@ async def preview_push_template(
     Returns the messages that would be sent without actually sending them.
     """
     # Check user has access to guild
-    if guild_id not in [g["id"] for g in user.guilds]:
+    if guild_id not in user.get("guilds", []):
         raise HTTPException(status_code=403, detail="Access denied to this guild")
 
     from ...models.summary import SummaryResult, Participant

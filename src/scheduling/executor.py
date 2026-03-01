@@ -594,7 +594,8 @@ class TaskExecutor:
                     result = await self._deliver_to_discord(
                         summary=summary,
                         channel_id=destination.target,
-                        format_type=destination.format
+                        format_type=destination.format,
+                        task=task  # ADR-014: Pass task for template context
                     )
                     delivery_results.append(result)
 
@@ -650,13 +651,17 @@ class TaskExecutor:
     async def _deliver_to_discord(self,
                                  summary: SummaryResult,
                                  channel_id: str,
-                                 format_type: str) -> Dict[str, Any]:
+                                 format_type: str,
+                                 task: Optional[SummaryTask] = None) -> Dict[str, Any]:
         """Deliver summary to Discord channel.
+
+        ADR-014: Supports template-based delivery with thread creation.
 
         Args:
             summary: Summary to deliver
             channel_id: Discord channel ID
-            format_type: Format (embed, markdown, etc.)
+            format_type: Format (embed, markdown, template, thread)
+            task: Summary task for context (ADR-014)
 
         Returns:
             Delivery result
@@ -674,7 +679,15 @@ class TaskExecutor:
             if not channel:
                 channel = await self.discord_client.fetch_channel(int(channel_id))
 
-            if format_type == "embed":
+            # ADR-014: Template-based delivery with thread support
+            if format_type in ("template", "thread"):
+                return await self._deliver_with_template(
+                    summary=summary,
+                    channel=channel,
+                    task=task,
+                )
+
+            elif format_type == "embed":
                 embed_dict = summary.to_embed_dict()
                 embed = discord.Embed.from_dict(embed_dict)
                 await channel.send(embed=embed)
@@ -704,6 +717,100 @@ class TaskExecutor:
             return {
                 "destination_type": "discord_channel",
                 "target": channel_id,
+                "success": False,
+                "error": str(e)
+            }
+
+    async def _deliver_with_template(self,
+                                     summary: SummaryResult,
+                                     channel: discord.TextChannel,
+                                     task: Optional[SummaryTask] = None) -> Dict[str, Any]:
+        """Deliver summary using ADR-014 template-based formatting with threads.
+
+        Args:
+            summary: Summary to deliver
+            channel: Discord channel
+            task: Summary task for context
+
+        Returns:
+            Delivery result with thread info
+        """
+        from ..services.push_message_builder import (
+            send_with_template, PushContext,
+        )
+        from ..data.push_template_repository import get_push_template_repository
+
+        try:
+            # Get guild-specific template (or default)
+            guild_id = str(channel.guild.id) if channel.guild else None
+            if guild_id:
+                repo = await get_push_template_repository()
+                template = await repo.get_template(guild_id)
+            else:
+                from ..models.push_template import DEFAULT_PUSH_TEMPLATE
+                template = DEFAULT_PUSH_TEMPLATE
+
+            # Build push context from task and summary
+            context = PushContext(
+                guild_id=guild_id or "",
+                start_time=summary.start_time,
+                end_time=summary.end_time,
+                message_count=summary.message_count,
+                participant_count=len(summary.participants) if summary.participants else 0,
+            )
+
+            # Extract channel names from task if available
+            if task:
+                channel_ids = task.get_all_channel_ids()
+                channel_names = []
+                for cid in channel_ids[:5]:  # Limit to first 5
+                    try:
+                        ch = self.discord_client.get_channel(int(cid))
+                        if ch:
+                            channel_names.append(ch.name)
+                    except Exception:
+                        pass
+                context.channel_names = channel_names if channel_names else [channel.name]
+
+                # Check scope for server-wide or category summaries
+                if task.scheduled_task and task.scheduled_task.scope:
+                    scope = task.scheduled_task.scope
+                    if scope == SummaryScope.GUILD:
+                        context.is_server_wide = True
+                    elif scope == SummaryScope.CATEGORY:
+                        context.category_name = getattr(task.scheduled_task, 'category_name', None)
+            else:
+                context.channel_names = [channel.name]
+
+            # Send with template (handles thread creation)
+            result = await send_with_template(
+                channel=channel,
+                summary=summary,
+                context=context,
+                template=template,
+                discord_client=self.discord_client,
+            )
+
+            logger.info(
+                f"Delivered summary to channel {channel.id} with template "
+                f"(thread_created={result.get('thread_created', False)})"
+            )
+
+            return {
+                "destination_type": "discord_channel",
+                "target": str(channel.id),
+                "success": result.get("success", False),
+                "message": "Delivered with template" if result.get("success") else result.get("error"),
+                "thread_created": result.get("thread_created", False),
+                "thread_id": result.get("thread_id"),
+                "message_ids": result.get("message_ids", []),
+            }
+
+        except Exception as e:
+            logger.exception(f"Failed to deliver with template to channel {channel.id}: {e}")
+            return {
+                "destination_type": "discord_channel",
+                "target": str(channel.id),
                 "success": False,
                 "error": str(e)
             }

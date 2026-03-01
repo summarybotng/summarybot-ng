@@ -200,6 +200,38 @@ WhatsApp lacks an API for historical messages. Data can come from two sources:
 - Import via: `POST /api/v1/archive/import/whatsapp?format=reader_bot`
 - Full fidelity: Message IDs, media, reactions, read receipts
 
+**Supported Date/Time Formats:**
+
+WhatsApp exports vary by region and device locale. The parser supports:
+
+| Format | Example | Region |
+|--------|---------|--------|
+| `DD/MM/YYYY, HH:MM:SS` | `14/02/2026, 10:30:45` | UK, Europe, Asia |
+| `MM/DD/YYYY, HH:MM` | `02/14/2026, 10:30` | US |
+| `MM/DD/YY, HH:MM AM/PM` | `02/14/26, 10:30 AM` | US (short year) |
+| `YYYY-MM-DD, HH:MM a.m./p.m.` | `2026-02-14, 10:30 a.m.` | Canada (ISO-like) |
+| `[DD/MM/YYYY, HH:MM:SS]` | `[14/02/2026, 10:30:45]` | Bracketed variant |
+
+**Timezone Considerations:**
+
+WhatsApp exports contain **naive timestamps** (no timezone information). The timestamp reflects the exporter's local time at the moment of export:
+
+1. **No Timezone in Export:** WhatsApp `.txt` exports do not include timezone identifiers. A message timestamped `2026-02-14, 10:30` could be in any timezone.
+
+2. **Assumption:** The parser treats all timestamps as naive (timezone-unaware). When filtering messages by date range, comparisons are done in naive datetime space.
+
+3. **Global Users:** Users from different timezones will export chats with timestamps in their local timezone. A message sent at "10:00 UTC" will appear as:
+   - `10:00` in a UK export
+   - `05:00` in a US Eastern export
+   - `18:00` in a Singapore export
+
+4. **Practical Impact:** For daily summary generation, this means:
+   - Summaries are grouped by calendar date **as seen by the exporter**
+   - If multiple users export the same chat, their date boundaries may differ
+   - For most use cases (single user/org), this is acceptable
+
+5. **Future Enhancement:** Consider adding an optional `export_timezone` parameter to the import API that allows users to specify the timezone of their export, enabling accurate UTC conversion.
+
 **Import Manifest:**
 ```json
 {

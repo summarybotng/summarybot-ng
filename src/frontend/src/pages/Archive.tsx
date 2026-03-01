@@ -199,7 +199,7 @@ export function Archive() {
             </DialogTrigger>
             <GenerateDialog
               guildId={guildId || ""}
-              sources={guildSources}
+              sources={sources || []}
               channels={guild?.channels || []}
               categories={guild?.categories || []}
               onEstimate={async (request) => {
@@ -566,12 +566,20 @@ function GenerateDialog({
   const [estimating, setEstimating] = useState(false);
   // ADR-011: Scope selection state
   const [scopeValue, setScopeValue] = useState<ScopeSelectorValue>(getInitialScopeValue("guild"));
+  // WhatsApp source selection
+  const [whatsappSourceId, setWhatsappSourceId] = useState<string>("");
+
+  // Filter WhatsApp sources from all sources
+  const whatsappSources = sources.filter(s => s.source_type === "whatsapp");
 
   // Build request with scope
   const buildRequest = (dryRun: boolean): GenerateRequest => {
+    // For WhatsApp, use the selected WhatsApp source ID; for Discord, use guildId
+    const serverId = sourceType === "whatsapp" ? whatsappSourceId : guildId;
+
     const request: GenerateRequest = {
       source_type: sourceType,
-      server_id: guildId,
+      server_id: serverId,
       scope: scopeValue.scope,
       date_range: { start: startDate, end: endDate },
       summary_type: summaryType,
@@ -582,11 +590,13 @@ function GenerateDialog({
       dry_run: dryRun,
     };
 
-    // Add scope-specific fields
-    if (scopeValue.scope === "channel" && scopeValue.channelIds.length > 0) {
-      request.channel_ids = scopeValue.channelIds;
-    } else if (scopeValue.scope === "category" && scopeValue.categoryId) {
-      request.category_id = scopeValue.categoryId;
+    // Add scope-specific fields (only for Discord)
+    if (sourceType === "discord") {
+      if (scopeValue.scope === "channel" && scopeValue.channelIds.length > 0) {
+        request.channel_ids = scopeValue.channelIds;
+      } else if (scopeValue.scope === "category" && scopeValue.categoryId) {
+        request.category_id = scopeValue.categoryId;
+      }
     }
 
     if (!dryRun && maxCost) {
@@ -636,7 +646,7 @@ function GenerateDialog({
           </Select>
         </div>
 
-        {/* ADR-011: Scope Selection */}
+        {/* ADR-011: Scope Selection for Discord */}
         {sourceType === "discord" && (
           <ScopeSelector
             value={scopeValue}
@@ -645,6 +655,41 @@ function GenerateDialog({
             categories={categories}
             compact
           />
+        )}
+
+        {/* WhatsApp Source Selection */}
+        {sourceType === "whatsapp" && (
+          <div className="space-y-2">
+            <Label>WhatsApp Chat</Label>
+            <Select value={whatsappSourceId} onValueChange={setWhatsappSourceId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select imported chat" />
+              </SelectTrigger>
+              <SelectContent>
+                {whatsappSources.length === 0 ? (
+                  <SelectItem value="" disabled>
+                    No WhatsApp chats imported
+                  </SelectItem>
+                ) : (
+                  whatsappSources.map((source) => (
+                    <SelectItem key={source.source_key} value={source.server_id}>
+                      {source.server_name}
+                      {source.date_range && (
+                        <span className="text-muted-foreground ml-2">
+                          ({source.date_range.start} - {source.date_range.end})
+                        </span>
+                      )}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            {whatsappSources.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Import a WhatsApp chat first using the Import button
+              </p>
+            )}
+          </div>
         )}
 
         <div className="grid grid-cols-2 gap-4">

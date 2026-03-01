@@ -8,15 +8,24 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from dataclasses import dataclass
 
-from .claude_client import ClaudeClient, ClaudeOptions
+from .claude_client import ClaudeClient, ClaudeOptions, ClaudeResponse
 from .prompt_builder import PromptBuilder
 from .response_parser import ResponseParser
 from .cache import SummaryCache
+from .retry_strategy import (
+    RetryReason, RetryAction, GenerationAttempt, GenerationAttemptTracker,
+    determine_retry_strategy, detect_quality_issue, is_malformed_content
+)
 from ..models.summary import SummaryResult, SummaryOptions, SummarizationContext
 from ..models.message import ProcessedMessage
 from ..exceptions import (
     SummarizationError, InsufficientContentError, PromptTooLongError,
+    RateLimitError, NetworkError, TimeoutError, ModelUnavailableError,
     create_error_context
+)
+from ..config.constants import (
+    MODEL_ESCALATION_CHAIN, STARTING_MODEL_INDEX,
+    DEFAULT_MAX_RETRY_ATTEMPTS, DEFAULT_RETRY_COST_CAP_USD, DEFAULT_MAX_TOKENS_CAP
 )
 
 logger = logging.getLogger(__name__)
@@ -32,6 +41,284 @@ class CostEstimate:
     model: str
     message_count: int
     error: Optional[str] = None
+
+
+class ResilientSummarizationEngine:
+    """ADR-024: Wraps generation with retry, model escalation, and tracking.
+
+    Provides resilient summary generation that handles various failure modes
+    through automatic retry with escalating model capability.
+    """
+
+    def __init__(
+        self,
+        claude_client: ClaudeClient,
+        response_parser: ResponseParser,
+        max_attempts: int = DEFAULT_MAX_RETRY_ATTEMPTS,
+        max_cost_usd: float = DEFAULT_RETRY_COST_CAP_USD,
+        max_tokens_cap: int = DEFAULT_MAX_TOKENS_CAP,
+    ):
+        """Initialize resilient engine.
+
+        Args:
+            claude_client: Claude API client
+            response_parser: Response parser instance
+            max_attempts: Maximum retry attempts
+            max_cost_usd: Maximum total cost allowed
+            max_tokens_cap: Maximum max_tokens value
+        """
+        self.claude_client = claude_client
+        self.response_parser = response_parser
+        self.max_attempts = max_attempts
+        self.max_cost_usd = max_cost_usd
+        self.max_tokens_cap = max_tokens_cap
+
+    def _get_starting_model_index(self, summary_length: str) -> int:
+        """Get starting model index based on summary type."""
+        return STARTING_MODEL_INDEX.get(summary_length, 0)
+
+    def _get_model_at_index(self, index: int) -> str:
+        """Get model at given index in escalation chain."""
+        if index < 0:
+            return MODEL_ESCALATION_CHAIN[0]
+        if index >= len(MODEL_ESCALATION_CHAIN):
+            return MODEL_ESCALATION_CHAIN[-1]
+        return MODEL_ESCALATION_CHAIN[index]
+
+    async def generate_with_retry(
+        self,
+        prompt_data: Any,
+        options: ClaudeOptions,
+        messages: List[ProcessedMessage],
+        context: Optional[SummarizationContext],
+        summary_length: str = "detailed",
+    ) -> tuple[ClaudeResponse, 'ParsedSummary', GenerationAttemptTracker]:
+        """Generate summary with automatic retry on failures.
+
+        Args:
+            prompt_data: Built prompt data from PromptBuilder
+            options: Initial Claude options
+            messages: Original messages for parsing
+            context: Summarization context
+            summary_length: Summary length type for model selection
+
+        Returns:
+            Tuple of (ClaudeResponse, ParsedSummary, GenerationAttemptTracker)
+
+        Raises:
+            SummarizationError: If all attempts fail
+        """
+        import time
+
+        tracker = GenerationAttemptTracker(
+            max_attempts=self.max_attempts,
+            max_cost_usd=self.max_cost_usd,
+        )
+
+        # Determine starting model
+        model_index = self._get_starting_model_index(summary_length)
+        current_model = self._get_model_at_index(model_index)
+        current_max_tokens = options.max_tokens
+        current_system_prompt = prompt_data.system_prompt
+
+        last_error: Optional[Exception] = None
+        last_response: Optional[ClaudeResponse] = None
+        last_parsed: Optional[Any] = None
+
+        while tracker.can_retry():
+            attempt_start = time.time()
+            attempt_number = tracker.attempt_count + 1
+
+            try:
+                # Build options for this attempt
+                attempt_options = ClaudeOptions(
+                    model=current_model,
+                    max_tokens=current_max_tokens,
+                    temperature=options.temperature,
+                    top_p=options.top_p,
+                    top_k=options.top_k,
+                    stop_sequences=options.stop_sequences,
+                )
+
+                logger.info(
+                    f"Attempt {attempt_number}: model={current_model}, "
+                    f"max_tokens={current_max_tokens}"
+                )
+
+                # Make API call
+                response = await self.claude_client.create_summary_with_fallback(
+                    prompt=prompt_data.user_prompt,
+                    system_prompt=current_system_prompt,
+                    options=attempt_options,
+                )
+
+                latency_ms = int((time.time() - attempt_start) * 1000)
+                cost = self.claude_client.estimate_cost(
+                    response.input_tokens, response.output_tokens, response.model
+                )
+
+                # Parse response
+                parsed_summary = self.response_parser.parse_summary_response(
+                    response_content=response.content,
+                    original_messages=messages,
+                    context=context,
+                    position_index=prompt_data.position_index,
+                )
+
+                # Check for quality issues
+                quality_issue = detect_quality_issue(
+                    summary_text=parsed_summary.summary_text,
+                    key_points=parsed_summary.key_points,
+                    stop_reason=response.stop_reason,
+                    output_tokens=response.output_tokens,
+                    max_tokens=current_max_tokens,
+                )
+
+                if quality_issue is None:
+                    # Success!
+                    tracker.add_attempt(GenerationAttempt(
+                        attempt_number=attempt_number,
+                        model=response.model,
+                        success=True,
+                        input_tokens=response.input_tokens,
+                        output_tokens=response.output_tokens,
+                        cost_usd=cost,
+                        latency_ms=latency_ms,
+                    ))
+                    return response, parsed_summary, tracker
+
+                # Quality issue detected - determine retry strategy
+                logger.warning(f"Quality issue detected: {quality_issue.value}")
+
+                try:
+                    action, new_model_idx, new_tokens = determine_retry_strategy(
+                        reason=quality_issue,
+                        current_model_index=model_index,
+                        current_max_tokens=current_max_tokens,
+                        tracker=tracker,
+                        max_tokens_cap=self.max_tokens_cap,
+                    )
+                except StopIteration:
+                    # Can't retry anymore - return best effort
+                    tracker.add_attempt(GenerationAttempt(
+                        attempt_number=attempt_number,
+                        model=response.model,
+                        success=True,  # Partial success
+                        retry_reason=quality_issue,
+                        input_tokens=response.input_tokens,
+                        output_tokens=response.output_tokens,
+                        cost_usd=cost,
+                        latency_ms=latency_ms,
+                    ))
+                    return response, parsed_summary, tracker
+
+                # Record failed attempt
+                tracker.add_attempt(GenerationAttempt(
+                    attempt_number=attempt_number,
+                    model=response.model,
+                    success=False,
+                    retry_reason=quality_issue,
+                    retry_action=action,
+                    input_tokens=response.input_tokens,
+                    output_tokens=response.output_tokens,
+                    cost_usd=cost,
+                    latency_ms=latency_ms,
+                ))
+
+                # Apply retry action
+                if action == RetryAction.ESCALATE_MODEL and new_model_idx is not None:
+                    model_index = new_model_idx
+                    current_model = self._get_model_at_index(model_index)
+                elif action == RetryAction.INCREASE_TOKENS and new_tokens is not None:
+                    current_max_tokens = new_tokens
+                elif action == RetryAction.ADD_PROMPT_HINT:
+                    json_hint = (
+                        "\n\nCRITICAL: Your response MUST be valid JSON. "
+                        "Ensure all strings are properly escaped (use \\\" for quotes, "
+                        "\\n for newlines). No text before or after the JSON object."
+                    )
+                    current_system_prompt = prompt_data.system_prompt + json_hint
+
+                last_response = response
+                last_parsed = parsed_summary
+
+            except RateLimitError as e:
+                latency_ms = int((time.time() - attempt_start) * 1000)
+                tracker.add_attempt(GenerationAttempt(
+                    attempt_number=attempt_number,
+                    model=current_model,
+                    success=False,
+                    retry_reason=RetryReason.RATE_LIMIT,
+                    retry_action=RetryAction.SAME_MODEL,
+                    latency_ms=latency_ms,
+                    error_message=str(e),
+                ))
+                retry_after = getattr(e, 'retry_after', 60)
+                logger.warning(f"Rate limit hit, waiting {retry_after}s")
+                await asyncio.sleep(retry_after)
+                last_error = e
+
+            except (NetworkError, TimeoutError) as e:
+                latency_ms = int((time.time() - attempt_start) * 1000)
+                reason = RetryReason.NETWORK_ERROR if isinstance(e, NetworkError) else RetryReason.TIMEOUT
+                tracker.add_attempt(GenerationAttempt(
+                    attempt_number=attempt_number,
+                    model=current_model,
+                    success=False,
+                    retry_reason=reason,
+                    retry_action=RetryAction.SAME_MODEL,
+                    latency_ms=latency_ms,
+                    error_message=str(e),
+                ))
+                # Exponential backoff
+                await asyncio.sleep(2 ** (attempt_number - 1))
+                last_error = e
+
+            except ModelUnavailableError as e:
+                latency_ms = int((time.time() - attempt_start) * 1000)
+                tracker.add_attempt(GenerationAttempt(
+                    attempt_number=attempt_number,
+                    model=current_model,
+                    success=False,
+                    retry_reason=RetryReason.MODEL_UNAVAILABLE,
+                    retry_action=RetryAction.ESCALATE_MODEL,
+                    latency_ms=latency_ms,
+                    error_message=str(e),
+                ))
+                model_index += 1
+                current_model = self._get_model_at_index(model_index)
+                last_error = e
+
+            except Exception as e:
+                latency_ms = int((time.time() - attempt_start) * 1000)
+                tracker.add_attempt(GenerationAttempt(
+                    attempt_number=attempt_number,
+                    model=current_model,
+                    success=False,
+                    latency_ms=latency_ms,
+                    error_message=str(e),
+                ))
+                last_error = e
+                # Try escalating model for unknown errors
+                model_index += 1
+                current_model = self._get_model_at_index(model_index)
+
+        # All attempts exhausted - return last result if we have one
+        if last_response and last_parsed:
+            logger.warning("All retry attempts used, returning best effort result")
+            return last_response, last_parsed, tracker
+
+        # No successful attempt at all
+        raise SummarizationError(
+            message=f"All {tracker.attempt_count} generation attempts failed",
+            error_code="RESILIENT_GENERATION_EXHAUSTED",
+            context={
+                "attempts": tracker.attempt_count,
+                "total_cost": tracker.total_cost_usd,
+                "last_error": str(last_error) if last_error else None,
+            },
+            retryable=False,
+        )
 
 
 class SummarizationEngine:
@@ -201,116 +488,26 @@ class SummarizationEngine:
             logger.info(f"Summarization engine: summary_length={options.summary_length.value}, model={claude_options.model}, max_tokens={claude_options.max_tokens}")
             logger.info(f"System prompt length: {len(prompt_data.system_prompt)} chars, User prompt length: {len(prompt_data.user_prompt)} chars")
 
-            # Call Claude API with fallback chain for all summary types
-            logger.info("Using fallback-enabled API call for summary")
-            response = await self.claude_client.create_summary_with_fallback(
-                prompt=prompt_data.user_prompt,
-                system_prompt=prompt_data.system_prompt,
-                options=claude_options
+            # ADR-024: Use resilient engine for retry with model escalation
+            logger.info("Using resilient summarization engine with retry support")
+            resilient_engine = ResilientSummarizationEngine(
+                claude_client=self.claude_client,
+                response_parser=self.response_parser,
             )
 
-            logger.info(f"Claude API response: input_tokens={response.input_tokens}, output_tokens={response.output_tokens}, content_length={len(response.content)}, stop_reason={response.stop_reason}")
-
-            # Auto-retry with higher max_tokens if response was truncated
-            MAX_RETRY_TOKENS = 16000  # Cap for retry attempts
-            if not response.is_complete() and claude_options.max_tokens < MAX_RETRY_TOKENS:
-                # Escalate: double the tokens, capped at MAX_RETRY_TOKENS
-                retry_max_tokens = min(claude_options.max_tokens * 2, MAX_RETRY_TOKENS)
-                logger.warning(
-                    f"Response truncated (stop_reason={response.stop_reason}, "
-                    f"used {response.output_tokens}/{claude_options.max_tokens} tokens). "
-                    f"Auto-retrying with max_tokens={retry_max_tokens}..."
-                )
-
-                retry_options = ClaudeOptions(
-                    model=claude_options.model,
-                    max_tokens=retry_max_tokens,
-                    temperature=claude_options.temperature
-                )
-
-                response = await self.claude_client.create_summary_with_fallback(
-                    prompt=prompt_data.user_prompt,
-                    system_prompt=prompt_data.system_prompt,
-                    options=retry_options
-                )
-
-                logger.info(f"Retry response: input_tokens={response.input_tokens}, output_tokens={response.output_tokens}, stop_reason={response.stop_reason}")
-
-                # Update options for metadata
-                claude_options = retry_options
-
-                # If still truncated, warn but continue with what we have
-                if not response.is_complete():
-                    logger.warning(
-                        f"Response still truncated after retry with {retry_max_tokens} tokens. "
-                        f"Consider reducing input messages or using comprehensive summary length."
-                    )
-
-            # Parse response (ADR-004: pass position_index for citation resolution)
-            # ADR-023: Track if we need to retry due to JSON parse errors
-            json_retry_attempted = False
-
-            parsed_summary = self.response_parser.parse_summary_response(
-                response_content=response.content,
-                original_messages=messages,
+            response, parsed_summary, generation_tracker = await resilient_engine.generate_with_retry(
+                prompt_data=prompt_data,
+                options=claude_options,
+                messages=messages,
                 context=context,
-                position_index=prompt_data.position_index
+                summary_length=options.summary_length.value,
             )
 
-            # ADR-023: Check if parsing had recoverable JSON errors that warrant API retry
-            parsing_recovery = parsed_summary.parsing_metadata.get("parsing_recovery")
-            if (parsing_recovery and
-                parsing_recovery.get("successful_step") == "freeform_fallback" and
-                not json_retry_attempted):
-                # Freeform fallback was used - try API retry with JSON reminder
-                json_retry_attempted = True
-                logger.warning(
-                    f"JSON parsing fell back to freeform. Retrying API with explicit JSON instruction..."
-                )
-
-                # Add explicit JSON reminder to system prompt
-                json_reminder = (
-                    "\n\nCRITICAL: Your response MUST be valid JSON. "
-                    "Ensure all strings are properly escaped (use \\\" for quotes inside strings, "
-                    "\\n for newlines). Do not include any text before or after the JSON object."
-                )
-                retry_system_prompt = prompt_data.system_prompt + json_reminder
-
-                response = await self.claude_client.create_summary_with_fallback(
-                    prompt=prompt_data.user_prompt,
-                    system_prompt=retry_system_prompt,
-                    options=claude_options
-                )
-
-                logger.info(f"JSON retry response: input_tokens={response.input_tokens}, output_tokens={response.output_tokens}")
-
-                # Re-parse with retry flag
-                retry_parsed = self.response_parser.parse_summary_response(
-                    response_content=response.content,
-                    original_messages=messages,
-                    context=context,
-                    position_index=prompt_data.position_index
-                )
-
-                # Check if retry was successful (not freeform fallback)
-                retry_recovery = retry_parsed.parsing_metadata.get("parsing_recovery")
-                if not retry_recovery or retry_recovery.get("successful_step") != "freeform_fallback":
-                    # Retry succeeded - use the new parsed result
-                    parsed_summary = retry_parsed
-                    # Update recovery tracking to show api_retry worked
-                    if parsing_recovery:
-                        parsing_recovery["recovery_steps"].append("api_retry")
-                        parsing_recovery["successful_step"] = "api_retry"
-                        parsed_summary.parsing_metadata["parsing_recovery"] = parsing_recovery
-                    logger.info("JSON retry successful - using retried response")
-                else:
-                    # Retry also fell back to freeform - use original
-                    logger.warning("JSON retry also fell back to freeform - using original response")
-                    # Update original recovery to show api_retry was attempted
-                    if parsing_recovery:
-                        parsing_recovery["recovery_steps"].append("api_retry")
-                        parsing_recovery["total_attempts"] = parsing_recovery.get("total_attempts", 1) + 1
-                        parsed_summary.parsing_metadata["parsing_recovery"] = parsing_recovery
+            logger.info(
+                f"Resilient generation complete: attempts={generation_tracker.attempt_count}, "
+                f"final_model={generation_tracker.final_model}, "
+                f"total_cost=${generation_tracker.total_cost_usd:.4f}"
+            )
 
             # Create final summary result
             start_time = min(msg.timestamp for msg in messages) if messages else datetime.utcnow()
@@ -339,7 +536,9 @@ class SummarizationEngine:
                 "perspective": options.perspective,
                 # ADR-004: Citation metadata
                 "citations_enabled": prompt_data.position_index is not None,
-                "grounded": summary_result.has_references()
+                "grounded": summary_result.has_references(),
+                # ADR-024: Generation attempt tracking
+                "generation_attempts": generation_tracker.to_metadata(),
             })
 
             # Add prompt source info for transparency

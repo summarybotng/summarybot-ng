@@ -264,6 +264,9 @@ class SummarizationAdapter:
         response.prompt_system = result.prompt_system
         response.prompt_user = result.prompt_user
 
+        # ADR-024: Pass through full metadata including generation_attempts
+        response.metadata = result.metadata
+
         # Extract prompt version and generate checksum
         prompt_source = result.metadata.get("prompt_source", {})
         if isinstance(prompt_source, dict):
@@ -1073,7 +1076,8 @@ async def list_archive_summaries(
 
         summaries.append(ArchiveSummaryResponse(
             id=summary.id,
-            source_key=f"discord:{server_id}",
+            # Use stored archive_source_key if available, fallback for legacy data
+            source_key=summary.archive_source_key or f"discord:{server_id}",
             date=date_str,
             channel_name=channel_name,
             summary_text=summary_text,
@@ -1171,7 +1175,8 @@ async def get_archive_summary(
 
     return {
         "id": summary.id,
-        "source_key": f"discord:{server_id}",
+        # Use stored archive_source_key if available, fallback for legacy data
+        "source_key": summary.archive_source_key or f"discord:{server_id}",
         "date": date_str,
         "channel_name": channel_name,
         "summary_text": summary_text,

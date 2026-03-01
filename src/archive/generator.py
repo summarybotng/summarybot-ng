@@ -666,6 +666,9 @@ class RetrospectiveGenerator:
                         "duration_seconds": generation.duration_seconds,
                         # ADR-004: Track grounding status
                         "grounded": len(getattr(summary_result, 'reference_index', [])) > 0,
+                        # ADR-024: Preserve generation_attempts for retry tracking
+                        **({"generation_attempts": getattr(summary_result, 'metadata', {}).get('generation_attempts')}
+                           if getattr(summary_result, 'metadata', {}).get('generation_attempts') else {}),
                     },
                 )
 

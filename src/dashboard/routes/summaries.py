@@ -970,6 +970,8 @@ async def get_stored_summary(
             total_participants=meta.get("total_participants"),
             api_version=meta.get("api_version"),
             cache_status=meta.get("cache_status"),
+            # ADR-024: Retry attempt tracking
+            generation_attempts=meta.get("generation_attempts"),
         )
 
         # Add prompt_source if available

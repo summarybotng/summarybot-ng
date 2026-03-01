@@ -312,6 +312,8 @@ class SummaryMetadataResponse(BaseModel):
     total_participants: Optional[int] = None
     api_version: Optional[str] = None
     cache_status: Optional[str] = None
+    # ADR-024: Retry attempt tracking for resilient generation
+    generation_attempts: Optional[Dict[str, Any]] = None
     # Pass through any additional unknown fields
     model_config = {"extra": "allow"}
 

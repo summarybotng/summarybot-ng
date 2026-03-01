@@ -147,11 +147,12 @@ class SummaryBotApp:
         # Run migrations
         await run_migrations(db_path)
 
-        # Initialize repositories
+        # Initialize repositories with pool_size=1 to prevent database locking
+        # SQLite WAL mode + single connection ensures safe concurrent access
         initialize_repositories(
             backend="sqlite",
             db_path=db_path,
-            pool_size=5
+            pool_size=1
         )
 
         # Initialize command logging
@@ -164,10 +165,13 @@ class SummaryBotApp:
         try:
             self.logger.info("Initializing command logging system...")
 
-            # Create database connection for command logging
-            db_connection = await aiosqlite.connect(db_path)
+            # Reuse shared database connection from repository factory
+            # This prevents multiple connections causing SQLite lock contention
+            from .data.repositories import get_repository_factory
+            factory = get_repository_factory()
+            db_connection = await factory.get_connection()
 
-            # Create repository
+            # Create repository using the shared connection
             repository = CommandLogRepository(db_connection)
 
             # Create logger with configuration from environment
@@ -289,17 +293,15 @@ class SummaryBotApp:
 
         try:
             from .prompts import PromptTemplateResolver, GuildPromptConfigStore
-            from .data.sqlite import SQLiteConnection
+            from .data.repositories import get_repository_factory
             from cryptography.fernet import Fernet
 
-            # Get database path from config or use default
-            db_path = self.config.database_config.url.replace('sqlite:///', '') if self.config.database_config else "data/summarybot.db"
+            self.logger.info("Initializing prompt system with shared database connection")
 
-            self.logger.info(f"Initializing prompt system with database: {db_path}")
-
-            # Initialize database connection
-            db_connection = SQLiteConnection(db_path=db_path)
-            await db_connection.connect()
+            # Reuse the shared database connection from repository factory
+            # This prevents multiple SQLiteConnection instances causing lock contention
+            factory = get_repository_factory()
+            db_connection = await factory.get_connection()
 
             # Get encryption key from environment (or generate one)
             encryption_key = os.environ.get('PROMPT_TOKEN_ENCRYPTION_KEY')

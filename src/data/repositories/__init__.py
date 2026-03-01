@@ -41,7 +41,9 @@ class RepositoryFactory:
         if self._connection is None:
             if self.backend == "sqlite":
                 db_path = self.config.get("db_path", "data/summarybot.db")
-                pool_size = self.config.get("pool_size", 5)
+                # Default to pool_size=1 to prevent SQLite locking issues
+                # aiosqlite uses worker threads, and multiple connections cause lock contention
+                pool_size = self.config.get("pool_size", 1)
                 self._connection = SQLiteConnection(db_path, pool_size)
                 await self._connection.connect()
             elif self.backend == "postgresql":

@@ -1090,13 +1090,21 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
                 f"but has issues: {', '.join(regen_status['issues'])}"
             )
 
+        # ADR-017: Extract message_count from summary_result for sortable column
+        message_count = 0
+        participant_count = 0
+        if summary.summary_result:
+            message_count = summary.summary_result.message_count or 0
+            participant_count = len(summary.summary_result.participants) if summary.summary_result.participants else 0
+
         query = """
         INSERT OR REPLACE INTO stored_summaries (
             id, guild_id, source_channel_ids, schedule_id,
             summary_json, created_at, viewed_at, pushed_at,
             push_deliveries, title, is_pinned, is_archived, tags,
-            source, archive_period, archive_granularity, archive_source_key
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            source, archive_period, archive_granularity, archive_source_key,
+            message_count, participant_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -1118,6 +1126,9 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             summary.archive_period,
             summary.archive_granularity,
             summary.archive_source_key,
+            # ADR-017: Sortable columns
+            message_count,
+            participant_count,
         )
 
         await self.connection.execute(query, params)

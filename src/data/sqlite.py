@@ -597,7 +597,12 @@ class SQLiteTaskRepository(TaskRepository):
     def _row_to_task(self, row: Dict[str, Any]) -> ScheduledTask:
         """Convert database row to ScheduledTask object."""
         destinations_data = json.loads(row['destinations'])
-        destinations = [Destination(**dest) for dest in destinations_data]
+        destinations = []
+        for dest in destinations_data:
+            # Convert type string to enum (database stores string values)
+            if isinstance(dest.get('type'), str):
+                dest['type'] = DestinationType(dest['type'])
+            destinations.append(Destination(**dest))
 
         options_data = json.loads(row['summary_options'])
         options_data['summary_length'] = SummaryLength(options_data['summary_length'])

@@ -32,10 +32,14 @@ class ReferenceStyle(str, Enum):
 
 @dataclass
 class SectionConfig(BaseModel):
-    """Configuration for a single section in the push output."""
+    """Configuration for a single section in the push output.
+
+    ADR-014: Template-based push sends ALL content without truncation.
+    Content is paginated across multiple messages if needed.
+    """
     type: str  # key_points, action_items, decisions, technical_terms, participants, sources
     enabled: bool = True
-    max_items: int = 10
+    max_items: int = 100  # High limit - pagination handles overflow
     title_override: Optional[str] = None  # Custom section title
     combine_with_previous: bool = False  # Combine into same message as previous section
 
@@ -82,7 +86,7 @@ class SectionConfig(BaseModel):
         return cls(
             type=data.get("type", "key_points"),
             enabled=data.get("enabled", True),
-            max_items=data.get("max_items", 10),
+            max_items=data.get("max_items", 100),  # ADR-014: No truncation
             title_override=data.get("title_override"),
             combine_with_previous=data.get("combine_with_previous", False),
         )
@@ -109,13 +113,14 @@ class PushTemplate(BaseModel):
     show_summary_text: bool = True
 
     # Sections (order determines message order)
+    # ADR-014: All content sent without truncation - pagination handles overflow
     sections: List[SectionConfig] = field(default_factory=lambda: [
-        SectionConfig(type="key_points", enabled=True, max_items=10),
-        SectionConfig(type="action_items", enabled=True, max_items=5),
-        SectionConfig(type="decisions", enabled=True, max_items=5),
-        SectionConfig(type="technical_terms", enabled=False, max_items=5),
-        SectionConfig(type="participants", enabled=False, max_items=10),
-        SectionConfig(type="sources", enabled=True, max_items=20),
+        SectionConfig(type="key_points", enabled=True, max_items=100),
+        SectionConfig(type="action_items", enabled=True, max_items=100),
+        SectionConfig(type="decisions", enabled=True, max_items=100),
+        SectionConfig(type="technical_terms", enabled=False, max_items=100),
+        SectionConfig(type="participants", enabled=False, max_items=100),
+        SectionConfig(type="sources", enabled=True, max_items=100),
     ])
 
     # Reference formatting
@@ -178,11 +183,12 @@ class PushTemplate(BaseModel):
 
 
 # Default sections configuration
+# ADR-014: All content sent - pagination handles message limits
 DEFAULT_SECTIONS = [
-    SectionConfig(type="key_points", enabled=True, max_items=10),
-    SectionConfig(type="action_items", enabled=True, max_items=5),
-    SectionConfig(type="decisions", enabled=True, max_items=5),
-    SectionConfig(type="sources", enabled=True, max_items=15),
+    SectionConfig(type="key_points", enabled=True, max_items=100),
+    SectionConfig(type="action_items", enabled=True, max_items=100),
+    SectionConfig(type="decisions", enabled=True, max_items=100),
+    SectionConfig(type="sources", enabled=True, max_items=100),
 ]
 
 # Default push template

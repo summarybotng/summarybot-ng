@@ -106,9 +106,14 @@ def _get_global_write_lock() -> asyncio.Lock:
 
 
 class SQLiteConnection(DatabaseConnection):
-    """SQLite database connection with connection pooling."""
+    """SQLite database connection with single-connection mode for safety.
 
-    def __init__(self, db_path: str, pool_size: int = 5):
+    Note: Pool size of 1 is used to prevent database locking issues.
+    aiosqlite uses worker threads per connection, and multiple connections
+    can cause database lock errors even with asyncio locks.
+    """
+
+    def __init__(self, db_path: str, pool_size: int = 1):
         self.db_path = db_path
         self.pool_size = pool_size
         self._connections: List[aiosqlite.Connection] = []

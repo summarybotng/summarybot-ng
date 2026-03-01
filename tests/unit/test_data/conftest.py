@@ -10,7 +10,7 @@ import pytest_asyncio
 from datetime import datetime, timedelta
 from typing import AsyncGenerator
 
-from src.data.sqlite import SQLiteConnection, SQLiteSummaryRepository, SQLiteConfigRepository, SQLiteTaskRepository
+from src.data.sqlite import SQLiteConnection, SQLiteSummaryRepository, SQLiteConfigRepository, SQLiteTaskRepository, SQLiteStoredSummaryRepository
 from src.data.base import SearchCriteria
 from src.models.summary import (
     SummaryResult, SummaryOptions, ActionItem, TechnicalTerm,
@@ -115,6 +115,40 @@ async def _create_schema(connection: SQLiteConnection) -> None:
         )
     """)
 
+    # Stored summaries table (ADR-008, ADR-012, ADR-017)
+    await connection.execute("""
+        CREATE TABLE IF NOT EXISTS stored_summaries (
+            id TEXT PRIMARY KEY,
+            guild_id TEXT NOT NULL,
+            source_channel_ids TEXT NOT NULL,
+            schedule_id TEXT,
+            summary_json TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            viewed_at TIMESTAMP,
+            pushed_at TIMESTAMP,
+            push_deliveries TEXT,
+            title TEXT NOT NULL,
+            is_pinned BOOLEAN DEFAULT FALSE,
+            is_archived BOOLEAN DEFAULT FALSE,
+            tags TEXT,
+            source TEXT DEFAULT 'realtime',
+            archive_period TEXT,
+            archive_granularity TEXT,
+            archive_source_key TEXT,
+            channel_id TEXT,
+            channel_name TEXT,
+            start_time TEXT,
+            end_time TEXT,
+            timezone TEXT DEFAULT 'UTC',
+            message_count INTEGER DEFAULT 0,
+            participant_count INTEGER DEFAULT 0,
+            scope TEXT DEFAULT 'channel',
+            category_id TEXT,
+            category_name TEXT,
+            FOREIGN KEY (schedule_id) REFERENCES scheduled_tasks(id) ON DELETE SET NULL
+        )
+    """)
+
 
 @pytest_asyncio.fixture
 async def summary_repository(in_memory_db: SQLiteConnection) -> SQLiteSummaryRepository:
@@ -132,6 +166,12 @@ async def config_repository(in_memory_db: SQLiteConnection) -> SQLiteConfigRepos
 async def task_repository(in_memory_db: SQLiteConnection) -> SQLiteTaskRepository:
     """Create a task repository with in-memory database."""
     return SQLiteTaskRepository(in_memory_db)
+
+
+@pytest_asyncio.fixture
+async def stored_summary_repository(in_memory_db: SQLiteConnection) -> SQLiteStoredSummaryRepository:
+    """Create a stored summary repository with in-memory database."""
+    return SQLiteStoredSummaryRepository(in_memory_db)
 
 
 @pytest.fixture

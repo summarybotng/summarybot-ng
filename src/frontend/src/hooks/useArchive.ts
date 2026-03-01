@@ -434,12 +434,24 @@ export interface ArchiveSummariesResponse {
   total: number;
 }
 
-export function useArchiveSummaries(serverId: string, limit: number = 50, offset: number = 0) {
+export interface ArchiveSummariesOptions {
+  limit?: number;
+  offset?: number;
+  sortBy?: "archive_period" | "message_count" | "created_at";
+  sortOrder?: "asc" | "desc";
+}
+
+export function useArchiveSummaries(
+  serverId: string,
+  options: ArchiveSummariesOptions = {}
+) {
+  const { limit = 50, offset = 0, sortBy = "archive_period", sortOrder = "desc" } = options;
+
   return useQuery({
-    queryKey: ["archive", "summaries", serverId, limit, offset],
+    queryKey: ["archive", "summaries", serverId, limit, offset, sortBy, sortOrder],
     queryFn: () =>
       api.get<ArchiveSummariesResponse>(
-        `/archive/summaries/${serverId}?limit=${limit}&offset=${offset}`
+        `/archive/summaries/${serverId}?limit=${limit}&offset=${offset}&sort_by=${sortBy}&sort_order=${sortOrder}`
       ),
     enabled: !!serverId,
     staleTime: 60 * 1000,

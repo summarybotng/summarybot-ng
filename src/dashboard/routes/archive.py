@@ -941,6 +941,8 @@ async def list_archive_summaries(
     server_id: str,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    sort_by: str = Query("archive_period", description="Sort field (archive_period, message_count, created_at)"),
+    sort_order: str = Query("desc", description="Sort direction (asc, desc)"),
 ):
     """
     List archive summaries for a server.
@@ -949,6 +951,7 @@ async def list_archive_summaries(
     regular summaries in the UI.
 
     ADR-019: Now queries database instead of disk files.
+    ADR-017: Supports sorting by message_count and other fields.
     """
     from . import get_stored_summary_repository
 
@@ -957,14 +960,19 @@ async def list_archive_summaries(
         logger.warning(f"Stored summary repository not available for server {server_id}")
         return ArchiveSummariesListResponse(summaries=[], total=0)
 
+    # ADR-017: Dynamic sorting support
+    valid_sort_fields = {"archive_period", "message_count", "created_at"}
+    if sort_by not in valid_sort_fields:
+        sort_by = "archive_period"
+
     # Query database for archive summaries (source="archive")
     db_summaries = await repo.find_by_guild(
         guild_id=server_id,
         source="archive",
         limit=limit,
         offset=offset,
-        sort_by="archive_period",
-        sort_order="desc",
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
 
     # Get total count

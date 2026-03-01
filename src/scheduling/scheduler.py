@@ -55,6 +55,9 @@ class TaskScheduler:
         self._running = False
         self._startup_complete = False
 
+        # Guard against concurrent execution of the same task
+        self._executing_tasks: set = set()
+
     async def start(self) -> None:
         """Start the task scheduler."""
         if self._running:
@@ -492,8 +495,16 @@ class TaskScheduler:
             logger.error(f"Task {task_id} not found in active tasks")
             return
 
+        # Guard against concurrent execution of the same task
+        if task_id in self._executing_tasks:
+            logger.warning(f"Task {task_id} is already running, skipping concurrent execution")
+            return
+
         task = self.active_tasks[task_id]
         metadata = self.task_metadata.get(task_id)
+
+        # Mark task as executing
+        self._executing_tasks.add(task_id)
 
         logger.info(f"Executing scheduled task {task_id}: {task.name}")
 
@@ -550,6 +561,10 @@ class TaskScheduler:
                 task=task,
                 error=e
             )
+
+        finally:
+            # Always remove from executing tasks when done
+            self._executing_tasks.discard(task_id)
 
     async def _load_persisted_tasks(self) -> None:
         """Load persisted tasks from storage (database preferred, then files)."""

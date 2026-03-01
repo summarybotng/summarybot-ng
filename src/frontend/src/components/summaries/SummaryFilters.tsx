@@ -5,7 +5,7 @@
  * Includes date range, sort controls, channel mode, integrity filters, and content filters.
  */
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon, ArrowUpDown, Filter, X, Hash, AlertTriangle, CheckCircle2, ListChecks, Users, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -61,6 +61,48 @@ interface SummaryFiltersProps {
   filters: FilterState;
   onFiltersChange: (filters: FilterState) => void;
   totalCount: number;
+}
+
+// Number input that only submits on blur or Enter (prevents auto-submit while typing)
+interface DebouncedNumberInputProps {
+  value: number | undefined;
+  onChange: (value: number | undefined) => void;
+  placeholder?: string;
+  className?: string;
+  min?: number;
+}
+
+function DebouncedNumberInput({ value, onChange, placeholder, className, min }: DebouncedNumberInputProps) {
+  const [localValue, setLocalValue] = useState(value?.toString() ?? "");
+
+  // Sync local value when external value changes
+  useEffect(() => {
+    setLocalValue(value?.toString() ?? "");
+  }, [value]);
+
+  const handleCommit = useCallback(() => {
+    const parsed = localValue ? parseInt(localValue, 10) : undefined;
+    if (parsed !== value) {
+      onChange(parsed);
+    }
+  }, [localValue, value, onChange]);
+
+  return (
+    <Input
+      type="number"
+      placeholder={placeholder}
+      className={className}
+      min={min}
+      value={localValue}
+      onChange={(e) => setLocalValue(e.target.value)}
+      onBlur={handleCommit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          handleCommit();
+        }
+      }}
+    />
+  );
 }
 
 export function SummaryFilters({ filters, onFiltersChange, totalCount }: SummaryFiltersProps) {
@@ -346,28 +388,28 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
                   Message Count
                 </label>
                 <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
+                  <DebouncedNumberInput
                     placeholder="Min"
                     className="w-20 h-8"
-                    value={filters.minMessageCount ?? ""}
-                    onChange={(e) =>
+                    min={0}
+                    value={filters.minMessageCount}
+                    onChange={(val) =>
                       onFiltersChange({
                         ...filters,
-                        minMessageCount: e.target.value ? parseInt(e.target.value) : undefined,
+                        minMessageCount: val,
                       })
                     }
                   />
                   <span className="text-muted-foreground">to</span>
-                  <Input
-                    type="number"
+                  <DebouncedNumberInput
                     placeholder="Max"
                     className="w-20 h-8"
-                    value={filters.maxMessageCount ?? ""}
-                    onChange={(e) =>
+                    min={0}
+                    value={filters.maxMessageCount}
+                    onChange={(val) =>
                       onFiltersChange({
                         ...filters,
-                        maxMessageCount: e.target.value ? parseInt(e.target.value) : undefined,
+                        maxMessageCount: val,
                       })
                     }
                   />
@@ -382,30 +424,28 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">Key Points</label>
                   <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
+                    <DebouncedNumberInput
                       placeholder="Min"
                       className="w-16 h-7 text-xs"
                       min={0}
-                      value={filters.minKeyPoints ?? ""}
-                      onChange={(e) =>
+                      value={filters.minKeyPoints}
+                      onChange={(val) =>
                         onFiltersChange({
                           ...filters,
-                          minKeyPoints: e.target.value ? parseInt(e.target.value) : undefined,
+                          minKeyPoints: val,
                         })
                       }
                     />
                     <span className="text-xs text-muted-foreground">-</span>
-                    <Input
-                      type="number"
+                    <DebouncedNumberInput
                       placeholder="Max"
                       className="w-16 h-7 text-xs"
                       min={0}
-                      value={filters.maxKeyPoints ?? ""}
-                      onChange={(e) =>
+                      value={filters.maxKeyPoints}
+                      onChange={(val) =>
                         onFiltersChange({
                           ...filters,
-                          maxKeyPoints: e.target.value ? parseInt(e.target.value) : undefined,
+                          maxKeyPoints: val,
                         })
                       }
                     />
@@ -416,30 +456,28 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">Action Items</label>
                   <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
+                    <DebouncedNumberInput
                       placeholder="Min"
                       className="w-16 h-7 text-xs"
                       min={0}
-                      value={filters.minActionItems ?? ""}
-                      onChange={(e) =>
+                      value={filters.minActionItems}
+                      onChange={(val) =>
                         onFiltersChange({
                           ...filters,
-                          minActionItems: e.target.value ? parseInt(e.target.value) : undefined,
+                          minActionItems: val,
                         })
                       }
                     />
                     <span className="text-xs text-muted-foreground">-</span>
-                    <Input
-                      type="number"
+                    <DebouncedNumberInput
                       placeholder="Max"
                       className="w-16 h-7 text-xs"
                       min={0}
-                      value={filters.maxActionItems ?? ""}
-                      onChange={(e) =>
+                      value={filters.maxActionItems}
+                      onChange={(val) =>
                         onFiltersChange({
                           ...filters,
-                          maxActionItems: e.target.value ? parseInt(e.target.value) : undefined,
+                          maxActionItems: val,
                         })
                       }
                     />
@@ -450,30 +488,28 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">Participants</label>
                   <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
+                    <DebouncedNumberInput
                       placeholder="Min"
                       className="w-16 h-7 text-xs"
                       min={0}
-                      value={filters.minParticipants ?? ""}
-                      onChange={(e) =>
+                      value={filters.minParticipants}
+                      onChange={(val) =>
                         onFiltersChange({
                           ...filters,
-                          minParticipants: e.target.value ? parseInt(e.target.value) : undefined,
+                          minParticipants: val,
                         })
                       }
                     />
                     <span className="text-xs text-muted-foreground">-</span>
-                    <Input
-                      type="number"
+                    <DebouncedNumberInput
                       placeholder="Max"
                       className="w-16 h-7 text-xs"
                       min={0}
-                      value={filters.maxParticipants ?? ""}
-                      onChange={(e) =>
+                      value={filters.maxParticipants}
+                      onChange={(val) =>
                         onFiltersChange({
                           ...filters,
-                          maxParticipants: e.target.value ? parseInt(e.target.value) : undefined,
+                          maxParticipants: val,
                         })
                       }
                     />

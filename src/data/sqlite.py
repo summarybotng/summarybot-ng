@@ -1324,8 +1324,14 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             sort_by = "created_at"
         sort_direction = "ASC" if sort_order.lower() == "asc" else "DESC"
 
+        # Handle NULL values for sorting - use COALESCE for message_count
+        if sort_by == "message_count":
+            sort_field = f"COALESCE({sort_by}, 0)"
+        else:
+            sort_field = sort_by
+
         # Always sort pinned first, then by the selected field
-        order_clause = f"is_pinned DESC, {sort_by} {sort_direction}"
+        order_clause = f"is_pinned DESC, {sort_field} {sort_direction}"
 
         query = f"""
         SELECT * FROM stored_summaries

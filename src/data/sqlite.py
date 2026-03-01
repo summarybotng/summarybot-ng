@@ -92,6 +92,19 @@ class SQLiteTransaction(Transaction):
             await self.commit()
 
 
+# Module-level write lock - shared across all SQLiteConnection instances
+# to prevent concurrent writes from causing database lock errors
+_global_write_lock: Optional[asyncio.Lock] = None
+
+
+def _get_global_write_lock() -> asyncio.Lock:
+    """Get the global write lock, creating it if necessary."""
+    global _global_write_lock
+    if _global_write_lock is None:
+        _global_write_lock = asyncio.Lock()
+    return _global_write_lock
+
+
 class SQLiteConnection(DatabaseConnection):
     """SQLite database connection with connection pooling."""
 
@@ -101,7 +114,6 @@ class SQLiteConnection(DatabaseConnection):
         self._connections: List[aiosqlite.Connection] = []
         self._available: asyncio.Queue = asyncio.Queue(maxsize=pool_size)
         self._lock = asyncio.Lock()
-        self._write_lock = asyncio.Lock()  # Serialize all writes to avoid SQLite locking issues
         self._initialized = False
 
     async def connect(self) -> None:
@@ -173,7 +185,8 @@ class SQLiteConnection(DatabaseConnection):
             try:
                 if is_write:
                     # Serialize writes to prevent concurrent write conflicts
-                    async with self._write_lock:
+                    # Use global lock to coordinate across all SQLiteConnection instances
+                    async with _get_global_write_lock():
                         async with self._get_connection() as conn:
                             cursor = await conn.execute(query, params or ())
                             await conn.commit()

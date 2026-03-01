@@ -75,7 +75,6 @@ def mock_config():
 
     return BotConfig(
         discord_token="test_token",
-        claude_api_key="test_api_key",
         guild_configs={"123456789": guild_config},
         webhook_config=webhook_config,
         database_config=database_config,

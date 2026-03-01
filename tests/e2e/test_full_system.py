@@ -10,7 +10,7 @@ import pytest_asyncio
 import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 
 from src.discord_bot.bot import SummaryBot
 from src.webhook_service.server import WebhookServer
@@ -141,7 +141,7 @@ class TestFullSystemIntegration:
             for msg in sample_messages
         ]
 
-        async with AsyncClient(app=webhook.app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=webhook.app), base_url="http://test") as client:
             # Make webhook request
             webhook_task = client.post(
                 "/api/v1/summaries",
@@ -226,7 +226,7 @@ class TestFullSystemIntegration:
         """Test system-wide health check through webhook API."""
         webhook = full_system['webhook']
 
-        async with AsyncClient(app=webhook.app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=webhook.app), base_url="http://test") as client:
             response = await client.get("/health")
 
             assert response.status_code in [200, 503]
@@ -265,7 +265,7 @@ class TestFullSystemIntegration:
         webhook = full_system['webhook']
 
         # Simulate error in one request
-        async with AsyncClient(app=webhook.app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=webhook.app), base_url="http://test") as client:
             # Send invalid request
             response1 = await client.post(
                 "/api/v1/summaries",
@@ -343,7 +343,7 @@ class TestSystemPerformance:
         """Test system performance under sustained load."""
         webhook = full_system['webhook']
 
-        async with AsyncClient(app=webhook.app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=webhook.app), base_url="http://test") as client:
             # Make multiple health check requests
             tasks = [
                 client.get("/health")
@@ -373,7 +373,7 @@ class TestSystemPerformance:
         webhook = full_system['webhook']
 
         # Make many requests
-        async with AsyncClient(app=webhook.app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=webhook.app), base_url="http://test") as client:
             for _ in range(20):
                 await client.get("/health")
 

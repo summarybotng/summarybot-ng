@@ -38,7 +38,8 @@ class ServiceContainer:
     def claude_client(self) -> ClaudeClient:
         """Get Claude API client instance."""
         if self._claude_client is None:
-            self._claude_client = ClaudeClient(api_key=self.config.claude_api_key)
+            api_key = os.getenv('OPENROUTER_API_KEY', '')
+            self._claude_client = ClaudeClient(api_key=api_key)
         return self._claude_client
 
     @property

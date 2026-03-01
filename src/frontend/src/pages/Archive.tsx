@@ -684,9 +684,13 @@ function GenerateDialog({
                 )}
               </SelectContent>
             </Select>
-            {whatsappSources.length === 0 && (
+            {whatsappSources.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 Import a WhatsApp chat first using the Import button
+              </p>
+            ) : !whatsappSourceId && (
+              <p className="text-xs text-orange-500">
+                Please select a WhatsApp chat to continue
               </p>
             )}
           </div>
@@ -811,7 +815,11 @@ function GenerateDialog({
       </div>
 
       <DialogFooter className="gap-2">
-        <Button variant="outline" onClick={handleEstimate} disabled={estimating}>
+        <Button
+          variant="outline"
+          onClick={handleEstimate}
+          disabled={estimating || (sourceType === "whatsapp" && !whatsappSourceId)}
+        >
           {estimating ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
@@ -819,7 +827,11 @@ function GenerateDialog({
           )}
           Estimate
         </Button>
-        <Button onClick={handleGenerate} disabled={isPending}>
+        <Button
+          onClick={handleGenerate}
+          disabled={isPending || (sourceType === "whatsapp" && !whatsappSourceId)}
+          title={sourceType === "whatsapp" && !whatsappSourceId ? "Select a WhatsApp chat first" : undefined}
+        >
           {isPending ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (

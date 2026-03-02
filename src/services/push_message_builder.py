@@ -536,8 +536,20 @@ def extract_push_context(
     if stored_summary:
         context.guild_id = stored_summary.guild_id
 
+        # ADR-026: Handle multi-platform sources (WhatsApp, etc.)
+        if stored_summary.archive_source_key:
+            # Parse source key like "whatsapp:ai-code-chat" or "discord:channel-name"
+            parts = stored_summary.archive_source_key.split(":", 1)
+            if len(parts) == 2:
+                platform, source_name = parts
+                # Format as friendly name: "WhatsApp: ai-code-chat"
+                platform_display = platform.capitalize()
+                context.channel_names = [f"{platform_display}: {source_name}"]
+            else:
+                context.channel_names = [stored_summary.archive_source_key]
+
         # Extract channel names from source_channel_ids or title
-        if stored_summary.source_channel_ids:
+        elif stored_summary.source_channel_ids:
             # Would need to resolve channel IDs to names via Discord API
             # For now, use the stored info if available
             pass
@@ -549,6 +561,17 @@ def extract_push_context(
             elif stored_summary.scope == 'category' and hasattr(stored_summary, 'category_name'):
                 context.category_name = stored_summary.category_name
 
+        # ADR-026: Use archive_period for date range on archive summaries
+        if stored_summary.archive_period and not context.start_time:
+            from datetime import datetime
+            try:
+                period_date = datetime.strptime(stored_summary.archive_period, "%Y-%m-%d")
+                # Set start and end to cover the full day
+                context.start_time = period_date.replace(hour=0, minute=0, second=0)
+                context.end_time = period_date.replace(hour=23, minute=59, second=59)
+            except ValueError:
+                pass
+
         # Get the summary result
         summary = stored_summary.summary_result
     else:
@@ -556,13 +579,16 @@ def extract_push_context(
 
     if summary:
         context.guild_id = context.guild_id or summary.guild_id
-        context.start_time = summary.start_time
-        context.end_time = summary.end_time
+        # Only use summary times if not already set from archive_period
+        if not context.start_time:
+            context.start_time = summary.start_time
+        if not context.end_time:
+            context.end_time = summary.end_time
         context.message_count = summary.message_count
         context.participant_count = len(summary.participants)
 
-        # Try to get channel name from context
-        if summary.context and summary.context.channel_name:
+        # Try to get channel name from context (only if not already set)
+        if not context.channel_names and summary.context and summary.context.channel_name:
             context.channel_names = [summary.context.channel_name]
 
     return context

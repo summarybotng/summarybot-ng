@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { format } from "date-fns";
+import { format, parse } from "date-fns";
 import { Calendar as CalendarIcon, ArrowUpDown, Filter, X, Hash, AlertTriangle, CheckCircle2, ListChecks, Users, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -55,6 +55,8 @@ export interface FilterState {
   maxActionItems?: number;
   minParticipants?: number;
   maxParticipants?: number;
+  // ADR-026: Platform filter
+  platform?: string;
 }
 
 interface SummaryFiltersProps {
@@ -171,6 +173,24 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
               <SelectItem value="archive">Archive</SelectItem>
               <SelectItem value="manual">Manual</SelectItem>
               <SelectItem value="imported">Imported</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* ADR-026: Platform filter */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Platform:</span>
+          <Select
+            value={filters.platform || "all"}
+            onValueChange={(v) => onFiltersChange({ ...filters, platform: v === "all" ? undefined : v })}
+          >
+            <SelectTrigger className="w-[130px] h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Platforms</SelectItem>
+              <SelectItem value="discord">Discord</SelectItem>
+              <SelectItem value="whatsapp">WhatsApp</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -555,7 +575,8 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
           {filters.archivePeriod && (
             <Badge variant="default" className="gap-1">
               <CalendarIcon className="h-3 w-3 mr-1" />
-              {format(new Date(filters.archivePeriod), "MMM d, yyyy")}
+              {/* Parse as local date to avoid timezone offset issues */}
+              {format(parse(filters.archivePeriod, "yyyy-MM-dd", new Date()), "MMM d, yyyy")}
               <button
                 onClick={() => onFiltersChange({ ...filters, archivePeriod: undefined })}
                 className="ml-1 hover:text-destructive"

@@ -59,6 +59,8 @@ interface StoredSummariesParams {
   maxActionItems?: number;
   minParticipants?: number;
   maxParticipants?: number;
+  // ADR-026: Platform filter
+  platform?: string;
 }
 
 export function useStoredSummaries(
@@ -94,6 +96,8 @@ export function useStoredSummaries(
   if (params.maxActionItems !== undefined) queryParams.set("max_action_items", params.maxActionItems.toString());
   if (params.minParticipants !== undefined) queryParams.set("min_participants", params.minParticipants.toString());
   if (params.maxParticipants !== undefined) queryParams.set("max_participants", params.maxParticipants.toString());
+  // ADR-026: Platform filter
+  if (params.platform && params.platform !== "all") queryParams.set("platform", params.platform);
 
   const queryString = queryParams.toString();
 

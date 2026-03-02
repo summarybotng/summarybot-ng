@@ -171,6 +171,8 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
     maxActionItems: filters.maxActionItems,
     minParticipants: filters.minParticipants,
     maxParticipants: filters.maxParticipants,
+    // ADR-026: Platform filter
+    platform: filters.platform,
   });
 
   const updateMutation = useUpdateStoredSummary(guildId);

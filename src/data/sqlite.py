@@ -1215,6 +1215,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         max_action_items: Optional[int] = None,
         min_participants: Optional[int] = None,
         max_participants: Optional[int] = None,
+        # ADR-026: Platform filter (discord, whatsapp, etc.)
+        platform: Optional[str] = None,
     ) -> List[StoredSummary]:
         """Find stored summaries for a guild.
 
@@ -1327,6 +1329,11 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.participants')), 0) <= ?")
             params.append(max_participants)
 
+        # ADR-026: Platform filter (filters by archive_source_key prefix)
+        if platform and platform != "all":
+            conditions.append("archive_source_key LIKE ?")
+            params.append(f"{platform}:%")
+
         where_clause = " AND ".join(conditions)
 
         # ADR-017: Dynamic sorting
@@ -1388,8 +1395,10 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         max_action_items: Optional[int] = None,
         min_participants: Optional[int] = None,
         max_participants: Optional[int] = None,
+        # ADR-026: Platform filter
+        platform: Optional[str] = None,
     ) -> int:
-        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021)."""
+        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026)."""
         conditions = ["guild_id = ?"]
         params: List[Any] = [guild_id]
 
@@ -1470,6 +1479,11 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         if max_participants is not None:
             conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.participants')), 0) <= ?")
             params.append(max_participants)
+
+        # ADR-026: Platform filter
+        if platform and platform != "all":
+            conditions.append("archive_source_key LIKE ?")
+            params.append(f"{platform}:%")
 
         where_clause = " AND ".join(conditions)
 

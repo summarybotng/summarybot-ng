@@ -305,7 +305,7 @@ class TaskExecutor:
             # Fetch and process messages from all channels
             # For multi-channel, skip per-channel min check and do aggregate check later
             all_messages = []
-            channel_names = []
+            channels_with_content = []  # Track channels that actually had messages
 
             for channel_id in channel_ids:
                 try:
@@ -316,7 +316,9 @@ class TaskExecutor:
                         options=task.summary_options,
                         skip_min_check=is_multi_channel  # Skip per-channel check for multi-channel
                     )
-                    all_messages.extend(channel_messages)
+                    if channel_messages:
+                        all_messages.extend(channel_messages)
+                        channels_with_content.append(channel_id)
                 except InsufficientContentError:
                     # For single channel, re-raise; for multi-channel, continue to next channel
                     if not is_multi_channel:
@@ -324,7 +326,9 @@ class TaskExecutor:
                     # Multi-channel: this channel had no messages, continue to others
                     logger.debug(f"Channel {channel_id} had no messages, continuing to next channel")
 
-                # Try to get channel name from Discord client
+            # Build channel names list from channels WITH CONTENT (for title)
+            channel_names = []
+            for channel_id in channels_with_content:
                 if self.discord_client:
                     try:
                         channel = self.discord_client.get_channel(int(channel_id))
@@ -374,6 +378,15 @@ class TaskExecutor:
             )
 
             logger.info(f"Generated summary {summary_result.id}")
+
+            # Store channels_with_content in metadata for title generation
+            if summary_result.metadata is None:
+                summary_result.metadata = {}
+            summary_result.metadata["channels_with_content"] = channels_with_content
+            # Store scope info for reference
+            if task.scheduled_task and task.scheduled_task.scope:
+                summary_result.metadata["scope_type"] = task.scheduled_task.scope.value
+            summary_result.metadata["scope_channel_ids"] = channel_ids
 
             # Deliver to destinations
             delivery_results = await self._deliver_summary(
@@ -859,12 +872,17 @@ class TaskExecutor:
         try:
             from ..data.repositories import get_stored_summary_repository
 
-            # Generate a descriptive title from channels
-            channel_names = []
-            channel_ids = task.get_all_channel_ids()
+            # Get channels that actually had content (from metadata) vs requested scope
+            scope_channel_ids = task.get_all_channel_ids()
+            channels_with_content = (
+                summary.metadata.get("channels_with_content", scope_channel_ids)
+                if summary.metadata else scope_channel_ids
+            )
 
+            # Build channel names from channels WITH CONTENT only
+            channel_names = []
             if self.discord_client:
-                for channel_id in channel_ids:
+                for channel_id in channels_with_content:
                     try:
                         channel = self.discord_client.get_channel(int(channel_id))
                         if channel:
@@ -874,15 +892,43 @@ class TaskExecutor:
                     except Exception:
                         channel_names.append(f"Channel {channel_id}")
             else:
-                channel_names = [f"Channel {cid}" for cid in channel_ids]
+                channel_names = [f"Channel {cid}" for cid in channels_with_content]
 
-            title = f"{', '.join(channel_names)} — {datetime.utcnow().strftime('%b %d, %H:%M')}"
+            # Generate smart title based on scope and content
+            timestamp = datetime.utcnow().strftime('%b %d, %H:%M')
+            scope_type = summary.metadata.get("scope_type") if summary.metadata else None
+
+            if scope_type == "guild" or len(scope_channel_ids) > 10:
+                # Server-wide summary - use count instead of listing all
+                if len(channel_names) > 3:
+                    title = f"Server Summary ({len(channel_names)} channels) — {timestamp}"
+                elif channel_names:
+                    title = f"{', '.join(channel_names)} — {timestamp}"
+                else:
+                    title = f"Server Summary — {timestamp}"
+            elif scope_type == "category":
+                # Category summary
+                category_name = task.scheduled_task.category_name if hasattr(task.scheduled_task, 'category_name') else None
+                if category_name:
+                    title = f"📁 {category_name} ({len(channel_names)} channels) — {timestamp}"
+                elif len(channel_names) > 3:
+                    title = f"Category Summary ({len(channel_names)} channels) — {timestamp}"
+                else:
+                    title = f"{', '.join(channel_names)} — {timestamp}"
+            else:
+                # Channel-specific summary
+                if len(channel_names) > 5:
+                    title = f"{', '.join(channel_names[:3])} +{len(channel_names)-3} more — {timestamp}"
+                elif channel_names:
+                    title = f"{', '.join(channel_names)} — {timestamp}"
+                else:
+                    title = f"Summary — {timestamp}"
 
             # Create stored summary with SCHEDULED source
             from ..models.stored_summary import SummarySource
             stored_summary = StoredSummary(
                 guild_id=task.guild_id,
-                source_channel_ids=channel_ids,
+                source_channel_ids=scope_channel_ids,  # Store full scope for reference
                 schedule_id=task.scheduled_task.id,
                 summary_result=summary,
                 title=title,

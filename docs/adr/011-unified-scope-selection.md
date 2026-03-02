@@ -476,7 +476,48 @@ SummaryBot Archives/
 - Create appropriate folder structure in Drive
 - Include scope info in sync state tracking
 
-### 9. UI/UX Considerations
+### 9. Title Generation Rules
+
+Summary titles should reflect **channels with actual content**, not all channels in the requested scope. This distinction is important for:
+- Clarity about what's actually summarized
+- Shorter, more readable titles
+- Accurate representation of activity
+
+#### Title Generation Logic
+
+```python
+# Metadata stores both:
+summary.metadata = {
+    "scope_type": "guild",           # What was requested
+    "scope_channel_ids": [...],      # All channels in scope (55 channels)
+    "channels_with_content": [...]   # Channels with messages (3 channels)
+}
+
+# Title is built from channels_with_content, not scope_channel_ids
+```
+
+#### Title Format by Scope Type
+
+| Scope | Channels with Content | Title Format |
+|-------|----------------------|--------------|
+| Guild | 0 | "Server Summary — Mar 01, 23:59" |
+| Guild | 1-3 | "#channel1, #channel2 — Mar 01, 23:59" |
+| Guild | 4+ | "Server Summary (N channels) — Mar 01, 23:59" |
+| Category | 0 | "📁 CategoryName — Mar 01, 23:59" |
+| Category | 1-3 | "#channel1, #channel2 — Mar 01, 23:59" |
+| Category | 4+ | "📁 CategoryName (N channels) — Mar 01, 23:59" |
+| Channel | 1-5 | "#channel1, #channel2, ... — Mar 01, 23:59" |
+| Channel | 6+ | "#ch1, #ch2, #ch3 +N more — Mar 01, 23:59" |
+
+#### Implementation (2026-03-02)
+
+The `_deliver_to_dashboard` method in `src/scheduling/executor.py` now:
+1. Extracts `channels_with_content` from summary metadata
+2. Falls back to `scope_channel_ids` if not available
+3. Generates smart titles based on scope type and content count
+4. Stores original scope in `source_channel_ids` for reference
+
+### 10. UI/UX Considerations
 
 1. **Scope Badge**: Show scope type badge on schedule cards (e.g., "Category: Engineering")
 2. **Channel Count**: Display resolved channel count for category/guild scopes

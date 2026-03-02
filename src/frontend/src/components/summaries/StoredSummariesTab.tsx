@@ -614,6 +614,7 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
           summaryTitle={pushModalSummary.title}
           isPending={pushMutation.isPending}
           onSubmit={handlePush}
+          guildId={guildId}
         />
       )}
 

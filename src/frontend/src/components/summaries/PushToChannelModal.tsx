@@ -2,7 +2,7 @@
  * Push to Channel Modal (ADR-005)
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +26,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Send, Search } from "lucide-react";
 import type { Channel, PushToChannelRequest } from "@/types";
 
+// Helper to get/set last used channel per guild
+const getLastPushChannel = (guildId: string): string | null => {
+  try {
+    return localStorage.getItem(`push_channel_${guildId}`);
+  } catch {
+    return null;
+  }
+};
+
+const setLastPushChannel = (guildId: string, channelId: string) => {
+  try {
+    localStorage.setItem(`push_channel_${guildId}`, channelId);
+  } catch {
+    // Ignore localStorage errors
+  }
+};
+
 interface PushToChannelModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -33,6 +50,7 @@ interface PushToChannelModalProps {
   summaryTitle: string;
   isPending: boolean;
   onSubmit: (request: PushToChannelRequest) => void;
+  guildId: string;
 }
 
 export function PushToChannelModal({
@@ -42,6 +60,7 @@ export function PushToChannelModal({
   summaryTitle,
   isPending,
   onSubmit,
+  guildId,
 }: PushToChannelModalProps) {
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [format, setFormat] = useState<"embed" | "markdown" | "plain">("embed");
@@ -59,8 +78,23 @@ export function PushToChannelModal({
     c.name.toLowerCase().includes(channelSearch.toLowerCase())
   );
 
+  // Pre-select last used channel when modal opens
+  useEffect(() => {
+    if (open && guildId && selectedChannels.length === 0) {
+      const lastChannel = getLastPushChannel(guildId);
+      if (lastChannel && textChannels.some(c => c.id === lastChannel)) {
+        setSelectedChannels([lastChannel]);
+      }
+    }
+  }, [open, guildId, textChannels]);
+
   const handleSubmit = () => {
     if (selectedChannels.length === 0) return;
+
+    // Save the first selected channel as the default for next time
+    if (guildId && selectedChannels.length > 0) {
+      setLastPushChannel(guildId, selectedChannels[0]);
+    }
 
     onSubmit({
       channel_ids: selectedChannels,

@@ -218,7 +218,7 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
               )}
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
+          <PopoverContent className="w-auto min-w-[600px] p-0" align="start">
             <DateRangeSelector
               from={filters.createdAfter ? new Date(filters.createdAfter) : undefined}
               to={filters.createdBefore ? new Date(filters.createdBefore) : undefined}
@@ -768,9 +768,9 @@ function DateRangeSelector({ from, to, onSelect, onClear }: DateRangeSelectorPro
       </div>
 
       <div className="border-t pt-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">From</label>
+        <div className="flex gap-6 justify-center">
+          <div className="flex flex-col items-center">
+            <label className="text-xs text-muted-foreground mb-2 font-medium">From</label>
             <Calendar
               mode="single"
               selected={internalFrom}
@@ -779,8 +779,8 @@ function DateRangeSelector({ from, to, onSelect, onClear }: DateRangeSelectorPro
               initialFocus
             />
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">To</label>
+          <div className="flex flex-col items-center">
+            <label className="text-xs text-muted-foreground mb-2 font-medium">To</label>
             <Calendar
               mode="single"
               selected={internalTo}

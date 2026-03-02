@@ -50,14 +50,14 @@ def count_phone_numbers(text: str) -> int:
 
 
 def anonymize_summary_result(
-    summary_data: Dict[str, Any],
+    summary_json: Dict[str, Any],
     anonymizer: PhoneAnonymizer,
 ) -> tuple[Dict[str, Any], Dict[str, int]]:
     """
     Anonymize phone numbers in a summary result dict.
 
     Args:
-        summary_data: The summary result data
+        summary_json: The summary result data
         anonymizer: PhoneAnonymizer instance
 
     Returns:
@@ -71,7 +71,7 @@ def anonymize_summary_result(
         "technical_terms": 0,
     }
 
-    data = summary_data.copy()
+    data = summary_json.copy()
 
     # Anonymize summary_text
     if data.get("summary_text"):
@@ -210,7 +210,7 @@ async def migrate_summaries(dry_run: bool = True) -> Dict[str, Any]:
         async with aiosqlite.connect(db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("""
-                SELECT id, guild_id, summary_data, archive_source_key
+                SELECT id, guild_id, summary_json, archive_source_key
                 FROM stored_summaries
                 WHERE archive_source_key LIKE 'whatsapp:%'
                 ORDER BY created_at DESC
@@ -222,8 +222,8 @@ async def migrate_summaries(dry_run: bool = True) -> Dict[str, Any]:
             for row in rows:
                 summary_id = row["id"]
                 guild_id = row["guild_id"]
-                summary_data_raw = row["summary_data"]
-                summary_data = json.loads(summary_data_raw) if isinstance(summary_data_raw, str) else (summary_data_raw or {})
+                summary_json_raw = row["summary_json"]
+                summary_json = json.loads(summary_json_raw) if isinstance(summary_json_raw, str) else (summary_json_raw or {})
 
                 stats["whatsapp_summaries"] += 1
 
@@ -231,17 +231,17 @@ async def migrate_summaries(dry_run: bool = True) -> Dict[str, Any]:
                 anonymizer = create_guild_anonymizer(guild_id)
 
                 # Check if summary has phone numbers
-                summary_text = summary_data.get("summary_text", "")
+                summary_text = summary_json.get("summary_text", "")
                 has_pii = has_phone_numbers(summary_text)
 
                 # Also check key points and participants
-                for kp in summary_data.get("key_points", []):
+                for kp in summary_json.get("key_points", []):
                     text = kp.get("text", "") if isinstance(kp, dict) else kp
                     if has_phone_numbers(text):
                         has_pii = True
                         break
 
-                for p in summary_data.get("participants", []):
+                for p in summary_json.get("participants", []):
                     name = p.get("name", "") if isinstance(p, dict) else p
                     if has_phone_numbers(name) or (isinstance(name, str) and name.startswith("+")):
                         has_pii = True
@@ -251,7 +251,7 @@ async def migrate_summaries(dry_run: bool = True) -> Dict[str, Any]:
                     stats["summaries_with_pii"] += 1
 
                     # Anonymize the summary
-                    anonymized_data, field_stats = anonymize_summary_result(summary_data, anonymizer)
+                    anonymized_data, field_stats = anonymize_summary_result(summary_json, anonymizer)
 
                     total_phones = sum(field_stats.values())
                     stats["phone_numbers_found"] += total_phones
@@ -276,7 +276,7 @@ async def migrate_summaries(dry_run: bool = True) -> Dict[str, Any]:
                         # Update the summary in database
                         try:
                             await db.execute(
-                                "UPDATE stored_summaries SET summary_data = ? WHERE id = ?",
+                                "UPDATE stored_summaries SET summary_json = ? WHERE id = ?",
                                 (json.dumps(anonymized_data), summary_id)
                             )
                             await db.commit()

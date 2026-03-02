@@ -1,7 +1,84 @@
 # ADR-026: Multi-Platform Source Architecture
 
 ## Status
-PROPOSED
+ACCEPTED (Minimal Implementation Completed)
+
+## Implementation (Spike - March 2026)
+
+A minimal "spike" implementation was completed to enable viewing WhatsApp summaries alongside Discord summaries without building the full Linked Sources infrastructure.
+
+### Approach: PRIMARY_GUILD_ID Pattern
+
+Instead of implementing the full `guild_linked_sources` table, we use a simpler approach:
+
+1. **Store WhatsApp summaries under a primary Discord guild** - Non-Discord sources (WhatsApp, Slack, etc.) store their summaries with `guild_id` set to `PRIMARY_GUILD_ID` from environment config
+2. **Preserve original source in `archive_source_key`** - The source attribution (e.g., `whatsapp:ai-code`) is preserved for display and filtering
+3. **Filter by platform** - Added platform filter to allow viewing only Discord or only WhatsApp summaries
+
+### Files Modified
+
+**Backend:**
+- `src/archive/generator.py` - Modified `_save_to_database()` to use `PRIMARY_GUILD_ID` for non-Discord sources
+- `src/dashboard/routes/archive.py` - Added `/migrate-source` endpoint for existing summaries
+- `src/dashboard/routes/summaries.py` - Added `platform` query parameter
+- `src/data/sqlite.py` - Added `platform` filter to `find_by_guild()` and `count_by_guild()`
+
+**Frontend:**
+- `src/frontend/src/components/summaries/SummaryFilters.tsx` - Added Platform dropdown filter
+- `src/frontend/src/components/summaries/StoredSummariesTab.tsx` - Pass platform filter to API
+- `src/frontend/src/hooks/useStoredSummaries.ts` - Added platform to query params
+
+**Configuration:**
+- `.env` - Added `PRIMARY_GUILD_ID=1283874310720716890`
+- `fly.toml` - Added `PRIMARY_GUILD_ID` for production
+
+### Key Code Change
+
+```python
+# src/archive/generator.py - _save_to_database()
+async def _save_to_database(self, ...):
+    """
+    ADR-026: For non-Discord sources (WhatsApp, Slack, etc.), store
+    summaries under the PRIMARY_GUILD_ID so they appear in the main
+    guild's summaries view. The original source is preserved in
+    archive_source_key for attribution.
+    """
+    # Determine guild_id for storage
+    if job.source.source_type != SourceType.DISCORD:
+        storage_guild_id = os.environ.get("PRIMARY_GUILD_ID", job.source.server_id or "")
+    else:
+        storage_guild_id = job.source.server_id or ""
+```
+
+### Migration Endpoint
+
+For existing WhatsApp summaries stored with the wrong `guild_id`:
+
+```bash
+curl -X POST "https://summarybot-ng.fly.dev/api/v1/archive/migrate-source" \
+  -H "X-Test-Auth-Key: $TEST_AUTH_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"source_key": "whatsapp:ai-code", "target_guild_id": "1283874310720716890"}'
+```
+
+### What This Enables
+
+1. WhatsApp summaries appear in the main guild's summaries list at `/guilds/{PRIMARY_GUILD_ID}/summaries`
+2. Users can filter by platform (All/Discord/WhatsApp) to find specific summaries
+3. The `archive_source_key` field shows the original source (e.g., "whatsapp:ai-code")
+4. No database schema changes required
+
+### What This Doesn't Solve (Deferred)
+
+- Multiple organizations with different primary guilds
+- Formal linking/unlinking of sources
+- Permission-level access control
+- Audit logging
+- Source ownership verification
+
+These require the full Linked Sources model described in this ADR.
+
+---
 
 ## Context
 

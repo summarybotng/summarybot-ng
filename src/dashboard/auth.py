@@ -7,7 +7,7 @@ import secrets
 import hashlib
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict
 from urllib.parse import urlencode
 
 import httpx
@@ -270,12 +270,18 @@ class DashboardAuth:
     # JWT Tokens
     # =========================================================================
 
-    def create_jwt(self, user: DashboardUser, guild_ids: List[str]) -> str:
+    def create_jwt(
+        self,
+        user: DashboardUser,
+        guild_ids: List[str],
+        guild_roles: Optional[Dict[str, str]] = None,
+    ) -> str:
         """Create JWT token for authenticated user.
 
         Args:
             user: Authenticated user
-            guild_ids: List of manageable guild IDs
+            guild_ids: List of accessible guild IDs
+            guild_roles: Dict mapping guild_id to role (owner/admin/member)
 
         Returns:
             JWT token string
@@ -286,6 +292,7 @@ class DashboardAuth:
             "username": user.username,
             "avatar": user.avatar,
             "guilds": guild_ids,
+            "guild_roles": guild_roles or {},  # Maps guild_id to role string
             "iat": now,
             "exp": now + timedelta(hours=self.jwt_expiration_hours),
         }
@@ -328,14 +335,14 @@ class DashboardAuth:
         """
         payload = self.verify_jwt(token)
 
-        # Create new token with same user info
+        # Create new token with same user info (preserving guild_roles)
         user = DashboardUser(
             id=payload["sub"],
             username=payload["username"],
             discriminator=None,
             avatar=payload.get("avatar"),
         )
-        return self.create_jwt(user, payload["guilds"])
+        return self.create_jwt(user, payload["guilds"], payload.get("guild_roles", {}))
 
     async def refresh_jwt_with_guilds(
         self, token: str, bot_guild_ids: set[str]
@@ -343,8 +350,8 @@ class DashboardAuth:
         """Refresh JWT token with a fresh guild list from Discord.
 
         Looks up the session, refreshes the Discord access token if needed,
-        re-fetches guilds from the Discord API, and filters to manageable
-        guilds that the bot is also in.
+        re-fetches guilds from the Discord API, and filters to guilds
+        where the bot is present (now includes members).
 
         Args:
             token: Current JWT token
@@ -367,7 +374,7 @@ class DashboardAuth:
         if session is None:
             # No session -- fall back to old behaviour (reuse JWT guild list)
             logger.warning("No session found for token refresh, reusing existing guild list")
-            new_token = self.create_jwt(user, payload["guilds"])
+            new_token = self.create_jwt(user, payload["guilds"], payload.get("guild_roles", {}))
             return new_token, payload["guilds"]
 
         # Get a valid Discord access token (auto-refreshes if expired)
@@ -376,19 +383,20 @@ class DashboardAuth:
         # Fetch fresh guild list from Discord
         all_guilds = await self.get_user_guilds(discord_token)
 
-        # Filter to guilds the user can manage AND the bot is in
-        manageable_guilds = [
+        # Filter to guilds where the bot is present (includes members now)
+        accessible_guilds = [
             g for g in all_guilds
-            if g.can_manage() and g.id in bot_guild_ids
+            if g.id in bot_guild_ids
         ]
-        guild_ids = [g.id for g in manageable_guilds]
+        guild_ids = [g.id for g in accessible_guilds]
+        guild_roles = {g.id: g.get_role().value for g in accessible_guilds}
 
         # Update session with new guild list
         session.manageable_guild_ids = guild_ids
 
         # Invalidate old JWT hash and create new token
         old_hash = self._hash_token(token)
-        new_token = self.create_jwt(user, guild_ids)
+        new_token = self.create_jwt(user, guild_ids, guild_roles)
         new_hash = self._hash_token(new_token)
 
         # Move session to new hash
@@ -432,7 +440,7 @@ class DashboardAuth:
             access_token: Discord access token
             refresh_token: Discord refresh token
             expires_in: Token expiration in seconds
-            manageable_guilds: Guilds user can manage
+            manageable_guilds: Guilds user can access (includes members now)
             ip_address: Client IP address
             user_agent: Client user agent
 
@@ -441,9 +449,11 @@ class DashboardAuth:
         """
         now = datetime.utcnow()
         guild_ids = [g.id for g in manageable_guilds]
+        # Build guild_roles dict mapping guild_id to role string
+        guild_roles = {g.id: g.get_role().value for g in manageable_guilds}
 
-        # Create JWT
-        jwt_token = self.create_jwt(user, guild_ids)
+        # Create JWT with roles
+        jwt_token = self.create_jwt(user, guild_ids, guild_roles)
 
         # Create session
         session = DashboardSession(
@@ -655,9 +665,66 @@ def require_guild_access(guild_id: str):
                 status_code=403,
                 detail={
                     "code": "FORBIDDEN",
-                    "message": "You don't have permission to manage this guild",
+                    "message": "You don't have permission to access this guild",
                 },
             )
         return user
 
     return dependency
+
+
+def get_user_role(user: dict, guild_id: str) -> Optional[str]:
+    """Get the user's role in a specific guild.
+
+    Args:
+        user: JWT payload dict
+        guild_id: Guild ID to check
+
+    Returns:
+        Role string (owner/admin/member) or None if no access
+    """
+    guild_roles = user.get("guild_roles", {})
+    return guild_roles.get(guild_id)
+
+
+def is_guild_admin(user: dict, guild_id: str) -> bool:
+    """Check if user has admin-level access to a guild.
+
+    Args:
+        user: JWT payload dict
+        guild_id: Guild ID to check
+
+    Returns:
+        True if user is owner or admin
+    """
+    role = get_user_role(user, guild_id)
+    return role in ("owner", "admin")
+
+
+def require_guild_admin(guild_id: str, user: dict):
+    """Check that user has admin access to a guild, raise 403 if not.
+
+    Args:
+        guild_id: Guild ID to check
+        user: JWT payload dict
+
+    Raises:
+        HTTPException: If user is not admin/owner
+    """
+    if guild_id not in user.get("guilds", []):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "FORBIDDEN",
+                "message": "You don't have permission to access this guild",
+            },
+        )
+
+    if not is_guild_admin(user, guild_id):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "FORBIDDEN",
+                "message": "This action requires admin permissions",
+            },
+        )

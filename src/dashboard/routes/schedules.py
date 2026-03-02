@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Path
 
-from ..auth import get_current_user
+from ..auth import get_current_user, require_guild_admin
 from ..models import (
     SchedulesResponse,
     ScheduleListItem,
@@ -168,6 +168,7 @@ async def create_schedule(
 ):
     """Create a new schedule."""
     _check_guild_access(guild_id, user)
+    require_guild_admin(guild_id, user)  # Admin only
     guild = _get_guild_or_404(guild_id)
 
     scheduler = get_task_scheduler()
@@ -316,6 +317,7 @@ async def update_schedule(
 ):
     """Update a schedule."""
     _check_guild_access(guild_id, user)
+    require_guild_admin(guild_id, user)  # Admin only
     guild = _get_guild_or_404(guild_id)
 
     scheduler = get_task_scheduler()
@@ -445,6 +447,7 @@ async def delete_schedule(
 ):
     """Delete a schedule."""
     _check_guild_access(guild_id, user)
+    require_guild_admin(guild_id, user)  # Admin only
 
     scheduler = get_task_scheduler()
     if not scheduler:
@@ -482,6 +485,7 @@ async def run_schedule(
 ):
     """Run schedule immediately."""
     _check_guild_access(guild_id, user)
+    require_guild_admin(guild_id, user)  # Admin only
 
     scheduler = get_task_scheduler()
     if not scheduler:

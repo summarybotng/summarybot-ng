@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
-from ..auth import get_current_user
+from ..auth import get_current_user, require_guild_admin
 from ..models import (
     SummariesResponse,
     SummaryListItem,
@@ -1952,6 +1952,7 @@ async def push_to_channel(
 ):
     """Push a stored summary to Discord channels."""
     _check_guild_access(guild_id, user)
+    require_guild_admin(guild_id, user)  # Admin only - sends to Discord
     guild = _get_guild_or_404(guild_id)
     bot = get_discord_bot()
 
@@ -2041,6 +2042,7 @@ async def push_summary_to_channel(
 ):
     """Push a summary to Discord channels."""
     _check_guild_access(guild_id, user)
+    require_guild_admin(guild_id, user)  # Admin only - sends to Discord
     guild = _get_guild_or_404(guild_id)
     bot = get_discord_bot()
 

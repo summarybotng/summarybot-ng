@@ -68,15 +68,16 @@ async def callback(request: Request, body: AuthCallbackRequest):
     # Get user's guilds
     all_guilds = await auth.get_user_guilds(access_token)
 
-    # Filter to guilds user can manage AND bot is in
+    # Filter to guilds where bot is present (allow members, not just admins)
     bot = get_discord_bot()
     bot_guild_ids = set()
     if bot and bot.client:
         bot_guild_ids = {str(g.id) for g in bot.client.guilds}
 
-    manageable_guilds = [
+    # Include all guilds where the bot is present (members can now access)
+    accessible_guilds = [
         g for g in all_guilds
-        if g.can_manage() and g.id in bot_guild_ids
+        if g.id in bot_guild_ids
     ]
 
     # Create session
@@ -88,21 +89,20 @@ async def callback(request: Request, body: AuthCallbackRequest):
         access_token=access_token,
         refresh_token=refresh_token,
         expires_in=expires_in,
-        manageable_guilds=manageable_guilds,
+        manageable_guilds=accessible_guilds,  # Now includes members
         ip_address=ip_address,
         user_agent=user_agent,
     )
 
-    # Build response
+    # Build response with proper roles
     guild_responses = []
-    for guild in manageable_guilds:
-        role = GuildRole.OWNER if guild.owner else GuildRole.ADMIN
+    for guild in accessible_guilds:
         guild_responses.append(
             GuildBriefResponse(
                 id=guild.id,
                 name=guild.name,
                 icon_url=guild.icon_url,
-                role=role,
+                role=guild.get_role(),
             )
         )
 

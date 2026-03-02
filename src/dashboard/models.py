@@ -49,7 +49,7 @@ class DashboardUser:
 
 @dataclass
 class DashboardGuild:
-    """Guild the user can manage."""
+    """Guild the user is a member of."""
     id: str
     name: str
     icon: Optional[str]
@@ -64,10 +64,18 @@ class DashboardGuild:
         return None
 
     def can_manage(self) -> bool:
-        """Check if user can manage this guild."""
+        """Check if user can manage this guild (admin-level access)."""
         ADMINISTRATOR = 0x8
         MANAGE_GUILD = 0x20
         return bool(self.permissions & (ADMINISTRATOR | MANAGE_GUILD)) or self.owner
+
+    def get_role(self) -> "GuildRole":
+        """Get user's role in this guild."""
+        if self.owner:
+            return GuildRole.OWNER
+        if self.can_manage():
+            return GuildRole.ADMIN
+        return GuildRole.MEMBER
 
 
 @dataclass

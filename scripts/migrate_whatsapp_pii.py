@@ -181,20 +181,20 @@ async def migrate_summaries(dry_run: bool = True) -> Dict[str, Any]:
     Returns:
         Migration statistics
     """
-    from src.data.repositories import initialize_repositories, get_stored_summary_repository
+    import aiosqlite
 
-    # Initialize repositories with database URL from environment
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        logger.error("DATABASE_URL not set")
-        return {"error": "DATABASE_URL not set"}
+    # Get database path from environment
+    database_url = os.environ.get("DATABASE_URL", "sqlite:///data/summarybot.db")
+    if database_url.startswith("sqlite:///"):
+        db_path = database_url.replace("sqlite:///", "")
+    else:
+        db_path = "data/summarybot.db"
 
-    await initialize_repositories(database_url)
+    logger.info(f"Using database: {db_path}")
 
-    repo = await get_stored_summary_repository()
-    if not repo:
-        logger.error("Could not get stored summary repository")
-        return {"error": "Repository not available"}
+    if not os.path.exists(db_path):
+        logger.error(f"Database file not found: {db_path}")
+        return {"error": f"Database file not found: {db_path}"}
 
     stats = {
         "total_summaries": 0,
@@ -205,101 +205,98 @@ async def migrate_summaries(dry_run: bool = True) -> Dict[str, Any]:
         "errors": [],
     }
 
-    # Get all summaries with WhatsApp source
-    # We need to query by archive_source_key starting with "whatsapp:"
+    # Get all summaries with WhatsApp source using direct SQLite access
     try:
-        # Use raw SQL query since the repository might not have a filter for source key
-        from src.data.postgres import PostgresStoredSummaryRepository
-        if isinstance(repo, PostgresStoredSummaryRepository):
-            async with repo.pool.acquire() as conn:
-                rows = await conn.fetch("""
-                    SELECT id, guild_id, summary_data, archive_source_key
-                    FROM stored_summaries
-                    WHERE archive_source_key LIKE 'whatsapp:%'
-                    ORDER BY created_at DESC
-                """)
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT id, guild_id, summary_data, archive_source_key
+                FROM stored_summaries
+                WHERE archive_source_key LIKE 'whatsapp:%'
+                ORDER BY created_at DESC
+            """) as cursor:
+                rows = await cursor.fetchall()
 
-                stats["total_summaries"] = len(rows)
+            stats["total_summaries"] = len(rows)
 
-                for row in rows:
-                    summary_id = row["id"]
-                    guild_id = row["guild_id"]
-                    summary_data = row["summary_data"] if isinstance(row["summary_data"], dict) else json.loads(row["summary_data"] or "{}")
+            for row in rows:
+                summary_id = row["id"]
+                guild_id = row["guild_id"]
+                summary_data_raw = row["summary_data"]
+                summary_data = json.loads(summary_data_raw) if isinstance(summary_data_raw, str) else (summary_data_raw or {})
 
-                    stats["whatsapp_summaries"] += 1
+                stats["whatsapp_summaries"] += 1
 
-                    # Create guild-specific anonymizer
-                    anonymizer = create_guild_anonymizer(guild_id)
+                # Create guild-specific anonymizer
+                anonymizer = create_guild_anonymizer(guild_id)
 
-                    # Check if summary has phone numbers
-                    summary_text = summary_data.get("summary_text", "")
-                    has_pii = has_phone_numbers(summary_text)
+                # Check if summary has phone numbers
+                summary_text = summary_data.get("summary_text", "")
+                has_pii = has_phone_numbers(summary_text)
 
-                    # Also check key points and participants
-                    for kp in summary_data.get("key_points", []):
-                        text = kp.get("text", "") if isinstance(kp, dict) else kp
-                        if has_phone_numbers(text):
-                            has_pii = True
-                            break
+                # Also check key points and participants
+                for kp in summary_data.get("key_points", []):
+                    text = kp.get("text", "") if isinstance(kp, dict) else kp
+                    if has_phone_numbers(text):
+                        has_pii = True
+                        break
 
-                    for p in summary_data.get("participants", []):
-                        name = p.get("name", "") if isinstance(p, dict) else p
-                        if has_phone_numbers(name) or (isinstance(name, str) and name.startswith("+")):
-                            has_pii = True
-                            break
+                for p in summary_data.get("participants", []):
+                    name = p.get("name", "") if isinstance(p, dict) else p
+                    if has_phone_numbers(name) or (isinstance(name, str) and name.startswith("+")):
+                        has_pii = True
+                        break
 
-                    if has_pii:
-                        stats["summaries_with_pii"] += 1
+                if has_pii:
+                    stats["summaries_with_pii"] += 1
 
-                        # Anonymize the summary
-                        anonymized_data, field_stats = anonymize_summary_result(summary_data, anonymizer)
+                    # Anonymize the summary
+                    anonymized_data, field_stats = anonymize_summary_result(summary_data, anonymizer)
 
-                        total_phones = sum(field_stats.values())
-                        stats["phone_numbers_found"] += total_phones
+                    total_phones = sum(field_stats.values())
+                    stats["phone_numbers_found"] += total_phones
 
-                        logger.info(
-                            f"Summary {summary_id}: Found {total_phones} phone numbers "
-                            f"(text: {field_stats['summary_text']}, "
-                            f"key_points: {field_stats['key_points']}, "
-                            f"participants: {field_stats['participants']})"
-                        )
+                    logger.info(
+                        f"Summary {summary_id}: Found {total_phones} phone numbers "
+                        f"(text: {field_stats['summary_text']}, "
+                        f"key_points: {field_stats['key_points']}, "
+                        f"participants: {field_stats['participants']})"
+                    )
 
-                        # Add anonymization metadata
-                        metadata = anonymized_data.get("metadata", {})
-                        metadata["anonymization"] = {
-                            "version": 1,
-                            "migrated_at": asyncio.get_event_loop().time(),
-                            "fields_processed": field_stats,
-                        }
-                        anonymized_data["metadata"] = metadata
+                    # Add anonymization metadata
+                    metadata = anonymized_data.get("metadata", {})
+                    metadata["anonymization"] = {
+                        "version": 1,
+                        "migrated_at": asyncio.get_event_loop().time(),
+                        "fields_processed": field_stats,
+                    }
+                    anonymized_data["metadata"] = metadata
 
-                        if not dry_run:
-                            # Update the summary in database
-                            try:
-                                await conn.execute("""
-                                    UPDATE stored_summaries
-                                    SET summary_data = $1
-                                    WHERE id = $2
-                                """, json.dumps(anonymized_data), summary_id)
-                                stats["summaries_updated"] += 1
-                                logger.info(f"Updated summary {summary_id}")
-                            except Exception as e:
-                                error_msg = f"Failed to update {summary_id}: {e}"
-                                logger.error(error_msg)
-                                stats["errors"].append(error_msg)
-                        else:
-                            logger.info(f"[DRY RUN] Would update summary {summary_id}")
+                    if not dry_run:
+                        # Update the summary in database
+                        try:
+                            await db.execute(
+                                "UPDATE stored_summaries SET summary_data = ? WHERE id = ?",
+                                (json.dumps(anonymized_data), summary_id)
+                            )
+                            await db.commit()
                             stats["summaries_updated"] += 1
-
+                            logger.info(f"Updated summary {summary_id}")
+                        except Exception as e:
+                            error_msg = f"Failed to update {summary_id}: {e}"
+                            logger.error(error_msg)
+                            stats["errors"].append(error_msg)
                     else:
-                        logger.debug(f"Summary {summary_id}: No phone numbers found")
+                        logger.info(f"[DRY RUN] Would update summary {summary_id}")
+                        stats["summaries_updated"] += 1
 
-        else:
-            logger.warning("Non-Postgres repository - migration not implemented")
-            stats["error"] = "Only Postgres repository is supported"
+                else:
+                    logger.debug(f"Summary {summary_id}: No phone numbers found")
 
     except Exception as e:
         logger.error(f"Migration failed: {e}")
+        import traceback
+        traceback.print_exc()
         stats["errors"].append(str(e))
 
     return stats

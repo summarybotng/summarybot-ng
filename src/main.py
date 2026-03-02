@@ -158,6 +158,9 @@ class SummaryBotApp:
         # Initialize command logging
         await self._initialize_command_logging(db_path)
 
+        # ADR-013: Recover interrupted jobs from previous session
+        await self._recover_interrupted_jobs()
+
         self.logger.info("Database initialized successfully")
 
     async def _initialize_command_logging(self, db_path: str):
@@ -188,6 +191,36 @@ class SummaryBotApp:
             self.logger.warning(f"Failed to initialize command logging: {e}")
             self.logger.warning("Bot will continue without command logging")
             self.command_logger = None
+
+    async def _recover_interrupted_jobs(self):
+        """
+        ADR-013: Recover jobs that were interrupted by server restart.
+
+        When the server restarts, any jobs that were in RUNNING status are
+        marked as PAUSED with reason 'server_restart'. This allows users to:
+        1. See that their job was interrupted
+        2. Choose to resume the job via the UI or API
+        """
+        try:
+            from .data.repositories import get_summary_job_repository
+
+            self.logger.info("Checking for interrupted jobs from previous session...")
+
+            job_repository = await get_summary_job_repository()
+            interrupted_count = await job_repository.mark_interrupted_jobs("server_restart")
+
+            if interrupted_count > 0:
+                self.logger.warning(
+                    f"Marked {interrupted_count} interrupted job(s) as PAUSED. "
+                    "Use the Jobs tab in the dashboard to resume or cancel them."
+                )
+            else:
+                self.logger.info("No interrupted jobs found")
+
+        except Exception as e:
+            # Don't fail startup if job recovery fails
+            self.logger.warning(f"Failed to recover interrupted jobs: {e}")
+            self.logger.warning("Bot will continue - check jobs manually if needed")
 
     def _select_llm_provider(self) -> Tuple[str, Optional[str], Optional[str], Optional[str]]:
         """

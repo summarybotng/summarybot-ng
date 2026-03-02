@@ -2488,3 +2488,25 @@ class SQLiteSummaryJobRepository(SummaryJobRepository):
 
         row = await self.connection.fetch_one(query, tuple(params))
         return row['count'] if row else 0
+
+    async def mark_interrupted_jobs(self, reason: str = "server_restart") -> int:
+        """
+        Mark all RUNNING jobs as PAUSED due to server restart.
+
+        ADR-013: Startup recovery - when the server restarts, any jobs that were
+        RUNNING are marked as PAUSED so users can see they were interrupted and
+        can choose to resume them.
+
+        Args:
+            reason: The pause reason to set (default: 'server_restart')
+
+        Returns:
+            Number of jobs that were marked as paused
+        """
+        query = """
+        UPDATE summary_jobs
+        SET status = 'paused', pause_reason = ?
+        WHERE status = 'running'
+        """
+        cursor = await self.connection.execute(query, (reason,))
+        return cursor.rowcount

@@ -949,6 +949,22 @@ class SummaryJobRepository(ABC):
         """Delete jobs older than specified days. Returns count deleted."""
         pass
 
+    @abstractmethod
+    async def mark_interrupted_jobs(self, reason: str = "server_restart") -> int:
+        """
+        Mark all RUNNING jobs as PAUSED due to server restart.
+
+        ADR-013: Startup recovery - when the server restarts, any jobs that were
+        RUNNING are marked as PAUSED so users can see they were interrupted.
+
+        Args:
+            reason: The pause reason to set
+
+        Returns:
+            Number of jobs that were marked as paused
+        """
+        pass
+
 
 class DatabaseConnection(ABC):
     """Abstract database connection interface."""

@@ -1,7 +1,8 @@
 # ADR-013: Unified Job Tracking
 
-**Status:** Proposed
+**Status:** Partially Implemented
 **Date:** 2026-02-22
+**Updated:** 2026-03-02
 **Depends on:** ADR-012 (Summaries UI Consolidation)
 
 ## 1. Context
@@ -190,3 +191,29 @@ POST /guilds/{guild_id}/jobs/{job_id}/retry     # Retry failed job
 1. Keep existing in-memory tracking as fallback during transition
 2. Gradually migrate all job types to new system
 3. Remove legacy tracking once stable
+
+## 9. Implementation Status
+
+### Completed
+- [x] Database schema (`015_summary_jobs.sql`)
+- [x] `SummaryJob` model with all fields
+- [x] `SummaryJobRepository` abstract interface
+- [x] `SQLiteSummaryJobRepository` implementation
+- [x] Retrospective jobs persist to database via `_persist_job()`
+- [x] **Startup recovery**: Jobs with status RUNNING are marked PAUSED with reason "server_restart" on startup
+
+### Pending
+- [ ] Manual generation creates job records
+- [ ] Scheduled jobs create job records
+- [ ] Jobs tab in frontend Summaries page
+- [ ] Real-time status updates (SSE/polling)
+- [ ] Cancel/retry actions in UI
+- [ ] Job history cleanup cron
+
+### Key Files
+- `src/models/summary_job.py` - Job model
+- `src/data/base.py` - `SummaryJobRepository` interface
+- `src/data/sqlite.py` - SQLite implementation
+- `src/data/migrations/015_summary_jobs.sql` - Database schema
+- `src/archive/generator.py` - Retrospective job persistence
+- `src/main.py` - Startup recovery via `_recover_interrupted_jobs()`

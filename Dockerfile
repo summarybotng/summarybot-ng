@@ -64,6 +64,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application code
 COPY --chown=botuser:botuser src/ ./src/
 COPY --chown=botuser:botuser pyproject.toml poetry.lock ./
+COPY --chown=botuser:botuser scripts/ ./scripts/
 
 # Copy frontend build output
 COPY --from=frontend-builder --chown=botuser:botuser /frontend/dist ./src/frontend/dist/

@@ -6,6 +6,7 @@ Supports two formats:
 2. Reader bot JSON export (from ADR-001)
 
 Phase 6: WhatsApp Import
+ADR-028: PII Anonymization for phone numbers
 """
 
 import json
@@ -16,6 +17,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+from src.services.anonymization import PhoneAnonymizer
+from src.services.anonymization.phone_anonymizer import create_guild_anonymizer
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +60,10 @@ class WhatsAppImportResult:
     messages: List[WhatsAppMessage] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     gaps: List[Dict] = field(default_factory=list)
+    anonymization: Optional[Dict[str, Any]] = None  # ADR-028: Anonymization metadata
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "import_id": self.import_id,
             "filename": self.filename,
             "format": self.format,
@@ -72,6 +77,9 @@ class WhatsAppImportResult:
             "errors": self.errors,
             "gaps": self.gaps,
         }
+        if self.anonymization:
+            result["anonymization"] = self.anonymization
+        return result
 
 
 class WhatsAppImporter:
@@ -112,14 +120,36 @@ class WhatsAppImporter:
         r"Tap to learn more",
     ]
 
-    def __init__(self, archive_root: Path):
+    def __init__(
+        self,
+        archive_root: Path,
+        guild_id: Optional[str] = None,
+        anonymize: bool = True,
+    ):
         """
         Initialize WhatsApp importer.
 
         Args:
             archive_root: Root path of the archive
+            guild_id: Guild ID for anonymization salt (ADR-028)
+            anonymize: Whether to anonymize phone numbers (default True)
         """
         self.archive_root = archive_root
+        self.guild_id = guild_id
+        self.anonymize = anonymize
+        self._anonymizer: Optional[PhoneAnonymizer] = None
+
+        if anonymize and guild_id:
+            self._anonymizer = create_guild_anonymizer(guild_id)
+
+    def _get_anonymizer(self, group_id: str) -> Optional[PhoneAnonymizer]:
+        """Get anonymizer, creating one if needed."""
+        if not self.anonymize:
+            return None
+        if self._anonymizer:
+            return self._anonymizer
+        # Create anonymizer using group_id as fallback salt
+        return create_guild_anonymizer(self.guild_id or group_id)
 
     async def import_txt_export(
         self,
@@ -195,6 +225,15 @@ class WhatsAppImporter:
         if current_message:
             messages.append(current_message)
 
+        # ADR-028: Apply anonymization to phone numbers
+        anonymization_metadata = None
+        anonymizer = self._get_anonymizer(group_id)
+        if anonymizer and messages:
+            messages, anonymization_metadata = self._anonymize_messages(messages, anonymizer)
+            # Update participants set with anonymized names
+            participants = {m.sender for m in messages if not m.is_system}
+            logger.info(f"Anonymized {anonymization_metadata.get('participant_count', 0)} phone-based participants")
+
         # Calculate date range
         if messages:
             dates = [m.timestamp.date() for m in messages]
@@ -222,6 +261,7 @@ class WhatsAppImporter:
             participant_count=len(participants),
             messages=messages,
             errors=errors,
+            anonymization=anonymization_metadata,
         )
 
         logger.info(f"Imported {len(messages)} messages from {file_path.name}")
@@ -266,6 +306,15 @@ class WhatsAppImporter:
             if not msg.is_system:
                 participants.add(msg.sender)
 
+        # ADR-028: Apply anonymization to phone numbers
+        anonymization_metadata = None
+        anonymizer = self._get_anonymizer(group_id)
+        if anonymizer and messages:
+            messages, anonymization_metadata = self._anonymize_messages(messages, anonymizer)
+            # Update participants set with anonymized names
+            participants = {m.sender for m in messages if not m.is_system}
+            logger.info(f"Anonymized {anonymization_metadata.get('participant_count', 0)} phone-based participants")
+
         # Calculate date range
         if messages:
             dates = [m.timestamp.date() for m in messages]
@@ -293,10 +342,73 @@ class WhatsAppImporter:
             participant_count=len(participants),
             messages=messages,
             errors=[],
+            anonymization=anonymization_metadata,
         )
 
         logger.info(f"Imported {len(messages)} messages from reader bot export")
         return result
+
+    def _anonymize_messages(
+        self,
+        messages: List[WhatsAppMessage],
+        anonymizer: PhoneAnonymizer,
+    ) -> Tuple[List[WhatsAppMessage], Dict[str, Any]]:
+        """
+        Anonymize phone numbers in messages (ADR-028).
+
+        Args:
+            messages: List of WhatsAppMessage objects
+            anonymizer: PhoneAnonymizer instance
+
+        Returns:
+            Tuple of (anonymized_messages, anonymization_metadata)
+        """
+        from dataclasses import replace
+
+        participant_info: Dict[str, Dict[str, Any]] = {}
+        anonymized = []
+
+        for msg in messages:
+            # Anonymize sender if it looks like a phone number
+            new_sender = msg.sender
+            if not msg.is_system:
+                display_name, phone_hash = anonymizer.anonymize_sender(msg.sender)
+                new_sender = display_name
+
+                # Track participant info
+                if phone_hash:  # Was a phone number
+                    if display_name not in participant_info:
+                        participant_info[display_name] = {
+                            "hash": phone_hash,
+                            "message_count": 0,
+                        }
+                    participant_info[display_name]["message_count"] += 1
+
+            # Anonymize content (phone numbers mentioned in text)
+            new_content = msg.content
+            if msg.content:
+                result = anonymizer.anonymize_text(msg.content)
+                new_content = result.anonymized_text
+
+            # Create new message with anonymized data
+            anonymized.append(WhatsAppMessage(
+                message_id=msg.message_id,
+                timestamp=msg.timestamp,
+                sender=new_sender,
+                content=new_content,
+                is_system=msg.is_system,
+                attachment=msg.attachment,
+                reply_to=msg.reply_to,
+            ))
+
+        # Build metadata
+        metadata = {
+            "version": 1,
+            "participant_count": len(participant_info),
+            "participants": participant_info,
+        }
+
+        return anonymized, metadata
 
     def _parse_message_line(
         self,

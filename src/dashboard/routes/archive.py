@@ -1934,3 +1934,77 @@ async def sync_archive_to_database(
         failed=failed,
         errors=errors[:10],  # Limit error messages
     )
+
+
+# ==================== ADR-026: Source Migration ====================
+
+
+class MigrateSourceRequest(BaseModel):
+    """Request to migrate a source to a different guild."""
+    source_key: str  # e.g., "whatsapp:ai-code"
+    target_guild_id: str  # Discord guild ID to migrate to
+
+
+class MigrateSourceResponse(BaseModel):
+    """Response from source migration."""
+    migrated: int
+    source_key: str
+    old_guild_id: str
+    new_guild_id: str
+
+
+@router.post("/migrate-source", response_model=MigrateSourceResponse)
+async def migrate_source_to_guild(request: MigrateSourceRequest):
+    """
+    ADR-026: Migrate all summaries from a source to a different guild.
+
+    This is used to link WhatsApp/Slack sources to a Discord guild so
+    their summaries appear alongside Discord summaries in the UI.
+
+    Example:
+        POST /archive/migrate-source
+        {"source_key": "whatsapp:ai-code", "target_guild_id": "1283874310720716890"}
+    """
+    from . import get_stored_summary_repository
+
+    repo = await get_stored_summary_repository()
+    if not repo:
+        raise HTTPException(503, "Database not available")
+
+    # Parse source key to get the old guild_id
+    parts = request.source_key.split(":", 1)
+    if len(parts) != 2:
+        raise HTTPException(400, f"Invalid source_key format: {request.source_key}")
+
+    source_type, old_guild_id = parts
+
+    # Find all summaries with this source_key
+    # We search by the old guild_id (which equals the source's server_id for non-Discord)
+    summaries = await repo.find_by_guild(
+        guild_id=old_guild_id,
+        source="archive",
+        limit=10000,
+    )
+
+    # Filter to only those matching this specific source_key
+    matching = [s for s in summaries if s.archive_source_key == request.source_key]
+
+    if not matching:
+        raise HTTPException(404, f"No summaries found for source: {request.source_key}")
+
+    migrated = 0
+    for summary in matching:
+        # Update guild_id to the target
+        summary.guild_id = request.target_guild_id
+        if summary.summary_result:
+            summary.summary_result.guild_id = request.target_guild_id
+        await repo.save(summary)
+        migrated += 1
+        logger.info(f"Migrated {summary.id} from {old_guild_id} to {request.target_guild_id}")
+
+    return MigrateSourceResponse(
+        migrated=migrated,
+        source_key=request.source_key,
+        old_guild_id=old_guild_id,
+        new_guild_id=request.target_guild_id,
+    )

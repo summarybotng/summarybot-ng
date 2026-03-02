@@ -23,6 +23,8 @@ kill_timeout = "30s"
   WEBHOOK_CORS_ORIGINS = "https://summarybot-ng.fly.dev,http://localhost:5173,http://localhost:3000,http://localhost:8080"
   # OAuth redirect should point to the actual deployed app
   DISCORD_REDIRECT_URI = "https://summarybot-ng.fly.dev/callback"
+  # ADR-026: Primary Discord guild for non-Discord sources (WhatsApp, etc.)
+  PRIMARY_GUILD_ID = "1283874310720716890"
 
 # HTTP service (Webhook API)
 [[services]]

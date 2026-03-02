@@ -622,11 +622,23 @@ class RetrospectiveGenerator:
         This enables archive summaries to appear in the Summaries page
         alongside real-time summaries, with consistent features like
         Push to Channel and View Generation Details.
+
+        ADR-026: For non-Discord sources (WhatsApp, Slack, etc.), store
+        summaries under the PRIMARY_GUILD_ID so they appear in the main
+        guild's summaries view. The original source is preserved in
+        archive_source_key for attribution.
         """
         from ..models.stored_summary import StoredSummary, SummarySource
         from ..models.summary import SummaryResult
+        import os
 
         try:
+            # ADR-026: Determine guild_id for storage
+            # Non-Discord sources use PRIMARY_GUILD_ID to appear in main guild view
+            if job.source.source_type != SourceType.DISCORD:
+                storage_guild_id = os.environ.get("PRIMARY_GUILD_ID", job.source.server_id or "")
+            else:
+                storage_guild_id = job.source.server_id or ""
             # Build a SummaryResult object if we have raw content
             if hasattr(summary_result, 'to_summary_result'):
                 db_summary_result = summary_result.to_summary_result()
@@ -638,7 +650,7 @@ class RetrospectiveGenerator:
                 # ADR-016: Preserve source_content for regeneration fallback
                 db_summary_result = SummaryResult(
                     id=summary_id,
-                    guild_id=job.source.server_id or "",
+                    guild_id=storage_guild_id,  # ADR-026: Use storage_guild_id
                     channel_id=job.source.channel_id or "",
                     start_time=period.start,
                     end_time=period.end,
@@ -682,9 +694,10 @@ class RetrospectiveGenerator:
                 source_channel_ids = [job.source.channel_id]
 
             # Create StoredSummary with archive source
+            # ADR-026: Use storage_guild_id so WhatsApp summaries appear under primary guild
             stored = StoredSummary(
                 id=summary_id,
-                guild_id=job.source.server_id or "",
+                guild_id=storage_guild_id,
                 source_channel_ids=source_channel_ids,
                 summary_result=db_summary_result,
                 title=f"{job.source.channel_name or job.source.server_name} - {period.start.strftime('%Y-%m-%d')}",

@@ -517,6 +517,253 @@ Option C: **Replace overlapping ranges** (destructive but clean)
 - Add permission levels (view_only, admin)
 - Add audit log for link/unlink actions
 
+## Known Limitations & Failure Scenarios
+
+### Critical Limitations
+
+#### 1. Discord-Only Identity (P1 - Architectural)
+
+**Problem**: Organizations without Discord cannot use the system.
+
+| Scenario | Impact |
+|----------|--------|
+| Slack + WhatsApp org, no Discord | Completely blocked |
+| WhatsApp-only user (e.g., marketing team) | Cannot log in to view own summaries |
+| Discord OAuth outage | All access blocked, no fallback |
+
+**Mitigation Options**:
+- Add email/password auth as fallback
+- Add API key auth for programmatic access
+- Support Slack OAuth as alternative identity provider
+
+**Status**: Not addressed. Discord OAuth is currently mandatory.
+
+#### 2. Source Ownership & Hijacking (P2 - Security)
+
+**Problem**: No verification that the person uploading a WhatsApp export actually owns/administers that group.
+
+| Scenario | Risk |
+|----------|------|
+| User A uploads `whatsapp:exec-chat` | User B (different org) could link it to their guild first |
+| Global namespace collision | Two orgs with `whatsapp:marketing` - first uploader "wins" |
+| Malicious upload | Could upload fabricated conversations under any group_id |
+
+**Mitigation Options**:
+- Require ownership token: uploader must include a secret phrase that appears in the export
+- Namespace by uploader: `whatsapp:{user_id}:{group_id}`
+- Admin approval: new sources require review before linking
+
+**Status**: Not addressed. Source keys are first-come-first-served.
+
+### Data Integrity Limitations
+
+#### 3. Edited Messages Not Handled (P2)
+
+**Problem**: WhatsApp allows editing messages after sending. Our dedup keeps the *first* version seen.
+
+```
+Import v1 (Jan 15): "Meeting at 3pm"
+Import v2 (Jan 20): "Meeting at 4pm" (edited)
+                ↓
+We keep: "Meeting at 3pm" (wrong!)
+```
+
+**Mitigation Options**:
+- Keep latest version: update fingerprint index on each import
+- Keep both: store versions with `edited_at` timestamp
+- Detect edits: compare content when fingerprint matches on timestamp+sender
+
+**Status**: Not addressed. First version wins.
+
+#### 4. Timezone Deduplication Failures (P3)
+
+**Problem**: WhatsApp exports use device timezone. Same message exported from different phones may have different timestamps.
+
+```
+Phone A (PST): "2025-01-15T10:00:00"
+Phone B (UTC): "2025-01-15T18:00:00"
+                ↓
+Different fingerprints → duplicate messages
+```
+
+**Mitigation Options**:
+- Normalize to UTC on import (requires timezone detection)
+- Fuzzy timestamp matching (±1 hour window)
+- Use message content + sender only (more collisions)
+
+**Status**: Not addressed. Timestamps used as-is.
+
+#### 5. Memory Pressure on Large Imports (P3)
+
+**Problem**: Dedup on read loads all messages from all imports into memory.
+
+| Import Size | Memory Impact |
+|-------------|---------------|
+| 10k messages, 5 imports | ~50MB - OK |
+| 100k messages, 50 imports | ~500MB - Risky |
+| 1M messages, 100 imports | ~5GB - OOM |
+
+**Mitigation Options**:
+- Pre-compute fingerprint index on import (not on read)
+- Streaming dedup with bloom filter
+- Limit imports per source (archive old imports)
+
+**Status**: Partially addressed. Dedup on read is simple but doesn't scale.
+
+### Access Control Limitations
+
+#### 6. All-or-Nothing Guild Access (P2)
+
+**Problem**: Linking a source to a guild gives ALL members access. No partial sharing.
+
+| Scenario | Desired | Actual |
+|----------|---------|--------|
+| Share WhatsApp with 5 of 500 members | 5 see it | 500 see it |
+| Partners need limited access | View-only | Full access |
+
+**Mitigation Options**:
+- Implement permission levels (view_only, full, admin) - already in roadmap
+- Create sub-guilds or roles for access control
+- Source-level access lists (complex)
+
+**Status**: Deferred to Phase 3. Currently full access only.
+
+#### 7. JWT Revocation Delay (P3)
+
+**Problem**: User's JWT contains guild list. Unlink/permission changes don't take effect until JWT refresh (hours).
+
+**Mitigation Options**:
+- Shorter JWT expiry (more Discord API calls)
+- Real-time permission check on sensitive operations
+- Maintain server-side revocation list
+
+**Status**: Not addressed. JWT caching is a known tradeoff.
+
+### Operational Limitations
+
+#### 8. Orphan Source Accumulation (P3)
+
+**Problem**: Uploaded but never linked sources accumulate in archive. No cleanup mechanism.
+
+```
+archive/sources/whatsapp/
+├── test_abc/        ← Uploaded Jan 2024, never linked
+├── old-group_xyz/   ← Uploaded Feb 2024, never linked
+├── typo_123/        ← Uploaded Mar 2024, never linked
+└── ... (hundreds more)
+```
+
+**Mitigation Options**:
+- Auto-delete after 30 days if not linked
+- Admin UI to view/delete orphan sources
+- Require linking at upload time
+
+**Status**: Not addressed. Manual filesystem cleanup required.
+
+#### 9. No Audit Trail (P2)
+
+**Problem**: No logging of who linked/unlinked sources, who accessed summaries.
+
+| Question | Answer |
+|----------|--------|
+| Who linked `whatsapp:exec-chat`? | Unknown |
+| When was it unlinked? | Unknown |
+| Who accessed it last month? | Unknown |
+
+**Mitigation Options**:
+- Add `audit_log` table: `(timestamp, user_id, action, source_key, guild_id)`
+- Log access events (may be verbose)
+- Integrate with external audit system
+
+**Status**: Not addressed. Critical for enterprise/compliance.
+
+#### 10. No Source Deletion (P3 - GDPR Risk)
+
+**Problem**: Can unlink but cannot delete source data. GDPR "right to be forgotten" requires manual intervention.
+
+**Mitigation Options**:
+- Add hard delete endpoint (admin only)
+- Cascade delete: source + all summaries + all imports
+- Soft delete with scheduled purge
+
+**Status**: Not addressed. Manual filesystem deletion required.
+
+### Platform-Specific Limitations
+
+#### 11. No Real-Time WhatsApp (P3 - UX)
+
+**Problem**: Discord = live summaries. WhatsApp = batch imports. User confusion.
+
+**Mitigation Options**:
+- Clear UI indicators: "Last updated: 3 days ago"
+- Scheduled import reminders
+- WhatsApp Business API integration (future)
+
+**Status**: Inherent limitation. UI should set expectations.
+
+#### 12. Context Loss in WhatsApp Exports (P3)
+
+**Problem**: WhatsApp native exports lack threading, reactions, read receipts. Summary quality may suffer.
+
+| Feature | Discord | WhatsApp Export |
+|---------|---------|-----------------|
+| Reply threading | ✓ | Partial (text only) |
+| Reactions | ✓ | ✗ |
+| Read receipts | ✓ | ✗ |
+| Attachments | ✓ | Filename only |
+
+**Mitigation Options**:
+- Use reader bot JSON format (has more metadata)
+- Detect reply patterns in text ("Replying to @user:")
+- Accept lower quality for WhatsApp summaries
+
+**Status**: Inherent limitation. Reader bot format recommended.
+
+### Multi-Guild Limitations
+
+#### 13. No Unified Cross-Guild View (P2)
+
+**Problem**: User with access to 5 guilds must view each separately. No dashboard across all.
+
+**Mitigation Options**:
+- Organization federation (Phase 4+)
+- Client-side aggregation (fetch from multiple guilds)
+- "My Sources" view showing all accessible sources
+
+**Status**: Deferred. Per-guild model is simpler but less powerful.
+
+#### 14. Primary Guild Deletion (P3)
+
+**Problem**: WhatsApp linked to guild that gets deleted. Source becomes orphaned.
+
+**Mitigation Options**:
+- Prevent guild deletion if sources linked
+- Auto-unlink on guild deletion (sources become orphans)
+- Transfer ownership to another guild
+
+**Status**: Not addressed. Edge case, but could cause data loss.
+
+---
+
+## Limitation Severity Summary
+
+| ID | Issue | Severity | Likelihood | Priority |
+|----|-------|----------|------------|----------|
+| 1 | Discord-only identity | High | Medium | **P1** |
+| 2 | Source hijacking | High | Low | **P2** |
+| 3 | Edited messages | Medium | Medium | **P2** |
+| 6 | All-or-nothing access | Medium | High | **P2** |
+| 9 | No audit trail | Medium | High | **P2** |
+| 13 | No unified view | Medium | High | **P2** |
+| 4 | Timezone dedup | Medium | Medium | **P3** |
+| 5 | Memory pressure | Low | Medium | **P3** |
+| 7 | JWT revocation delay | Low | Medium | **P3** |
+| 8 | Orphan accumulation | Low | High | **P3** |
+| 10 | No source deletion | Medium | Low | **P3** |
+| 11 | No real-time WhatsApp | Low | High | **P3** |
+| 12 | WhatsApp context loss | Low | High | **P3** |
+| 14 | Primary guild deletion | Medium | Low | **P3** |
+
 ## Related ADRs
 
 - ADR-006: Retrospective Summary Archive (introduced WhatsApp support)

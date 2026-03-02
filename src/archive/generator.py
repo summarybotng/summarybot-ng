@@ -44,7 +44,8 @@ logger = logging.getLogger(__name__)
 
 class JobStatus(Enum):
     """Status of a generation job."""
-    QUEUED = "queued"
+    # Note: Use PENDING (not QUEUED) to match SummaryJob model in database
+    PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -93,7 +94,7 @@ class GenerationJob:
     date_range: tuple  # (start_date, end_date)
     granularity: str  # "daily", "weekly", "monthly"
     timezone: str
-    status: JobStatus = JobStatus.QUEUED
+    status: JobStatus = JobStatus.PENDING
     progress: GenerationProgress = field(default_factory=lambda: GenerationProgress(0))
     cost: CostProgress = field(default_factory=CostProgress)
     created_at: datetime = field(default_factory=datetime.utcnow)
@@ -813,7 +814,7 @@ class RetrospectiveGenerator:
         if not job:
             return False
 
-        if job.status in (JobStatus.RUNNING, JobStatus.QUEUED, JobStatus.PAUSED):
+        if job.status in (JobStatus.RUNNING, JobStatus.PENDING, JobStatus.PAUSED):
             job.status = JobStatus.CANCELLED
             logger.info(f"Cancelled job {job_id}")
             return True

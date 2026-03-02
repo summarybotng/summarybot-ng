@@ -67,7 +67,6 @@ build/
 .claude-flow/
 .clasp/
 dev-context.sh
-scripts/
 
 # Architecture and planning docs
 architecture/

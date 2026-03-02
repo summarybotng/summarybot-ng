@@ -449,6 +449,24 @@ class WhatsAppImporter:
         with open(manifest_file, 'w') as f:
             json.dump(manifest, f, indent=2)
 
+    def _message_fingerprint(self, msg: Dict[str, Any]) -> str:
+        """
+        Generate a fingerprint for deduplication.
+
+        WhatsApp doesn't have guaranteed unique message IDs, so we use
+        timestamp + sender + first 50 chars of content as a fingerprint.
+
+        Args:
+            msg: Message dictionary with timestamp, sender, content
+
+        Returns:
+            Fingerprint string for deduplication
+        """
+        timestamp = msg.get("timestamp", "")
+        sender = msg.get("sender", "")
+        content = msg.get("content", "")[:50]
+        return f"{timestamp}|{sender}|{content}"
+
     async def get_messages_for_period(
         self,
         group_id: str,
@@ -458,18 +476,23 @@ class WhatsAppImporter:
         """
         Get imported messages for a time period.
 
+        Deduplicates messages from overlapping imports using a fingerprint
+        of timestamp + sender + content[:50].
+
         Args:
             group_id: Group identifier
             start: Period start
             end: Period end
 
         Returns:
-            List of message dictionaries
+            List of unique message dictionaries
         """
         # Find group directory
         sources_dir = self.archive_root / "sources" / "whatsapp"
-        group_dir = None
+        if not sources_dir.exists():
+            return []
 
+        group_dir = None
         for d in sources_dir.iterdir():
             if d.is_dir() and d.name.endswith(f"_{group_id}"):
                 group_dir = d
@@ -482,8 +505,9 @@ class WhatsAppImporter:
         if not imports_dir.exists():
             return []
 
-        # Load all messages from all imports
+        # Load all messages from all imports, deduplicating
         all_messages = []
+        seen_fingerprints: set = set()
 
         # Convert start/end to naive datetimes for comparison (WhatsApp messages are naive)
         start_naive = start.replace(tzinfo=None) if start.tzinfo else start
@@ -498,6 +522,12 @@ class WhatsAppImporter:
                 # Also strip timezone from parsed time if present
                 msg_time_naive = msg_time.replace(tzinfo=None) if msg_time.tzinfo else msg_time
                 if start_naive <= msg_time_naive <= end_naive:
+                    # Deduplicate using fingerprint
+                    fingerprint = self._message_fingerprint(msg)
+                    if fingerprint in seen_fingerprints:
+                        continue
+                    seen_fingerprints.add(fingerprint)
+
                     all_messages.append({
                         "id": msg["message_id"],
                         "author_id": msg["sender"],
@@ -509,6 +539,11 @@ class WhatsAppImporter:
 
         # Sort by timestamp
         all_messages.sort(key=lambda m: m["timestamp"])
+
+        if len(seen_fingerprints) < len(all_messages) + (len(all_messages) - len(seen_fingerprints)):
+            # Log if we deduplicated anything (for debugging)
+            logger.debug(f"Deduplicated WhatsApp messages: {len(all_messages)} unique from imports")
+
         return all_messages
 
     async def get_coverage(self, group_id: str) -> Optional[Dict[str, Any]]:

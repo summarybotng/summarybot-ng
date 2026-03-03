@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Archive, Hash, Globe } from "lucide-react";
+import { Archive, Hash, Globe, Mail } from "lucide-react";
 import type { Schedule, SummaryOptions, Destination, Channel, Category } from "@/types";
 import { ScopeSelector, type ScopeSelectorValue, type ScopeType } from "@/components/ScopeSelector";
 
@@ -66,6 +66,8 @@ export interface ScheduleFormData {
     discord_channel_id: string;
     webhook: boolean;
     webhook_url: string;
+    email: boolean;           // ADR-030: Email delivery
+    email_addresses: string;  // ADR-030: Comma-separated email addresses
   };
 }
 
@@ -369,6 +371,44 @@ export function ScheduleForm({ formData, onChange, channels = [], categories = [
             />
           )}
         </div>
+
+        {/* ADR-030: Email Option */}
+        <div className="space-y-2 rounded-md border p-3">
+          <div className="flex items-start space-x-3">
+            <Checkbox
+              id="dest-email"
+              checked={formData.destinations.email}
+              onCheckedChange={(checked) =>
+                onChange({
+                  ...formData,
+                  destinations: { ...formData.destinations, email: checked as boolean },
+                })
+              }
+            />
+            <div className="space-y-1 flex-1">
+              <label htmlFor="dest-email" className="text-sm font-medium cursor-pointer flex items-center gap-2">
+                <Mail className="h-4 w-4" />
+                Email
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Send to email addresses (requires SMTP configuration)
+              </p>
+            </div>
+          </div>
+          {formData.destinations.email && (
+            <Input
+              className="mt-2"
+              placeholder="team@example.com, manager@example.com"
+              value={formData.destinations.email_addresses}
+              onChange={(e) =>
+                onChange({
+                  ...formData,
+                  destinations: { ...formData.destinations, email_addresses: e.target.value },
+                })
+              }
+            />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -393,6 +433,8 @@ export const getInitialFormData = (): ScheduleFormData => ({
     discord_channel_id: "",
     webhook: false,
     webhook_url: "",
+    email: false,           // ADR-030
+    email_addresses: "",    // ADR-030
   },
 });
 
@@ -404,6 +446,7 @@ export function scheduleToFormData(schedule: Schedule): ScheduleFormData {
   const dashboardDest = schedule.destinations.find((d) => d.type === "dashboard");
   const discordDest = schedule.destinations.find((d) => d.type === "discord_channel");
   const webhookDest = schedule.destinations.find((d) => d.type === "webhook");
+  const emailDest = schedule.destinations.find((d) => d.type === "email");  // ADR-030
 
   // ADR-011: Extract scope from schedule
   const scope = (schedule.scope as ScopeType) || "channel";
@@ -426,6 +469,8 @@ export function scheduleToFormData(schedule: Schedule): ScheduleFormData {
       discord_channel_id: discordDest?.target || "",
       webhook: !!webhookDest,
       webhook_url: webhookDest?.target || "",
+      email: !!emailDest,                    // ADR-030
+      email_addresses: emailDest?.target || "",  // ADR-030
     },
   };
 }
@@ -455,6 +500,15 @@ export function formDataToDestinations(formData: ScheduleFormData): Destination[
       type: "webhook",
       target: formData.destinations.webhook_url,
       format: "json",
+    });
+  }
+
+  // ADR-030: Email destination
+  if (formData.destinations.email && formData.destinations.email_addresses) {
+    destinations.push({
+      type: "email",
+      target: formData.destinations.email_addresses,
+      format: "html",
     });
   }
 

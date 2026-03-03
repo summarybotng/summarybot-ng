@@ -9,7 +9,7 @@
 import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
-import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, useRegenerateSummary, type SummarySourceType, type RegenerateOptions } from "@/hooks/useStoredSummaries";
+import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, useSendToEmail, useRegenerateSummary, type SummarySourceType, type RegenerateOptions } from "@/hooks/useStoredSummaries";
 import { useGuild } from "@/hooks/useGuilds";
 import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -79,6 +79,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { StoredSummaryCard } from "./StoredSummaryCard";
 import { PushToChannelModal } from "./PushToChannelModal";
+import { SendToEmailModal, type SendToEmailRequest } from "./SendToEmailModal";
 import { SummaryFilters, type FilterState } from "./SummaryFilters";
 import { SummaryCalendar } from "./SummaryCalendar";
 import { BulkActionBar } from "./BulkActionBar";
@@ -129,6 +130,8 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
   const [viewMode, setViewMode] = useState<"list" | "calendar">("list");  // ADR-017
   const [selectedSummary, setSelectedSummary] = useState<string | null>(null);
   const [pushModalSummary, setPushModalSummary] = useState<StoredSummary | null>(null);
+  const [emailModalSummary, setEmailModalSummary] = useState<StoredSummary | null>(null);  // ADR-030
+  const [emailError, setEmailError] = useState<string | null>(null);  // ADR-030
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   // ADR-018: Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -178,6 +181,7 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
   const updateMutation = useUpdateStoredSummary(guildId);
   const deleteMutation = useDeleteStoredSummary(guildId);
   const pushMutation = usePushToChannel(guildId);
+  const emailMutation = useSendToEmail(guildId);  // ADR-030
   const regenerateMutation = useRegenerateSummary(guildId);
 
   // Refresh both list and calendar views
@@ -317,6 +321,32 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
         description: "Failed to push summary",
         variant: "destructive",
       });
+    }
+  };
+
+  // ADR-030: Email handling
+  const handleEmail = async (request: SendToEmailRequest) => {
+    if (!emailModalSummary) return;
+    setEmailError(null);
+    try {
+      const result = await emailMutation.mutateAsync({
+        summaryId: emailModalSummary.id,
+        request,
+      });
+      setEmailModalSummary(null);
+      toast({
+        title: result.success ? "Email sent" : "Partially sent",
+        description: `Sent to ${result.successful_recipients}/${result.total_recipients} recipients`,
+        variant: result.success ? "default" : "destructive",
+      });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to send email";
+      // Check for specific error codes
+      if (errorMessage.includes("EMAIL_NOT_CONFIGURED")) {
+        setEmailError("Email is not configured on the server. Contact your administrator.");
+      } else {
+        setEmailError(errorMessage);
+      }
     }
   };
 
@@ -539,6 +569,7 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
                         index={startIndex + idx}
                         onView={() => setSelectedSummary(summary.id)}
                         onPush={() => setPushModalSummary(summary)}
+                        onEmail={() => setEmailModalSummary(summary)}
                         onPin={() => handlePin(summary)}
                         onArchive={() => handleArchive(summary)}
                         onDelete={() => setDeleteConfirmId(summary.id)}
@@ -615,6 +646,23 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
           isPending={pushMutation.isPending}
           onSubmit={handlePush}
           guildId={guildId}
+        />
+      )}
+
+      {/* ADR-030: Email Modal */}
+      {emailModalSummary && (
+        <SendToEmailModal
+          open={!!emailModalSummary}
+          onOpenChange={(open) => {
+            if (!open) {
+              setEmailModalSummary(null);
+              setEmailError(null);
+            }
+          }}
+          summaryTitle={emailModalSummary.title}
+          isPending={emailMutation.isPending}
+          onSubmit={handleEmail}
+          error={emailError}
         />
       )}
 

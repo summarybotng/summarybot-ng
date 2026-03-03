@@ -38,6 +38,10 @@ from ..models import (
     BulkRegenerateRequest,
     BulkRegenerateResponse,
     RegenerateOptionsRequest,
+    # ADR-030: Email delivery
+    SendToEmailRequest,
+    SendToEmailResponse,
+    EmailDeliveryResult,
 )
 from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_stored_summary_repository, get_config_manager, get_task_scheduler, get_summary_job_repository
 from ...data.base import SearchCriteria
@@ -2195,6 +2199,101 @@ async def push_summary_to_channel(
             status_code=404,
             detail={"code": "NOT_FOUND", "message": str(e)},
         )
+
+
+# ==================== ADR-030: Email Delivery ====================
+
+@router.post(
+    "/guilds/{guild_id}/summaries/{summary_id}/email",
+    response_model=SendToEmailResponse,
+    summary="Send summary via email",
+    description="Send a stored summary to email recipients (ADR-030).",
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid email addresses"},
+        404: {"model": ErrorResponse, "description": "Summary not found"},
+        503: {"model": ErrorResponse, "description": "Email not configured"},
+    },
+)
+async def send_summary_to_email(
+    body: SendToEmailRequest,
+    guild_id: str = Path(..., description="Discord guild ID"),
+    summary_id: str = Path(..., description="Stored summary ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Send a stored summary to email recipients.
+
+    ADR-030: Email Delivery Destination.
+    Requires SMTP configuration (SMTP_ENABLED=true).
+    """
+    _check_guild_access(guild_id, user)
+    require_guild_admin(guild_id, user)  # Admin only
+
+    from ...services.email_delivery import get_email_service, EmailContext
+    from ...data.repositories import get_stored_summary_repository
+
+    # Check if email is configured
+    email_service = get_email_service()
+    if not email_service.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "EMAIL_NOT_CONFIGURED",
+                "message": "SMTP not configured. Set SMTP_ENABLED=true and configure SMTP_* environment variables.",
+            },
+        )
+
+    # Validate email addresses
+    valid_recipients = email_service.parse_recipients(",".join(body.recipients))
+    if not valid_recipients:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_RECIPIENTS",
+                "message": "No valid email addresses provided.",
+            },
+        )
+
+    # Load summary
+    repo = await get_stored_summary_repository()
+    summary = await repo.get(summary_id)
+    if not summary or summary.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": f"Summary {summary_id} not found"},
+        )
+
+    # Build email context
+    context = EmailContext(
+        guild_name=f"Guild {guild_id}",
+        start_time=summary.summary_result.start_time if summary.summary_result else None,
+        end_time=summary.summary_result.end_time if summary.summary_result else None,
+        message_count=summary.summary_result.message_count if summary.summary_result else 0,
+        participant_count=len(summary.summary_result.participants) if summary.summary_result and summary.summary_result.participants else 0,
+    )
+
+    # Send email
+    result = await email_service.send_summary(
+        summary=summary.summary_result,
+        recipients=valid_recipients,
+        context=context,
+        subject=body.subject,
+        guild_id=guild_id,
+    )
+
+    # Build response
+    deliveries = []
+    for recipient in result.recipients_sent:
+        deliveries.append(EmailDeliveryResult(recipient=recipient, success=True))
+    for recipient in result.recipients_failed:
+        deliveries.append(EmailDeliveryResult(recipient=recipient, success=False, error="Delivery failed"))
+
+    return SendToEmailResponse(
+        success=result.success,
+        total_recipients=len(valid_recipients),
+        successful_recipients=len(result.recipients_sent),
+        failed_recipients=len(result.recipients_failed),
+        deliveries=deliveries,
+    )
 
 
 # ==================== Diagnostic Endpoint ====================

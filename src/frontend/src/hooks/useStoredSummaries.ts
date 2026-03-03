@@ -12,6 +12,8 @@ import type {
   StoredSummaryUpdateRequest,
   PushToChannelRequest,
   PushToChannelResponse,
+  SendToEmailRequest,
+  SendToEmailResponse,
 } from "@/types";
 
 interface StoredSummariesResponse {
@@ -206,6 +208,23 @@ export function usePushToChannel(guildId: string) {
         queryKey: ["stored-summary", guildId, summaryId],
       });
     },
+  });
+}
+
+// ADR-030: Send to email
+export function useSendToEmail(guildId: string) {
+  return useMutation({
+    mutationFn: ({
+      summaryId,
+      request,
+    }: {
+      summaryId: string;
+      request: SendToEmailRequest;
+    }) =>
+      api.post<SendToEmailResponse>(
+        `/guilds/${guildId}/summaries/${summaryId}/email`,
+        request
+      ),
   });
 }
 

@@ -629,6 +629,15 @@ class TaskExecutor:
                     )
                     delivery_results.append(result)
 
+                elif destination.type == DestinationType.EMAIL:
+                    # ADR-030: Email delivery
+                    result = await self._deliver_to_email(
+                        summary=summary,
+                        destination=destination,
+                        task=task
+                    )
+                    delivery_results.append(result)
+
                 # Other destination types would be implemented here
 
             except Exception as e:
@@ -851,6 +860,113 @@ class TaskExecutor:
             "success": True,
             "message": "Webhook delivery not yet implemented"
         }
+
+    async def _deliver_to_email(self,
+                               summary: SummaryResult,
+                               destination: Destination,
+                               task: SummaryTask) -> Dict[str, Any]:
+        """Deliver summary via email (ADR-030).
+
+        Args:
+            summary: Summary to deliver
+            destination: Email destination with recipients
+            task: Original summary task for context
+
+        Returns:
+            Delivery result dict
+        """
+        from ..services.email_delivery import get_email_service, EmailContext
+
+        try:
+            service = get_email_service()
+            if not service.is_configured():
+                logger.warning("Email delivery requested but SMTP not configured")
+                return {
+                    "destination_type": "email",
+                    "target": destination.target,
+                    "success": False,
+                    "error": "SMTP not configured. Set SMTP_ENABLED=true and configure SMTP_* env vars."
+                }
+
+            # Parse recipients from target
+            recipients = service.parse_recipients(destination.target)
+            if not recipients:
+                return {
+                    "destination_type": "email",
+                    "target": destination.target,
+                    "success": False,
+                    "error": "No valid email addresses in destination"
+                }
+
+            # Build email context from task
+            channel_names = []
+            if self.discord_client:
+                for channel_id in task.get_all_channel_ids()[:5]:
+                    try:
+                        channel = self.discord_client.get_channel(int(channel_id))
+                        if channel:
+                            channel_names.append(channel.name)
+                    except Exception:
+                        pass
+
+            # Determine scope
+            is_server_wide = False
+            category_name = None
+            if task.scheduled_task and task.scheduled_task.scope:
+                scope = task.scheduled_task.scope
+                if scope == SummaryScope.GUILD:
+                    is_server_wide = True
+                elif scope == SummaryScope.CATEGORY:
+                    category_name = getattr(task.scheduled_task, 'category_name', None)
+
+            context = EmailContext(
+                guild_name=f"Guild {task.guild_id}",
+                channel_names=channel_names,
+                category_name=category_name,
+                is_server_wide=is_server_wide,
+                start_time=summary.start_time,
+                end_time=summary.end_time,
+                message_count=summary.message_count,
+                participant_count=len(summary.participants) if summary.participants else 0,
+                schedule_name=task.scheduled_task.name if task.scheduled_task else None,
+            )
+
+            # Send email
+            result = await service.send_summary(
+                summary=summary,
+                recipients=recipients,
+                context=context,
+                guild_id=task.guild_id,
+            )
+
+            if result.success:
+                logger.info(f"Email delivered to {len(result.recipients_sent)} recipient(s)")
+                return {
+                    "destination_type": "email",
+                    "target": destination.target,
+                    "success": True,
+                    "message": f"Sent to {len(result.recipients_sent)} recipient(s)",
+                    "details": {
+                        "recipients_sent": result.recipients_sent,
+                        "recipients_failed": result.recipients_failed,
+                    }
+                }
+            else:
+                return {
+                    "destination_type": "email",
+                    "target": destination.target,
+                    "success": False,
+                    "error": result.error or "Unknown error"
+                }
+
+        except Exception as e:
+            logger.exception(f"Failed to deliver email: {e}")
+            return {
+                "destination_type": "email",
+                "target": destination.target,
+                "success": False,
+                "error": str(e)
+            }
 
     async def _deliver_to_dashboard(self,
                                    summary: SummaryResult,

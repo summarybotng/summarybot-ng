@@ -7,7 +7,7 @@ from typing import List, Optional, Dict, Any
 from dotenv import load_dotenv
 from .settings import (
     BotConfig, GuildConfig, SummaryOptions, PermissionSettings,
-    DatabaseConfig, CacheConfig, WebhookConfig, LogLevel, SummaryLength
+    DatabaseConfig, CacheConfig, WebhookConfig, SMTPConfig, LogLevel, SummaryLength
 )
 from .constants import DEFAULT_SUMMARIZATION_MODEL
 
@@ -55,6 +55,18 @@ class EnvironmentLoader:
             cors_origins=EnvironmentLoader._parse_list(os.getenv('WEBHOOK_CORS_ORIGINS', '')),
             rate_limit=int(os.getenv('WEBHOOK_RATE_LIMIT', '100'))
         )
+
+        # ADR-030: SMTP configuration for email delivery
+        smtp_config = SMTPConfig(
+            host=os.getenv('SMTP_HOST', ''),
+            port=int(os.getenv('SMTP_PORT', '587')),
+            username=os.getenv('SMTP_USERNAME', ''),
+            password=os.getenv('SMTP_PASSWORD', ''),
+            use_tls=os.getenv('SMTP_USE_TLS', 'true').lower() == 'true',
+            from_address=os.getenv('SMTP_FROM_ADDRESS', ''),
+            from_name=os.getenv('SMTP_FROM_NAME', 'SummaryBot'),
+            enabled=os.getenv('SMTP_ENABLED', 'false').lower() == 'true',
+        )
         
         # Log level
         log_level_str = os.getenv('LOG_LEVEL', 'INFO').upper()
@@ -71,6 +83,7 @@ class EnvironmentLoader:
             discord_token=discord_token,
             guild_configs=guild_configs,
             webhook_config=webhook_config,
+            smtp_config=smtp_config,
             database_config=database_config,
             cache_config=cache_config,
             log_level=log_level,

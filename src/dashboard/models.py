@@ -925,6 +925,38 @@ class PushToChannelResponse(BaseModel):
 
 
 # ============================================================================
+# ADR-030: Email Delivery Models
+# ============================================================================
+
+class SendToEmailRequest(BaseModel):
+    """Request to send a stored summary via email (ADR-030)."""
+    recipients: List[str] = Field(
+        ...,
+        min_length=1,
+        max_length=10,
+        description="Email addresses to send to (max 10)"
+    )
+    subject: Optional[str] = Field(None, description="Custom email subject")
+    include_references: bool = Field(True, description="Include source references")
+
+
+class EmailDeliveryResult(BaseModel):
+    """Result of sending to a single email address."""
+    recipient: str
+    success: bool
+    error: Optional[str] = None
+
+
+class SendToEmailResponse(BaseModel):
+    """Response for send to email operation."""
+    success: bool
+    total_recipients: int
+    successful_recipients: int
+    failed_recipients: int
+    deliveries: List[EmailDeliveryResult]
+
+
+# ============================================================================
 # ADR-013: Unified Job Tracking Models
 # ============================================================================
 

@@ -141,6 +141,27 @@ class CacheConfig:
 
 
 @dataclass
+class SMTPConfig:
+    """SMTP configuration for email delivery (ADR-030)."""
+    host: str = ""
+    port: int = 587
+    username: str = ""
+    password: str = ""
+    use_tls: bool = True
+    from_address: str = ""
+    from_name: str = "SummaryBot"
+    enabled: bool = False
+
+    def is_configured(self) -> bool:
+        """Check if SMTP is properly configured."""
+        return bool(
+            self.enabled
+            and self.host
+            and self.from_address
+        )
+
+
+@dataclass
 class WebhookConfig:
     """Webhook server configuration."""
     host: str = "0.0.0.0"
@@ -159,6 +180,7 @@ class BotConfig:
     discord_token: str
     guild_configs: Dict[str, GuildConfig] = field(default_factory=dict)
     webhook_config: WebhookConfig = field(default_factory=WebhookConfig)
+    smtp_config: SMTPConfig = field(default_factory=SMTPConfig)  # ADR-030: Email delivery
     database_config: Optional[DatabaseConfig] = None
     cache_config: CacheConfig = field(default_factory=CacheConfig)
     log_level: LogLevel = LogLevel.INFO

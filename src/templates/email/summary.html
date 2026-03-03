@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>{% if context.is_server_wide %}Server Summary{% elif context.category_name %}{{ context.category_name }}{% elif context.channel_names %}{{ context.channel_names | join(', ') }}{% else %}Summary{% endif %}</title>
+    <style type="text/css">
+        /* Reset */
+        body, table, td, p, a, li { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+        img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+
+        /* Base */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #2e3338;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 0;
+        }
+
+        .wrapper {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .content {
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 32px;
+        }
+
+        /* Header */
+        .header {
+            border-bottom: 3px solid #5865F2;
+            padding-bottom: 16px;
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            color: #5865F2;
+            font-size: 24px;
+            font-weight: 600;
+            margin: 0 0 8px 0;
+        }
+
+        .header .scope {
+            color: #4752C4;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        /* Meta info */
+        .meta {
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            color: #5c6370;
+        }
+
+        .meta-item {
+            display: inline-block;
+            margin-right: 16px;
+        }
+
+        .meta-icon {
+            margin-right: 4px;
+        }
+
+        /* Summary text */
+        .summary-text {
+            background-color: #f0f4ff;
+            border-left: 4px solid #5865F2;
+            padding: 16px;
+            margin-bottom: 24px;
+            border-radius: 0 6px 6px 0;
+            font-size: 15px;
+            line-height: 1.7;
+        }
+
+        /* Sections */
+        .section {
+            margin-bottom: 24px;
+        }
+
+        .section h2 {
+            color: #4752C4;
+            font-size: 18px;
+            font-weight: 600;
+            margin: 0 0 12px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e8e8e8;
+        }
+
+        .section ul {
+            margin: 0;
+            padding-left: 0;
+            list-style: none;
+        }
+
+        .section li {
+            padding: 8px 0;
+            padding-left: 24px;
+            position: relative;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .section li:last-child {
+            border-bottom: none;
+        }
+
+        .section li::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 14px;
+            width: 8px;
+            height: 8px;
+            background-color: #5865F2;
+            border-radius: 50%;
+        }
+
+        /* Action items */
+        .action-items li::before {
+            content: "";
+            background-color: transparent;
+            border: 2px solid #f59e0b;
+            width: 10px;
+            height: 10px;
+            top: 12px;
+            border-radius: 3px;
+        }
+
+        /* Decisions */
+        .decisions li::before {
+            background-color: #10b981;
+        }
+
+        /* Participants */
+        .participants {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 8px 0;
+        }
+
+        .participant {
+            background-color: #f0f0f0;
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 13px;
+            color: #5c6370;
+        }
+
+        .participant-count {
+            color: #8a8f98;
+            margin-left: 4px;
+        }
+
+        /* Citations */
+        .citation {
+            color: #5865F2;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 32px;
+            padding-top: 16px;
+            border-top: 1px solid #e8e8e8;
+            font-size: 12px;
+            color: #8a8f98;
+            text-align: center;
+        }
+
+        .footer a {
+            color: #5865F2;
+            text-decoration: none;
+        }
+
+        /* Mobile responsive */
+        @media only screen and (max-width: 480px) {
+            .wrapper {
+                padding: 10px;
+            }
+            .content {
+                padding: 20px;
+            }
+            .header h1 {
+                font-size: 20px;
+            }
+            .meta-item {
+                display: block;
+                margin-bottom: 4px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="content">
+            <!-- Header -->
+            <div class="header">
+                <h1>
+                    {% if context.is_server_wide %}
+                        Server-wide Summary
+                    {% elif context.category_name %}
+                        {{ context.category_name }} Summary
+                    {% elif context.channel_names %}
+                        {% if context.channel_names | length == 1 %}
+                            #{{ context.channel_names[0] }} Summary
+                        {% else %}
+                            {{ context.channel_names | length }} Channels Summary
+                        {% endif %}
+                    {% else %}
+                        Summary
+                    {% endif %}
+                </h1>
+                {% if context.schedule_name %}
+                <div class="scope">Schedule: {{ context.schedule_name }}</div>
+                {% endif %}
+            </div>
+
+            <!-- Meta info -->
+            <div class="meta">
+                {% if context.start_time and context.end_time %}
+                <span class="meta-item">
+                    <span class="meta-icon">&#128197;</span>
+                    {{ context.start_time.strftime('%b %d, %Y %I:%M %p') }} - {{ context.end_time.strftime('%b %d, %Y %I:%M %p') }} UTC
+                </span>
+                {% endif %}
+                <span class="meta-item">
+                    <span class="meta-icon">&#128172;</span>
+                    {{ context.message_count }} messages
+                </span>
+                <span class="meta-item">
+                    <span class="meta-icon">&#128101;</span>
+                    {{ context.participant_count }} participants
+                </span>
+            </div>
+
+            <!-- Summary text -->
+            {% if summary.summary_text %}
+            <div class="summary-text">
+                {{ summary.summary_text }}
+            </div>
+            {% endif %}
+
+            <!-- Key Points -->
+            {% if summary.key_points %}
+            <div class="section">
+                <h2>&#128204; Key Points</h2>
+                <ul>
+                    {% for point in summary.key_points[:10] %}
+                    <li>{{ point }}</li>
+                    {% endfor %}
+                    {% if summary.key_points | length > 10 %}
+                    <li style="color: #8a8f98; font-style: italic;">...and {{ summary.key_points | length - 10 }} more</li>
+                    {% endif %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <!-- Action Items -->
+            {% if summary.action_items %}
+            <div class="section action-items">
+                <h2>&#9989; Action Items</h2>
+                <ul>
+                    {% for item in summary.action_items[:10] %}
+                    <li>
+                        {% if item.description is defined %}
+                            {{ item.description }}
+                            {% if item.assignee %}<span style="color: #5865F2;">@{{ item.assignee }}</span>{% endif %}
+                        {% else %}
+                            {{ item }}
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <!-- Decisions -->
+            {% if summary.referenced_decisions %}
+            <div class="section decisions">
+                <h2>&#128221; Decisions</h2>
+                <ul>
+                    {% for decision in summary.referenced_decisions[:10] %}
+                    <li>
+                        {% if decision.text is defined %}
+                            {{ decision.text }}
+                        {% else %}
+                            {{ decision }}
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <!-- Participants -->
+            {% if summary.participants %}
+            <div class="section">
+                <h2>&#128101; Top Participants</h2>
+                <div class="participants">
+                    {% for p in summary.participants[:8] %}
+                    <span class="participant">
+                        {{ p.display_name }}<span class="participant-count">({{ p.message_count }})</span>
+                    </span>
+                    {% endfor %}
+                    {% if summary.participants | length > 8 %}
+                    <span class="participant" style="background-color: #e8e8e8;">
+                        +{{ summary.participants | length - 8 }} more
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Footer -->
+            <div class="footer">
+                <p>
+                    Generated by SummaryBot at {{ now.strftime('%Y-%m-%d %H:%M UTC') }}
+                </p>
+                <p style="margin-top: 8px;">
+                    {% if context.channel_names %}
+                    Channels: {{ context.channel_names | join(', ') }}
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

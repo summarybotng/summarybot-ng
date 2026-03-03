@@ -35,6 +35,7 @@ import {
   Clock,
   Sparkles,
   Settings2,
+  Mail,
 } from "lucide-react";
 import type { StoredSummary, SummarySourceType } from "@/types";
 
@@ -60,6 +61,7 @@ interface StoredSummaryCardProps {
   index: number;
   onView: () => void;
   onPush: () => void;
+  onEmail: () => void;  // ADR-030: Email delivery
   onPin: () => void;
   onArchive: () => void;
   onDelete: () => void;
@@ -73,6 +75,7 @@ export function StoredSummaryCard({
   index,
   onView,
   onPush,
+  onEmail,
   onPin,
   onArchive,
   onDelete,
@@ -153,6 +156,10 @@ export function StoredSummaryCard({
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onPush(); }}>
                     <Send className="mr-2 h-4 w-4" />
                     Push to Channel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEmail(); }}>
+                    <Mail className="mr-2 h-4 w-4" />
+                    Send to Email
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onPin(); }}>

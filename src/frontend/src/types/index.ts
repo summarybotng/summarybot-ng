@@ -357,6 +357,25 @@ export interface PushToChannelResponse {
   }[];
 }
 
+// ADR-030: Email delivery types
+export interface SendToEmailRequest {
+  recipients: string[];
+  subject?: string;
+  include_references?: boolean;
+}
+
+export interface SendToEmailResponse {
+  success: boolean;
+  total_recipients: number;
+  successful_recipients: number;
+  failed_recipients: number;
+  deliveries: {
+    recipient: string;
+    success: boolean;
+    error?: string;
+  }[];
+}
+
 export interface StoredSummaryUpdateRequest {
   title?: string;
   is_pinned?: boolean;

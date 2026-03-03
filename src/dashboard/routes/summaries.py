@@ -2225,52 +2225,55 @@ async def send_summary_to_email(
     ADR-030: Email Delivery Destination.
     Requires SMTP configuration (SMTP_ENABLED=true).
     """
-    _check_guild_access(guild_id, user)
-    require_guild_admin(guild_id, user)  # Admin only
+    import logging
+    logger = logging.getLogger(__name__)
 
-    from ...services.email_delivery import get_email_service, EmailContext
-    from ...data.repositories import get_stored_summary_repository
-
-    # Check if email is configured
-    email_service = get_email_service()
-    if not email_service.is_configured():
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": "EMAIL_NOT_CONFIGURED",
-                "message": "SMTP not configured. Set SMTP_ENABLED=true and configure SMTP_* environment variables.",
-            },
-        )
-
-    # Validate email addresses
-    valid_recipients = email_service.parse_recipients(",".join(body.recipients))
-    if not valid_recipients:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "INVALID_RECIPIENTS",
-                "message": "No valid email addresses provided.",
-            },
-        )
-
-    # Load summary
-    repo = await get_stored_summary_repository()
-    summary = await repo.get(summary_id)
-    if not summary or summary.guild_id != guild_id:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "NOT_FOUND", "message": f"Summary {summary_id} not found"},
-        )
-
-    # Verify summary has content
-    if not summary.summary_result:
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "NO_CONTENT", "message": "Summary has no content to email"},
-        )
-
-    # Build email context
     try:
+        _check_guild_access(guild_id, user)
+        require_guild_admin(guild_id, user)  # Admin only
+
+        from ...services.email_delivery import get_email_service, EmailContext
+        from ...data.repositories import get_stored_summary_repository
+
+        # Check if email is configured
+        email_service = get_email_service()
+        if not email_service.is_configured():
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "EMAIL_NOT_CONFIGURED",
+                    "message": "SMTP not configured. Set SMTP_ENABLED=true and configure SMTP_* environment variables.",
+                },
+            )
+
+        # Validate email addresses
+        valid_recipients = email_service.parse_recipients(",".join(body.recipients))
+        if not valid_recipients:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "INVALID_RECIPIENTS",
+                    "message": "No valid email addresses provided.",
+                },
+            )
+
+        # Load summary
+        repo = await get_stored_summary_repository()
+        summary = await repo.get(summary_id)
+        if not summary or summary.guild_id != guild_id:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": f"Summary {summary_id} not found"},
+            )
+
+        # Verify summary has content
+        if not summary.summary_result:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "NO_CONTENT", "message": "Summary has no content to email"},
+            )
+
+        # Build email context
         context = EmailContext(
             guild_name=f"Guild {guild_id}",
             start_time=summary.summary_result.start_time if summary.summary_result else None,
@@ -2287,29 +2290,30 @@ async def send_summary_to_email(
             subject=body.subject,
             guild_id=guild_id,
         )
+
+        # Build response
+        deliveries = []
+        for recipient in result.recipients_sent:
+            deliveries.append(EmailDeliveryResult(recipient=recipient, success=True))
+        for recipient in result.recipients_failed:
+            deliveries.append(EmailDeliveryResult(recipient=recipient, success=False, error="Delivery failed"))
+
+        return SendToEmailResponse(
+            success=result.success,
+            total_recipients=len(valid_recipients),
+            successful_recipients=len(result.recipients_sent),
+            failed_recipients=len(result.recipients_failed),
+            deliveries=deliveries,
+        )
+
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.exception(f"Email delivery failed for summary {summary_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail={"code": "EMAIL_FAILED", "message": f"Email delivery failed: {str(e)}"},
         )
-
-    # Build response
-    deliveries = []
-    for recipient in result.recipients_sent:
-        deliveries.append(EmailDeliveryResult(recipient=recipient, success=True))
-    for recipient in result.recipients_failed:
-        deliveries.append(EmailDeliveryResult(recipient=recipient, success=False, error="Delivery failed"))
-
-    return SendToEmailResponse(
-        success=result.success,
-        total_recipients=len(valid_recipients),
-        successful_recipients=len(result.recipients_sent),
-        failed_recipients=len(result.recipients_failed),
-        deliveries=deliveries,
-    )
 
 
 # ==================== Diagnostic Endpoint ====================

@@ -8,7 +8,9 @@
 
 import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
+import { formatDistanceToNow } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
+import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -79,6 +81,17 @@ export function StoredSummaryCard({
 }: StoredSummaryCardProps) {
   const { id: guildId } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { formatDateTime } = useTimezone();
+
+  // Format date with timezone and relative time
+  const createdDate = parseAsUTC(summary.created_at);
+  const formattedDate = formatDateTime(createdDate, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const relativeTime = formatDistanceToNow(createdDate, { addSuffix: true });
 
   const handleScheduleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -120,8 +133,11 @@ export function StoredSummaryCard({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">
-                {new Date(summary.created_at).toLocaleDateString()}
+              <span
+                className="text-sm text-muted-foreground"
+                title={formattedDate}
+              >
+                {relativeTime}
               </span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>

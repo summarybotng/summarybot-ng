@@ -298,6 +298,29 @@ destinations: {
 - Escape user-generated content to prevent XSS in email clients
 - No external image loading (prevents tracking pixels in summaries)
 
+### 6.5 Test Authentication
+
+The email endpoint requires admin-level access. Test authentication supports two levels:
+
+```bash
+# Admin-level access (required for email endpoint)
+TEST_AUTH_ADMIN_SECRET=<secret>
+
+# User-level access (read-only, member permissions)
+TEST_AUTH_SECRET=<secret>
+```
+
+Usage:
+```bash
+# Admin request (can send emails)
+curl -H "X-Test-Auth-Key: $TEST_AUTH_ADMIN_SECRET" \
+  -X POST /api/v1/guilds/{guild_id}/summaries/{id}/email
+
+# User request (read-only access)
+curl -H "X-Test-Auth-Key: $TEST_AUTH_SECRET" \
+  /api/v1/guilds/{guild_id}/stored-summaries
+```
+
 ---
 
 ## 7. File-by-File Change Map

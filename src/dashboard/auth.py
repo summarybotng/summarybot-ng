@@ -585,11 +585,19 @@ async def get_current_user(
     Raises:
         HTTPException: If not authenticated
     """
-    # Test bypass: check for X-Test-Auth-Key header matching TEST_AUTH_SECRET env var
-    test_secret = os.getenv("TEST_AUTH_SECRET")
-    if test_secret:
-        provided_key = request.headers.get("X-Test-Auth-Key")
-        if provided_key == test_secret:
+    # Test bypass: check for X-Test-Auth-Key header
+    # Two levels of access:
+    #   - TEST_AUTH_ADMIN_SECRET: Admin-level access (can use admin-only endpoints like email)
+    #   - TEST_AUTH_SECRET: User-level access (read-only, member permissions)
+    provided_key = request.headers.get("X-Test-Auth-Key")
+    if provided_key:
+        admin_secret = os.getenv("TEST_AUTH_ADMIN_SECRET")
+        user_secret = os.getenv("TEST_AUTH_SECRET")
+
+        is_admin = admin_secret and provided_key == admin_secret
+        is_user = user_secret and provided_key == user_secret
+
+        if is_admin or is_user:
             # Return a mock user - TEST_GUILD_ID can be comma-separated list or "*" for all
             test_guild_config = os.getenv("TEST_GUILD_ID", "*")
             if test_guild_config == "*":
@@ -602,11 +610,17 @@ async def get_current_user(
                         break
             else:
                 guilds = [g.strip() for g in test_guild_config.split(",")]
+
+            # Build guild_roles based on access level
+            role = "admin" if is_admin else "member"
+            guild_roles = {g: role for g in guilds}
+
             return {
-                "sub": "test_user_id",
-                "username": "test_user",
+                "sub": f"test_{role}_user_id",
+                "username": f"test_{role}_user",
                 "avatar": None,
                 "guilds": guilds,
+                "guild_roles": guild_roles,
                 "iat": datetime.utcnow(),
                 "exp": datetime.utcnow() + timedelta(hours=24),
             }

@@ -416,10 +416,39 @@ class WebhookServer:
 
     def _setup_error_handlers(self) -> None:
         """Configure global error handlers."""
+        from fastapi import HTTPException
+
+        @self.app.exception_handler(HTTPException)
+        async def http_error_handler(request: Request, exc: HTTPException):
+            """Handle HTTP exceptions with logging (ADR-031)."""
+            # Log 4xx and 5xx errors for debugging
+            detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+            error_code = detail.get("code", "HTTP_ERROR")
+            error_message = detail.get("message", str(exc.detail))
+
+            if exc.status_code >= 500:
+                logger.error(
+                    f"HTTP {exc.status_code} {request.method} {request.url.path}: "
+                    f"{error_code} - {error_message}"
+                )
+            elif exc.status_code >= 400:
+                logger.warning(
+                    f"HTTP {exc.status_code} {request.method} {request.url.path}: "
+                    f"{error_code} - {error_message}"
+                )
+
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={
+                    "detail": exc.detail,
+                    "request_id": request.headers.get("X-Request-ID"),
+                }
+            )
 
         @self.app.exception_handler(WebhookError)
         async def webhook_error_handler(request, exc: WebhookError):
             """Handle webhook-specific errors."""
+            logger.warning(f"Webhook error on {request.method} {request.url.path}: {exc.error_code}")
             return JSONResponse(
                 status_code=400,
                 content={

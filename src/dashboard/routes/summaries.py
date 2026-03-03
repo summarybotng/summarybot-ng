@@ -2270,22 +2270,31 @@ async def send_summary_to_email(
         )
 
     # Build email context
-    context = EmailContext(
-        guild_name=f"Guild {guild_id}",
-        start_time=summary.summary_result.start_time if summary.summary_result else None,
-        end_time=summary.summary_result.end_time if summary.summary_result else None,
-        message_count=summary.summary_result.message_count if summary.summary_result else 0,
-        participant_count=len(summary.summary_result.participants) if summary.summary_result and summary.summary_result.participants else 0,
-    )
+    try:
+        context = EmailContext(
+            guild_name=f"Guild {guild_id}",
+            start_time=summary.summary_result.start_time if summary.summary_result else None,
+            end_time=summary.summary_result.end_time if summary.summary_result else None,
+            message_count=summary.summary_result.message_count if summary.summary_result else 0,
+            participant_count=len(summary.summary_result.participants) if summary.summary_result and summary.summary_result.participants else 0,
+        )
 
-    # Send email
-    result = await email_service.send_summary(
-        summary=summary.summary_result,
-        recipients=valid_recipients,
-        context=context,
-        subject=body.subject,
-        guild_id=guild_id,
-    )
+        # Send email
+        result = await email_service.send_summary(
+            summary=summary.summary_result,
+            recipients=valid_recipients,
+            context=context,
+            subject=body.subject,
+            guild_id=guild_id,
+        )
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.exception(f"Email delivery failed for summary {summary_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "EMAIL_FAILED", "message": f"Email delivery failed: {str(e)}"},
+        )
 
     # Build response
     deliveries = []

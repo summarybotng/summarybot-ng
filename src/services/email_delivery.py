@@ -481,10 +481,16 @@ class EmailDeliveryService:
             sent_recipients = []
             failed_recipients = []
 
+            # For port 465, use implicit TLS (use_tls=True)
+            # For port 587, use STARTTLS (start_tls=True)
+            use_implicit_tls = self.config.port == 465
+            use_starttls = self.config.use_tls and self.config.port != 465
+
             async with aiosmtplib.SMTP(
                 hostname=self.config.host,
                 port=self.config.port,
-                use_tls=self.config.use_tls,
+                use_tls=use_implicit_tls,
+                start_tls=use_starttls,
             ) as smtp:
                 # Authenticate if credentials provided
                 if self.config.username and self.config.password:
@@ -530,10 +536,10 @@ class EmailDeliveryService:
                 error="aiosmtplib not installed",
             )
         except Exception as e:
-            logger.exception(f"SMTP error: {e}")
+            logger.exception(f"SMTP error connecting to {self.config.host}:{self.config.port}: {e}")
             return EmailDeliveryResult(
                 success=False,
-                error=str(e),
+                error=f"SMTP connection failed: {e}",
             )
 
 
@@ -562,6 +568,11 @@ def get_email_service() -> EmailDeliveryService:
             enabled=os.getenv("SMTP_ENABLED", "false").lower() == "true",
         )
         _email_service = EmailDeliveryService(config)
+        logger.info(
+            f"Email service initialized: enabled={config.enabled}, "
+            f"host={config.host}, port={config.port}, "
+            f"from={config.from_address}, configured={config.is_configured()}"
+        )
     return _email_service
 
 

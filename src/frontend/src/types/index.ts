@@ -65,6 +65,7 @@ export interface SummaryOptions {
   perspective: "general" | "developer" | "marketing" | "executive" | "support";
   include_action_items: boolean;
   include_technical_terms: boolean;
+  min_messages?: number;  // Minimum messages required (default 5)
 }
 
 // Summary types

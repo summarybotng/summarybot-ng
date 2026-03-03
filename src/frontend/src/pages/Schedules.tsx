@@ -90,6 +90,7 @@ export function Schedules() {
           perspective: formData.perspective,
           include_action_items: true,
           include_technical_terms: true,
+          min_messages: formData.min_messages,
         },
       });
       setCreateOpen(false);
@@ -136,6 +137,7 @@ export function Schedules() {
             perspective: formData.perspective,
             include_action_items: true,
             include_technical_terms: true,
+            min_messages: formData.min_messages,
           },
         },
       });

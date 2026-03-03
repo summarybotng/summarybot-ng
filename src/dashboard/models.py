@@ -185,6 +185,7 @@ class SummaryOptionsResponse(BaseModel):
     perspective: str = "general"
     include_action_items: bool = True
     include_technical_terms: bool = True
+    min_messages: int = 5  # Minimum messages required; set to 1 for low-activity channels
 
 
 class GuildConfigResponse(BaseModel):

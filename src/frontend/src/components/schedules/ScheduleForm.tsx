@@ -58,6 +58,7 @@ export interface ScheduleFormData {
   timezone: string;
   summary_length: SummaryOptions["summary_length"];
   perspective: SummaryOptions["perspective"];
+  min_messages: number;  // Minimum messages required (default 5, set to 1 for low-activity)
   // ADR-005: Delivery destinations
   destinations: {
     dashboard: boolean;
@@ -232,6 +233,28 @@ export function ScheduleForm({ formData, onChange, channels = [], categories = [
         </Select>
       </div>
 
+      {/* Low Activity Mode */}
+      <div className="flex items-start space-x-3 rounded-md border p-3">
+        <Checkbox
+          id="low-activity"
+          checked={formData.min_messages === 1}
+          onCheckedChange={(checked) =>
+            onChange({
+              ...formData,
+              min_messages: checked ? 1 : 5,
+            })
+          }
+        />
+        <div className="space-y-1">
+          <label htmlFor="low-activity" className="text-sm font-medium cursor-pointer">
+            Allow low activity
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Run even with just 1 message (default requires 5). Useful for support/alert channels.
+          </p>
+        </div>
+      </div>
+
       {/* ADR-005: Delivery Destinations */}
       <div className="space-y-3">
         <label className="text-sm font-medium">Delivery Destinations</label>
@@ -363,6 +386,7 @@ export const getInitialFormData = (): ScheduleFormData => ({
   timezone: getBrowserTimezone(),
   summary_length: "detailed",
   perspective: "general",
+  min_messages: 5,  // Default: require 5 messages
   destinations: {
     dashboard: true, // Default to dashboard
     discord_channel: false,
@@ -395,6 +419,7 @@ export function scheduleToFormData(schedule: Schedule): ScheduleFormData {
     timezone: schedule.timezone,
     summary_length: schedule.summary_options.summary_length,
     perspective: schedule.summary_options.perspective,
+    min_messages: schedule.summary_options.min_messages ?? 5,
     destinations: {
       dashboard: !!dashboardDest,
       discord_channel: !!discordDest,

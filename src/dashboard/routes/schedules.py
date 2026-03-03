@@ -102,6 +102,7 @@ def _task_to_response(task, category_name: str = None) -> ScheduleListItem:
             perspective="general",
             include_action_items=task.summary_options.extract_action_items,
             include_technical_terms=task.summary_options.extract_technical_terms,
+            min_messages=task.summary_options.min_messages,
         ),
         last_run=task.last_run,
         next_run=task.next_run,
@@ -224,6 +225,7 @@ async def create_schedule(
         summary_length=SummaryLength(body.summary_options.summary_length if body.summary_options else "detailed"),
         extract_action_items=body.summary_options.include_action_items if body.summary_options else True,
         extract_technical_terms=body.summary_options.include_technical_terms if body.summary_options else True,
+        min_messages=body.summary_options.min_messages if body.summary_options else 5,
     )
 
     task = ScheduledTask(
@@ -421,6 +423,7 @@ async def update_schedule(
         task.summary_options.summary_length = SummaryLength(body.summary_options.summary_length)
         task.summary_options.extract_action_items = body.summary_options.include_action_items
         task.summary_options.extract_technical_terms = body.summary_options.include_technical_terms
+        task.summary_options.min_messages = body.summary_options.min_messages
 
     # Recalculate next run
     task.next_run = task.calculate_next_run()

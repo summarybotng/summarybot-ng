@@ -109,6 +109,10 @@ def setup_dashboard_api(
         task_scheduler: Task scheduler
         config_manager: Configuration manager
     """
+    # ADR-031: Add error logging middleware
+    from .middleware import setup_error_logging_middleware
+    setup_error_logging_middleware(app)
+
     router = create_dashboard_router(
         discord_bot=discord_bot,
         summarization_engine=summarization_engine,

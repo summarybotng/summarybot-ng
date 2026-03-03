@@ -156,6 +156,12 @@ async def create_webhook(
 
     await webhook_repo.save_webhook(webhook)
 
+    # ADR-031: Log webhook creation
+    logger.info(
+        f"Webhook created: webhook_id={webhook_id}, guild_id={guild_id}, "
+        f"name={body.name}, type={body.type}, created_by={user['sub']}"
+    )
+
     return _webhook_to_response(webhook)
 
 
@@ -286,6 +292,12 @@ async def delete_webhook(
 
     await webhook_repo.delete_webhook(webhook_id)
 
+    # ADR-031: Log webhook deletion
+    logger.info(
+        f"Webhook deleted: webhook_id={webhook_id}, guild_id={guild_id}, "
+        f"name={webhook.get('name', 'unknown')}, deleted_by={user['sub']}"
+    )
+
     return {"success": True}
 
 
@@ -368,6 +380,20 @@ async def test_webhook(
             status = "success" if response.is_success else "failed"
             await webhook_repo.update_delivery_status(webhook_id, status, datetime.utcnow())
 
+            # ADR-031: Log webhook test result
+            if response.is_success:
+                logger.info(
+                    f"Webhook test success: webhook_id={webhook_id}, "
+                    f"guild_id={guild_id}, status={response.status_code}, "
+                    f"response_time={elapsed_ms}ms"
+                )
+            else:
+                logger.warning(
+                    f"Webhook test failed: webhook_id={webhook_id}, "
+                    f"guild_id={guild_id}, status={response.status_code}, "
+                    f"response_time={elapsed_ms}ms"
+                )
+
             return WebhookTestResponse(
                 success=response.is_success,
                 response_code=response.status_code,
@@ -375,6 +401,11 @@ async def test_webhook(
             )
 
     except httpx.TimeoutException:
+        # ADR-031: Log webhook timeout errors
+        logger.warning(
+            f"Webhook test timeout: webhook_id={webhook_id}, "
+            f"guild_id={guild_id}, url={_mask_url(webhook['url'])}"
+        )
         await webhook_repo.update_delivery_status(webhook_id, "failed", datetime.utcnow())
         return WebhookTestResponse(
             success=False,
@@ -384,6 +415,12 @@ async def test_webhook(
         )
 
     except httpx.RequestError as e:
+        # ADR-031: Log webhook connection errors
+        logger.error(
+            f"Webhook test failed: webhook_id={webhook_id}, "
+            f"guild_id={guild_id}, url={_mask_url(webhook['url'])}, "
+            f"error={type(e).__name__}: {e}"
+        )
         await webhook_repo.update_delivery_status(webhook_id, "failed", datetime.utcnow())
         return WebhookTestResponse(
             success=False,

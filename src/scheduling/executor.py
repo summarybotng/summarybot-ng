@@ -602,6 +602,12 @@ class TaskExecutor:
             if not destination.enabled:
                 continue
 
+            # ADR-031: Log delivery attempt
+            logger.info(
+                f"Delivering summary {summary.id} to {destination.type.value}: "
+                f"target={destination.target}, task_id={task.scheduled_task.id}"
+            )
+
             try:
                 if destination.type == DestinationType.DISCORD_CHANNEL:
                     result = await self._deliver_to_discord(
@@ -641,7 +647,12 @@ class TaskExecutor:
                 # Other destination types would be implemented here
 
             except Exception as e:
-                logger.error(f"Failed to deliver to {destination.type.value}: {e}")
+                # ADR-031: Log delivery failure with full context
+                logger.error(
+                    f"Delivery failed: destination={destination.type.value}, "
+                    f"target={destination.target}, task_id={task.scheduled_task.id}, "
+                    f"summary_id={summary.id}, error={type(e).__name__}: {e}"
+                )
                 delivery_results.append({
                     "destination_type": destination.type.value,
                     "target": destination.target,

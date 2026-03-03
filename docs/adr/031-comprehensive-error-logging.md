@@ -1,7 +1,7 @@
 # ADR-031: Comprehensive Error Logging
 
 ## Status
-Accepted
+Implemented
 
 ## Context
 
@@ -79,14 +79,14 @@ DO log (sanitized):
 
 - [x] Email service: Log initialization with config status
 - [x] Email service: Log SMTP connection errors with context
-- [ ] API routes: Add middleware for error logging
-- [ ] Scheduling executor: Log delivery attempts and failures
-- [ ] Discord bot: Log command errors
-- [ ] Webhook handlers: Log incoming request errors
+- [x] API routes: Add middleware for error logging (`src/dashboard/middleware.py`)
+- [x] Scheduling executor: Log delivery attempts and failures
+- [x] Discord bot: Log command errors (`src/discord_bot/events.py`)
+- [x] Webhook handlers: Log incoming request errors
 
 ## Implementation
 
-### Email Service Updates (Already Implemented)
+### Email Service Updates
 
 ```python
 # In get_email_service()
@@ -101,19 +101,65 @@ except Exception as e:
     logger.exception(f"SMTP error connecting to {self.config.host}:{self.config.port}: {e}")
 ```
 
-### API Error Logging Middleware (TODO)
+### API Error Logging Middleware
+
+Implemented in `src/dashboard/middleware.py`:
 
 ```python
-@app.middleware("http")
-async def log_errors(request: Request, call_next):
-    try:
-        response = await call_next(request)
-        if response.status_code >= 400:
-            logger.warning(f"HTTP {response.status_code} {request.method} {request.url.path}")
-        return response
-    except Exception as e:
-        logger.exception(f"Unhandled error on {request.method} {request.url.path}")
-        raise
+class ErrorLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        request_id = str(uuid.uuid4())[:8]
+        start_time = time.time()
+
+        try:
+            response = await call_next(request)
+            duration_ms = int((time.time() - start_time) * 1000)
+
+            if response.status_code >= 500:
+                logger.error(f"[{request_id}] HTTP {response.status_code} {request.method} {request.url.path} ({duration_ms}ms)")
+            elif response.status_code >= 400:
+                logger.warning(f"[{request_id}] HTTP {response.status_code} {request.method} {request.url.path} ({duration_ms}ms)")
+
+            return response
+        except Exception as e:
+            logger.exception(f"[{request_id}] Unhandled error on {request.method} {request.url.path}")
+            raise
+```
+
+### Scheduling Executor Delivery Logging
+
+```python
+# Before each delivery attempt
+logger.info(f"Delivering summary {summary.id} to {destination.type.value}: target={destination.target}")
+
+# On delivery failure
+logger.error(f"Delivery failed: destination={destination.type.value}, target={destination.target}, error={e}")
+```
+
+### Discord Bot Command Error Handler
+
+Already implemented in `src/discord_bot/events.py`:
+
+```python
+async def on_application_command_error(self, interaction, error):
+    context = create_error_context(
+        user_id=str(interaction.user.id),
+        guild_id=str(interaction.guild_id),
+        command=interaction.command.name
+    )
+    logger.error(f"Command error: {error}", extra={"context": context.to_dict()})
+```
+
+### Webhook Handler Logging
+
+```python
+# On webhook test success/failure
+logger.info(f"Webhook test success: webhook_id={webhook_id}, status={response.status_code}")
+logger.warning(f"Webhook test failed: webhook_id={webhook_id}, status={response.status_code}")
+
+# On webhook creation/deletion
+logger.info(f"Webhook created: webhook_id={webhook_id}, guild_id={guild_id}, created_by={user['sub']}")
+logger.info(f"Webhook deleted: webhook_id={webhook_id}, guild_id={guild_id}")
 ```
 
 ## Consequences

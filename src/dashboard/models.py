@@ -921,3 +921,105 @@ class PushToChannelResponse(BaseModel):
     total_channels: int
     successful_channels: int
     deliveries: List[PushDeliveryResult]
+
+
+# ============================================================================
+# ADR-013: Unified Job Tracking Models
+# ============================================================================
+
+class JobType(str, Enum):
+    """Type of summary generation job."""
+    MANUAL = "manual"
+    SCHEDULED = "scheduled"
+    RETROSPECTIVE = "retrospective"
+
+
+class JobStatus(str, Enum):
+    """Status of a summary generation job."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    PAUSED = "paused"
+
+
+class JobProgressResponse(BaseModel):
+    """Progress information for a job."""
+    current: int
+    total: int
+    percent: float
+    message: Optional[str] = None
+    current_period: Optional[str] = None
+
+
+class JobCostResponse(BaseModel):
+    """Cost tracking for a job."""
+    cost_usd: float = 0.0
+    tokens_input: int = 0
+    tokens_output: int = 0
+
+
+class JobListItem(BaseModel):
+    """Brief job info for list view."""
+    job_id: str
+    guild_id: str
+    job_type: JobType
+    status: JobStatus
+    scope: Optional[str] = None
+    schedule_id: Optional[str] = None
+    progress: JobProgressResponse
+    summary_id: Optional[str] = None
+    error: Optional[str] = None
+    pause_reason: Optional[str] = None
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+
+class JobDetailResponse(BaseModel):
+    """Full job details."""
+    job_id: str
+    guild_id: str
+    job_type: JobType
+    status: JobStatus
+    scope: Optional[str] = None
+    channel_ids: List[str] = []
+    category_id: Optional[str] = None
+    schedule_id: Optional[str] = None
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
+    progress: JobProgressResponse
+    cost: JobCostResponse
+    summary_id: Optional[str] = None
+    summary_ids: List[str] = []
+    error: Optional[str] = None
+    pause_reason: Optional[str] = None
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    created_by: Optional[str] = None
+    metadata: Dict[str, Any] = {}
+
+
+class JobsListResponse(BaseModel):
+    """Response for job list endpoint."""
+    jobs: List[JobListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class JobCancelResponse(BaseModel):
+    """Response for job cancel operation."""
+    success: bool
+    job_id: str
+    message: str
+
+
+class JobRetryResponse(BaseModel):
+    """Response for job retry operation."""
+    success: bool
+    job_id: str
+    new_job_id: Optional[str] = None
+    message: str

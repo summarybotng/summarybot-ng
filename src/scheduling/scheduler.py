@@ -16,6 +16,7 @@ from .tasks import SummaryTask, CleanupTask, TaskType, TaskMetadata
 from .executor import TaskExecutor
 from .persistence import TaskPersistence
 from ..models.task import ScheduledTask, ScheduleType, TaskStatus
+from ..models.summary_job import SummaryJob, JobType, JobStatus
 from ..exceptions import (
     SummaryBotException, ConfigurationError, create_error_context
 )
@@ -510,7 +511,42 @@ class TaskScheduler:
 
         start_time = datetime.utcnow()
 
+        # ADR-013: Create job record for tracking
+        import secrets
+        job_id = f"job_{secrets.token_urlsafe(16)}"
+        job = SummaryJob(
+            id=job_id,
+            guild_id=task.guild_id,
+            job_type=JobType.SCHEDULED,
+            status=JobStatus.PENDING,
+            scope=task.scope.value if hasattr(task, 'scope') and task.scope else "channel",
+            channel_ids=task.channel_ids if task.channel_ids else ([task.channel_id] if task.channel_id else []),
+            category_id=task.category_id if hasattr(task, 'category_id') else None,
+            schedule_id=task.id,
+            metadata={"task_name": task.name},
+        )
+
+        # Persist job to database
+        job_repo = None
         try:
+            from ..data.repositories import get_summary_job_repository
+            job_repo = await get_summary_job_repository()
+            if job_repo:
+                await job_repo.save(job)
+                logger.info(f"[{job_id}] Created scheduled job record")
+        except Exception as e:
+            logger.warning(f"[{job_id}] Failed to persist job: {e}")
+
+        try:
+            # Mark job as RUNNING
+            job.start()
+            job.update_progress(0, 3, "Starting scheduled task")
+            if job_repo:
+                try:
+                    await job_repo.update(job)
+                except Exception:
+                    pass
+
             # Mark task as started
             task.mark_run_started()
 
@@ -523,6 +559,14 @@ class TaskScheduler:
                 destinations=task.destinations
             )
 
+            # Update job progress
+            job.update_progress(1, 3, "Executing summary task")
+            if job_repo:
+                try:
+                    await job_repo.update(job)
+                except Exception:
+                    pass
+
             # Execute task
             result = await self.executor.execute_summary_task(summary_task)
 
@@ -530,9 +574,28 @@ class TaskScheduler:
             if result.success:
                 task.mark_run_completed()
                 logger.info(f"Task {task_id} completed successfully")
+
+                # ADR-013: Mark job as completed
+                job.complete(result.summary_result.id if result.summary_result else None)
+                job.update_progress(3, 3, "Complete")
+                if job_repo:
+                    try:
+                        await job_repo.update(job)
+                        logger.info(f"[{job_id}] Job marked COMPLETED")
+                    except Exception as e:
+                        logger.warning(f"[{job_id}] Failed to update job completion: {e}")
             else:
                 task.mark_run_failed()
                 logger.error(f"Task {task_id} failed: {result.error_message}")
+
+                # ADR-013: Mark job as failed
+                job.fail(result.error_message or "Unknown error")
+                if job_repo:
+                    try:
+                        await job_repo.update(job)
+                        logger.info(f"[{job_id}] Job marked FAILED")
+                    except Exception as e:
+                        logger.warning(f"[{job_id}] Failed to update job failure: {e}")
 
             # Update metadata
             if metadata:
@@ -548,6 +611,15 @@ class TaskScheduler:
 
             # Handle task failure
             task.mark_run_failed()
+
+            # ADR-013: Mark job as failed
+            job.fail(str(e))
+            if job_repo:
+                try:
+                    await job_repo.update(job)
+                    logger.info(f"[{job_id}] Job marked FAILED (exception)")
+                except Exception as update_err:
+                    logger.warning(f"[{job_id}] Failed to update job: {update_err}")
 
             if metadata:
                 duration = (datetime.utcnow() - start_time).total_seconds()

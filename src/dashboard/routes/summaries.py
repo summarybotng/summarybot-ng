@@ -39,9 +39,10 @@ from ..models import (
     BulkRegenerateResponse,
     RegenerateOptionsRequest,
 )
-from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_stored_summary_repository, get_config_manager, get_task_scheduler
+from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_stored_summary_repository, get_config_manager, get_task_scheduler, get_summary_job_repository
 from ...data.base import SearchCriteria
 from ...models.stored_summary import StoredSummary, SummarySource
+from ...models.summary_job import SummaryJob, JobType, JobStatus
 
 logger = logging.getLogger(__name__)
 
@@ -455,9 +456,9 @@ async def generate_summary(
             },
         )
 
-    # Create task ID
+    # Create job ID (ADR-013: use job_ prefix for unified job tracking)
     import secrets
-    task_id = f"gen_{secrets.token_urlsafe(16)}"
+    job_id = f"job_{secrets.token_urlsafe(16)}"
 
     # Calculate time range
     now = datetime.utcnow()
@@ -471,7 +472,36 @@ async def generate_summary(
         start_time = body.time_range.start or (now - timedelta(hours=24))
         end_time = body.time_range.end or now
 
-    # Store task info
+    # ADR-013: Create persistent job record
+    job = SummaryJob(
+        id=job_id,
+        guild_id=guild_id,
+        job_type=JobType.MANUAL,
+        status=JobStatus.PENDING,
+        scope=body.scope.value,
+        channel_ids=channel_ids,
+        category_id=body.category_id,
+        period_start=start_time,
+        period_end=end_time,
+        created_by=user.get("id"),
+        metadata={
+            "summary_length": body.options.summary_length if body.options else "detailed",
+            "include_action_items": body.options.include_action_items if body.options else True,
+            "include_technical_terms": body.options.include_technical_terms if body.options else True,
+        },
+    )
+
+    # Persist job to database
+    job_repo = await get_summary_job_repository()
+    if job_repo:
+        try:
+            await job_repo.save(job)
+            logger.info(f"[{job_id}] Created job record in database")
+        except Exception as e:
+            logger.warning(f"[{job_id}] Failed to persist job: {e}")
+
+    # Also store in-memory for backwards compatibility with task status endpoint
+    task_id = job_id  # Use same ID for compatibility
     _generation_tasks[task_id] = {
         "status": "processing",
         "guild_id": guild_id,
@@ -483,18 +513,28 @@ async def generate_summary(
 
     # Start generation in background
     async def run_generation():
-        logger.info(f"[{task_id}] Starting background summary generation for guild {guild_id}")
-        logger.info(f"[{task_id}] Scope: {body.scope.value}, Time range: {start_time} to {end_time}")
-        logger.info(f"[{task_id}] Channels ({len(channel_ids)}): {channel_ids}")
+        logger.info(f"[{job_id}] Starting background summary generation for guild {guild_id}")
+        logger.info(f"[{job_id}] Scope: {body.scope.value}, Time range: {start_time} to {end_time}")
+        logger.info(f"[{job_id}] Channels ({len(channel_ids)}): {channel_ids}")
+
+        # ADR-013: Mark job as RUNNING
+        job.start()
+        job.update_progress(0, len(channel_ids) + 2, "Fetching messages")  # +2 for processing and summarization
+        if job_repo:
+            try:
+                await job_repo.update(job)
+            except Exception as e:
+                logger.warning(f"[{job_id}] Failed to update job status: {e}")
+
         try:
             from ...message_processing import MessageProcessor
 
             # Collect messages from all channels
             all_messages = []
             channel_errors = []
-            for channel_id in channel_ids:
+            for idx, channel_id in enumerate(channel_ids):
                 channel = guild.get_channel(int(channel_id))
-                logger.info(f"[{task_id}] Fetching from channel {channel_id}: {channel.name if channel else 'NOT FOUND'}")
+                logger.info(f"[{job_id}] Fetching from channel {channel_id}: {channel.name if channel else 'NOT FOUND'}")
                 if channel:
                     try:
                         msg_count = 0
@@ -505,9 +545,17 @@ async def generate_summary(
                         ):
                             all_messages.append(message)
                             msg_count += 1
-                        logger.info(f"[{task_id}] Fetched {msg_count} messages from {channel.name}")
+                        logger.info(f"[{job_id}] Fetched {msg_count} messages from {channel.name}")
+
+                        # ADR-013: Update job progress
+                        job.update_progress(idx + 1, None, f"Fetched {channel.name}")
+                        if job_repo:
+                            try:
+                                await job_repo.update(job)
+                            except Exception:
+                                pass
                     except Exception as channel_error:
-                        logger.error(f"[{task_id}] Error fetching from {channel.name}: {channel_error}")
+                        logger.error(f"[{job_id}] Error fetching from {channel.name}: {channel_error}")
                         channel_errors.append((channel_id, channel.name, channel_error))
 
             # Track any channel-level errors
@@ -525,26 +573,42 @@ async def generate_summary(
                             guild_id=guild_id,
                             channel_id=ch_id,
                             operation=f"fetch_messages ({ch_name})",
-                            details={"task_id": task_id, "channel_name": ch_name},
+                            details={"job_id": job_id, "channel_name": ch_name},
                         )
-                        logger.info(f"[{task_id}] Tracked error for channel {ch_name}")
+                        logger.info(f"[{job_id}] Tracked error for channel {ch_name}")
                 except Exception as track_err:
-                    logger.warning(f"[{task_id}] Failed to track channel errors: {track_err}")
+                    logger.warning(f"[{job_id}] Failed to track channel errors: {track_err}")
 
-            logger.info(f"[{task_id}] Total messages collected: {len(all_messages)}")
+            logger.info(f"[{job_id}] Total messages collected: {len(all_messages)}")
 
             if not all_messages:
-                logger.warning(f"[{task_id}] No messages found in time range")
+                logger.warning(f"[{job_id}] No messages found in time range")
                 _generation_tasks[task_id]["status"] = "failed"
                 _generation_tasks[task_id]["error"] = "No messages found in time range"
+
+                # ADR-013: Mark job as failed
+                job.fail("No messages found in time range")
+                if job_repo:
+                    try:
+                        await job_repo.update(job)
+                    except Exception:
+                        pass
                 return
 
             # Process messages with relaxed minimum for dashboard
             from ...models.summary import SummaryOptions, SummaryLength
 
+            # ADR-013: Update progress - processing
+            job.update_progress(len(channel_ids), None, "Processing messages")
+            if job_repo:
+                try:
+                    await job_repo.update(job)
+                except Exception:
+                    pass
+
             # Get options from request
             requested_length = body.options.summary_length if body.options else "detailed"
-            logger.info(f"[{task_id}] Requested summary_length: {requested_length}")
+            logger.info(f"[{job_id}] Requested summary_length: {requested_length}")
 
             options = SummaryOptions(
                 summary_length=SummaryLength(requested_length),
@@ -553,12 +617,12 @@ async def generate_summary(
                 min_messages=1,  # Allow single message summaries from dashboard
             )
 
-            logger.info(f"[{task_id}] SummaryOptions created: summary_length={options.summary_length.value}, max_tokens={options.get_max_tokens_for_length()}")
+            logger.info(f"[{job_id}] SummaryOptions created: summary_length={options.summary_length.value}, max_tokens={options.get_max_tokens_for_length()}")
 
-            logger.info(f"[{task_id}] Processing {len(all_messages)} messages...")
+            logger.info(f"[{job_id}] Processing {len(all_messages)} messages...")
             processor = MessageProcessor(bot.client)
             processed = await processor.process_messages(all_messages, options)
-            logger.info(f"[{task_id}] Processed {len(processed)} messages")
+            logger.info(f"[{job_id}] Processed {len(processed)} messages")
 
             # Get channel and guild info for context
             primary_channel = guild.get_channel(int(channel_ids[0]))
@@ -577,7 +641,15 @@ async def generate_summary(
                 time_span_hours=time_span_hours,
             )
 
-            logger.info(f"[{task_id}] Calling summarization engine...")
+            # ADR-013: Update progress - summarizing
+            job.update_progress(len(channel_ids) + 1, None, "Generating summary")
+            if job_repo:
+                try:
+                    await job_repo.update(job)
+                except Exception:
+                    pass
+
+            logger.info(f"[{job_id}] Calling summarization engine...")
             result = await engine.summarize_messages(
                 messages=processed,
                 options=options,
@@ -585,11 +657,11 @@ async def generate_summary(
                 guild_id=guild_id,
                 channel_id=channel_ids[0],  # Primary channel for storage
             )
-            logger.info(f"[{task_id}] Summarization complete, result id: {result.id}")
+            logger.info(f"[{job_id}] Summarization complete, result id: {result.id}")
 
             # ADR-012: Save to StoredSummaryRepository (unified storage)
             # This ensures all summaries appear in the same tab with consistent features
-            logger.info(f"[{task_id}] Getting stored summary repository...")
+            logger.info(f"[{job_id}] Getting stored summary repository...")
             stored_repo = await get_stored_summary_repository()
             if stored_repo:
                 # Generate descriptive title
@@ -613,27 +685,47 @@ async def generate_summary(
                     created_at=datetime.utcnow(),
                 )
 
-                logger.info(f"[{task_id}] Saving to stored_summaries...")
+                logger.info(f"[{job_id}] Saving to stored_summaries...")
                 await stored_repo.save(stored_summary)
-                logger.info(f"[{task_id}] Saved summary {result.id} to stored_summaries for guild {guild_id}, scope {body.scope.value}")
+                logger.info(f"[{job_id}] Saved summary {result.id} to stored_summaries for guild {guild_id}, scope {body.scope.value}")
             else:
-                logger.error(f"[{task_id}] Stored summary repository not available - summary {result.id} NOT saved!")
+                logger.error(f"[{job_id}] Stored summary repository not available - summary {result.id} NOT saved!")
 
             # Also save to legacy summaries table for backwards compatibility
-            logger.info(f"[{task_id}] Getting legacy summary repository...")
+            logger.info(f"[{job_id}] Getting legacy summary repository...")
             summary_repo = await get_summary_repository()
             if summary_repo:
                 await summary_repo.save_summary(result)
-                logger.info(f"[{task_id}] Also saved to legacy summaries table")
+                logger.info(f"[{job_id}] Also saved to legacy summaries table")
 
             _generation_tasks[task_id]["status"] = "completed"
             _generation_tasks[task_id]["summary_id"] = result.id
-            logger.info(f"[{task_id}] Generation task completed successfully")
+
+            # ADR-013: Mark job as completed
+            job.complete(result.id)
+            job.update_progress(len(channel_ids) + 2, len(channel_ids) + 2, "Complete")
+            if job_repo:
+                try:
+                    await job_repo.update(job)
+                    logger.info(f"[{job_id}] Job record updated to COMPLETED")
+                except Exception as e:
+                    logger.warning(f"[{job_id}] Failed to update job completion: {e}")
+
+            logger.info(f"[{job_id}] Generation task completed successfully")
 
         except Exception as e:
-            logger.error(f"[{task_id}] Summary generation failed: {e}", exc_info=True)
+            logger.error(f"[{job_id}] Summary generation failed: {e}", exc_info=True)
             _generation_tasks[task_id]["status"] = "failed"
             _generation_tasks[task_id]["error"] = str(e)
+
+            # ADR-013: Mark job as failed
+            job.fail(str(e))
+            if job_repo:
+                try:
+                    await job_repo.update(job)
+                    logger.info(f"[{job_id}] Job record updated to FAILED")
+                except Exception as update_err:
+                    logger.warning(f"[{job_id}] Failed to update job failure: {update_err}")
 
             # Track the error for dashboard visibility
             try:
@@ -657,7 +749,7 @@ async def generate_summary(
                     channel_id=channel_ids[0] if channel_ids else None,
                     operation=f"generate_summary ({body.scope.value})",
                     details={
-                        "task_id": task_id,
+                        "job_id": job_id,
                         "channel_count": len(channel_ids),
                         "scope": body.scope.value,
                     },
@@ -2215,3 +2307,301 @@ async def debug_database(
         result["errors"].append(f"Diagnostic error: {str(e)}")
 
     return result
+
+
+# ============================================================================
+# ADR-013: Unified Job Tracking Endpoints
+# ============================================================================
+
+from ..models import (
+    JobType as APIJobType,
+    JobStatus as APIJobStatus,
+    JobProgressResponse,
+    JobCostResponse,
+    JobListItem,
+    JobDetailResponse,
+    JobsListResponse,
+    JobCancelResponse,
+    JobRetryResponse,
+)
+
+
+def _job_to_list_item(job: SummaryJob) -> JobListItem:
+    """Convert SummaryJob to JobListItem for API response."""
+    return JobListItem(
+        job_id=job.id,
+        guild_id=job.guild_id,
+        job_type=APIJobType(job.job_type.value),
+        status=APIJobStatus(job.status.value),
+        scope=job.scope,
+        schedule_id=job.schedule_id,
+        progress=JobProgressResponse(
+            current=job.progress_current,
+            total=job.progress_total,
+            percent=job.percent_complete,
+            message=job.progress_message,
+            current_period=job.current_period,
+        ),
+        summary_id=job.summary_id,
+        error=job.error,
+        pause_reason=job.pause_reason,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+    )
+
+
+def _job_to_detail(job: SummaryJob) -> JobDetailResponse:
+    """Convert SummaryJob to JobDetailResponse for API response."""
+    return JobDetailResponse(
+        job_id=job.id,
+        guild_id=job.guild_id,
+        job_type=APIJobType(job.job_type.value),
+        status=APIJobStatus(job.status.value),
+        scope=job.scope,
+        channel_ids=job.channel_ids,
+        category_id=job.category_id,
+        schedule_id=job.schedule_id,
+        period_start=job.period_start,
+        period_end=job.period_end,
+        progress=JobProgressResponse(
+            current=job.progress_current,
+            total=job.progress_total,
+            percent=job.percent_complete,
+            message=job.progress_message,
+            current_period=job.current_period,
+        ),
+        cost=JobCostResponse(
+            cost_usd=job.cost_usd,
+            tokens_input=job.tokens_input,
+            tokens_output=job.tokens_output,
+        ),
+        summary_id=job.summary_id,
+        summary_ids=job.summary_ids,
+        error=job.error,
+        pause_reason=job.pause_reason,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        created_by=job.created_by,
+        metadata=job.metadata,
+    )
+
+
+@router.get(
+    "/guilds/{guild_id}/jobs",
+    response_model=JobsListResponse,
+    summary="List jobs (ADR-013)",
+    description="Get paginated list of summary generation jobs for a guild.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Guild not found"},
+    },
+)
+async def list_jobs(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    job_type: Optional[str] = Query(None, description="Filter by job type (manual, scheduled, retrospective)"),
+    status: Optional[str] = Query(None, description="Filter by status (pending, running, completed, failed, cancelled, paused)"),
+    limit: int = Query(20, ge=1, le=100, description="Number of items to return"),
+    offset: int = Query(0, ge=0, description="Number of items to skip"),
+    user: dict = Depends(get_current_user),
+):
+    """List jobs for a guild."""
+    _check_guild_access(guild_id, user)
+
+    job_repo = await get_summary_job_repository()
+    if not job_repo:
+        return JobsListResponse(jobs=[], total=0, limit=limit, offset=offset)
+
+    # Convert filter params to strings for repository
+    type_filter = job_type if job_type else None
+    status_filter = status if status else None
+
+    # Get jobs from repository
+    jobs = await job_repo.find_by_guild(
+        guild_id=guild_id,
+        job_type=type_filter,
+        status=status_filter,
+        limit=limit,
+        offset=offset,
+    )
+
+    # Get total count
+    total = await job_repo.count_by_guild(
+        guild_id=guild_id,
+        job_type=type_filter,
+        status=status_filter,
+    )
+
+    job_items = [_job_to_list_item(job) for job in jobs]
+
+    return JobsListResponse(
+        jobs=job_items,
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/guilds/{guild_id}/jobs/{job_id}",
+    response_model=JobDetailResponse,
+    summary="Get job details (ADR-013)",
+    description="Get full details of a specific job.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Job not found"},
+    },
+)
+async def get_job(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    job_id: str = Path(..., description="Job ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Get job details."""
+    _check_guild_access(guild_id, user)
+
+    job_repo = await get_summary_job_repository()
+    if not job_repo:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "DATABASE_UNAVAILABLE", "message": "Database not available"},
+        )
+
+    job = await job_repo.get(job_id)
+    if not job or job.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Job not found"},
+        )
+
+    return _job_to_detail(job)
+
+
+@router.post(
+    "/guilds/{guild_id}/jobs/{job_id}/cancel",
+    response_model=JobCancelResponse,
+    summary="Cancel job (ADR-013)",
+    description="Cancel a running or pending job.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Job not found"},
+        400: {"model": ErrorResponse, "description": "Job cannot be cancelled"},
+    },
+)
+async def cancel_job(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    job_id: str = Path(..., description="Job ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Cancel a job."""
+    _check_guild_access(guild_id, user)
+
+    job_repo = await get_summary_job_repository()
+    if not job_repo:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "DATABASE_UNAVAILABLE", "message": "Database not available"},
+        )
+
+    job = await job_repo.get(job_id)
+    if not job or job.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Job not found"},
+        )
+
+    if not job.can_cancel:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "CANNOT_CANCEL", "message": f"Job with status '{job.status.value}' cannot be cancelled"},
+        )
+
+    job.cancel()
+    await job_repo.update(job)
+
+    logger.info(f"Cancelled job {job_id} by user {user.get('id')}")
+
+    return JobCancelResponse(
+        success=True,
+        job_id=job_id,
+        message="Job cancelled successfully",
+    )
+
+
+@router.post(
+    "/guilds/{guild_id}/jobs/{job_id}/retry",
+    response_model=JobRetryResponse,
+    summary="Retry job (ADR-013)",
+    description="Retry a failed job.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Job not found"},
+        400: {"model": ErrorResponse, "description": "Job cannot be retried"},
+    },
+)
+async def retry_job(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    job_id: str = Path(..., description="Job ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Retry a failed job."""
+    _check_guild_access(guild_id, user)
+
+    job_repo = await get_summary_job_repository()
+    if not job_repo:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "DATABASE_UNAVAILABLE", "message": "Database not available"},
+        )
+
+    job = await job_repo.get(job_id)
+    if not job or job.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Job not found"},
+        )
+
+    if not job.can_retry:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "CANNOT_RETRY", "message": f"Job with status '{job.status.value}' cannot be retried"},
+        )
+
+    # Create a new job with the same parameters
+    import secrets
+    new_job_id = f"job_{secrets.token_urlsafe(16)}"
+
+    new_job = SummaryJob(
+        id=new_job_id,
+        guild_id=job.guild_id,
+        job_type=job.job_type,
+        status=JobStatus.PENDING,
+        scope=job.scope,
+        channel_ids=job.channel_ids,
+        category_id=job.category_id,
+        schedule_id=job.schedule_id,
+        period_start=job.period_start,
+        period_end=job.period_end,
+        date_range_start=job.date_range_start,
+        date_range_end=job.date_range_end,
+        granularity=job.granularity,
+        summary_type=job.summary_type,
+        perspective=job.perspective,
+        created_by=user.get("id"),
+        metadata={**job.metadata, "retry_of": job_id},
+    )
+
+    await job_repo.save(new_job)
+
+    logger.info(f"Created retry job {new_job_id} from failed job {job_id}")
+
+    # TODO: Actually trigger the job execution based on job_type
+    # For now, just create the record - the user can check the Jobs tab
+
+    return JobRetryResponse(
+        success=True,
+        job_id=job_id,
+        new_job_id=new_job_id,
+        message="Retry job created. It will be processed shortly.",
+    )

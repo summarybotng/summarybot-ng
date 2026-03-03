@@ -29,9 +29,10 @@ import {
 } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, FileText, Loader2, Hash, FolderOpen, Server, Search, Archive as ArchiveIcon } from "lucide-react";
+import { Sparkles, FileText, Loader2, Hash, FolderOpen, Server, Search, Archive as ArchiveIcon, Briefcase } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { StoredSummariesTab } from "@/components/summaries/StoredSummariesTab";
+import { JobsTab } from "@/components/summaries/JobsTab";
 import type { SummaryOptions, GenerateRequest } from "@/types";
 
 export function Summaries() {
@@ -397,22 +398,31 @@ export function Summaries() {
         </motion.div>
       )}
 
-      {/* ADR-012: Consolidated Tabs - All Summaries + Retrospective Jobs */}
+      {/* ADR-012, ADR-013: Consolidated Tabs - All Summaries + Jobs + Retrospective */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="all" className="gap-2">
             <FileText className="h-4 w-4" />
             All Summaries
           </TabsTrigger>
+          <TabsTrigger value="jobs" className="gap-2">
+            <Briefcase className="h-4 w-4" />
+            Jobs
+          </TabsTrigger>
           <TabsTrigger value="retrospective" className="gap-2">
             <ArchiveIcon className="h-4 w-4" />
-            Retrospective Jobs
+            Retrospective
           </TabsTrigger>
         </TabsList>
 
         {/* All Summaries Tab - Unified view (ADR-012) */}
         <TabsContent value="all">
           <StoredSummariesTab guildId={id || ""} initialSource={sourceParam as "archive" | "scheduled" | "manual" | undefined} />
+        </TabsContent>
+
+        {/* Jobs Tab - Unified job tracking (ADR-013) */}
+        <TabsContent value="jobs">
+          <JobsTab guildId={id || ""} />
         </TabsContent>
 
         {/* Retrospective Jobs Tab - Archive job management */}

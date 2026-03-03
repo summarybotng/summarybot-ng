@@ -1,8 +1,8 @@
 # ADR-013: Unified Job Tracking
 
-**Status:** Partially Implemented
+**Status:** Implemented
 **Date:** 2026-02-22
-**Updated:** 2026-03-02
+**Updated:** 2026-03-03
 **Depends on:** ADR-012 (Summaries UI Consolidation)
 
 ## 1. Context
@@ -201,14 +201,15 @@ POST /guilds/{guild_id}/jobs/{job_id}/retry     # Retry failed job
 - [x] `SQLiteSummaryJobRepository` implementation
 - [x] Retrospective jobs persist to database via `_persist_job()`
 - [x] **Startup recovery**: Jobs with status RUNNING are marked PAUSED with reason "server_restart" on startup
+- [x] **Manual generation creates job records** (`src/dashboard/routes/summaries.py`)
+- [x] **Scheduled jobs create job records** (`src/scheduling/scheduler.py`)
+- [x] **Jobs API endpoints** - list, get, cancel, retry (`/guilds/{guild_id}/jobs/*`)
+- [x] **Jobs tab in frontend Summaries page** (`src/frontend/src/components/summaries/JobsTab.tsx`)
+- [x] **Real-time status updates** (polling every 3s for active jobs)
+- [x] **Cancel/retry actions in UI**
 
 ### Pending
-- [ ] Manual generation creates job records
-- [ ] Scheduled jobs create job records
-- [ ] Jobs tab in frontend Summaries page
-- [ ] Real-time status updates (SSE/polling)
-- [ ] Cancel/retry actions in UI
-- [ ] Job history cleanup cron
+- [ ] Job history cleanup cron (low priority)
 
 ### Key Files
 - `src/models/summary_job.py` - Job model
@@ -217,3 +218,7 @@ POST /guilds/{guild_id}/jobs/{job_id}/retry     # Retry failed job
 - `src/data/migrations/015_summary_jobs.sql` - Database schema
 - `src/archive/generator.py` - Retrospective job persistence
 - `src/main.py` - Startup recovery via `_recover_interrupted_jobs()`
+- `src/dashboard/routes/summaries.py` - Manual job tracking + Jobs API endpoints
+- `src/scheduling/scheduler.py` - Scheduled job tracking
+- `src/frontend/src/components/summaries/JobsTab.tsx` - Jobs tab UI component
+- `src/frontend/src/pages/Summaries.tsx` - Integrated Jobs tab

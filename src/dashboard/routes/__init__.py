@@ -90,6 +90,15 @@ async def get_feed_repository():
         return None
 
 
+async def get_summary_job_repository():
+    """Get summary job repository instance (ADR-013)."""
+    try:
+        from ...data.repositories import get_summary_job_repository as _get_repo
+        return await _get_repo()
+    except RuntimeError:
+        return None
+
+
 async def get_config_repository():
     """Get config repository instance (database-backed)."""
     try:

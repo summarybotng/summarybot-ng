@@ -2262,6 +2262,13 @@ async def send_summary_to_email(
             detail={"code": "NOT_FOUND", "message": f"Summary {summary_id} not found"},
         )
 
+    # Verify summary has content
+    if not summary.summary_result:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "NO_CONTENT", "message": "Summary has no content to email"},
+        )
+
     # Build email context
     context = EmailContext(
         guild_name=f"Guild {guild_id}",

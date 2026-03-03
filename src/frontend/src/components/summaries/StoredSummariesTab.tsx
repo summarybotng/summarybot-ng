@@ -60,6 +60,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Mail,
 } from "lucide-react";
 import {
   Select,
@@ -631,6 +632,12 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
             setPushModalSummary(summary);
           }
         }}
+        onEmail={(summaryId) => {
+          const summary = summaries.find((s) => s.id === summaryId);
+          if (summary) {
+            setEmailModalSummary(summary);
+          }
+        }}
         onRegenerate={handleRegenerate}
         isRegenerating={regenerateMutation.isPending}
         onNavigate={(newSummaryId) => setSelectedSummary(newSummaryId)}
@@ -747,6 +754,7 @@ function StoredSummaryDetailSheet({
   open,
   onOpenChange,
   onPush,
+  onEmail,
   onRegenerate,
   isRegenerating,
   onNavigate,
@@ -756,6 +764,7 @@ function StoredSummaryDetailSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPush: (summaryId: string) => void;
+  onEmail: (summaryId: string) => void;
   onRegenerate: (summaryId: string, options?: RegenerateOptions) => void;
   isRegenerating: boolean;
   onNavigate?: (summaryId: string) => void;
@@ -834,6 +843,11 @@ function StoredSummaryDetailSheet({
                 <Button onClick={() => onPush(summary.id)} className="w-full sm:w-auto">
                   <Send className="mr-2 h-4 w-4" />
                   Push to Channel
+                </Button>
+                {/* ADR-030: Email button */}
+                <Button variant="outline" onClick={() => onEmail(summary.id)} className="w-full sm:w-auto">
+                  <Mail className="mr-2 h-4 w-4" />
+                  Send to Email
                 </Button>
                 {/* ADR-004: Regenerate button - now always available with options */}
                 <Button

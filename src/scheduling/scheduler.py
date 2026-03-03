@@ -184,7 +184,7 @@ class TaskScheduler:
             )
 
     async def cancel_task(self, task_id: str) -> bool:
-        """Cancel a scheduled task.
+        """Cancel a scheduled task (pauses but keeps in storage).
 
         Args:
             task_id: ID of task to cancel
@@ -215,6 +215,51 @@ class TaskScheduler:
             return False
         except Exception as e:
             logger.error(f"Failed to cancel task {task_id}: {e}")
+            return False
+
+    async def delete_task(self, task_id: str) -> bool:
+        """Permanently delete a scheduled task.
+
+        Args:
+            task_id: ID of task to delete
+
+        Returns:
+            True if task was deleted, False if not found
+        """
+        try:
+            # Remove from scheduler if active
+            try:
+                self.scheduler.remove_job(task_id)
+            except JobLookupError:
+                pass  # Not in scheduler, but may still be in persistence
+
+            # Remove from active tracking
+            if task_id in self.active_tasks:
+                del self.active_tasks[task_id]
+
+            if task_id in self.task_metadata:
+                del self.task_metadata[task_id]
+
+            # Delete from persistence (database preferred, then files)
+            deleted = False
+            if self.task_repository:
+                try:
+                    deleted = await self.task_repository.delete_task(task_id)
+                except Exception as e:
+                    logger.warning(f"Failed to delete task {task_id} from database: {e}")
+
+            if not deleted and self.persistence:
+                deleted = await self.persistence.delete_task(task_id)
+
+            if deleted:
+                logger.info(f"Deleted task {task_id}")
+            else:
+                logger.warning(f"Task {task_id} not found in any storage")
+
+            return deleted
+
+        except Exception as e:
+            logger.error(f"Failed to delete task {task_id}: {e}")
             return False
 
     async def get_scheduled_tasks(self, guild_id: Optional[str] = None, include_inactive: bool = True) -> List[ScheduledTask]:

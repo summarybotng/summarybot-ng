@@ -183,6 +183,12 @@ function JobCard({ job, onCancel, onRetry, isCancelling, isRetrying }: JobCardPr
                 <span className="capitalize">{job.scope} scope</span>
               </div>
             )}
+            {job.schedule_id && (
+              <div className="flex items-center gap-1" title={`Schedule ID: ${job.schedule_id}`}>
+                <Clock className="h-3 w-3" />
+                <span className="font-mono">{job.schedule_id.substring(0, 8)}</span>
+              </div>
+            )}
             {job.summary_id && (
               <div className="flex items-center gap-1 text-green-600">
                 <CheckCircle2 className="h-3 w-3" />

@@ -466,7 +466,10 @@ async def delete_schedule(
             detail={"code": "NOT_FOUND", "message": "Schedule not found"},
         )
 
-    await scheduler.cancel_task(schedule_id)
+    # Use delete_task to permanently remove (not just cancel/deactivate)
+    deleted = await scheduler.delete_task(schedule_id)
+    if not deleted:
+        logger.warning(f"Task {schedule_id} was not found in storage during deletion")
 
     return {"success": True}
 

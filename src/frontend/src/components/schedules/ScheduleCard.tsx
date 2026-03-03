@@ -59,9 +59,6 @@ export function ScheduleCard({
                 <Badge variant={schedule.is_active ? "default" : "secondary"}>
                   {schedule.is_active ? "Active" : "Inactive"}
                 </Badge>
-                <span className="text-xs text-muted-foreground font-mono" title="Schedule ID">
-                  {schedule.id.substring(0, 8)}
-                </span>
               </div>
 
               <div className="mb-3 flex flex-wrap gap-3 text-sm text-muted-foreground">

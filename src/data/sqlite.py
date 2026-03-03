@@ -1701,7 +1701,12 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
     def _dict_to_summary_result(self, data: Dict[str, Any]) -> SummaryResult:
         """Convert dictionary to SummaryResult object."""
         # Handle nested objects
-        action_items = [ActionItem(**item) for item in data.get('action_items', [])]
+        # ActionItem expects 'description' but JSON may have 'text'
+        action_items = []
+        for item in data.get('action_items', []):
+            if 'text' in item and 'description' not in item:
+                item = {**item, 'description': item.pop('text')}
+            action_items.append(ActionItem(**item))
         technical_terms = [TechnicalTerm(**term) for term in data.get('technical_terms', [])]
         participants = [Participant(**p) for p in data.get('participants', [])]
 

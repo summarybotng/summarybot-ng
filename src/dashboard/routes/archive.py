@@ -866,9 +866,16 @@ async def import_whatsapp(
     group_name: str = Query(...),
     format: str = Query("whatsapp_txt"),  # "whatsapp_txt" or "reader_bot"
 ):
-    """Import WhatsApp chat export."""
+    """
+    Import WhatsApp chat export.
+
+    ADR-006: Supports both .txt and .zip file formats.
+    When a .zip file is uploaded, the archive is extracted and the
+    contained .txt file is processed.
+    """
     from src.archive.importers.whatsapp import WhatsAppImporter
     import tempfile
+    import zipfile
 
     archive_root = get_archive_root()
     importer = WhatsAppImporter(archive_root)
@@ -879,20 +886,71 @@ async def import_whatsapp(
         tmp.write(content)
         tmp_path = Path(tmp.name)
 
+    extracted_path = None  # Track extracted file for cleanup
+
     try:
+        # ADR-006: Handle .zip files by extracting the .txt file inside
+        file_to_process = tmp_path
+        original_filename = file.filename or "upload"
+
+        if original_filename.lower().endswith('.zip') or tmp_path.suffix.lower() == '.zip':
+            logger.info(f"Processing WhatsApp .zip upload: {original_filename}")
+
+            # Extract the zip file
+            try:
+                with zipfile.ZipFile(tmp_path, 'r') as zip_ref:
+                    # Find .txt file(s) in the archive
+                    txt_files = [f for f in zip_ref.namelist()
+                                 if f.lower().endswith('.txt') and not f.startswith('__MACOSX')]
+
+                    if not txt_files:
+                        raise HTTPException(
+                            400,
+                            "No .txt file found in the ZIP archive. "
+                            "WhatsApp exports contain a _chat.txt file."
+                        )
+
+                    # Use the first .txt file (WhatsApp typically exports as "WhatsApp Chat with X.txt")
+                    txt_filename = txt_files[0]
+                    logger.info(f"Found chat file in ZIP: {txt_filename}")
+
+                    # Extract to temp directory
+                    extract_dir = Path(tempfile.mkdtemp())
+                    zip_ref.extract(txt_filename, extract_dir)
+                    extracted_path = extract_dir / txt_filename
+                    file_to_process = extracted_path
+
+                    # Update original filename for result metadata
+                    original_filename = txt_filename
+
+            except zipfile.BadZipFile:
+                raise HTTPException(
+                    400,
+                    "Invalid ZIP file. Please upload a valid WhatsApp export ZIP or .txt file."
+                )
+
+        # Process the file
         if format == "reader_bot":
             result = await importer.import_reader_bot_json(
-                tmp_path, group_id, group_name
+                file_to_process, group_id, group_name
             )
         else:
             result = await importer.import_txt_export(
-                tmp_path, group_id, group_name
+                file_to_process, group_id, group_name
             )
 
         return result.to_dict()
 
     finally:
-        tmp_path.unlink()
+        # Clean up temp files
+        tmp_path.unlink(missing_ok=True)
+        if extracted_path and extracted_path.exists():
+            # Clean up extracted file and its parent temp directory
+            extracted_path.unlink(missing_ok=True)
+            try:
+                extracted_path.parent.rmdir()
+            except OSError:
+                pass  # Directory not empty or already removed
 
 
 @router.get("/costs")

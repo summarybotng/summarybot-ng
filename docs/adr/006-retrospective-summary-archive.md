@@ -190,9 +190,24 @@ WhatsApp lacks an API for historical messages. Data can come from two sources:
 
 **Option A: Manual Chat Export (Basic)**
 - User exports chat from WhatsApp → Settings → Export Chat
-- Upload `.txt` file via dashboard: `POST /api/v1/archive/import/whatsapp`
+- Upload via dashboard: `POST /api/v1/archive/import/whatsapp`
 - Parser extracts messages with timestamps and participants
 - Limited: No message IDs, no media metadata, no reactions
+
+**Supported File Formats:**
+
+| Format | Extension | Handling |
+|--------|-----------|----------|
+| Plain text | `.txt` | Parsed directly using date format detection |
+| ZIP archive | `.zip` | Extracted automatically; contained `.txt` file is parsed |
+
+When a `.zip` file is uploaded:
+1. Extract the archive to a temporary directory
+2. Locate the `.txt` file inside (WhatsApp exports contain a single text file)
+3. Parse the extracted text file using standard processing
+4. Clean up temporary files after import
+
+This supports the native WhatsApp export format, which may be delivered as either a plain `.txt` file or a `.zip` archive depending on the device and export options selected.
 
 **Option B: Reader Bot Export (Recommended)**
 - Use ADR-001 WhatsApp Reader Bot to capture messages in real-time

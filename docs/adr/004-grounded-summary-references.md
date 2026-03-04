@@ -39,6 +39,8 @@ A reference anchors a summary claim to one or more source messages:
 │  ┌─────────────────────────────────────────────────┐    │
 │  │  Reference                                      │    │
 │  │  message_id: "3EB0A8B2F7C7"                     │    │
+│  │  channel_id: "987654321098765432"               │    │
+│  │  channel_name: "#budget-planning"               │    │
 │  │  sender: "Bob"                                   │    │
 │  │  timestamp: 2026-02-10T14:32:00Z                │    │
 │  │  snippet: "I think we need to increase the       │    │
@@ -51,12 +53,14 @@ A reference anchors a summary claim to one or more source messages:
 | Field | Type | Description |
 |-------|------|-------------|
 | `message_id` | `string` | Source-native message ID (WhatsApp hex ID, Discord snowflake) |
+| `channel_id` | `string` | Source channel/chat identifier (Discord channel snowflake, WhatsApp JID) |
+| `channel_name` | `string` | Human-readable channel/chat name (e.g., "#general", "Project Team Chat") |
 | `sender` | `string` | Display name of the message author |
 | `timestamp` | `datetime` | When the message was sent |
 | `snippet` | `string` | Relevant excerpt from the message (max 200 chars) |
 | `position` | `int` | 1-based ordinal position in the conversation window |
 
-`position` is the most important field for human readability — it lets a reader say "this came from message 2 of 47" and quickly locate it in a message list or export.
+`position` is the most important field for human readability — it lets a reader say "this came from message 2 of 47" and quickly locate it in a message list or export. `channel_id` and `channel_name` provide source attribution, which is especially valuable for cross-channel summaries or when messages originate from multiple sources.
 
 ---
 
@@ -69,10 +73,13 @@ A reference anchors a summary claim to one or more source messages:
 
 from pydantic import BaseModel, Field
 from datetime import datetime
+from typing import Optional
 
 class MessageReference(BaseModel):
     """A citation pointing to a specific source message."""
     message_id: str
+    channel_id: str = Field(description="Source channel/chat ID (Discord snowflake, WhatsApp JID)")
+    channel_name: str = Field(description="Human-readable channel/chat name")
     sender: str
     timestamp: datetime
     snippet: str = Field(max_length=200)
@@ -282,8 +289,10 @@ Built during prompt formatting:
 class PositionIndex:
     """Maps [N] position numbers to source message metadata."""
 
-    def __init__(self, messages: list[ProcessedMessage]):
+    def __init__(self, messages: list[ProcessedMessage], channel_id: str, channel_name: str):
         self._index: dict[int, ProcessedMessage] = {}
+        self._channel_id = channel_id
+        self._channel_name = channel_name
         for i, msg in enumerate(messages, start=1):
             self._index[i] = msg
 
@@ -291,6 +300,8 @@ class PositionIndex:
         msg = self._index[position]
         return MessageReference(
             message_id=msg.id,
+            channel_id=self._channel_id,
+            channel_name=self._channel_name,
             sender=msg.author_name,
             timestamp=msg.timestamp,
             snippet=msg.content[:200],
@@ -364,12 +375,12 @@ Inline superscript-style citations with a footnote section:
 
 ### Sources
 
-| # | Who | When | Said |
-|---|-----|------|------|
-| [2] | Bob | 14:32 | "I think we need to increase the marketing allocation by 15%" |
-| [4] | Bob | 14:35 | "Last quarter we underspent on marketing and missed our lead gen targets by 20%..." |
-| [5] | Carol | 14:40 | "I agree with Bob. We lost momentum in Q4." |
-| [6] | Alice | 14:42 | "OK, let's go with it. Bob, can you update the spreadsheet?" |
+| # | Channel | Who | When | Said |
+|---|---------|-----|------|------|
+| [2] | #budget-planning | Bob | 14:32 | "I think we need to increase the marketing allocation by 15%" |
+| [4] | #budget-planning | Bob | 14:35 | "Last quarter we underspent on marketing and missed our lead gen targets by 20%..." |
+| [5] | #budget-planning | Carol | 14:40 | "I agree with Bob. We lost momentum in Q4." |
+| [6] | #budget-planning | Alice | 14:42 | "OK, let's go with it. Bob, can you update the spreadsheet?" |
 ```
 
 ### 6.3 HTML

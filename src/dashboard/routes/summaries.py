@@ -99,6 +99,7 @@ async def list_summaries(
     channel_id: Optional[str] = Query(None, description="Filter by channel ID"),
     start_date: Optional[datetime] = Query(None, description="Filter from date"),
     end_date: Optional[datetime] = Query(None, description="Filter to date"),
+    perspective: Optional[str] = Query(None, description="Filter by perspective (general, developer, executive, etc.)"),
     limit: int = Query(20, ge=1, le=100, description="Number of items to return"),
     offset: int = Query(0, ge=0, description="Number of items to skip"),
     user: dict = Depends(get_current_user),
@@ -113,13 +114,14 @@ async def list_summaries(
         logger.warning(f"Summary repository not available for guild {guild_id}")
         return SummariesResponse(summaries=[], total=0, limit=limit, offset=offset)
 
-    logger.info(f"Fetching summaries for guild {guild_id}, channel={channel_id}, limit={limit}")
+    logger.info(f"Fetching summaries for guild {guild_id}, channel={channel_id}, perspective={perspective}, limit={limit}")
 
     criteria = SearchCriteria(
         guild_id=guild_id,
         channel_id=channel_id,
         start_time=start_date,
         end_time=end_date,
+        perspective=perspective,
         limit=limit,
         offset=offset,
         order_by="created_at",

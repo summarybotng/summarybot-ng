@@ -35,6 +35,8 @@ class SearchCriteria:
         order_direction: str = "DESC",
         # ADR-002: Multi-source support
         source_type: Optional[str] = None,  # 'discord', 'whatsapp', etc.
+        # Perspective filter
+        perspective: Optional[str] = None,  # 'general', 'developer', 'executive', etc.
     ):
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -45,6 +47,7 @@ class SearchCriteria:
         self.order_by = order_by
         self.order_direction = order_direction
         self.source_type = source_type
+        self.perspective = perspective
 
 
 class SummaryRepository(ABC):

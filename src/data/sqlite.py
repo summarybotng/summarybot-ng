@@ -315,6 +315,10 @@ class SQLiteSummaryRepository(SummaryRepository):
             conditions.append("created_at <= ?")
             params.append(criteria.end_time.isoformat())
 
+        if criteria.perspective:
+            conditions.append("json_extract(metadata, '$.perspective') = ?")
+            params.append(criteria.perspective)
+
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
         query = f"""
@@ -355,6 +359,10 @@ class SQLiteSummaryRepository(SummaryRepository):
         if criteria.end_time:
             conditions.append("created_at <= ?")
             params.append(criteria.end_time.isoformat())
+
+        if criteria.perspective:
+            conditions.append("json_extract(metadata, '$.perspective') = ?")
+            params.append(criteria.perspective)
 
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 

@@ -99,7 +99,7 @@ def _task_to_response(task, category_name: str = None) -> ScheduleListItem:
         destinations=destinations,
         summary_options=SummaryOptionsResponse(
             summary_length=task.summary_options.summary_length.value,
-            perspective="general",
+            perspective=getattr(task.summary_options, 'perspective', 'general'),
             include_action_items=task.summary_options.extract_action_items,
             include_technical_terms=task.summary_options.extract_technical_terms,
             min_messages=task.summary_options.min_messages,
@@ -223,6 +223,7 @@ async def create_schedule(
     # Create summary options
     summary_opts = SummaryOptions(
         summary_length=SummaryLength(body.summary_options.summary_length if body.summary_options else "detailed"),
+        perspective=body.summary_options.perspective if body.summary_options else "general",
         extract_action_items=body.summary_options.include_action_items if body.summary_options else True,
         extract_technical_terms=body.summary_options.include_technical_terms if body.summary_options else True,
         min_messages=body.summary_options.min_messages if body.summary_options else 5,
@@ -421,6 +422,7 @@ async def update_schedule(
     if body.summary_options is not None:
         from ...models.summary import SummaryLength
         task.summary_options.summary_length = SummaryLength(body.summary_options.summary_length)
+        task.summary_options.perspective = body.summary_options.perspective
         task.summary_options.extract_action_items = body.summary_options.include_action_items
         task.summary_options.extract_technical_terms = body.summary_options.include_technical_terms
         task.summary_options.min_messages = body.summary_options.min_messages

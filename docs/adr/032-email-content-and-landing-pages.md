@@ -526,6 +526,236 @@ function SendToEmailModal({ summary, guildId, onClose }) {
 }
 ```
 
+### 5. Interactive Email Editing
+
+#### 5.1 Pre-Send Preview & Edit Flow
+
+Users can review and modify email content before sending. This enables:
+- Editing subject line and body text
+- Adding or removing recipients
+- Reviewing rendered content in context
+- Making one-time changes without affecting templates
+
+**UI Flow:**
+```
+Click "Send Email"
+→ Preview modal opens with rendered email
+→ User can edit subject, body, recipients
+→ Click "Send" to deliver
+```
+
+#### 5.2 API Changes
+
+**Preview Endpoint** - generates email without sending:
+
+```python
+@router.post("/summaries/{summary_id}/email/preview")
+async def preview_email(
+    summary_id: str,
+    request: EmailPreviewRequest,
+    user: dict = Depends(get_current_user)
+) -> EmailPreviewResponse:
+    """Generate email preview for editing before send.
+
+    Returns fully rendered email content that can be modified
+    by the user before final delivery.
+    """
+    pass
+```
+
+**Data Models:**
+
+```python
+class EmailPreviewRequest(BaseModel):
+    """Request to generate an email preview."""
+    recipients: List[EmailStr]
+    include_fields: Optional[List[str]] = None
+    template_id: Optional[str] = None
+    include_landing_page: bool = True
+    require_authentication: Optional[bool] = None
+    link_expiry_hours: Optional[int] = None
+
+
+class EmailPreviewResponse(BaseModel):
+    """Rendered email ready for review/editing."""
+    subject: str
+    body_html: str
+    body_text: str
+    recipients: List[str]
+    landing_page_url: Optional[str] = None
+    landing_page_expires: Optional[datetime] = None
+    template_variables: Dict[str, Any]  # For reference
+
+
+class SendEmailRequest(BaseModel):
+    """Request to send email, with optional overrides from editing."""
+    recipients: List[EmailStr]
+
+    # Content selection (used if no overrides)
+    include_fields: Optional[List[str]] = None
+    exclude_fields: Optional[List[str]] = None
+    include_references: bool = True
+
+    # Landing page options
+    include_landing_page: bool = True
+    require_authentication: Optional[bool] = None
+    link_expiry_hours: Optional[int] = None
+
+    # Template
+    template_id: Optional[str] = None
+
+    # User overrides from editing (applied after template rendering)
+    subject_override: Optional[str] = None
+    body_override: Optional[str] = None  # Markdown or HTML
+```
+
+#### 5.3 Frontend Components
+
+**Email Preview Modal:**
+
+```typescript
+interface EmailPreviewState {
+  subject: string;
+  bodyHtml: string;
+  bodyText: string;
+  recipients: string[];
+  isEditing: boolean;
+  editedSubject?: string;
+  editedBody?: string;  // Markdown
+}
+
+function EmailPreviewModal({
+  summary,
+  guildId,
+  initialRecipients,
+  onClose,
+  onSend
+}: EmailPreviewModalProps) {
+  const [preview, setPreview] = useState<EmailPreviewState | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fetch preview on mount
+  useEffect(() => {
+    fetchEmailPreview(summary.id, {
+      recipients: initialRecipients,
+    }).then(setPreview);
+  }, [summary.id, initialRecipients]);
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogHeader>
+        <DialogTitle>Preview Email</DialogTitle>
+      </DialogHeader>
+
+      <DialogContent className="email-preview-content">
+        {/* Recipients */}
+        <section className="recipients-section">
+          <Label>Recipients</Label>
+          <EmailChipInput
+            emails={preview?.recipients ?? []}
+            onChange={(emails) => setPreview(p => ({ ...p!, recipients: emails }))}
+          />
+        </section>
+
+        {/* Subject */}
+        <section className="subject-section">
+          <Label>Subject</Label>
+          <Input
+            value={preview?.editedSubject ?? preview?.subject ?? ''}
+            onChange={(e) => setPreview(p => ({
+              ...p!,
+              editedSubject: e.target.value
+            }))}
+          />
+        </section>
+
+        {/* Body - Toggle between preview and edit */}
+        <section className="body-section">
+          <div className="body-header">
+            <Label>Email Body</Label>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPreview(p => ({ ...p!, isEditing: !p!.isEditing }))}
+            >
+              {preview?.isEditing ? 'Preview' : 'Edit'}
+            </Button>
+          </div>
+
+          {preview?.isEditing ? (
+            <MarkdownEditor
+              value={preview.editedBody ?? htmlToMarkdown(preview.bodyHtml)}
+              onChange={(md) => setPreview(p => ({ ...p!, editedBody: md }))}
+            />
+          ) : (
+            <div
+              className="email-body-preview"
+              dangerouslySetInnerHTML={{
+                __html: preview?.editedBody
+                  ? markdownToHtml(preview.editedBody)
+                  : preview?.bodyHtml ?? ''
+              }}
+            />
+          )}
+        </section>
+
+        {/* Landing page info */}
+        {preview?.landing_page_url && (
+          <section className="landing-page-info">
+            <p className="text-sm text-muted-foreground">
+              Recipients will see a "View Full Summary" link to:
+              <code>{preview.landing_page_url}</code>
+            </p>
+          </section>
+        )}
+      </DialogContent>
+
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button
+          onClick={() => onSend({
+            recipients: preview!.recipients,
+            subject_override: preview?.editedSubject,
+            body_override: preview?.editedBody,
+          })}
+          disabled={!preview || preview.recipients.length === 0}
+        >
+          Send Email
+        </Button>
+      </DialogFooter>
+    </Dialog>
+  );
+}
+```
+
+#### 5.4 Edit Behavior
+
+**Subject editing:**
+- Direct text input
+- Character limit enforced (150 chars)
+- Cannot be empty
+
+**Body editing:**
+- Rich text or Markdown editor
+- Preserves template structure if minor edits
+- Full override if substantial changes
+- Changes are per-send only (do not affect templates)
+
+**Recipient editing:**
+- Add/remove individual addresses
+- Validate email format
+- Cannot send with empty recipient list
+
+#### 5.5 Implementation Notes
+
+1. **Preview generates landing page token**: The preview endpoint creates the access token so the landing page URL is accurate in the preview. If the user cancels, the token is cleaned up after a short TTL.
+
+2. **Markdown to HTML conversion**: User edits in Markdown are converted to HTML matching the template styles before sending.
+
+3. **Original template preserved**: The `template_variables` field in the response allows the UI to show what data was available, but edits replace the rendered output.
+
+4. **Audit trail**: When `subject_override` or `body_override` is used, the email delivery record logs that user modifications were applied.
+
 ## Implementation Plan
 
 ### Phase 1: Email Template System

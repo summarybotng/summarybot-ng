@@ -197,6 +197,8 @@ class SummaryPushService:
     ) -> PushResult:
         """Push summary to a single channel.
 
+        CS-006: Delegates to _push_summary_to_channel to avoid code duplication.
+
         Args:
             stored_summary: Stored summary to push
             channel_id: Discord channel ID
@@ -208,77 +210,14 @@ class SummaryPushService:
         Returns:
             Push result
         """
-        if not self.discord_client:
-            return PushResult(
-                channel_id=channel_id,
-                success=False,
-                error="Discord client not available"
-            )
-
-        # Default section options if not provided
-        if section_options is None:
-            section_options = {
-                "include_key_points": True,
-                "include_action_items": True,
-                "include_participants": True,
-                "include_technical_terms": True,
-            }
-
-        try:
-            # Get channel
-            channel = self.discord_client.get_channel(int(channel_id))
-            if not channel:
-                try:
-                    channel = await self.discord_client.fetch_channel(int(channel_id))
-                except discord.NotFound:
-                    return PushResult(
-                        channel_id=channel_id,
-                        success=False,
-                        error="Channel not found"
-                    )
-
-            # Check if we can send messages
-            if not hasattr(channel, 'send'):
-                return PushResult(
-                    channel_id=channel_id,
-                    success=False,
-                    error="Cannot send messages to this channel type"
-                )
-
-            summary = stored_summary.summary_result
-            message_id = None
-
-            # Send custom intro message if provided
-            if custom_message:
-                await channel.send(custom_message)
-
-            # Send summary in requested format
-            if format == "embed":
-                message_id = await self._send_embed(channel, summary, section_options)
-            elif format == "markdown":
-                message_id = await self._send_markdown(channel, summary, include_references, section_options)
-            else:  # plain
-                message_id = await self._send_plain(channel, summary)
-
-            return PushResult(
-                channel_id=channel_id,
-                success=True,
-                message_id=message_id
-            )
-
-        except discord.Forbidden:
-            return PushResult(
-                channel_id=channel_id,
-                success=False,
-                error="Missing permission to send messages"
-            )
-        except Exception as e:
-            logger.exception(f"Failed to push to channel {channel_id}: {e}")
-            return PushResult(
-                channel_id=channel_id,
-                success=False,
-                error=str(e)
-            )
+        return await self._push_summary_to_channel(
+            summary_result=stored_summary.summary_result,
+            channel_id=channel_id,
+            format=format,
+            include_references=include_references,
+            custom_message=custom_message,
+            section_options=section_options,
+        )
 
     async def _send_embed(
         self,
@@ -546,7 +485,7 @@ class SummaryPushService:
         successful_count = 0
 
         for channel_id in channel_ids:
-            result = await self._push_result_to_channel(
+            result = await self._push_summary_to_channel(
                 summary_result=summary,
                 channel_id=channel_id,
                 format=format,
@@ -582,7 +521,7 @@ class SummaryPushService:
             deliveries=deliveries
         )
 
-    async def _push_result_to_channel(
+    async def _push_summary_to_channel(
         self,
         summary_result: SummaryResult,
         channel_id: str,
@@ -592,6 +531,9 @@ class SummaryPushService:
         section_options: Optional[Dict[str, bool]] = None,
     ) -> PushResult:
         """Push a SummaryResult to a single channel.
+
+        CS-006: Unified implementation for both StoredSummary and SummaryResult pushes.
+        Called by _push_to_channel (for stored summaries) and push_result_to_channels.
 
         Args:
             summary_result: SummaryResult to push

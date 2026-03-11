@@ -257,7 +257,7 @@ This plan addresses 10 critical stop-ship issues, 20+ high-priority findings, an
 ### Phase 2 Verification (IN PROGRESS)
 - [x] sqlite.py is no longer >2500 LOC (CS-001: COMPLETE - 12 modules, 2,747 LOC total)
 - [x] No method has >15 parameters (CS-002: StoredSummaryFilter dataclass extracts 22 filter params)
-- [ ] summary_push.py has single push implementation (CS-006 pending)
+- [x] summary_push.py has single push implementation (CS-006: COMPLETE - unified _push_summary_to_channel, -58 LOC)
 - [ ] executor.py uses strategy pattern for delivery (CS-008 pending)
 - [ ] Single DI system (either container.py OR main.py wiring, not both) (CS-014 pending)
 

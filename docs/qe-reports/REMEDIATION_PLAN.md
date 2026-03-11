@@ -254,12 +254,12 @@ This plan addresses 10 critical stop-ship issues, 20+ high-priority findings, an
 - [x] docker-compose up works without modification - defaults to memory cache
 - [x] LLM calls timeout after 120s max (already implemented)
 
-### Phase 2 Verification
-- [ ] sqlite.py is no longer >2500 LOC
-- [ ] No method has >15 parameters
-- [ ] summary_push.py has single push implementation
-- [ ] executor.py uses strategy pattern for delivery
-- [ ] Single DI system (either container.py OR main.py wiring, not both)
+### Phase 2 Verification (IN PROGRESS)
+- [ ] sqlite.py is no longer >2500 LOC (CS-001 pending)
+- [x] No method has >15 parameters (CS-002: StoredSummaryFilter dataclass extracts 22 filter params)
+- [ ] summary_push.py has single push implementation (CS-006 pending)
+- [ ] executor.py uses strategy pattern for delivery (CS-008 pending)
+- [ ] Single DI system (either container.py OR main.py wiring, not both) (CS-014 pending)
 
 ### Phase 3 Verification
 - [ ] permissions/ module has >80% test coverage

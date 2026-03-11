@@ -8,11 +8,47 @@ transactions, and async database operations.
 import json
 import logging
 import aiosqlite
-from typing import List, Optional, Dict, Any
+from dataclasses import dataclass, field
+from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime
 from pathlib import Path
 import asyncio
 from contextlib import asynccontextmanager
+
+
+# CS-002: StoredSummaryFilter dataclass to eliminate duplicated filter logic
+@dataclass
+class StoredSummaryFilter:
+    """Filter parameters for stored summary queries.
+
+    Used by find_by_guild and count_by_guild to avoid duplicating filter logic.
+    """
+    guild_id: str
+    pinned_only: bool = False
+    include_archived: bool = False
+    tags: Optional[List[str]] = None
+    source: Optional[str] = None  # ADR-008: Filter by source
+    # ADR-017: Enhanced filtering
+    created_after: Optional[datetime] = None
+    created_before: Optional[datetime] = None
+    archive_period: Optional[str] = None
+    channel_mode: Optional[str] = None  # "single" or "multi"
+    has_grounding: Optional[bool] = None
+    # ADR-018: Content-based filters
+    has_key_points: Optional[bool] = None
+    has_action_items: Optional[bool] = None
+    has_participants: Optional[bool] = None
+    min_message_count: Optional[int] = None
+    max_message_count: Optional[int] = None
+    # ADR-021: Content count filters
+    min_key_points: Optional[int] = None
+    max_key_points: Optional[int] = None
+    min_action_items: Optional[int] = None
+    max_action_items: Optional[int] = None
+    min_participants: Optional[int] = None
+    max_participants: Optional[int] = None
+    # ADR-026: Platform filter
+    platform: Optional[str] = None
 
 logger = logging.getLogger(__name__)
 
@@ -1193,6 +1229,114 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
 
         return self._row_to_stored_summary(row)
 
+    def _build_filter_clause(self, filter: StoredSummaryFilter) -> Tuple[str, List[Any]]:
+        """Build WHERE clause and params from filter.
+
+        CS-002: Shared filter logic for find_by_guild and count_by_guild.
+
+        Args:
+            filter: StoredSummaryFilter with all filter parameters
+
+        Returns:
+            Tuple of (where_clause, params_list)
+        """
+        conditions = ["guild_id = ?"]
+        params: List[Any] = [filter.guild_id]
+
+        if filter.pinned_only:
+            conditions.append("is_pinned = 1")
+
+        if not filter.include_archived:
+            conditions.append("is_archived = 0")
+
+        # ADR-008: Source filtering
+        if filter.source and filter.source != "all":
+            conditions.append("source = ?")
+            params.append(filter.source)
+
+        # ADR-017: Date range filtering
+        if filter.created_after:
+            conditions.append("created_at >= ?")
+            params.append(filter.created_after.isoformat())
+
+        if filter.created_before:
+            conditions.append("created_at <= ?")
+            params.append(filter.created_before.isoformat())
+
+        # ADR-017: Archive period filtering
+        if filter.archive_period:
+            conditions.append("archive_period = ?")
+            params.append(filter.archive_period)
+
+        # ADR-017: Channel mode filtering (single vs multi-channel)
+        if filter.channel_mode == "single":
+            conditions.append("json_array_length(source_channel_ids) = 1")
+        elif filter.channel_mode == "multi":
+            conditions.append("json_array_length(source_channel_ids) > 1")
+
+        # ADR-017: Grounding filter
+        if filter.has_grounding is True:
+            conditions.append("json_array_length(json_extract(summary_json, '$.reference_index')) > 0")
+        elif filter.has_grounding is False:
+            conditions.append("(json_extract(summary_json, '$.reference_index') IS NULL OR json_array_length(json_extract(summary_json, '$.reference_index')) = 0)")
+
+        # ADR-018: Content-based filters
+        if filter.has_key_points is True:
+            conditions.append("json_array_length(json_extract(summary_json, '$.key_points')) > 0")
+        elif filter.has_key_points is False:
+            conditions.append("(json_extract(summary_json, '$.key_points') IS NULL OR json_array_length(json_extract(summary_json, '$.key_points')) = 0)")
+
+        if filter.has_action_items is True:
+            conditions.append("json_array_length(json_extract(summary_json, '$.action_items')) > 0")
+        elif filter.has_action_items is False:
+            conditions.append("(json_extract(summary_json, '$.action_items') IS NULL OR json_array_length(json_extract(summary_json, '$.action_items')) = 0)")
+
+        if filter.has_participants is True:
+            conditions.append("json_array_length(json_extract(summary_json, '$.participants')) > 0")
+        elif filter.has_participants is False:
+            conditions.append("(json_extract(summary_json, '$.participants') IS NULL OR json_array_length(json_extract(summary_json, '$.participants')) = 0)")
+
+        if filter.min_message_count is not None:
+            conditions.append("message_count >= ?")
+            params.append(filter.min_message_count)
+
+        if filter.max_message_count is not None:
+            conditions.append("message_count <= ?")
+            params.append(filter.max_message_count)
+
+        # ADR-021: Content count filters
+        if filter.min_key_points is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.key_points')), 0) >= ?")
+            params.append(filter.min_key_points)
+
+        if filter.max_key_points is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.key_points')), 0) <= ?")
+            params.append(filter.max_key_points)
+
+        if filter.min_action_items is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.action_items')), 0) >= ?")
+            params.append(filter.min_action_items)
+
+        if filter.max_action_items is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.action_items')), 0) <= ?")
+            params.append(filter.max_action_items)
+
+        if filter.min_participants is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.participants')), 0) >= ?")
+            params.append(filter.min_participants)
+
+        if filter.max_participants is not None:
+            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.participants')), 0) <= ?")
+            params.append(filter.max_participants)
+
+        # ADR-026: Platform filter (filters by archive_source_key prefix)
+        if filter.platform and filter.platform != "all":
+            conditions.append("archive_source_key LIKE ?")
+            params.append(f"{filter.platform}:%")
+
+        where_clause = " AND ".join(conditions)
+        return where_clause, params
+
     async def find_by_guild(
         self,
         guild_id: str,
@@ -1248,101 +1392,32 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         Returns:
             List of matching StoredSummary objects
         """
-        conditions = ["guild_id = ?"]
-        params: List[Any] = [guild_id]
-
-        if pinned_only:
-            conditions.append("is_pinned = 1")
-
-        if not include_archived:
-            conditions.append("is_archived = 0")
-
-        # ADR-008: Source filtering
-        if source and source != "all":
-            conditions.append("source = ?")
-            params.append(source)
-
-        # ADR-017: Date range filtering
-        if created_after:
-            conditions.append("created_at >= ?")
-            params.append(created_after.isoformat())
-
-        if created_before:
-            conditions.append("created_at <= ?")
-            params.append(created_before.isoformat())
-
-        # ADR-017: Archive period filtering
-        if archive_period:
-            conditions.append("archive_period = ?")
-            params.append(archive_period)
-
-        # ADR-017: Channel mode filtering (single vs multi-channel)
-        if channel_mode == "single":
-            conditions.append("json_array_length(source_channel_ids) = 1")
-        elif channel_mode == "multi":
-            conditions.append("json_array_length(source_channel_ids) > 1")
-
-        # ADR-017: Grounding filter
-        if has_grounding is True:
-            conditions.append("json_array_length(json_extract(summary_json, '$.reference_index')) > 0")
-        elif has_grounding is False:
-            conditions.append("(json_extract(summary_json, '$.reference_index') IS NULL OR json_array_length(json_extract(summary_json, '$.reference_index')) = 0)")
-
-        # ADR-018: Content-based filters
-        if has_key_points is True:
-            conditions.append("json_array_length(json_extract(summary_json, '$.key_points')) > 0")
-        elif has_key_points is False:
-            conditions.append("(json_extract(summary_json, '$.key_points') IS NULL OR json_array_length(json_extract(summary_json, '$.key_points')) = 0)")
-
-        if has_action_items is True:
-            conditions.append("json_array_length(json_extract(summary_json, '$.action_items')) > 0")
-        elif has_action_items is False:
-            conditions.append("(json_extract(summary_json, '$.action_items') IS NULL OR json_array_length(json_extract(summary_json, '$.action_items')) = 0)")
-
-        if has_participants is True:
-            conditions.append("json_array_length(json_extract(summary_json, '$.participants')) > 0")
-        elif has_participants is False:
-            conditions.append("(json_extract(summary_json, '$.participants') IS NULL OR json_array_length(json_extract(summary_json, '$.participants')) = 0)")
-
-        if min_message_count is not None:
-            conditions.append("message_count >= ?")
-            params.append(min_message_count)
-
-        if max_message_count is not None:
-            conditions.append("message_count <= ?")
-            params.append(max_message_count)
-
-        # ADR-021: Content count filters
-        if min_key_points is not None:
-            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.key_points')), 0) >= ?")
-            params.append(min_key_points)
-
-        if max_key_points is not None:
-            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.key_points')), 0) <= ?")
-            params.append(max_key_points)
-
-        if min_action_items is not None:
-            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.action_items')), 0) >= ?")
-            params.append(min_action_items)
-
-        if max_action_items is not None:
-            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.action_items')), 0) <= ?")
-            params.append(max_action_items)
-
-        if min_participants is not None:
-            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.participants')), 0) >= ?")
-            params.append(min_participants)
-
-        if max_participants is not None:
-            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.participants')), 0) <= ?")
-            params.append(max_participants)
-
-        # ADR-026: Platform filter (filters by archive_source_key prefix)
-        if platform and platform != "all":
-            conditions.append("archive_source_key LIKE ?")
-            params.append(f"{platform}:%")
-
-        where_clause = " AND ".join(conditions)
+        # CS-002: Use shared filter builder
+        filter_obj = StoredSummaryFilter(
+            guild_id=guild_id,
+            pinned_only=pinned_only,
+            include_archived=include_archived,
+            tags=tags,
+            source=source,
+            created_after=created_after,
+            created_before=created_before,
+            archive_period=archive_period,
+            channel_mode=channel_mode,
+            has_grounding=has_grounding,
+            has_key_points=has_key_points,
+            has_action_items=has_action_items,
+            has_participants=has_participants,
+            min_message_count=min_message_count,
+            max_message_count=max_message_count,
+            min_key_points=min_key_points,
+            max_key_points=max_key_points,
+            min_action_items=min_action_items,
+            max_action_items=max_action_items,
+            min_participants=min_participants,
+            max_participants=max_participants,
+            platform=platform,
+        )
+        where_clause, params = self._build_filter_clause(filter_obj)
 
         # ADR-017: Dynamic sorting
         valid_sort_fields = {"created_at", "message_count", "archive_period"}
@@ -1407,93 +1482,30 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         platform: Optional[str] = None,
     ) -> int:
         """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026)."""
-        conditions = ["guild_id = ?"]
-        params: List[Any] = [guild_id]
-
-        if not include_archived:
-            conditions.append("is_archived = 0")
-
-        if source and source != "all":
-            conditions.append("source = ?")
-            params.append(source)
-
-        if created_after:
-            conditions.append("created_at >= ?")
-            params.append(created_after.isoformat())
-
-        if created_before:
-            conditions.append("created_at <= ?")
-            params.append(created_before.isoformat())
-
-        if archive_period:
-            conditions.append("archive_period = ?")
-            params.append(archive_period)
-
-        if channel_mode == "single":
-            conditions.append("json_array_length(source_channel_ids) = 1")
-        elif channel_mode == "multi":
-            conditions.append("json_array_length(source_channel_ids) > 1")
-
-        if has_grounding is True:
-            conditions.append("json_array_length(json_extract(summary_json, '$.reference_index')) > 0")
-        elif has_grounding is False:
-            conditions.append("(json_extract(summary_json, '$.reference_index') IS NULL OR json_array_length(json_extract(summary_json, '$.reference_index')) = 0)")
-
-        # ADR-018: Content-based filters
-        if has_key_points is True:
-            conditions.append("json_array_length(json_extract(summary_json, '$.key_points')) > 0")
-        elif has_key_points is False:
-            conditions.append("(json_extract(summary_json, '$.key_points') IS NULL OR json_array_length(json_extract(summary_json, '$.key_points')) = 0)")
-
-        if has_action_items is True:
-            conditions.append("json_array_length(json_extract(summary_json, '$.action_items')) > 0")
-        elif has_action_items is False:
-            conditions.append("(json_extract(summary_json, '$.action_items') IS NULL OR json_array_length(json_extract(summary_json, '$.action_items')) = 0)")
-
-        if has_participants is True:
-            conditions.append("json_array_length(json_extract(summary_json, '$.participants')) > 0")
-        elif has_participants is False:
-            conditions.append("(json_extract(summary_json, '$.participants') IS NULL OR json_array_length(json_extract(summary_json, '$.participants')) = 0)")
-
-        if min_message_count is not None:
-            conditions.append("message_count >= ?")
-            params.append(min_message_count)
-
-        if max_message_count is not None:
-            conditions.append("message_count <= ?")
-            params.append(max_message_count)
-
-        # ADR-021: Content count filters
-        if min_key_points is not None:
-            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.key_points')), 0) >= ?")
-            params.append(min_key_points)
-
-        if max_key_points is not None:
-            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.key_points')), 0) <= ?")
-            params.append(max_key_points)
-
-        if min_action_items is not None:
-            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.action_items')), 0) >= ?")
-            params.append(min_action_items)
-
-        if max_action_items is not None:
-            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.action_items')), 0) <= ?")
-            params.append(max_action_items)
-
-        if min_participants is not None:
-            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.participants')), 0) >= ?")
-            params.append(min_participants)
-
-        if max_participants is not None:
-            conditions.append("COALESCE(json_array_length(json_extract(summary_json, '$.participants')), 0) <= ?")
-            params.append(max_participants)
-
-        # ADR-026: Platform filter
-        if platform and platform != "all":
-            conditions.append("archive_source_key LIKE ?")
-            params.append(f"{platform}:%")
-
-        where_clause = " AND ".join(conditions)
+        # CS-002: Use shared filter builder
+        filter_obj = StoredSummaryFilter(
+            guild_id=guild_id,
+            include_archived=include_archived,
+            source=source,
+            created_after=created_after,
+            created_before=created_before,
+            archive_period=archive_period,
+            channel_mode=channel_mode,
+            has_grounding=has_grounding,
+            has_key_points=has_key_points,
+            has_action_items=has_action_items,
+            has_participants=has_participants,
+            min_message_count=min_message_count,
+            max_message_count=max_message_count,
+            min_key_points=min_key_points,
+            max_key_points=max_key_points,
+            min_action_items=min_action_items,
+            max_action_items=max_action_items,
+            min_participants=min_participants,
+            max_participants=max_participants,
+            platform=platform,
+        )
+        where_clause, params = self._build_filter_clause(filter_obj)
 
         query = f"SELECT COUNT(*) as count FROM stored_summaries WHERE {where_clause}"
 

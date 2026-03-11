@@ -308,7 +308,7 @@ class TestEmailDelivery:
         import asyncio
 
         result = asyncio.get_event_loop().run_until_complete(
-            service.send_summary(sample_summary, [])
+            email_service.send_summary(sample_summary, [])
         )
 
         assert result.success is False

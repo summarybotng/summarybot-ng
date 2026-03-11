@@ -350,11 +350,11 @@ class TestWebhookDatabaseIntegration:
         await mock_claude.close() if hasattr(mock_claude, 'close') else None
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(reason="Requires database setup - to be implemented in Phase 3 integration test expansion")
     async def test_summary_persistence(self, real_webhook_server, sample_messages):
         """Test that summaries are persisted to database."""
-        # This test would require database setup
-        # Placeholder for database integration testing
-        pass
+        # TODO: Implement with proper database fixture
+        pytest.fail("Not implemented")
 
     @pytest.mark.asyncio
     async def test_summary_retrieval(self, real_webhook_server):

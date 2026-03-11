@@ -255,11 +255,26 @@ This plan addresses 10 critical stop-ship issues, 20+ high-priority findings, an
 - [x] LLM calls timeout after 120s max (already implemented)
 
 ### Phase 2 Verification (IN PROGRESS)
-- [ ] sqlite.py is no longer >2500 LOC (CS-001 pending)
+- [x] sqlite.py is no longer >2500 LOC (CS-001: COMPLETE - 12 modules, 2,747 LOC total)
 - [x] No method has >15 parameters (CS-002: StoredSummaryFilter dataclass extracts 22 filter params)
 - [ ] summary_push.py has single push implementation (CS-006 pending)
 - [ ] executor.py uses strategy pattern for delivery (CS-008 pending)
 - [ ] Single DI system (either container.py OR main.py wiring, not both) (CS-014 pending)
+
+CS-001 COMPLETE (2026-03-11):
+- src/data/sqlite/__init__.py: 61 LOC (exports for backward compat)
+- src/data/sqlite/connection.py: 224 LOC (SQLiteConnection, SQLiteTransaction)
+- src/data/sqlite/filters.py: 43 LOC (StoredSummaryFilter)
+- src/data/sqlite/summary_repository.py: 201 LOC
+- src/data/sqlite/config_repository.py: 91 LOC
+- src/data/sqlite/task_repository.py: 222 LOC
+- src/data/sqlite/feed_repository.py: 114 LOC
+- src/data/sqlite/webhook_repository.py: 103 LOC
+- src/data/sqlite/error_repository.py: 204 LOC
+- src/data/sqlite/stored_summary_repository.py: 945 LOC
+- src/data/sqlite/ingest_repository.py: 300 LOC
+- src/data/sqlite/summary_job_repository.py: 239 LOC
+- _sqlite_legacy.py: DELETED (all classes extracted)
 
 ### Phase 3 Verification
 - [ ] permissions/ module has >80% test coverage

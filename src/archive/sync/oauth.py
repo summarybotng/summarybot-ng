@@ -95,8 +95,17 @@ class SecureTokenStore:
     def _get_cipher(self) -> Fernet:
         """Get or create encryption cipher."""
         key = os.environ.get("ARCHIVE_TOKEN_ENCRYPTION_KEY")
+        environment = os.environ.get("ENVIRONMENT", "development").lower()
+        testing_enabled = os.environ.get("TESTING", "").lower() in ("true", "1", "yes")
 
         if not key:
+            # DATA-001: Require encryption key in production
+            if environment == "production" and not testing_enabled:
+                raise RuntimeError(
+                    "ARCHIVE_TOKEN_ENCRYPTION_KEY is required in production. "
+                    "Please set a Fernet-compatible key (44 chars, base64) or "
+                    "any string which will be SHA256-hashed into a key."
+                )
             # Generate a key if not provided (will be lost on restart)
             logger.warning(
                 "ARCHIVE_TOKEN_ENCRYPTION_KEY not set. "

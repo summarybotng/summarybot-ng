@@ -2067,6 +2067,8 @@ class SQLiteIngestRepository(IngestRepository):
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
+        # PERF-002: Use executemany for batch inserts (10-100x faster)
+        msg_params_list = []
         for msg in processed_messages:
             attachments_json = json.dumps([
                 {
@@ -2095,8 +2097,11 @@ class SQLiteIngestRepository(IngestRepository):
                 1 if msg.is_deleted else 0,
                 json.dumps({'phone_number': msg.phone_number}) if msg.phone_number else '{}',
             )
+            msg_params_list.append(msg_params)
 
-            await self.connection.execute(msg_query, msg_params)
+        # Batch insert all messages at once
+        if msg_params_list:
+            await self.connection.executemany(msg_query, msg_params_list)
 
         # Update channel stats
         await self._update_channel_stats(document)

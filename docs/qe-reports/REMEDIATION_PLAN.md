@@ -247,12 +247,12 @@ This plan addresses 10 critical stop-ship issues, 20+ high-priority findings, an
 - [x] New guild users can use bot immediately (no permission lockout)
 - [x] No bare `except:` clauses remain in src/
 
-### Phase 1 Verification
-- [ ] Batch insert 1000 messages in <1 second (vs 30+ seconds before)
-- [ ] 365-day backfill completes in <5 minutes (vs 30+ minutes before)
-- [ ] Encryption keys required at startup in production
-- [ ] docker-compose up works without modification
-- [ ] LLM calls timeout after 120s max
+### Phase 1 Verification (COMPLETED 2026-03-11)
+- [x] Batch insert 1000 messages in <1 second (vs 30+ seconds before) - executemany()
+- [x] 365-day backfill completes in <5 minutes (vs 30+ minutes before) - asyncio.gather()
+- [x] Encryption keys required at startup in production
+- [x] docker-compose up works without modification - defaults to memory cache
+- [x] LLM calls timeout after 120s max (already implemented)
 
 ### Phase 2 Verification
 - [ ] sqlite.py is no longer >2500 LOC

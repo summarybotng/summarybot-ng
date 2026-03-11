@@ -67,10 +67,15 @@ def create_dashboard_router(
         client_id = client_id or "not-configured"
         client_secret = client_secret or "not-configured"
 
-    # Create encryption key if not provided
+    # DATA-001: Validate encryption key in production
     if encryption_key:
         encryption_key = encryption_key.encode()
     else:
+        if environment == "production":
+            raise RuntimeError(
+                "DASHBOARD_ENCRYPTION_KEY is required in production. "
+                "Please set a Fernet-compatible key (44 chars, base64)."
+            )
         encryption_key = Fernet.generate_key()
         logger.warning("No DASHBOARD_ENCRYPTION_KEY set, using ephemeral key")
 

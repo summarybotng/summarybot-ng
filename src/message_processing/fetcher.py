@@ -76,14 +76,12 @@ class MessageFetcher:
                         )
                     )
             
+            # PERF-004: Collect messages without per-message delay
+            # Rate limiting is applied per-batch in _fetch_messages_with_pagination
             messages = []
             async for message in self._fetch_messages_with_pagination(channel, start_time, end_time, limit):
                 messages.append(message)
-                
-                # Apply rate limiting
-                if self.rate_limit_delay > 0:
-                    await asyncio.sleep(self.rate_limit_delay)
-            
+
             return messages
             
         except discord.Forbidden as e:

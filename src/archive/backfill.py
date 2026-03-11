@@ -303,37 +303,63 @@ class BackfillManager:
         job.started_at = datetime.utcnow()
 
         try:
-            for target_date in job.dates:
-                # Check for cancellation
+            # PERF-003: Parallelize backfill processing with controlled concurrency
+            # Use semaphore to limit concurrent API calls (3-5 is safe for most APIs)
+            concurrency_limit = 3
+            semaphore = asyncio.Semaphore(concurrency_limit)
+
+            async def process_date(target_date: date) -> tuple[date, bool, Optional[str]]:
+                """Process a single date with semaphore control.
+
+                Returns: (date, success, error_msg)
+                """
+                # Check for cancellation before starting
                 if job_id in self._cancelled:
-                    job.status = BackfillStatus.CANCELLED
-                    break
+                    return (target_date, False, "cancelled")
 
-                # Check cost limit
+                # Check cost limit before starting
                 if job.max_cost_usd and job.progress.cost_usd >= job.max_cost_usd:
-                    job.status = BackfillStatus.PAUSED
-                    job.error = "Cost limit reached"
-                    break
+                    return (target_date, False, "cost_limit")
 
-                job.progress.current_period = target_date.isoformat()
+                async with semaphore:
+                    try:
+                        await self._backfill_date(
+                            job=job,
+                            target_date=target_date,
+                            timezone=timezone,
+                            prompt_version=prompt_version,
+                            prompt_checksum=prompt_checksum,
+                            model=model,
+                        )
+                        return (target_date, True, None)
+                    except Exception as e:
+                        logger.error(f"Failed to backfill {target_date}: {e}")
+                        return (target_date, False, str(e))
 
-                try:
-                    await self._backfill_date(
-                        job=job,
-                        target_date=target_date,
-                        timezone=timezone,
-                        prompt_version=prompt_version,
-                        prompt_checksum=prompt_checksum,
-                        model=model,
-                    )
-                    job.progress.completed += 1
+            # Process all dates concurrently with limited parallelism
+            results = await asyncio.gather(
+                *[process_date(d) for d in job.dates],
+                return_exceptions=True
+            )
 
-                except Exception as e:
-                    logger.error(f"Failed to backfill {target_date}: {e}")
+            # Process results and update progress
+            for result in results:
+                if isinstance(result, Exception):
                     job.progress.failed += 1
-
-                # Small delay between generations
-                await asyncio.sleep(0.5)
+                    logger.error(f"Backfill task exception: {result}")
+                else:
+                    target_date, success, error_msg = result
+                    if success:
+                        job.progress.completed += 1
+                    elif error_msg == "cancelled":
+                        job.status = BackfillStatus.CANCELLED
+                        break
+                    elif error_msg == "cost_limit":
+                        job.status = BackfillStatus.PAUSED
+                        job.error = "Cost limit reached"
+                        break
+                    else:
+                        job.progress.failed += 1
 
             if job.status == BackfillStatus.RUNNING:
                 job.status = BackfillStatus.COMPLETED

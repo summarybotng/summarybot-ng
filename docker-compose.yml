@@ -20,8 +20,10 @@ services:
       # Database Configuration
       - DATABASE_URL=sqlite:///data/summarybot.db
 
-      # Cache Configuration (use Redis in production)
-      - CACHE_BACKEND=${CACHE_BACKEND:-redis}
+      # Cache Configuration
+      # DATA-002: Default to 'memory' since Redis backend isn't implemented yet
+      # Set CACHE_BACKEND=redis when Redis support is added
+      - CACHE_BACKEND=${CACHE_BACKEND:-memory}
       - REDIS_URL=redis://redis:6379/0
       - CACHE_DEFAULT_TTL=${CACHE_DEFAULT_TTL:-3600}
       - CACHE_MAX_SIZE=${CACHE_MAX_SIZE:-1000}

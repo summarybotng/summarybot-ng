@@ -258,17 +258,17 @@ This plan addresses 10 critical stop-ship issues, 20+ high-priority findings, an
 - [x] sqlite.py is no longer >2500 LOC (CS-001: COMPLETE - 12 modules, 2,747 LOC total)
 - [x] No method has >15 parameters (CS-002: StoredSummaryFilter dataclass extracts 22 filter params)
 - [x] summary_push.py has single push implementation (CS-006: COMPLETE - unified _push_summary_to_channel, -58 LOC)
-- [~] executor.py uses strategy pattern for delivery (CS-008: FOUNDATION - delivery/ package with 4 strategies created)
+- [x] executor.py uses strategy pattern for delivery (CS-008: COMPLETE - 1,135→760 LOC, -375 lines)
 - [ ] Single DI system (either container.py OR main.py wiring, not both) (CS-014 pending)
 
-CS-008 Foundation (2026-03-11):
-- src/scheduling/delivery/__init__.py: Package exports
-- src/scheduling/delivery/base.py: DeliveryStrategy ABC, DeliveryResult, DeliveryContext
-- src/scheduling/delivery/discord.py: DiscordDeliveryStrategy (embed, markdown, template formats)
-- src/scheduling/delivery/webhook.py: WebhookDeliveryStrategy (placeholder)
-- src/scheduling/delivery/email.py: EmailDeliveryStrategy (ADR-030)
-- src/scheduling/delivery/dashboard.py: DashboardDeliveryStrategy (ADR-005)
-- Next: Update executor.py to use strategy registry instead of if/elif chain
+CS-008 COMPLETE (2026-03-11):
+- src/scheduling/delivery/__init__.py: Package exports (21 LOC)
+- src/scheduling/delivery/base.py: DeliveryStrategy ABC, DeliveryResult, DeliveryContext (78 LOC)
+- src/scheduling/delivery/discord.py: DiscordDeliveryStrategy (197 LOC)
+- src/scheduling/delivery/email.py: EmailDeliveryStrategy (134 LOC)
+- src/scheduling/delivery/dashboard.py: DashboardDeliveryStrategy (164 LOC)
+- src/scheduling/delivery/webhook.py: WebhookDeliveryStrategy (49 LOC)
+- executor.py: Uses strategy registry, TaskDeliveryContext adapter, removed 5 _deliver_* methods
 
 CS-001 COMPLETE (2026-03-11):
 - src/data/sqlite/__init__.py: 61 LOC (exports for backward compat)

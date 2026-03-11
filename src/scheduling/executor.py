@@ -1,5 +1,7 @@
 """
 Task execution logic for scheduled tasks.
+
+CS-008: Uses delivery strategy pattern for extensible destination handling.
 """
 
 import asyncio
@@ -11,6 +13,14 @@ from typing import Optional, List, Dict, Any
 import discord
 
 from .tasks import SummaryTask, CleanupTask
+from .delivery import (
+    DeliveryStrategy,
+    DeliveryResult,
+    DiscordDeliveryStrategy,
+    WebhookDeliveryStrategy,
+    EmailDeliveryStrategy,
+    DashboardDeliveryStrategy,
+)
 from ..models.task import TaskResult, DestinationType, ScheduledTask, Destination, SummaryScope
 from ..models.summary import SummaryResult, SummarizationContext
 from ..models.stored_summary import StoredSummary
@@ -24,6 +34,27 @@ from ..logging.error_tracker import get_error_tracker
 from ..dashboard.models import SummaryScope as DashboardScope
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TaskDeliveryContext:
+    """Adapter that provides DeliveryContext interface for SummaryTask.
+
+    CS-008: Bridges the gap between SummaryTask and the DeliveryStrategy protocol.
+    """
+    task: SummaryTask
+    discord_client: Any
+
+    @property
+    def guild_id(self) -> str:
+        return self.task.guild_id
+
+    @property
+    def scheduled_task(self) -> Any:
+        return self.task.scheduled_task
+
+    def get_all_channel_ids(self) -> List[str]:
+        return self.task.get_all_channel_ids()
 
 
 @dataclass
@@ -52,7 +83,10 @@ class TaskExecutionResult:
 
 
 class TaskExecutor:
-    """Executes scheduled tasks with proper error handling and delivery."""
+    """Executes scheduled tasks with proper error handling and delivery.
+
+    CS-008: Uses delivery strategy pattern for extensible destination handling.
+    """
 
     def __init__(self,
                  summarization_engine,
@@ -71,6 +105,14 @@ class TaskExecutor:
         self.message_processor = message_processor
         self.discord_client = discord_client
         self.command_logger = command_logger
+
+        # CS-008: Initialize delivery strategy registry
+        self._delivery_strategies: Dict[DestinationType, DeliveryStrategy] = {
+            DestinationType.DISCORD_CHANNEL: DiscordDeliveryStrategy(),
+            DestinationType.WEBHOOK: WebhookDeliveryStrategy(),
+            DestinationType.EMAIL: EmailDeliveryStrategy(),
+            DestinationType.DASHBOARD: DashboardDeliveryStrategy(),
+        }
 
     @log_command(CommandType.SCHEDULED_TASK, command_name="execute_summary_task")
     async def execute_summary_task(self, task: SummaryTask) -> TaskExecutionResult:
@@ -591,6 +633,8 @@ class TaskExecutor:
                               task: SummaryTask) -> List[Dict[str, Any]]:
         """Deliver summary to configured destinations.
 
+        CS-008: Uses strategy pattern for extensible delivery handling.
+
         Args:
             summary: Summary result to deliver
             destinations: List of delivery destinations
@@ -600,6 +644,9 @@ class TaskExecutor:
             List of delivery results
         """
         delivery_results = []
+
+        # CS-008: Create delivery context adapter
+        context = TaskDeliveryContext(task=task, discord_client=self.discord_client)
 
         for destination in destinations:
             if not destination.enabled:
@@ -612,42 +659,24 @@ class TaskExecutor:
             )
 
             try:
-                if destination.type == DestinationType.DISCORD_CHANNEL:
-                    result = await self._deliver_to_discord(
-                        summary=summary,
-                        channel_id=destination.target,
-                        format_type=destination.format,
-                        task=task  # ADR-014: Pass task for template context
-                    )
-                    delivery_results.append(result)
+                # CS-008: Look up strategy from registry
+                strategy = self._delivery_strategies.get(destination.type)
 
-                elif destination.type == DestinationType.WEBHOOK:
-                    result = await self._deliver_to_webhook(
-                        summary=summary,
-                        webhook_url=destination.target,
-                        format_type=destination.format
-                    )
-                    delivery_results.append(result)
-
-                elif destination.type == DestinationType.DASHBOARD:
-                    # ADR-005: Store summary in dashboard for viewing
-                    result = await self._deliver_to_dashboard(
+                if strategy:
+                    result = await strategy.deliver(
                         summary=summary,
                         destination=destination,
-                        task=task
+                        context=context,
                     )
-                    delivery_results.append(result)
-
-                elif destination.type == DestinationType.EMAIL:
-                    # ADR-030: Email delivery
-                    result = await self._deliver_to_email(
-                        summary=summary,
-                        destination=destination,
-                        task=task
-                    )
-                    delivery_results.append(result)
-
-                # Other destination types would be implemented here
+                    delivery_results.append(result.to_dict())
+                else:
+                    logger.warning(f"No delivery strategy for type: {destination.type.value}")
+                    delivery_results.append({
+                        "destination_type": destination.type.value,
+                        "target": destination.target,
+                        "success": False,
+                        "error": f"Unsupported destination type: {destination.type.value}"
+                    })
 
             except Exception as e:
                 # ADR-031: Log delivery failure with full context
@@ -684,412 +713,8 @@ class TaskExecutor:
 
         return delivery_results
 
-    async def _deliver_to_discord(self,
-                                 summary: SummaryResult,
-                                 channel_id: str,
-                                 format_type: str,
-                                 task: Optional[SummaryTask] = None) -> Dict[str, Any]:
-        """Deliver summary to Discord channel.
-
-        ADR-014: Supports template-based delivery with thread creation.
-
-        Args:
-            summary: Summary to deliver
-            channel_id: Discord channel ID
-            format_type: Format (embed, markdown, template, thread)
-            task: Summary task for context (ADR-014)
-
-        Returns:
-            Delivery result
-        """
-        if not self.discord_client:
-            return {
-                "destination_type": "discord_channel",
-                "target": channel_id,
-                "success": False,
-                "error": "Discord client not available"
-            }
-
-        try:
-            channel = self.discord_client.get_channel(int(channel_id))
-            if not channel:
-                channel = await self.discord_client.fetch_channel(int(channel_id))
-
-            # ADR-014: Template-based delivery with thread support
-            if format_type in ("template", "thread"):
-                return await self._deliver_with_template(
-                    summary=summary,
-                    channel=channel,
-                    task=task,
-                )
-
-            elif format_type == "embed":
-                embed_dict = summary.to_embed_dict()
-                embed = discord.Embed.from_dict(embed_dict)
-                await channel.send(embed=embed)
-
-            elif format_type == "markdown":
-                markdown = summary.to_markdown()
-                # Split if too long
-                if len(markdown) > 2000:
-                    chunks = [markdown[i:i+2000] for i in range(0, len(markdown), 2000)]
-                    for chunk in chunks:
-                        await channel.send(chunk)
-                else:
-                    await channel.send(markdown)
-
-            else:
-                await channel.send(f"Summary generated: {summary.summary_text[:500]}...")
-
-            return {
-                "destination_type": "discord_channel",
-                "target": channel_id,
-                "success": True,
-                "message": "Delivered successfully"
-            }
-
-        except Exception as e:
-            logger.exception(f"Failed to deliver to Discord channel {channel_id}: {e}")
-            return {
-                "destination_type": "discord_channel",
-                "target": channel_id,
-                "success": False,
-                "error": str(e)
-            }
-
-    async def _deliver_with_template(self,
-                                     summary: SummaryResult,
-                                     channel: discord.TextChannel,
-                                     task: Optional[SummaryTask] = None) -> Dict[str, Any]:
-        """Deliver summary using ADR-014 template-based formatting with threads.
-
-        Args:
-            summary: Summary to deliver
-            channel: Discord channel
-            task: Summary task for context
-
-        Returns:
-            Delivery result with thread info
-        """
-        from ..services.push_message_builder import (
-            send_with_template, PushContext,
-        )
-        from ..data.push_template_repository import get_push_template_repository
-
-        try:
-            # Get guild-specific template (or default)
-            guild_id = str(channel.guild.id) if channel.guild else None
-            if guild_id:
-                repo = await get_push_template_repository()
-                template = await repo.get_template(guild_id)
-            else:
-                from ..models.push_template import DEFAULT_PUSH_TEMPLATE
-                template = DEFAULT_PUSH_TEMPLATE
-
-            # Build push context from task and summary
-            context = PushContext(
-                guild_id=guild_id or "",
-                start_time=summary.start_time,
-                end_time=summary.end_time,
-                message_count=summary.message_count,
-                participant_count=len(summary.participants) if summary.participants else 0,
-            )
-
-            # Extract channel names from task if available
-            if task:
-                channel_ids = task.get_all_channel_ids()
-                channel_names = []
-                for cid in channel_ids[:5]:  # Limit to first 5
-                    try:
-                        ch = self.discord_client.get_channel(int(cid))
-                        if ch:
-                            channel_names.append(ch.name)
-                    except Exception:
-                        pass
-                context.channel_names = channel_names if channel_names else [channel.name]
-
-                # Check scope for server-wide or category summaries
-                if task.scheduled_task and task.scheduled_task.scope:
-                    scope = task.scheduled_task.scope
-                    if scope == SummaryScope.GUILD:
-                        context.is_server_wide = True
-                    elif scope == SummaryScope.CATEGORY:
-                        context.category_name = getattr(task.scheduled_task, 'category_name', None)
-            else:
-                context.channel_names = [channel.name]
-
-            # Send with template (handles thread creation)
-            result = await send_with_template(
-                channel=channel,
-                summary=summary,
-                context=context,
-                template=template,
-                discord_client=self.discord_client,
-            )
-
-            logger.info(
-                f"Delivered summary to channel {channel.id} with template "
-                f"(thread_created={result.get('thread_created', False)})"
-            )
-
-            return {
-                "destination_type": "discord_channel",
-                "target": str(channel.id),
-                "success": result.get("success", False),
-                "message": "Delivered with template" if result.get("success") else result.get("error"),
-                "thread_created": result.get("thread_created", False),
-                "thread_id": result.get("thread_id"),
-                "message_ids": result.get("message_ids", []),
-            }
-
-        except Exception as e:
-            logger.exception(f"Failed to deliver with template to channel {channel.id}: {e}")
-            return {
-                "destination_type": "discord_channel",
-                "target": str(channel.id),
-                "success": False,
-                "error": str(e)
-            }
-
-    async def _deliver_to_webhook(self,
-                                 summary: SummaryResult,
-                                 webhook_url: str,
-                                 format_type: str) -> Dict[str, Any]:
-        """Deliver summary to webhook.
-
-        Args:
-            summary: Summary to deliver
-            webhook_url: Webhook URL
-            format_type: Format (json, markdown, etc.)
-
-        Returns:
-            Delivery result
-        """
-        # Placeholder - would use aiohttp or similar
-        logger.info(f"Would deliver to webhook: {webhook_url}")
-
-        return {
-            "destination_type": "webhook",
-            "target": webhook_url,
-            "success": True,
-            "message": "Webhook delivery not yet implemented"
-        }
-
-    async def _deliver_to_email(self,
-                               summary: SummaryResult,
-                               destination: Destination,
-                               task: SummaryTask) -> Dict[str, Any]:
-        """Deliver summary via email (ADR-030).
-
-        Args:
-            summary: Summary to deliver
-            destination: Email destination with recipients
-            task: Original summary task for context
-
-        Returns:
-            Delivery result dict
-        """
-        from ..services.email_delivery import get_email_service, EmailContext
-
-        try:
-            service = get_email_service()
-            if not service.is_configured():
-                logger.warning("Email delivery requested but SMTP not configured")
-                return {
-                    "destination_type": "email",
-                    "target": destination.target,
-                    "success": False,
-                    "error": "SMTP not configured. Set SMTP_ENABLED=true and configure SMTP_* env vars."
-                }
-
-            # Parse recipients from target
-            recipients = service.parse_recipients(destination.target)
-            if not recipients:
-                return {
-                    "destination_type": "email",
-                    "target": destination.target,
-                    "success": False,
-                    "error": "No valid email addresses in destination"
-                }
-
-            # Build email context from task
-            channel_names = []
-            if self.discord_client:
-                for channel_id in task.get_all_channel_ids()[:5]:
-                    try:
-                        channel = self.discord_client.get_channel(int(channel_id))
-                        if channel:
-                            channel_names.append(channel.name)
-                    except Exception:
-                        pass
-
-            # Determine scope
-            is_server_wide = False
-            category_name = None
-            if task.scheduled_task and task.scheduled_task.scope:
-                scope = task.scheduled_task.scope
-                if scope == SummaryScope.GUILD:
-                    is_server_wide = True
-                elif scope == SummaryScope.CATEGORY:
-                    category_name = getattr(task.scheduled_task, 'category_name', None)
-
-            context = EmailContext(
-                guild_name=f"Guild {task.guild_id}",
-                channel_names=channel_names,
-                category_name=category_name,
-                is_server_wide=is_server_wide,
-                start_time=summary.start_time,
-                end_time=summary.end_time,
-                message_count=summary.message_count,
-                participant_count=len(summary.participants) if summary.participants else 0,
-                schedule_name=task.scheduled_task.name if task.scheduled_task else None,
-            )
-
-            # Send email
-            result = await service.send_summary(
-                summary=summary,
-                recipients=recipients,
-                context=context,
-                guild_id=task.guild_id,
-            )
-
-            if result.success:
-                logger.info(f"Email delivered to {len(result.recipients_sent)} recipient(s)")
-                return {
-                    "destination_type": "email",
-                    "target": destination.target,
-                    "success": True,
-                    "message": f"Sent to {len(result.recipients_sent)} recipient(s)",
-                    "details": {
-                        "recipients_sent": result.recipients_sent,
-                        "recipients_failed": result.recipients_failed,
-                    }
-                }
-            else:
-                return {
-                    "destination_type": "email",
-                    "target": destination.target,
-                    "success": False,
-                    "error": result.error or "Unknown error"
-                }
-
-        except Exception as e:
-            logger.exception(f"Failed to deliver email: {e}")
-            return {
-                "destination_type": "email",
-                "target": destination.target,
-                "success": False,
-                "error": str(e)
-            }
-
-    async def _deliver_to_dashboard(self,
-                                   summary: SummaryResult,
-                                   destination: Destination,
-                                   task: SummaryTask) -> Dict[str, Any]:
-        """Deliver summary to dashboard for viewing (ADR-005).
-
-        Stores the summary in the database for viewing in the dashboard UI.
-        Users can later push this summary to Discord channels on demand.
-
-        Args:
-            summary: Summary result to store
-            destination: Dashboard destination configuration
-            task: Original summary task
-
-        Returns:
-            Delivery result with stored summary ID
-        """
-        try:
-            from ..data.repositories import get_stored_summary_repository
-
-            # Get channels that actually had content (from metadata) vs requested scope
-            scope_channel_ids = task.get_all_channel_ids()
-            channels_with_content = (
-                summary.metadata.get("channels_with_content", scope_channel_ids)
-                if summary.metadata else scope_channel_ids
-            )
-
-            # Build channel names from channels WITH CONTENT only
-            channel_names = []
-            if self.discord_client:
-                for channel_id in channels_with_content:
-                    try:
-                        channel = self.discord_client.get_channel(int(channel_id))
-                        if channel:
-                            channel_names.append(f"#{channel.name}")
-                        else:
-                            channel_names.append(f"Channel {channel_id}")
-                    except Exception:
-                        channel_names.append(f"Channel {channel_id}")
-            else:
-                channel_names = [f"Channel {cid}" for cid in channels_with_content]
-
-            # Generate smart title based on scope and content
-            timestamp = datetime.utcnow().strftime('%b %d, %H:%M')
-            scope_type = summary.metadata.get("scope_type") if summary.metadata else None
-
-            if scope_type == "guild" or len(scope_channel_ids) > 10:
-                # Server-wide summary - use count instead of listing all
-                if len(channel_names) > 3:
-                    title = f"Server Summary ({len(channel_names)} channels) — {timestamp}"
-                elif channel_names:
-                    title = f"{', '.join(channel_names)} — {timestamp}"
-                else:
-                    title = f"Server Summary — {timestamp}"
-            elif scope_type == "category":
-                # Category summary
-                category_name = task.scheduled_task.category_name if hasattr(task.scheduled_task, 'category_name') else None
-                if category_name:
-                    title = f"📁 {category_name} ({len(channel_names)} channels) — {timestamp}"
-                elif len(channel_names) > 3:
-                    title = f"Category Summary ({len(channel_names)} channels) — {timestamp}"
-                else:
-                    title = f"{', '.join(channel_names)} — {timestamp}"
-            else:
-                # Channel-specific summary
-                if len(channel_names) > 5:
-                    title = f"{', '.join(channel_names[:3])} +{len(channel_names)-3} more — {timestamp}"
-                elif channel_names:
-                    title = f"{', '.join(channel_names)} — {timestamp}"
-                else:
-                    title = f"Summary — {timestamp}"
-
-            # Create stored summary with SCHEDULED source
-            from ..models.stored_summary import SummarySource
-            stored_summary = StoredSummary(
-                guild_id=task.guild_id,
-                source_channel_ids=scope_channel_ids,  # Store full scope for reference
-                schedule_id=task.scheduled_task.id,
-                summary_result=summary,
-                title=title,
-                source=SummarySource.SCHEDULED,
-            )
-
-            # Persist to database
-            stored_summary_repo = await get_stored_summary_repository()
-            await stored_summary_repo.save(stored_summary)
-
-            logger.info(f"Stored summary {stored_summary.id} in dashboard for guild {task.guild_id}")
-
-            return {
-                "destination_type": "dashboard",
-                "target": "dashboard",
-                "success": True,
-                "message": "Stored in dashboard",
-                "details": {
-                    "summary_id": stored_summary.id,
-                    "title": title
-                }
-            }
-
-        except Exception as e:
-            logger.exception(f"Failed to store summary in dashboard: {e}")
-            return {
-                "destination_type": "dashboard",
-                "target": "dashboard",
-                "success": False,
-                "error": str(e)
-            }
+    # CS-008: Old delivery methods removed - now using delivery strategy pattern
+    # See src/scheduling/delivery/ for strategy implementations
 
     async def _send_failure_notification(self,
                                         task: ScheduledTask,

@@ -269,8 +269,9 @@ class SummarizeCommandHandler(BaseCommandHandler):
                     f"❌ Failed to create summary: {str(e)}",
                     ephemeral=True
                 )
-            except:
-                pass
+            except Exception as followup_error:
+                # SEC-005: Log the error instead of silently swallowing
+                logger.warning(f"Failed to send error followup: {followup_error}")
 
     async def fetch_messages(self, channel: discord.TextChannel, limit: int = 100) -> list[discord.Message]:
         """

@@ -325,7 +325,8 @@ class ScheduleCommandHandler(BaseCommandHandler):
                         try:
                             ch = interaction.guild.get_channel(int(cid))
                             channel_mentions.append(ch.mention if ch else f"`{cid}`")
-                        except:
+                        except (ValueError, AttributeError):
+                            # SEC-005: Specific exceptions for channel resolution
                             channel_mentions.append(f"`{cid}`")
                     channel_name = ", ".join(channel_mentions)
                     if len(channel_ids) > 3:

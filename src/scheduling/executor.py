@@ -218,8 +218,9 @@ class TaskExecutor:
                         channel = self.discord_client.get_channel(int(channel_id))
                         if channel:
                             channel_name = f"#{channel.name}"
-                    except:
-                        pass
+                    except (ValueError, AttributeError) as e:
+                        # SEC-005: Log channel resolution errors at debug level
+                        logger.debug(f"Could not resolve channel {channel_id}: {e}")
 
                 # Create summarization context
                 context = SummarizationContext(
@@ -336,7 +337,9 @@ class TaskExecutor:
                             channel_names.append(f"#{channel.name}")
                         else:
                             channel_names.append(f"Channel {channel_id}")
-                    except:
+                    except (ValueError, AttributeError) as e:
+                        # SEC-005: Log channel resolution errors at debug level
+                        logger.debug(f"Could not resolve channel {channel_id}: {e}")
                         channel_names.append(f"Channel {channel_id}")
                 else:
                     channel_names.append(f"Channel {channel_id}")

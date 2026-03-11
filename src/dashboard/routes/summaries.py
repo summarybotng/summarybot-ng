@@ -1509,7 +1509,9 @@ async def regenerate_stored_summary(
         try:
             guild = _get_guild_or_404(guild_id)
             bot = get_discord_bot()
-        except:
+        except Exception as e:
+            # SEC-005: Log Discord access failure
+            logger.debug(f"Discord access failed for guild {guild_id}: {e}")
             can_use_discord = False
             if not has_source_content:
                 raise HTTPException(
@@ -1594,7 +1596,8 @@ async def regenerate_stored_summary(
 
                             try:
                                 timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M')
-                            except:
+                            except ValueError:
+                                # SEC-005: Specific exception for date parsing
                                 timestamp = stored.created_at or datetime.utcnow()
 
                             processed.append(ProcessedMessage(

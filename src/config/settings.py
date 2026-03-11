@@ -69,11 +69,16 @@ class SummaryOptions:
 
 @dataclass
 class PermissionSettings:
-    """Permission configuration for a guild."""
+    """Permission configuration for a guild.
+
+    Note: FUNC-002 fix - require_permissions defaults to False to prevent
+    new guilds from being locked out. Admins can enable permission checks
+    after configuring allowed_roles/allowed_users.
+    """
     allowed_roles: List[str] = field(default_factory=list)
     allowed_users: List[str] = field(default_factory=list)
     admin_roles: List[str] = field(default_factory=list)
-    require_permissions: bool = True
+    require_permissions: bool = False  # FUNC-002: Default False to prevent lockout
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -163,13 +168,18 @@ class SMTPConfig:
 
 @dataclass
 class WebhookConfig:
-    """Webhook server configuration."""
+    """Webhook server configuration.
+
+    SEC-001: jwt_secret must be set explicitly - no default.
+    The application will fail to start in production if not set.
+    """
     host: str = "0.0.0.0"
     port: int = 5000
     enabled: bool = True
     cors_origins: List[str] = field(default_factory=list)
     rate_limit: int = 100  # requests per minute
-    jwt_secret: str = "change-this-in-production"  # JWT secret for token signing
+    # SEC-001: Empty default - must be configured. Validation in auth.py
+    jwt_secret: str = ""
     jwt_expiration_minutes: int = 60
     api_keys: Dict[str, str] = field(default_factory=dict)  # API key -> user_id mapping
     

@@ -35,8 +35,29 @@ def create_dashboard_router(
     client_id = os.environ.get("DISCORD_CLIENT_ID")
     client_secret = os.environ.get("DISCORD_CLIENT_SECRET")
     redirect_uri = os.environ.get("DISCORD_REDIRECT_URI", "http://localhost:3000/callback")
-    jwt_secret = os.environ.get("DASHBOARD_JWT_SECRET", os.environ.get("JWT_SECRET", "change-in-production"))
+    jwt_secret = os.environ.get("DASHBOARD_JWT_SECRET", os.environ.get("JWT_SECRET", ""))
     encryption_key = os.environ.get("DASHBOARD_ENCRYPTION_KEY")
+
+    # SEC-001: Validate JWT secret
+    environment = os.environ.get("ENVIRONMENT", "development").lower()
+    insecure_secrets = {
+        "change-in-production", "change-this-in-production",
+        "your-secret-key-change-in-production", "secret", "changeme", ""
+    }
+    if jwt_secret.lower() in insecure_secrets:
+        if environment == "production":
+            raise RuntimeError(
+                "DASHBOARD_JWT_SECRET is required in production. "
+                "Please set a strong, random secret in your environment."
+            )
+        else:
+            logger.warning(
+                "DASHBOARD_JWT_SECRET not set or using insecure default. "
+                "This is acceptable for development but MUST be changed for production."
+            )
+            # Generate a temporary secret for development
+            import secrets as secrets_module
+            jwt_secret = secrets_module.token_urlsafe(32)
 
     if not client_id or not client_secret:
         logger.warning(

@@ -589,8 +589,24 @@ async def get_current_user(
     # Two levels of access:
     #   - TEST_AUTH_ADMIN_SECRET: Admin-level access (can use admin-only endpoints like email)
     #   - TEST_AUTH_SECRET: User-level access (read-only, member permissions)
+    #
+    # SEC-002: Only allow test bypass in non-production environments or when TESTING=true
     provided_key = request.headers.get("X-Test-Auth-Key")
     if provided_key:
+        environment = os.getenv("ENVIRONMENT", "development").lower()
+        testing_enabled = os.getenv("TESTING", "").lower() in ("true", "1", "yes")
+
+        # Block test auth in production unless explicitly testing
+        if environment == "production" and not testing_enabled:
+            logger.warning(
+                "Test auth bypass attempted in production without TESTING=true. "
+                f"Client IP: {request.client.host if request.client else 'unknown'}"
+            )
+            raise HTTPException(
+                status_code=401,
+                detail={"code": "UNAUTHORIZED", "message": "Test authentication not available in production"},
+            )
+
         admin_secret = os.getenv("TEST_AUTH_ADMIN_SECRET")
         user_secret = os.getenv("TEST_AUTH_SECRET")
 

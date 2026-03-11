@@ -124,8 +124,9 @@ class CommandRegistry:
                         f"❌ An error occurred: {str(e)}",
                         ephemeral=True
                     )
-                except:
-                    pass
+                except Exception as followup_error:
+                    # SEC-005: Log the error instead of silently swallowing
+                    logger.warning(f"Failed to send error followup: {followup_error}")
 
         # Register /schedule command group
         schedule_group = discord.app_commands.Group(

@@ -20,9 +20,19 @@ from ..config.settings import BotConfig
 logger = logging.getLogger(__name__)
 
 # JWT configuration (will be overridden by config)
-JWT_SECRET = "your-secret-key-change-in-production"
+# SEC-001: Default is None - MUST be set via config before use
+JWT_SECRET: str | None = None
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_MINUTES = 60
+
+# Known insecure default values that must not be used in production
+_INSECURE_SECRETS = {
+    "your-secret-key-change-in-production",
+    "change-this-in-production",
+    "change-in-production",
+    "secret",
+    "changeme",
+}
 
 # Rate limiting storage (in-memory for now)
 _rate_limit_store: Dict[str, list] = {}
@@ -36,10 +46,46 @@ def set_config(config: BotConfig) -> None:
 
     Args:
         config: Bot configuration
+
+    Raises:
+        ValueError: If JWT secret is missing or insecure in production
     """
     global _config, JWT_SECRET, JWT_EXPIRATION_MINUTES
     _config = config
-    JWT_SECRET = config.webhook_config.jwt_secret
+
+    import os
+    environment = os.getenv("ENVIRONMENT", "development").lower()
+    testing_enabled = os.getenv("TESTING", "").lower() in ("true", "1", "yes")
+
+    # SEC-001: Validate JWT secret is set and not an insecure default
+    jwt_secret = config.webhook_config.jwt_secret
+    if not jwt_secret:
+        if environment == "production" and not testing_enabled:
+            raise ValueError(
+                "WEBHOOK_JWT_SECRET is required but not set. "
+                "Please set a strong, random secret in your environment."
+            )
+        else:
+            # Generate a temporary secret for development/testing
+            import secrets as secrets_module
+            jwt_secret = secrets_module.token_urlsafe(32)
+            logger.warning(
+                "WEBHOOK_JWT_SECRET not set - using generated temporary secret. "
+                "This is acceptable for development/testing but MUST be configured for production."
+            )
+    elif jwt_secret.lower() in _INSECURE_SECRETS:
+        if environment == "production" and not testing_enabled:
+            raise ValueError(
+                f"WEBHOOK_JWT_SECRET is set to an insecure default value. "
+                "Please set a strong, random secret for production use."
+            )
+        else:
+            logger.warning(
+                "WEBHOOK_JWT_SECRET is using an insecure default value. "
+                "This is acceptable for development but MUST be changed for production."
+            )
+
+    JWT_SECRET = jwt_secret
     JWT_EXPIRATION_MINUTES = config.webhook_config.jwt_expiration_minutes
 
 
@@ -94,9 +140,21 @@ async def get_api_key_auth(
                     detail="Invalid API key"
                 )
         else:
-            # If no API keys configured, accept any valid format for development
-            user_id = "api-user"
-            logger.warning("No API keys configured - accepting any valid key format")
+            # SEC-003: Fail closed - reject all requests when no API keys configured
+            import os
+            environment = os.getenv("ENVIRONMENT", "development").lower()
+            if environment == "production":
+                raise HTTPException(
+                    status_code=401,
+                    detail="API authentication not configured. Contact administrator."
+                )
+            else:
+                # Allow development mode to continue with warning
+                user_id = "api-user"
+                logger.warning(
+                    "No API keys configured - accepting any valid key format. "
+                    "This is only allowed in non-production environments."
+                )
 
         return APIKeyAuth(
             api_key=x_api_key,
@@ -289,12 +347,20 @@ def setup_rate_limiting(app, rate_limit: int = 100):
         request_count = len(_rate_limit_store[client_id])
 
         if request_count >= rate_limit:
-            return HTTPException(
+            # SEC-004: Return JSONResponse instead of returning HTTPException object
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
                 status_code=429,
-                detail={
+                content={
                     "error": "RATE_LIMIT_EXCEEDED",
                     "message": f"Rate limit of {rate_limit} requests per minute exceeded",
                     "retry_after": 60
+                },
+                headers={
+                    "Retry-After": "60",
+                    "X-RateLimit-Limit": str(rate_limit),
+                    "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Reset": str((current_minute + 1) * 60)
                 }
             )
 

@@ -13,9 +13,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient, ASGITransport
 
 from src.webhook_service.server import WebhookServer
-from src.container import ServiceContainer
 from src.config.settings import BotConfig, WebhookConfig
 from src.models.summary import SummaryOptions, SummaryLength
+from src.summarization.engine import SummarizationEngine
 
 
 @pytest.mark.integration
@@ -25,9 +25,8 @@ class TestWebhookAPIIntegration:
     @pytest_asyncio.fixture
     async def real_webhook_server(self, mock_config):
         """Create real webhook server with mocked external dependencies."""
-        # Mock Claude client BEFORE creating container
-        mock_instance = AsyncMock()
-        mock_instance.create_summary.return_value = MagicMock(
+        mock_claude = AsyncMock()
+        mock_claude.create_summary.return_value = MagicMock(
             content="Test API summary content",
             model="claude-3-5-sonnet-20241022",
             input_tokens=1000,
@@ -35,32 +34,30 @@ class TestWebhookAPIIntegration:
             total_tokens=1200,
             response_id="test_api_response_123"
         )
-        # Make health_check async return True
+
         async def mock_health_check():
             return True
-        mock_instance.health_check = mock_health_check
+        mock_claude.health_check = mock_health_check
 
-        # Make get_usage_stats return a proper object
-        mock_instance.get_usage_stats.return_value = MagicMock(
+        mock_claude.get_usage_stats.return_value = MagicMock(
             to_dict=lambda: {"total_requests": 1, "total_tokens": 1200}
         )
 
-        with patch('src.container.ClaudeClient') as mock_claude_class:
-            mock_claude_class.return_value = mock_instance
+        # Create engine directly with mocked Claude client
+        engine = SummarizationEngine(
+            claude_client=mock_claude,
+            cache=None
+        )
 
-            # Create service container with mocked Claude
-            container = ServiceContainer(mock_config)
-            await container.initialize()
+        # Create webhook server
+        server = WebhookServer(
+            config=mock_config,
+            summarization_engine=engine
+        )
 
-            # Create webhook server
-            server = WebhookServer(
-                config=mock_config,
-                summarization_engine=container.summarization_engine
-            )
+        yield server
 
-            yield server
-
-            await container.cleanup()
+        await mock_claude.close() if hasattr(mock_claude, 'close') else None
 
     @pytest.mark.asyncio
     async def test_health_check_endpoint(self, real_webhook_server):
@@ -318,9 +315,8 @@ class TestWebhookDatabaseIntegration:
     @pytest_asyncio.fixture
     async def real_webhook_server(self, mock_config):
         """Create real webhook server with mocked external dependencies."""
-        # Mock Claude client BEFORE creating container
-        mock_instance = AsyncMock()
-        mock_instance.create_summary.return_value = MagicMock(
+        mock_claude = AsyncMock()
+        mock_claude.create_summary.return_value = MagicMock(
             content="Test API summary content",
             model="claude-3-5-sonnet-20241022",
             input_tokens=1000,
@@ -328,32 +324,30 @@ class TestWebhookDatabaseIntegration:
             total_tokens=1200,
             response_id="test_api_response_123"
         )
-        # Make health_check async return True
+
         async def mock_health_check():
             return True
-        mock_instance.health_check = mock_health_check
+        mock_claude.health_check = mock_health_check
 
-        # Make get_usage_stats return a proper object
-        mock_instance.get_usage_stats.return_value = MagicMock(
+        mock_claude.get_usage_stats.return_value = MagicMock(
             to_dict=lambda: {"total_requests": 1, "total_tokens": 1200}
         )
 
-        with patch('src.container.ClaudeClient') as mock_claude_class:
-            mock_claude_class.return_value = mock_instance
+        # Create engine directly with mocked Claude client
+        engine = SummarizationEngine(
+            claude_client=mock_claude,
+            cache=None
+        )
 
-            # Create service container with mocked Claude
-            container = ServiceContainer(mock_config)
-            await container.initialize()
+        # Create webhook server
+        server = WebhookServer(
+            config=mock_config,
+            summarization_engine=engine
+        )
 
-            # Create webhook server
-            server = WebhookServer(
-                config=mock_config,
-                summarization_engine=container.summarization_engine
-            )
+        yield server
 
-            yield server
-
-            await container.cleanup()
+        await mock_claude.close() if hasattr(mock_claude, 'close') else None
 
     @pytest.mark.asyncio
     async def test_summary_persistence(self, real_webhook_server, sample_messages):

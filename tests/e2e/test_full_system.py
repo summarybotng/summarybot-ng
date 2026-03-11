@@ -14,8 +14,8 @@ from httpx import AsyncClient, ASGITransport
 
 from src.discord_bot.bot import SummaryBot
 from src.webhook_service.server import WebhookServer
-from src.container import ServiceContainer
 from src.config.settings import BotConfig
+from src.summarization.engine import SummarizationEngine
 
 
 @pytest.mark.e2e
@@ -26,12 +26,8 @@ class TestFullSystemIntegration:
     @pytest_asyncio.fixture
     async def full_system(self, mock_config):
         """Setup complete system with bot and webhook server."""
-        # Create service container
-        container = ServiceContainer(mock_config)
-
         # Mock external dependencies
-        with patch('src.summarization.claude_client.ClaudeClient') as mock_claude, \
-             patch('discord.Client') as mock_discord:
+        with patch('discord.Client') as mock_discord:
 
             # Setup Claude API mock
             claude_instance = AsyncMock()
@@ -49,7 +45,6 @@ class TestFullSystemIntegration:
                 total_tokens=0,
                 to_dict=lambda: {"total_requests": 0, "total_tokens": 0}
             )
-            mock_claude.return_value = claude_instance
 
             # Setup Discord client mock
             discord_instance = AsyncMock()
@@ -58,41 +53,43 @@ class TestFullSystemIntegration:
             discord_instance.guilds = []
             mock_discord.return_value = discord_instance
 
-            # Initialize container
-            await container.initialize()
+            # Create engine directly
+            engine = SummarizationEngine(
+                claude_client=claude_instance,
+                cache=None
+            )
 
             # Create bot
             bot = SummaryBot(
                 config=mock_config,
-                services={'container': container}
+                services={'summarization_engine': engine}
             )
 
             # Create webhook server
             webhook_server = WebhookServer(
                 config=mock_config,
-                summarization_engine=container.summarization_engine
+                summarization_engine=engine
             )
 
             yield {
-                'container': container,
+                'engine': engine,
                 'bot': bot,
                 'webhook': webhook_server,
                 'claude_client': claude_instance
             }
 
             # Cleanup
-            await container.cleanup()
+            await claude_instance.close() if hasattr(claude_instance, 'close') else None
 
     @pytest.mark.asyncio
     async def test_system_startup(self, full_system):
         """Test that all system components start up correctly."""
-        container = full_system['container']
+        engine = full_system['engine']
         bot = full_system['bot']
         webhook = full_system['webhook']
 
-        # Verify container is initialized
-        assert container is not None
-        assert container.summarization_engine is not None
+        # Verify engine is initialized
+        assert engine is not None
 
         # Verify bot is configured
         assert bot is not None
@@ -106,12 +103,12 @@ class TestFullSystemIntegration:
     @pytest.mark.asyncio
     async def test_shared_service_access(self, full_system):
         """Test that bot and webhook share the same service instances."""
-        container = full_system['container']
+        engine = full_system['engine']
         bot = full_system['bot']
         webhook = full_system['webhook']
 
         # Both should access the same summarization engine
-        assert webhook.summarization_engine is container.summarization_engine
+        assert webhook.summarization_engine is engine
 
         # Both should use the same configuration
         assert bot.config == webhook.config
@@ -124,7 +121,7 @@ class TestFullSystemIntegration:
     ):
         """Test bot and webhook handling requests concurrently."""
         webhook = full_system['webhook']
-        container = full_system['container']
+        engine = full_system['engine']
 
         # Prepare webhook request
         messages_data = [
@@ -163,7 +160,7 @@ class TestFullSystemIntegration:
             import discord
 
             handler = SummarizeCommandHandler(
-                summarization_engine=container.summarization_engine
+                summarization_engine=engine
             )
 
             interaction = AsyncMock(spec=discord.Interaction)
@@ -239,7 +236,6 @@ class TestFullSystemIntegration:
     @pytest.mark.asyncio
     async def test_graceful_shutdown(self, full_system):
         """Test graceful shutdown of all system components."""
-        container = full_system['container']
         bot = full_system['bot']
         webhook = full_system['webhook']
 
@@ -252,16 +248,12 @@ class TestFullSystemIntegration:
         if bot.is_running:
             await bot.stop()
 
-        # 3. Cleanup container
-        await container.cleanup()
-
         # Verify cleanup
         assert not bot.is_running
 
     @pytest.mark.asyncio
     async def test_error_isolation(self, full_system):
         """Test that errors in one component don't crash others."""
-        container = full_system['container']
         webhook = full_system['webhook']
 
         # Simulate error in one request
@@ -289,15 +281,15 @@ class TestFullSystemIntegration:
     @pytest.mark.asyncio
     async def test_resource_cleanup_on_error(self, full_system):
         """Test that resources are cleaned up properly after errors."""
-        container = full_system['container']
+        engine = full_system['engine']
 
         # Force an error in the engine
-        original_summarize = container.summarization_engine.summarize_messages
+        original_summarize = engine.summarize_messages
 
         async def failing_summarize(*args, **kwargs):
             raise Exception("Simulated failure")
 
-        container.summarization_engine.summarize_messages = failing_summarize
+        engine.summarize_messages = failing_summarize
 
         # Try to use the service
         from src.models.message import ProcessedMessage
@@ -317,7 +309,7 @@ class TestFullSystemIntegration:
         ] * 10
 
         with pytest.raises(Exception):
-            await container.summarization_engine.summarize_messages(
+            await engine.summarize_messages(
                 messages=messages,
                 options=SummaryOptions(),
                 context=SummarizationContext(),
@@ -326,10 +318,10 @@ class TestFullSystemIntegration:
             )
 
         # Restore original method
-        container.summarization_engine.summarize_messages = original_summarize
+        engine.summarize_messages = original_summarize
 
-        # System should still be functional
-        health = await container.health_check()
+        # System should still be functional (engine doesn't have health_check but Claude client does)
+        health = await engine.health_check()
         assert health is not None
 
 

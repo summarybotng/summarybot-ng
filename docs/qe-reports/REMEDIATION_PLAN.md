@@ -254,12 +254,12 @@ This plan addresses 10 critical stop-ship issues, 20+ high-priority findings, an
 - [x] docker-compose up works without modification - defaults to memory cache
 - [x] LLM calls timeout after 120s max (already implemented)
 
-### Phase 2 Verification (IN PROGRESS)
+### Phase 2 Verification (COMPLETED 2026-03-11)
 - [x] sqlite.py is no longer >2500 LOC (CS-001: COMPLETE - 12 modules, 2,747 LOC total)
 - [x] No method has >15 parameters (CS-002: StoredSummaryFilter dataclass extracts 22 filter params)
 - [x] summary_push.py has single push implementation (CS-006: COMPLETE - unified _push_summary_to_channel, -58 LOC)
 - [x] executor.py uses strategy pattern for delivery (CS-008: COMPLETE - 1,135→760 LOC, -375 lines)
-- [ ] Single DI system (either container.py OR main.py wiring, not both) (CS-014 pending)
+- [x] Single DI system (RepositoryFactory pattern only) (CS-014: COMPLETE - deleted broken container.py)
 
 CS-008 COMPLETE (2026-03-11):
 - src/scheduling/delivery/__init__.py: Package exports (21 LOC)
@@ -284,6 +284,17 @@ CS-001 COMPLETE (2026-03-11):
 - src/data/sqlite/ingest_repository.py: 300 LOC
 - src/data/sqlite/summary_job_repository.py: 239 LOC
 - _sqlite_legacy.py: DELETED (all classes extracted)
+
+CS-014 COMPLETE (2026-03-11):
+- DELETED src/container.py (broken ServiceContainer - tried to instantiate abstract classes)
+- ServiceContainer was only used in 4 test files, not in production code
+- Updated tests to create SummarizationEngine directly with mocked dependencies
+- Production code already uses RepositoryFactory from src/data/repositories/__init__.py
+- Files updated:
+  - tests/integration/test_discord_integration.py
+  - tests/integration/test_webhook_integration.py
+  - tests/e2e/test_full_system.py
+  - tests/e2e/test_full_workflow/test_summarization_workflow.py
 
 ### Phase 3 Verification
 - [ ] permissions/ module has >80% test coverage

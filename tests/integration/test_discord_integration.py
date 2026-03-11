@@ -13,11 +13,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 
 from src.discord_bot.bot import SummaryBot
-from src.container import ServiceContainer
 from src.config.settings import BotConfig, GuildConfig, SummaryOptions
 from src.command_handlers.summarize import SummarizeCommandHandler
 from src.models.summary import SummaryResult
 from src.exceptions import InsufficientContentError, ChannelAccessError
+from src.summarization.engine import SummarizationEngine
 
 
 @pytest.mark.integration
@@ -25,11 +25,10 @@ class TestDiscordBotIntegration:
     """Integration tests for Discord bot startup and lifecycle."""
 
     @pytest_asyncio.fixture
-    async def real_service_container(self, mock_config):
-        """Create real service container with mocked external dependencies."""
-        # Mock Claude client BEFORE creating container
-        mock_instance = AsyncMock()
-        mock_instance.create_summary.return_value = MagicMock(
+    async def summarization_engine(self, mock_config):
+        """Create summarization engine with mocked Claude client."""
+        mock_claude = AsyncMock()
+        mock_claude.create_summary.return_value = MagicMock(
             content="Test summary content",
             model="claude-3-5-sonnet-20241022",
             input_tokens=1000,
@@ -37,30 +36,26 @@ class TestDiscordBotIntegration:
             total_tokens=1200,
             response_id="test_response_123"
         )
-        # Make health_check async return True
+
         async def mock_health_check():
             return True
-        mock_instance.health_check = mock_health_check
+        mock_claude.health_check = mock_health_check
 
-        # Make get_usage_stats return a proper object
-        mock_instance.get_usage_stats.return_value = MagicMock(
+        mock_claude.get_usage_stats.return_value = MagicMock(
             total_requests=1,
             total_tokens=1200,
             total_cost=0.01,
             to_dict=lambda: {"total_requests": 1, "total_tokens": 1200}
         )
 
-        with patch('src.container.ClaudeClient') as mock_claude_class:
-            mock_claude_class.return_value = mock_instance
+        engine = SummarizationEngine(
+            claude_client=mock_claude,
+            cache=None
+        )
 
-            # Initialize container with mocked Claude
-            container = ServiceContainer(mock_config)
-            await container.initialize()
+        yield engine
 
-            yield container
-
-            # Cleanup
-            await container.cleanup()
+        await mock_claude.close() if hasattr(mock_claude, 'close') else None
 
     @pytest.fixture
     def mock_discord_interaction(self, mock_discord_channel, mock_discord_user):
@@ -88,13 +83,13 @@ class TestDiscordBotIntegration:
         return interaction
 
     @pytest.mark.asyncio
-    async def test_bot_initialization_with_real_container(self, mock_config, real_service_container):
-        """Test bot initializes correctly with real service container."""
-        # Create bot with real container
+    async def test_bot_initialization_with_engine(self, mock_config, summarization_engine):
+        """Test bot initializes correctly with summarization engine."""
+        # Create bot with engine service
         bot = SummaryBot(
             config=mock_config,
             services={
-                'container': real_service_container
+                'summarization_engine': summarization_engine
             }
         )
 
@@ -107,11 +102,11 @@ class TestDiscordBotIntegration:
         assert not bot.is_ready
 
     @pytest.mark.asyncio
-    async def test_command_registration_flow(self, mock_config, real_service_container):
+    async def test_command_registration_flow(self, mock_config, summarization_engine):
         """Test command registration with real command tree."""
         bot = SummaryBot(
             config=mock_config,
-            services={'container': real_service_container}
+            services={'summarization_engine': summarization_engine}
         )
 
         # Setup commands
@@ -125,13 +120,13 @@ class TestDiscordBotIntegration:
     async def test_full_summarize_command_flow(
         self,
         mock_discord_interaction,
-        real_service_container,
+        summarization_engine,
         sample_messages
     ):
         """Test complete summarize command flow from interaction to response."""
-        # Create command handler with real engine
+        # Create command handler with engine
         handler = SummarizeCommandHandler(
-            summarization_engine=real_service_container.summarization_engine
+            summarization_engine=summarization_engine
         )
 
         # Mock message fetching - the actual methods used by handle_summarize
@@ -182,11 +177,11 @@ class TestDiscordBotIntegration:
     async def test_error_propagation_through_layers(
         self,
         mock_discord_interaction,
-        real_service_container
+        summarization_engine
     ):
         """Test that errors propagate correctly through bot layers."""
         handler = SummarizeCommandHandler(
-            summarization_engine=real_service_container.summarization_engine
+            summarization_engine=summarization_engine
         )
 
         # Mock insufficient messages
@@ -227,11 +222,11 @@ class TestDiscordBotIntegration:
     async def test_permission_check_integration(
         self,
         mock_discord_interaction,
-        real_service_container
+        summarization_engine
     ):
         """Test permission checking in command flow."""
         handler = SummarizeCommandHandler(
-            summarization_engine=real_service_container.summarization_engine
+            summarization_engine=summarization_engine
         )
 
         # Mock no read permission
@@ -256,12 +251,12 @@ class TestDiscordBotIntegration:
     async def test_concurrent_command_execution(
         self,
         mock_config,
-        real_service_container,
+        summarization_engine,
         sample_messages
     ):
         """Test handling multiple concurrent command requests."""
         handler = SummarizeCommandHandler(
-            summarization_engine=real_service_container.summarization_engine
+            summarization_engine=summarization_engine
         )
 
         # Create multiple interactions

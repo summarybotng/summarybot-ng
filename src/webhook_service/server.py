@@ -125,6 +125,25 @@ class WebhookServer:
         # GZip compression
         self.app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+        # Phase 4: Security headers middleware
+        @self.app.middleware("http")
+        async def add_security_headers(request: Request, call_next):
+            response = await call_next(request)
+            # Prevent MIME type sniffing
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            # Prevent clickjacking
+            response.headers["X-Frame-Options"] = "DENY"
+            # Enable XSS filter (legacy browsers)
+            response.headers["X-XSS-Protection"] = "1; mode=block"
+            # Referrer policy
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            # Content Security Policy (API-appropriate)
+            response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+            # HSTS (only in production)
+            if os.environ.get("ENVIRONMENT") == "production":
+                response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            return response
+
         # Rate limiting middleware
         setup_rate_limiting(
             self.app,

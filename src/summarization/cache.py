@@ -4,6 +4,7 @@ Summary caching logic for performance optimization.
 
 import json
 import hashlib
+from collections import OrderedDict
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from abc import ABC, abstractmethod
@@ -42,45 +43,50 @@ class CacheInterface(ABC):
 
 
 class MemoryCache(CacheInterface):
-    """Simple in-memory cache implementation."""
-    
+    """Simple in-memory cache implementation with O(1) LRU eviction.
+
+    Phase 4: Uses OrderedDict for O(1) LRU eviction instead of O(n) min() scan.
+    """
+
     def __init__(self, max_size: int = 1000, default_ttl: int = 3600):
         self.max_size = max_size
         self.default_ttl = default_ttl
-        self._cache: Dict[str, Dict[str, Any]] = {}
-    
+        # OrderedDict maintains insertion order, enabling O(1) LRU eviction
+        self._cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+
     async def get(self, key: str) -> Optional[Any]:
-        """Get value by key."""
+        """Get value by key, moving to end for LRU ordering."""
         if key not in self._cache:
             return None
-        
+
         entry = self._cache[key]
-        
+
         # Check expiration
         if entry.get("expires_at") and datetime.utcnow() > entry["expires_at"]:
             del self._cache[key]
             return None
-        
+
+        # Move to end for LRU (most recently used)
+        self._cache.move_to_end(key)
+
         return entry["value"]
     
     async def set(self, key: str, value: Any, ttl: int = None) -> bool:
         """Set value with optional TTL."""
-        # Enforce size limit
+        # Enforce size limit with O(1) LRU eviction
         if len(self._cache) >= self.max_size and key not in self._cache:
-            # Remove oldest entry
-            oldest_key = min(self._cache.keys(), 
-                           key=lambda k: self._cache[k]["created_at"])
-            del self._cache[oldest_key]
-        
+            # Remove oldest entry (first item in OrderedDict) - O(1)
+            self._cache.popitem(last=False)
+
         ttl = ttl or self.default_ttl
         expires_at = datetime.utcnow() + timedelta(seconds=ttl) if ttl > 0 else None
-        
+
         self._cache[key] = {
             "value": value,
             "created_at": datetime.utcnow(),
             "expires_at": expires_at
         }
-        
+
         return True
     
     async def delete(self, key: str) -> bool:
@@ -135,20 +141,22 @@ class SummaryCache:
                                channel_id: str,
                                start_time: datetime,
                                end_time: datetime,
-                               options_hash: str) -> Optional[SummaryResult]:
+                               options_hash: str,
+                               guild_id: str = "") -> Optional[SummaryResult]:
         """Get cached summary if available.
-        
+
         Args:
             channel_id: Discord channel ID
             start_time: Start time of message range
             end_time: End time of message range
             options_hash: Hash of summarization options
-            
+            guild_id: Discord guild ID (Phase 4: for proper cache key lookup)
+
         Returns:
             Cached summary result or None
         """
         cache_key = self._generate_cache_key(
-            channel_id, start_time, end_time, options_hash
+            channel_id, start_time, end_time, options_hash, guild_id
         )
         
         cached_data = await self.backend.get(cache_key)
@@ -163,27 +171,28 @@ class SummaryCache:
             await self.backend.delete(cache_key)
             return None
     
-    async def cache_summary(self, 
-                          summary: SummaryResult, 
+    async def cache_summary(self,
+                          summary: SummaryResult,
                           ttl: int = 3600) -> None:
         """Cache a summary result.
-        
+
         Args:
             summary: Summary result to cache
             ttl: Time to live in seconds
         """
-        # Generate cache key from summary properties
+        # Generate cache key from summary properties (includes guild_id for proper invalidation)
         options_hash = self._hash_summary_options(summary)
         cache_key = self._generate_cache_key(
             summary.channel_id,
             summary.start_time,
             summary.end_time,
-            options_hash
+            options_hash,
+            summary.guild_id  # Phase 4: Include guild_id
         )
-        
+
         # Serialize summary
         cached_data = summary.to_dict()
-        
+
         await self.backend.set(cache_key, cached_data, ttl)
     
     async def invalidate_channel(self, channel_id: str) -> int:
@@ -200,16 +209,19 @@ class SummaryCache:
     
     async def invalidate_guild(self, guild_id: str) -> int:
         """Invalidate all cached summaries for a guild.
-        
+
+        Phase 4: Now properly invalidates only guild-specific entries
+        using the guild_id prefix in cache keys.
+
         Args:
             guild_id: Guild to invalidate
-            
+
         Returns:
             Number of entries removed
         """
-        # This is more complex as we'd need to track guild->channel mappings
-        # For now, just clear all (could be optimized with better key structure)
-        return await self.backend.clear()
+        # Use guild_id prefix to invalidate only this guild's entries
+        pattern = f"summary:{guild_id}:"
+        return await self.backend.clear(pattern)
     
     async def cleanup_expired(self) -> int:
         """Clean up expired cache entries.
@@ -238,24 +250,30 @@ class SummaryCache:
         """Check if cache is healthy."""
         return await self.backend.health_check()
     
-    def _generate_cache_key(self, 
+    def _generate_cache_key(self,
                           channel_id: str,
                           start_time: datetime,
                           end_time: datetime,
-                          options_hash: str) -> str:
-        """Generate cache key for summary."""
+                          options_hash: str,
+                          guild_id: str = "") -> str:
+        """Generate cache key for summary.
+
+        Phase 4: Includes guild_id for proper guild-based invalidation.
+        Key format: summary:{guild_id}:{channel_id}:{start}:{end}:{options}
+        """
         # Use timestamp ranges rounded to nearest hour for better cache hits
         start_hour = start_time.replace(minute=0, second=0, microsecond=0)
         end_hour = end_time.replace(minute=0, second=0, microsecond=0)
-        
+
         key_parts = [
             "summary",
+            guild_id or "unknown",  # Include guild_id for proper invalidation
             channel_id,
             start_hour.strftime("%Y%m%d%H"),
             end_hour.strftime("%Y%m%d%H"),
             options_hash
         ]
-        
+
         return ":".join(key_parts)
     
     def _hash_summary_options(self, summary: SummaryResult) -> str:

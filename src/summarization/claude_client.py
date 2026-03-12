@@ -95,12 +95,23 @@ class ClaudeClient:
     """Client for interacting with Claude API."""
     
     # Token costs per model (input, output) per 1K tokens in USD
+    # Phase 4: Updated with Claude 3.5+ and Claude 4.x model costs
     MODEL_COSTS = {
+        # Claude 3 models
         "claude-3-sonnet-20240229": (0.003, 0.015),
         "claude-3-opus-20240229": (0.015, 0.075),
         "claude-3-haiku-20240307": (0.00025, 0.00125),
+        # Claude 3.5 models
         "claude-3-5-sonnet-20240620": (0.003, 0.015),
-        "claude-3-5-sonnet-20241022": (0.003, 0.015),  # Latest Sonnet 3.5
+        "claude-3-5-sonnet-20241022": (0.003, 0.015),
+        "claude-3-5-haiku-20241022": (0.0008, 0.004),
+        # Claude 4 models
+        "claude-sonnet-4-20250514": (0.003, 0.015),
+        "claude-opus-4-20250514": (0.015, 0.075),
+        # Claude 4.5 models (latest as of 2025)
+        "claude-sonnet-4-5-20250929": (0.003, 0.015),
+        "claude-opus-4-5-20251101": (0.015, 0.075),
+        "claude-haiku-4-5-20251001": (0.0008, 0.004),
     }
     
     def __init__(self, api_key: str, base_url: Optional[str] = None,
@@ -493,26 +504,28 @@ class ClaudeClient:
         )
 
     async def health_check(self) -> bool:
-        """Check if Claude API is accessible.
+        """Check if Claude API client is configured.
+
+        Phase 4: Health check no longer makes paid API calls.
+        Instead, it verifies local configuration state only.
 
         Returns:
-            True if API is healthy, False otherwise
+            True if client is configured, False otherwise
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
-        try:
-            # Use fallback chain so health check passes as long as ANY model works
-            options = ClaudeOptions(max_tokens=5)
-            await self.create_summary_with_fallback(
-                prompt="Say hello",
-                system_prompt="You are a helpful assistant.",
-                options=options
-            )
-            return True
-        except Exception as e:
-            logger.warning(f"Health check failed: {e}")
+        # Check if we have an API key configured
+        if not self.api_key:
             return False
+
+        # Check if we have a valid primary model
+        if not self.primary_model:
+            return False
+
+        # Check if HTTP client is available
+        if self._client is None:
+            return False
+
+        # All local checks passed - client is configured
+        return True
     
     def get_usage_stats(self) -> UsageStats:
         """Get current usage statistics."""

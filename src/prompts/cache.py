@@ -15,6 +15,7 @@ Features:
 
 import asyncio
 import logging
+from collections import OrderedDict
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 import hashlib
@@ -42,13 +43,16 @@ class PromptCacheManager:
         """
         Initialize the cache manager.
 
+        Phase 4: Uses OrderedDict for O(1) LRU eviction.
+
         Args:
             ttl: Fresh cache TTL in seconds
             stale_ttl: Stale cache TTL in seconds (how long to keep expired entries)
         """
         self.ttl = ttl
         self.stale_ttl = stale_ttl
-        self._memory_cache: Dict[str, CachedPrompt] = {}
+        # OrderedDict for O(1) LRU eviction
+        self._memory_cache: OrderedDict[str, CachedPrompt] = OrderedDict()
         self._background_tasks = set()
 
     async def get(
@@ -72,6 +76,8 @@ class PromptCacheManager:
         cached = self._memory_cache.get(cache_key)
         if cached and cached.is_fresh:
             logger.debug(f"Cache HIT (fresh) for guild {guild_id}")
+            # Move to end for LRU ordering
+            self._memory_cache.move_to_end(cache_key)
             return cached
 
         logger.debug(f"Cache MISS for guild {guild_id}")
@@ -221,17 +227,15 @@ class PromptCacheManager:
         return hash_obj.hexdigest()[:8]
 
     async def _evict_oldest(self) -> None:
-        """Evict oldest cache entry to enforce size limit."""
+        """Evict oldest cache entry to enforce size limit.
+
+        Phase 4: O(1) eviction using OrderedDict.popitem(last=False).
+        """
         if not self._memory_cache:
             return
 
-        # Find oldest entry
-        oldest_key = min(
-            self._memory_cache.keys(),
-            key=lambda k: self._memory_cache[k].cached_at
-        )
-
-        del self._memory_cache[oldest_key]
+        # Remove oldest entry (first item in OrderedDict) - O(1)
+        oldest_key, _ = self._memory_cache.popitem(last=False)
         logger.debug(f"Evicted oldest cache entry: {oldest_key}")
 
     async def get_with_revalidation(

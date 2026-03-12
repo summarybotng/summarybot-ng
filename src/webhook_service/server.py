@@ -145,11 +145,13 @@ class WebhookServer:
                 response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
             else:
                 # Dashboard/frontend: allow self-hosted scripts, styles, images
+                # Note: 'unsafe-eval' needed for some JS frameworks (framer-motion, etc.)
                 response.headers["Content-Security-Policy"] = (
                     "default-src 'self'; "
-                    "script-src 'self' 'unsafe-inline'; "
+                    "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
                     "style-src 'self' 'unsafe-inline'; "
                     "img-src 'self' data: https:; "
+                    "font-src 'self' data:; "
                     "connect-src 'self' https://discord.com https://cdn.discordapp.com; "
                     "frame-ancestors 'none'"
                 )

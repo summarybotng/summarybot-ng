@@ -69,13 +69,29 @@ class SummaryBotApp:
         self.running = False
         self.webhook_only_mode = False  # True when DISCORD_TOKEN not set
 
-        # Setup logging - file handler is optional (may fail if not writable)
+        # Setup logging with log rotation
+        from logging.handlers import RotatingFileHandler
+
         log_handlers = [logging.StreamHandler(sys.stdout)]
+
+        # Configure file logging with rotation (prevents unbounded log growth)
         try:
-            # Try to create log file in data directory for persistence
             log_path = Path("data/summarybot.log")
             log_path.parent.mkdir(parents=True, exist_ok=True)
-            log_handlers.append(logging.FileHandler(str(log_path)))
+
+            # Get rotation settings from environment (with sensible defaults)
+            max_bytes = int(os.environ.get('LOG_MAX_BYTES', 10 * 1024 * 1024))  # 10MB default
+            backup_count = int(os.environ.get('LOG_BACKUP_COUNT', 5))  # Keep 5 backups
+
+            # Use RotatingFileHandler to auto-rotate when file exceeds max_bytes
+            # Keeps backup_count historical files (summarybot.log.1, .2, etc.)
+            file_handler = RotatingFileHandler(
+                str(log_path),
+                maxBytes=max_bytes,
+                backupCount=backup_count,
+                encoding='utf-8'
+            )
+            log_handlers.append(file_handler)
         except (OSError, PermissionError):
             # File logging not available, use stdout only
             pass

@@ -338,13 +338,13 @@ Fixed test_email_delivery.py (2026-03-12):
 - Add required total_participants and time_span_hours to SummarizationContext fixture
 
 ### Phase 4 Verification (IN PROGRESS)
-- [ ] Zero `datetime.utcnow()` occurrences (227 remaining - helper created: src/utils/time.py)
+- [x] Zero `datetime.utcnow()` occurrences (2026-03-12 - all 227 migrated to utc_now_naive())
 - [x] No dead postgresql.py code (DELETED 2026-03-12)
 - [ ] No module-level mutable globals (except ServiceContainer)
 - [x] Security headers present on all responses (2026-03-12)
 - [x] CORS requires explicit configuration (2026-03-12)
 - [ ] Cost budget actually prevents API calls when exceeded
-- [ ] Log files rotate automatically
+- [x] Log files rotate automatically (2026-03-12 - RotatingFileHandler in src/main.py)
 - [x] Cache eviction is O(1) (2026-03-12 - OrderedDict in both caches)
 - [x] Health check makes no paid API calls (2026-03-12)
 - [x] Model costs updated with Claude 3.5/4.x models (2026-03-12)
@@ -360,6 +360,8 @@ Phase 4 Completed Items (2026-03-12):
 6. O(1) cache eviction using OrderedDict (summarization/cache.py, prompts/cache.py)
 7. Fixed guild cache invalidation - uses guild_id prefix in cache keys
 8. Created src/utils/time.py with utc_now() helper for datetime.utcnow() migration
+9. Completed datetime.utcnow() migration - all 227 occurrences now use utc_now_naive()
+10. Added log rotation with RotatingFileHandler (10MB default, 5 backups)
 
 ---
 

@@ -46,7 +46,7 @@ class SourceCost:
     api_key_source: str = "default"
     api_key_ref: Optional[str] = None
     monthly: Dict[str, MonthlyCost] = field(default_factory=dict)
-    last_updated: datetime = field(default_factory=datetime.utcnow)
+    last_updated: datetime = field(default_factory=utc_now_naive)
 
     def to_dict(self) -> Dict[str, Any]:
         return {

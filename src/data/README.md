@@ -294,15 +294,16 @@ async with await connection.begin_transaction() as tx:
 ### Advanced Search
 
 ```python
-from datetime import datetime, timedelta
+from datetime import timedelta
 from src.data import SearchCriteria
+from src.utils.time import utc_now_naive
 
 # Create search criteria with time range
 criteria = SearchCriteria(
     guild_id="987654321",
     channel_id="123456789",
-    start_time=datetime.utcnow() - timedelta(days=7),
-    end_time=datetime.utcnow(),
+    start_time=utc_now_naive() - timedelta(days=7),
+    end_time=utc_now_naive(),
     limit=50,
     offset=0,
     order_by="created_at",

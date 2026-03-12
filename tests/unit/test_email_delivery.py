@@ -16,7 +16,7 @@ from src.services.email_delivery import (
     MAX_RECIPIENTS_PER_DESTINATION,
     MAX_EMAILS_PER_HOUR,
 )
-from src.models.summary import SummaryResult, SummarizationContext, ParticipantInfo
+from src.models.summary import SummaryResult, SummarizationContext, Participant
 
 
 @pytest.fixture
@@ -58,12 +58,12 @@ def sample_summary():
             MagicMock(description="Review the code changes", assignee="@bob"),
         ],
         participants=[
-            ParticipantInfo(
+            Participant(
                 user_id="1",
                 display_name="Alice",
                 message_count=15,
             ),
-            ParticipantInfo(
+            Participant(
                 user_id="2",
                 display_name="Bob",
                 message_count=10,
@@ -75,6 +75,8 @@ def sample_summary():
         context=SummarizationContext(
             channel_name="general",
             guild_name="Test Server",
+            total_participants=10,
+            time_span_hours=8.0,
         ),
     )
 

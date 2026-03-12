@@ -138,8 +138,21 @@ class WebhookServer:
             response.headers["X-XSS-Protection"] = "1; mode=block"
             # Referrer policy
             response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-            # Content Security Policy (API-appropriate)
-            response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+            # Content Security Policy
+            # Use restrictive CSP for API routes, permissive for dashboard
+            if request.url.path.startswith("/api/") or request.url.path == "/health":
+                # API routes: no content needed
+                response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+            else:
+                # Dashboard/frontend: allow self-hosted scripts, styles, images
+                response.headers["Content-Security-Policy"] = (
+                    "default-src 'self'; "
+                    "script-src 'self' 'unsafe-inline'; "
+                    "style-src 'self' 'unsafe-inline'; "
+                    "img-src 'self' data: https:; "
+                    "connect-src 'self' https://discord.com https://cdn.discordapp.com; "
+                    "frame-ancestors 'none'"
+                )
             # HSTS (only in production)
             if os.environ.get("ENVIRONMENT") == "production":
                 response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"

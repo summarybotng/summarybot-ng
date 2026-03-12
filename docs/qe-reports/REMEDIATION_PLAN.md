@@ -337,16 +337,29 @@ Fixed test_email_delivery.py (2026-03-12):
 - Import Participant instead of non-existent ParticipantInfo
 - Add required total_participants and time_span_hours to SummarizationContext fixture
 
-### Phase 4 Verification
-- [ ] Zero `datetime.utcnow()` occurrences
-- [ ] No dead postgresql.py code
+### Phase 4 Verification (IN PROGRESS)
+- [ ] Zero `datetime.utcnow()` occurrences (227 remaining - helper created: src/utils/time.py)
+- [x] No dead postgresql.py code (DELETED 2026-03-12)
 - [ ] No module-level mutable globals (except ServiceContainer)
-- [ ] Security headers present on all responses
-- [ ] CORS requires explicit configuration
+- [x] Security headers present on all responses (2026-03-12)
+- [x] CORS requires explicit configuration (2026-03-12)
 - [ ] Cost budget actually prevents API calls when exceeded
 - [ ] Log files rotate automatically
-- [ ] Cache eviction is O(1)
-- [ ] Health check makes no paid API calls
+- [x] Cache eviction is O(1) (2026-03-12 - OrderedDict in both caches)
+- [x] Health check makes no paid API calls (2026-03-12)
+- [x] Model costs updated with Claude 3.5/4.x models (2026-03-12)
+- [x] Guild cache invalidation fixed (2026-03-12 - uses guild_id prefix)
+
+Phase 4 Completed Items (2026-03-12):
+1. Deleted dead postgresql.py (162 LOC of stubs)
+2. Fixed CORS wildcard - now requires explicit WEBHOOK_CORS_ORIGINS
+3. Added security headers middleware (X-Content-Type-Options, X-Frame-Options,
+   X-XSS-Protection, Referrer-Policy, CSP, HSTS)
+4. Fixed health check - no longer makes paid API calls
+5. Updated MODEL_COSTS with Claude 3.5, 4.0, 4.5 models
+6. O(1) cache eviction using OrderedDict (summarization/cache.py, prompts/cache.py)
+7. Fixed guild cache invalidation - uses guild_id prefix in cache keys
+8. Created src/utils/time.py with utc_now() helper for datetime.utcnow() migration
 
 ---
 

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Literal
 import json
 import re
+from src.utils.time import utc_now_naive
 
 
 class SourceType(Enum):
@@ -287,7 +288,7 @@ class GenerationLock:
 
     def is_expired(self) -> bool:
         """Check if lock has expired."""
-        return datetime.utcnow() > self.expires_at
+        return utc_now_naive() > self.expires_at
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""

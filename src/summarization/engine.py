@@ -12,6 +12,7 @@ from .claude_client import ClaudeClient, ClaudeOptions, ClaudeResponse
 from .prompt_builder import PromptBuilder
 from .response_parser import ResponseParser
 from .cache import SummaryCache
+from src.utils.time import utc_now_naive
 from .retry_strategy import (
     RetryReason, RetryAction, GenerationAttempt, GenerationAttemptTracker,
     determine_retry_strategy, detect_quality_issue, is_malformed_content
@@ -510,8 +511,8 @@ class SummarizationEngine:
             )
 
             # Create final summary result
-            start_time = min(msg.timestamp for msg in messages) if messages else datetime.utcnow()
-            end_time = max(msg.timestamp for msg in messages) if messages else datetime.utcnow()
+            start_time = min(msg.timestamp for msg in messages) if messages else utc_now_naive()
+            end_time = max(msg.timestamp for msg in messages) if messages else utc_now_naive()
             
             summary_result = self.response_parser.extract_summary_result(
                 parsed=parsed_summary,
@@ -531,7 +532,7 @@ class SummarizationEngine:
                 "output_tokens": response.output_tokens,
                 "total_tokens": response.total_tokens,
                 "api_response_id": response.response_id,
-                "processing_time": (datetime.utcnow() - summary_result.created_at).total_seconds(),
+                "processing_time": (utc_now_naive() - summary_result.created_at).total_seconds(),
                 "summary_length": options.summary_length.value,
                 "perspective": options.perspective,
                 # ADR-004: Citation metadata
@@ -659,8 +660,8 @@ class SummarizationEngine:
                 error_summary = SummaryResult(
                     channel_id=requests[i].get("channel_id", ""),
                     guild_id=requests[i].get("guild_id", ""),
-                    start_time=datetime.utcnow(),
-                    end_time=datetime.utcnow(),
+                    start_time=utc_now_naive(),
+                    end_time=utc_now_naive(),
                     message_count=len(requests[i]["messages"]),
                     summary_text=f"Error: {str(result)}",
                     metadata={"error": True, "error_type": type(result).__name__}

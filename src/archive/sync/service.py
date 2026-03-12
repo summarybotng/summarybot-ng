@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from .base import SyncConfig, SyncResult, SyncStatus
 from .google_drive import GoogleDriveSync, GoogleDriveConfig
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -337,7 +338,7 @@ class ArchiveSyncService:
                 result = await sync_provider.sync(source_path)
 
                 # Update state
-                state.last_sync = datetime.utcnow()
+                state.last_sync = utc_now_naive()
                 state.last_status = result.status
                 state.files_synced = result.files_synced
                 state.total_bytes += result.bytes_uploaded

@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional
 from enum import Enum
 
 from .base import BaseModel
+from src.utils.time import utc_now_naive
 
 
 class SectionType(str, Enum):
@@ -238,8 +239,8 @@ class GuildPushTemplate(BaseModel):
         return cls(
             guild_id=data["guild_id"],
             template=PushTemplate.from_dict(data["template"]),
-            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else datetime.utcnow(),
-            updated_at=datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else datetime.utcnow(),
+            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else utc_now_naive(),
+            updated_at=datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else utc_now_naive(),
             created_by=data.get("created_by"),
         )
 

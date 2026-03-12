@@ -14,6 +14,7 @@ from enum import Enum
 from typing import Dict, Optional, Any, Literal
 
 from .backends import get_backend_for_ref
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +142,7 @@ class ApiKeyResolver:
         # Check cache first
         if key_ref in self._key_cache:
             cached_key, expiry = self._key_cache[key_ref]
-            if datetime.utcnow() < expiry:
+            if utc_now_naive() < expiry:
                 return cached_key
 
         # Get appropriate backend
@@ -151,7 +152,7 @@ class ApiKeyResolver:
         if key:
             # Cache for 5 minutes
             from datetime import timedelta
-            self._key_cache[key_ref] = (key, datetime.utcnow() + timedelta(minutes=5))
+            self._key_cache[key_ref] = (key, utc_now_naive() + timedelta(minutes=5))
 
         return key
 
@@ -169,7 +170,7 @@ class ApiKeyResolver:
         key_hash = hash(key)
         if key_hash in self._validation_cache:
             status, expiry = self._validation_cache[key_hash]
-            if datetime.utcnow() < expiry:
+            if utc_now_naive() < expiry:
                 return status == KeyStatus.VALID
 
         # Validate with OpenRouter
@@ -190,7 +191,7 @@ class ApiKeyResolver:
                 status = KeyStatus.VALID if is_valid else KeyStatus.INVALID
                 self._validation_cache[key_hash] = (
                     status,
-                    datetime.utcnow() + timedelta(hours=1)
+                    utc_now_naive() + timedelta(hours=1)
                 )
 
                 return is_valid
@@ -220,7 +221,7 @@ class ApiKeyResolver:
                     "valid": False,
                     "key_ref": key_ref,
                     "error": "Key not found",
-                    "validated_at": datetime.utcnow().isoformat(),
+                    "validated_at": utc_now_naive().isoformat(),
                 }
 
             import httpx
@@ -239,14 +240,14 @@ class ApiKeyResolver:
                         "key_ref": key_ref,
                         "credits_remaining": data.get("credits_remaining"),
                         "rate_limit": data.get("rate_limit"),
-                        "validated_at": datetime.utcnow().isoformat(),
+                        "validated_at": utc_now_naive().isoformat(),
                     }
                 else:
                     return {
                         "valid": False,
                         "key_ref": key_ref,
                         "error": f"HTTP {response.status_code}",
-                        "validated_at": datetime.utcnow().isoformat(),
+                        "validated_at": utc_now_naive().isoformat(),
                     }
 
         except Exception as e:
@@ -254,7 +255,7 @@ class ApiKeyResolver:
                 "valid": False,
                 "key_ref": key_ref,
                 "error": str(e),
-                "validated_at": datetime.utcnow().isoformat(),
+                "validated_at": utc_now_naive().isoformat(),
             }
 
     async def set_server_key(

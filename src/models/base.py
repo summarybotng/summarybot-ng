@@ -9,6 +9,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Dict, Any, Optional
 import uuid
+from src.utils.time import utc_now_naive
 
 
 def _serialize_value(value: Any) -> Any:
@@ -81,4 +82,4 @@ def generate_id() -> str:
 
 def utc_now() -> datetime:
     """Get current UTC datetime."""
-    return datetime.utcnow().replace(microsecond=0)
+    return utc_now_naive().replace(microsecond=0)

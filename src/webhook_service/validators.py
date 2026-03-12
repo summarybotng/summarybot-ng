@@ -7,6 +7,7 @@ from typing import Optional, List, Dict, Any
 from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator, model_validator, validator, HttpUrl
+from src.utils.time import utc_now_naive
 
 
 class SummaryType(str, Enum):
@@ -50,7 +51,7 @@ class TimeRangeModel(BaseModel):
     @classmethod
     def not_future(cls, v):
         """Validate time is not in the future."""
-        if v > datetime.utcnow():
+        if v > utc_now_naive():
             raise ValueError("time cannot be in the future")
         return v
 

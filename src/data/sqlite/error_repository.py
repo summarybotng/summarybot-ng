@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from ..base import ErrorRepository
 from ...models.error_log import ErrorLog, ErrorType, ErrorSeverity
 from .connection import SQLiteConnection
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -126,13 +127,13 @@ class SQLiteErrorRepository(ErrorRepository):
         """
         cursor = await self.connection.execute(
             query,
-            (datetime.utcnow().isoformat(), notes, error_id)
+            (utc_now_naive().isoformat(), notes, error_id)
         )
         return cursor.rowcount > 0
 
     async def delete_old_errors(self, days: int = 7) -> int:
         """Delete errors older than specified days."""
-        cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        cutoff = (utc_now_naive() - timedelta(days=days)).isoformat()
 
         query = "DELETE FROM error_logs WHERE created_at < ?"
         cursor = await self.connection.execute(query, (cutoff,))
@@ -144,7 +145,7 @@ class SQLiteErrorRepository(ErrorRepository):
         hours: int = 24,
     ) -> Dict[str, int]:
         """Get error counts grouped by type."""
-        cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+        cutoff = (utc_now_naive() - timedelta(hours=hours)).isoformat()
 
         if guild_id:
             query = """
@@ -180,7 +181,7 @@ class SQLiteErrorRepository(ErrorRepository):
         error_type_value = error_type.value if isinstance(error_type, ErrorType) else error_type
         cursor = await self.connection.execute(
             query,
-            (datetime.utcnow().isoformat(), notes, guild_id, error_type_value)
+            (utc_now_naive().isoformat(), notes, guild_id, error_type_value)
         )
         return cursor.rowcount
 

@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from ..auth import get_current_user
+from src.utils.time import utc_now_naive
 from ...models.push_template import (
     PushTemplate, DEFAULT_PUSH_TEMPLATE, validate_template,
     SectionConfig,
@@ -243,7 +244,7 @@ async def preview_push_template(
         template = await repo.get_template(guild_id)
 
     # Create sample summary
-    now = datetime.utcnow()
+    now = utc_now_naive()
     sample_summary = SummaryResult(
         id="preview-sample",
         guild_id=guild_id,

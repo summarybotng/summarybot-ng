@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from . import get_discord_bot
 from ..models import SummaryScope
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -1414,7 +1415,7 @@ async def trigger_source_sync(source_key: str):
             raise HTTPException(500, f"Sync failed: {e}")
 
         # Update last sync time
-        server_config.last_sync = datetime.utcnow()
+        server_config.last_sync = utc_now_naive()
         await service.save_server_config(server_id, server_config)
 
         return SyncResultResponse(
@@ -1708,7 +1709,7 @@ async def configure_server_sync(
         folder_name=request.folder_name,
         oauth_token_id=token_id,
         configured_by=user_id,
-        configured_at=datetime.utcnow(),
+        configured_at=utc_now_naive(),
         sync_on_generation=request.sync_on_generation,
         include_metadata=request.include_metadata,
     )

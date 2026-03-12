@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 from ..models.message import ProcessedMessage
 from ..models.summary import SummaryOptions
+from src.utils.time import utc_now_naive
 
 
 class SummaryOptimizer:
@@ -172,7 +173,7 @@ class SummaryOptimizer:
                 continue
             
             # Skip very old messages (potential data quality issues)
-            age_days = (datetime.utcnow() - message.timestamp).days
+            age_days = (utc_now_naive() - message.timestamp).days
             if age_days > self.max_message_age_days:
                 continue
             
@@ -236,7 +237,7 @@ class SummaryOptimizer:
                 score += 2
             
             # Recency bonus (messages in last hour get bonus)
-            age_hours = (datetime.utcnow() - message.timestamp).total_seconds() / 3600
+            age_hours = (utc_now_naive() - message.timestamp).total_seconds() / 3600
             if age_hours < 1:
                 score += 2
             

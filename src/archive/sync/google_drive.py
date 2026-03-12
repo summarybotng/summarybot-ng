@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .base import SyncProvider, SyncConfig, SyncResult, SyncStatus
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -115,13 +116,13 @@ class GoogleDriveSync(SyncProvider):
                     result.errors.append(f"{local_file}: {str(e)}")
 
             result.status = SyncStatus.SUCCESS if result.files_failed == 0 else SyncStatus.PARTIAL
-            result.completed_at = datetime.utcnow()
+            result.completed_at = utc_now_naive()
 
         except Exception as e:
             logger.error(f"Sync failed: {e}")
             result.status = SyncStatus.FAILED
             result.errors.append(str(e))
-            result.completed_at = datetime.utcnow()
+            result.completed_at = utc_now_naive()
 
         return result
 

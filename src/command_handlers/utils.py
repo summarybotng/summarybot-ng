@@ -9,6 +9,7 @@ from typing import Optional, Tuple, Dict, Any
 import discord
 
 from ..exceptions import UserError, create_error_context
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ def format_error_response(error_message: str, error_code: str = "ERROR") -> disc
         title="❌ Error",
         description=error_message,
         color=0xFF0000,  # Red
-        timestamp=datetime.utcnow()
+        timestamp=utc_now_naive()
     )
 
     embed.set_footer(text=f"Error Code: {error_code}")
@@ -53,7 +54,7 @@ def format_success_response(title: str, description: str,
         title=f"✅ {title}",
         description=description,
         color=0x00FF00,  # Green
-        timestamp=datetime.utcnow()
+        timestamp=utc_now_naive()
     )
 
     if fields:
@@ -80,7 +81,7 @@ def format_info_response(title: str, description: str,
         title=f"ℹ️ {title}",
         description=description,
         color=0x4A90E2,  # Blue
-        timestamp=datetime.utcnow()
+        timestamp=utc_now_naive()
     )
 
     if fields:
@@ -167,7 +168,7 @@ def validate_time_range(start_time: datetime, end_time: datetime,
         )
 
     # Check that times aren't in the future
-    now = datetime.utcnow()
+    now = utc_now_naive()
     if end_time > now:
         raise UserError(
             message=f"End time in future: {end_time}",
@@ -195,7 +196,7 @@ def parse_time_string(time_str: str) -> datetime:
         UserError: If time string cannot be parsed
     """
     time_str = time_str.strip().lower()
-    now = datetime.utcnow()
+    now = utc_now_naive()
 
     # Relative time formats
     relative_pattern = r'^(\d+)\s*(h|hour|hours|m|min|mins|minute|minutes|d|day|days|w|week|weeks)$'

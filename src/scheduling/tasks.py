@@ -9,6 +9,7 @@ from enum import Enum
 
 from ..models.task import ScheduledTask, TaskStatus, Destination
 from ..models.summary import SummaryOptions
+from src.utils.time import utc_now_naive
 
 
 class TaskType(Enum):
@@ -77,18 +78,18 @@ class SummaryTask:
     def mark_started(self) -> None:
         """Mark task as started."""
         self.status = TaskStatus.RUNNING
-        self.started_at = datetime.utcnow()
+        self.started_at = utc_now_naive()
 
     def mark_completed(self) -> None:
         """Mark task as completed successfully."""
         self.status = TaskStatus.COMPLETED
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now_naive()
         self.scheduled_task.mark_run_completed()
 
     def mark_failed(self, error: str) -> None:
         """Mark task as failed."""
         self.status = TaskStatus.FAILED
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now_naive()
         self.error_message = error
         self.retry_count += 1
         self.scheduled_task.mark_run_failed()
@@ -132,7 +133,7 @@ class SummaryTask:
             return f"⏳ Pending - Scheduled for channel {self.channel_id}"
 
         if self.status == TaskStatus.RUNNING:
-            elapsed = (datetime.utcnow() - self.started_at).total_seconds() if self.started_at else 0
+            elapsed = (utc_now_naive() - self.started_at).total_seconds() if self.started_at else 0
             return f"🔄 Running for {elapsed:.1f}s"
 
         if self.status == TaskStatus.COMPLETED:
@@ -165,23 +166,23 @@ class CleanupTask:
 
     def get_cutoff_date(self) -> datetime:
         """Get the cutoff date for deletion."""
-        return datetime.utcnow() - timedelta(days=self.retention_days)
+        return utc_now_naive() - timedelta(days=self.retention_days)
 
     def mark_started(self) -> None:
         """Mark task as started."""
         self.status = TaskStatus.RUNNING
-        self.started_at = datetime.utcnow()
+        self.started_at = utc_now_naive()
 
     def mark_completed(self, items_deleted: int) -> None:
         """Mark task as completed successfully."""
         self.status = TaskStatus.COMPLETED
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now_naive()
         self.items_deleted = items_deleted
 
     def mark_failed(self, error: str) -> None:
         """Mark task as failed."""
         self.status = TaskStatus.FAILED
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now_naive()
         self.error_message = error
 
     def to_dict(self) -> Dict[str, Any]:
@@ -208,7 +209,7 @@ class CleanupTask:
             return f"⏳ Pending - Will clean data older than {self.retention_days} days in {scope}"
 
         if self.status == TaskStatus.RUNNING:
-            elapsed = (datetime.utcnow() - self.started_at).total_seconds() if self.started_at else 0
+            elapsed = (utc_now_naive() - self.started_at).total_seconds() if self.started_at else 0
             return f"🔄 Running cleanup for {elapsed:.1f}s"
 
         if self.status == TaskStatus.COMPLETED:
@@ -236,7 +237,7 @@ class TaskMetadata:
 
     def update_execution(self, duration_seconds: float, failed: bool = False) -> None:
         """Update execution statistics."""
-        self.last_executed = datetime.utcnow()
+        self.last_executed = utc_now_naive()
         self.execution_count += 1
 
         if failed:

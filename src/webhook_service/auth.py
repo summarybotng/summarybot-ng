@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from ..exceptions.webhook import WebhookAuthError
 from ..config.settings import BotConfig
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -242,7 +243,7 @@ async def verify_jwt_token(token: str) -> JWTAuth:
             raise JWTError("Token missing user ID")
 
         expires_at = datetime.fromtimestamp(payload.get("exp", 0))
-        if expires_at < datetime.utcnow():
+        if expires_at < utc_now_naive():
             raise JWTError("Token expired")
 
         return JWTAuth(
@@ -276,7 +277,7 @@ def create_jwt_token(
     Returns:
         Encoded JWT token
     """
-    now = datetime.utcnow()
+    now = utc_now_naive()
     expires = now + timedelta(minutes=expires_minutes)
 
     payload = {

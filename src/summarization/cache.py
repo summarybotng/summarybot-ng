@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 
 from ..models.summary import SummaryResult
 from ..models.base import BaseModel
+from src.utils.time import utc_now_naive
 
 
 class CacheInterface(ABC):
@@ -62,7 +63,7 @@ class MemoryCache(CacheInterface):
         entry = self._cache[key]
 
         # Check expiration
-        if entry.get("expires_at") and datetime.utcnow() > entry["expires_at"]:
+        if entry.get("expires_at") and utc_now_naive() > entry["expires_at"]:
             del self._cache[key]
             return None
 
@@ -79,11 +80,11 @@ class MemoryCache(CacheInterface):
             self._cache.popitem(last=False)
 
         ttl = ttl or self.default_ttl
-        expires_at = datetime.utcnow() + timedelta(seconds=ttl) if ttl > 0 else None
+        expires_at = utc_now_naive() + timedelta(seconds=ttl) if ttl > 0 else None
 
         self._cache[key] = {
             "value": value,
-            "created_at": datetime.utcnow(),
+            "created_at": utc_now_naive(),
             "expires_at": expires_at
         }
 
@@ -116,7 +117,7 @@ class MemoryCache(CacheInterface):
     
     def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
-        now = datetime.utcnow()
+        now = utc_now_naive()
         expired_count = sum(
             1 for entry in self._cache.values()
             if entry.get("expires_at") and now > entry["expires_at"]

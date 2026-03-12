@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+from src.utils.time import utc_now_naive
 
 # ADR-023: JSON repair for malformed LLM responses
 try:
@@ -176,7 +177,7 @@ class ResponseParser:
             participants=parsed.participants,
             summary_text=parsed.summary_text,
             metadata=parsed.parsing_metadata,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
             context=context,
             # ADR-004: Include referenced claims
             referenced_key_points=parsed.referenced_key_points,

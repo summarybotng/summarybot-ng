@@ -9,6 +9,7 @@ import discord
 import re
 
 from .base import BaseCommandHandler
+from src.utils.time import utc_now_naive
 from ..prompts import (
     PromptTemplateResolver,
     PromptContext,
@@ -96,7 +97,7 @@ class PromptConfigCommandHandler(BaseCommandHandler):
                 title="🔄 Testing Repository",
                 description=f"Validating `{repo_url}` (branch: `{config.branch}`)...",
                 color=0x4A90E2,
-                timestamp=datetime.utcnow()
+                timestamp=utc_now_naive()
             )
             await interaction.followup.send(embed=status_embed, ephemeral=True)
 
@@ -136,7 +137,7 @@ class PromptConfigCommandHandler(BaseCommandHandler):
                     )
 
                 # Save configuration
-                config.last_sync = datetime.utcnow()
+                config.last_sync = utc_now_naive()
                 config.last_sync_status = "success"
                 await self.config_store.set_config(config)
 
@@ -145,7 +146,7 @@ class PromptConfigCommandHandler(BaseCommandHandler):
                     title="✅ Custom Prompts Configured",
                     description=f"Successfully configured custom prompts from `{repo_url}`",
                     color=0x2ECC71,
-                    timestamp=datetime.utcnow()
+                    timestamp=utc_now_naive()
                 )
 
                 success_embed.add_field(
@@ -215,7 +216,7 @@ class PromptConfigCommandHandler(BaseCommandHandler):
                     title="📋 Prompt Configuration Status",
                     description="This server is using the default built-in prompts.",
                     color=0x95A5A6,
-                    timestamp=datetime.utcnow()
+                    timestamp=utc_now_naive()
                 )
 
                 embed.add_field(
@@ -250,7 +251,7 @@ class PromptConfigCommandHandler(BaseCommandHandler):
                 title="📋 Prompt Configuration Status",
                 description=f"Custom prompts configured from GitHub repository",
                 color=0x2ECC71 if config.enabled and config.last_sync_status == "success" else 0xE74C3C,
-                timestamp=datetime.utcnow()
+                timestamp=utc_now_naive()
             )
 
             embed.add_field(
@@ -346,7 +347,7 @@ class PromptConfigCommandHandler(BaseCommandHandler):
                 title="✅ Custom Prompts Removed",
                 description="Custom prompt configuration has been removed. This server will now use default prompts.",
                 color=0x2ECC71,
-                timestamp=datetime.utcnow()
+                timestamp=utc_now_naive()
             )
 
             embed.set_footer(text="You can reconfigure custom prompts anytime with /prompt-config set")
@@ -391,7 +392,7 @@ class PromptConfigCommandHandler(BaseCommandHandler):
                 title="✅ Cache Refreshed",
                 description=f"Invalidated {invalidated} cached prompt(s). Fresh prompts will be fetched on next summary.",
                 color=0x2ECC71,
-                timestamp=datetime.utcnow()
+                timestamp=utc_now_naive()
             )
 
             await interaction.followup.send(embed=embed, ephemeral=True)
@@ -449,7 +450,7 @@ class PromptConfigCommandHandler(BaseCommandHandler):
                 title="🧪 Prompt Test Results",
                 description=f"Test prompt resolution for category: `{category}`",
                 color=0x3498DB,
-                timestamp=datetime.utcnow()
+                timestamp=utc_now_naive()
             )
 
             embed.add_field(

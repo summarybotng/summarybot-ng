@@ -17,6 +17,7 @@ from .executor import TaskExecutor
 from .persistence import TaskPersistence
 from ..models.task import ScheduledTask, ScheduleType, TaskStatus
 from ..models.summary_job import SummaryJob, JobType, JobStatus
+from src.utils.time import utc_now_naive
 from ..exceptions import (
     SummaryBotException, ConfigurationError, create_error_context
 )
@@ -140,7 +141,7 @@ class TaskScheduler:
             metadata = TaskMetadata(
                 task_id=task.id,
                 task_type=TaskType.SUMMARY,  # Default, could be parameterized
-                created_at=datetime.utcnow(),
+                created_at=utc_now_naive(),
                 next_execution=task.next_run
             )
 
@@ -445,7 +446,7 @@ class TaskScheduler:
         """Create APScheduler trigger from scheduled task."""
         if task.schedule_type == ScheduleType.ONCE:
             # One-time execution
-            run_time = task.next_run or datetime.utcnow()
+            run_time = task.next_run or utc_now_naive()
             return DateTrigger(run_date=run_time, timezone=self.timezone)
 
         elif task.schedule_type == ScheduleType.FIFTEEN_MINUTES:
@@ -554,7 +555,7 @@ class TaskScheduler:
 
         logger.info(f"Executing scheduled task {task_id}: {task.name}")
 
-        start_time = datetime.utcnow()
+        start_time = utc_now_naive()
 
         # ADR-013: Create job record for tracking
         import secrets
@@ -644,7 +645,7 @@ class TaskScheduler:
 
             # Update metadata
             if metadata:
-                duration = (datetime.utcnow() - start_time).total_seconds()
+                duration = (utc_now_naive() - start_time).total_seconds()
                 metadata.update_execution(duration, failed=not result.success)
                 metadata.next_execution = task.next_run
 
@@ -667,7 +668,7 @@ class TaskScheduler:
                     logger.warning(f"[{job_id}] Failed to update job: {update_err}")
 
             if metadata:
-                duration = (datetime.utcnow() - start_time).total_seconds()
+                duration = (utc_now_naive() - start_time).total_seconds()
                 metadata.update_execution(duration, failed=True)
 
             # Persist failure

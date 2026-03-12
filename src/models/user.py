@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Optional
 from enum import Enum
 
 from .base import BaseModel
+from src.utils.time import utc_now_naive
 
 
 class PermissionLevel(Enum):
@@ -76,7 +77,7 @@ class UserPermissions(BaseModel):
         """Check if permissions are expired."""
         if not self.expires_at:
             return False
-        return datetime.utcnow() > self.expires_at
+        return utc_now_naive() > self.expires_at
 
 
 @dataclass
@@ -114,7 +115,7 @@ class User(BaseModel):
     
     def update_last_seen(self) -> None:
         """Update last seen timestamp."""
-        self.last_seen = datetime.utcnow()
+        self.last_seen = utc_now_naive()
     
     def increment_summary_count(self) -> None:
         """Increment the count of summaries requested."""

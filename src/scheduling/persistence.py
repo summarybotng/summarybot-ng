@@ -12,6 +12,7 @@ from ..models.task import ScheduledTask, ScheduleType, Destination, DestinationT
 from ..models.summary import SummaryOptions, SummaryLength
 from ..config.constants import DEFAULT_SUMMARIZATION_MODEL
 from ..exceptions import ConfigurationError, create_error_context
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -303,7 +304,7 @@ class TaskPersistence:
         Returns:
             Number of tasks cleaned up
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = utc_now_naive() - timedelta(days=days)
         cleaned_count = 0
 
         try:
@@ -339,7 +340,7 @@ class TaskPersistence:
 
             with open(output_file, 'w') as f:
                 json.dump({
-                    "export_date": datetime.utcnow().isoformat(),
+                    "export_date": utc_now_naive().isoformat(),
                     "task_count": len(task_data),
                     "tasks": task_data
                 }, f, indent=2)

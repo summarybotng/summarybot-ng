@@ -13,6 +13,7 @@ import json
 
 from .models import GuildPromptConfig
 from ..data.sqlite import SQLiteConnection
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +81,8 @@ class GuildPromptConfigStore:
             last_sync=datetime.fromisoformat(row['last_sync']) if row['last_sync'] else None,
             last_sync_status=row['last_sync_status'] or 'never',
             validation_errors=validation_errors,
-            created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else datetime.utcnow(),
-            updated_at=datetime.fromisoformat(row['updated_at']) if row['updated_at'] else datetime.utcnow()
+            created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else utc_now_naive(),
+            updated_at=datetime.fromisoformat(row['updated_at']) if row['updated_at'] else utc_now_naive()
         )
 
     async def set_config(self, config: GuildPromptConfig) -> None:
@@ -127,8 +128,8 @@ class GuildPromptConfigStore:
             config.last_sync.isoformat() if config.last_sync else None,
             config.last_sync_status,
             validation_errors_json,
-            config.created_at.isoformat() if config.created_at else datetime.utcnow().isoformat(),
-            datetime.utcnow().isoformat()  # Always update updated_at
+            config.created_at.isoformat() if config.created_at else utc_now_naive().isoformat(),
+            utc_now_naive().isoformat()  # Always update updated_at
         )
 
         await self.connection.execute(query, params)
@@ -181,10 +182,10 @@ class GuildPromptConfigStore:
         """
 
         params = (
-            datetime.utcnow().isoformat(),
+            utc_now_naive().isoformat(),
             status,
             validation_errors_json,
-            datetime.utcnow().isoformat(),
+            utc_now_naive().isoformat(),
             guild_id
         )
 
@@ -223,8 +224,8 @@ class GuildPromptConfigStore:
                     last_sync=datetime.fromisoformat(row['last_sync']) if row['last_sync'] else None,
                     last_sync_status=row['last_sync_status'] or 'never',
                     validation_errors=validation_errors,
-                    created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else datetime.utcnow(),
-                    updated_at=datetime.fromisoformat(row['updated_at']) if row['updated_at'] else datetime.utcnow()
+                    created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else utc_now_naive(),
+                    updated_at=datetime.fromisoformat(row['updated_at']) if row['updated_at'] else utc_now_naive()
                 )
                 configs.append(config)
             except Exception as e:

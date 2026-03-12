@@ -11,6 +11,7 @@ from collections import deque
 from .models import CommandLog, CommandType, CommandStatus, LoggingConfig
 from .sanitizer import LogSanitizer
 from .repository import CommandLogRepository
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +147,7 @@ class CommandLogger:
             channel_id=channel_id,
             parameters=sanitized_params,
             execution_context=sanitized_context,
-            started_at=datetime.utcnow()
+            started_at=utc_now_naive()
         )
 
         # Queue for async write or write immediately

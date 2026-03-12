@@ -17,6 +17,7 @@ from fastapi import Request, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from .models import DashboardUser, DashboardGuild, DashboardSession, GuildRole
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +287,7 @@ class DashboardAuth:
         Returns:
             JWT token string
         """
-        now = datetime.utcnow()
+        now = utc_now_naive()
         payload = {
             "sub": user.id,
             "username": user.username,
@@ -447,7 +448,7 @@ class DashboardAuth:
         Returns:
             Tuple of (jwt_token, session)
         """
-        now = datetime.utcnow()
+        now = utc_now_naive()
         guild_ids = [g.id for g in manageable_guilds]
         # Build guild_roles dict mapping guild_id to role string
         guild_roles = {g.id: g.get_role().value for g in manageable_guilds}
@@ -491,9 +492,9 @@ class DashboardAuth:
         token_hash = self._hash_token(jwt_token)
         session = self._sessions.get(token_hash)
 
-        if session and session.expires_at > datetime.utcnow():
+        if session and session.expires_at > utc_now_naive():
             # Update last activity
-            session.last_activity = datetime.utcnow()
+            session.last_activity = utc_now_naive()
             return session
 
         return None
@@ -523,7 +524,7 @@ class DashboardAuth:
             Valid Discord access token
         """
         # Check if token needs refresh
-        if session.token_expires_at <= datetime.utcnow() + timedelta(minutes=5):
+        if session.token_expires_at <= utc_now_naive() + timedelta(minutes=5):
             # Refresh token
             refresh_token = self._decrypt(session.discord_refresh_token)
             access_token, new_refresh, expires_in = await self.refresh_discord_token(refresh_token)
@@ -531,7 +532,7 @@ class DashboardAuth:
             # Update session
             session.discord_access_token = self._encrypt(access_token)
             session.discord_refresh_token = self._encrypt(new_refresh)
-            session.token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+            session.token_expires_at = utc_now_naive() + timedelta(seconds=expires_in)
 
             return access_token
 
@@ -539,7 +540,7 @@ class DashboardAuth:
 
     def cleanup_expired_sessions(self):
         """Remove expired sessions."""
-        now = datetime.utcnow()
+        now = utc_now_naive()
         expired = [
             token_hash
             for token_hash, session in self._sessions.items()
@@ -637,8 +638,8 @@ async def get_current_user(
                 "avatar": None,
                 "guilds": guilds,
                 "guild_roles": guild_roles,
-                "iat": datetime.utcnow(),
-                "exp": datetime.utcnow() + timedelta(hours=24),
+                "iat": utc_now_naive(),
+                "exp": utc_now_naive() + timedelta(hours=24),
             }
 
     if credentials is None:

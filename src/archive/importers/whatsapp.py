@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from src.services.anonymization import PhoneAnonymizer
 from src.services.anonymization.phone_anonymizer import create_guild_anonymizer
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +256,7 @@ class WhatsAppImporter:
             import_id=import_id,
             filename=file_path.name,
             format="whatsapp_txt",
-            imported_at=datetime.utcnow(),
+            imported_at=utc_now_naive(),
             date_range=date_range,
             message_count=len(messages),
             participant_count=len(participants),
@@ -336,7 +337,7 @@ class WhatsAppImporter:
             import_id=import_id,
             filename=file_path.name,
             format="reader_bot",
-            imported_at=datetime.utcnow(),
+            imported_at=utc_now_naive(),
             date_range=date_range,
             message_count=len(messages),
             participant_count=len(participants),
@@ -540,7 +541,7 @@ class WhatsAppImporter:
             "import_id": import_id,
             "filename": filename,
             "format": format_type,
-            "imported_at": datetime.utcnow().isoformat(),
+            "imported_at": utc_now_naive().isoformat(),
             "date_range": {"start": earliest, "end": latest},
             "message_count": len(messages),
             "participant_count": len(set(m.sender for m in messages if not m.is_system)),

@@ -11,6 +11,7 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +31,12 @@ class CacheEntry:
         """Check if the cache entry is expired."""
         if not self.expires_at:
             return False
-        return datetime.utcnow() > self.expires_at
+        return utc_now_naive() > self.expires_at
 
     def access(self) -> Any:
         """Access the cache entry and update access statistics."""
         self.access_count += 1
-        self.last_accessed = datetime.utcnow()
+        self.last_accessed = utc_now_naive()
         return self.value
 
     def to_dict(self) -> Dict[str, Any]:
@@ -128,7 +129,7 @@ class PermissionCache:
 
             # Calculate expiration time
             ttl_seconds = ttl if ttl is not None else self._ttl
-            expires_at = datetime.utcnow() + timedelta(seconds=ttl_seconds)
+            expires_at = utc_now_naive() + timedelta(seconds=ttl_seconds)
 
             # Create and store entry
             entry = CacheEntry(

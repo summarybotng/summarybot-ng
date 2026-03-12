@@ -12,6 +12,7 @@ from .utils import format_error_response, format_success_response, format_info_r
 from ..exceptions import UserError, create_error_context
 from ..models.task import ScheduledTask, TaskType, TaskStatus, ScheduleType, Destination, DestinationType
 from ..models.summary import SummaryLength, SummaryOptions
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -312,7 +313,7 @@ class ScheduleCommandHandler(BaseCommandHandler):
                 title="📅 Scheduled Summaries",
                 description=f"Active summaries for {interaction.guild.name}",
                 color=0x4A90E2,
-                timestamp=datetime.utcnow()
+                timestamp=utc_now_naive()
             )
 
             for i, task in enumerate(summary_tasks[:10], 1):  # Limit to 10

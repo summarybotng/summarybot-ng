@@ -8,6 +8,7 @@ from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime
 
 from ..base import StoredSummaryRepository
+from src.utils.time import utc_now_naive
 from ...models.summary import (
     SummaryResult,
     ActionItem,
@@ -653,8 +654,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             id=data.get('id', ''),
             channel_id=data.get('channel_id', ''),
             guild_id=data.get('guild_id', ''),
-            start_time=datetime.fromisoformat(data['start_time']) if data.get('start_time') else datetime.utcnow(),
-            end_time=datetime.fromisoformat(data['end_time']) if data.get('end_time') else datetime.utcnow(),
+            start_time=datetime.fromisoformat(data['start_time']) if data.get('start_time') else utc_now_naive(),
+            end_time=datetime.fromisoformat(data['end_time']) if data.get('end_time') else utc_now_naive(),
             message_count=data.get('message_count', 0),
             key_points=data.get('key_points', []),
             action_items=action_items,
@@ -662,7 +663,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             participants=participants,
             summary_text=data.get('summary_text', ''),
             metadata=data.get('metadata', {}),
-            created_at=datetime.fromisoformat(data['created_at']) if data.get('created_at') else datetime.utcnow(),
+            created_at=datetime.fromisoformat(data['created_at']) if data.get('created_at') else utc_now_naive(),
             context=context,
             prompt_system=data.get('prompt_system'),
             prompt_user=data.get('prompt_user'),

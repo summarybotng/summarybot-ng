@@ -8,10 +8,13 @@ datetime object without timezone info, which can lead to subtle bugs when compar
 with timezone-aware datetimes.
 
 Usage:
-    from src.utils.time import utc_now
+    from src.utils.time import utc_now, utc_now_naive
 
-    # Instead of: datetime.utcnow()
+    # For new code (timezone-aware):
     now = utc_now()
+
+    # For backward compatibility (naive datetime):
+    now = utc_now_naive()
 """
 
 from datetime import datetime, timezone
@@ -20,8 +23,7 @@ from datetime import datetime, timezone
 def utc_now() -> datetime:
     """Get current UTC time as a timezone-aware datetime.
 
-    This replaces datetime.utcnow() which is deprecated in Python 3.12+.
-    Returns a timezone-aware datetime in UTC.
+    Returns a timezone-aware datetime in UTC. Use this for new code.
 
     Returns:
         Current UTC time with timezone info
@@ -32,8 +34,8 @@ def utc_now() -> datetime:
 def utc_now_naive() -> datetime:
     """Get current UTC time as a naive datetime (for backward compatibility).
 
-    Use this only when you need a naive datetime for compatibility with
-    existing code that expects naive datetimes. Prefer utc_now() for new code.
+    Use this for compatibility with existing code that expects naive datetimes.
+    This replaces datetime.utcnow() throughout the codebase.
 
     Returns:
         Current UTC time without timezone info

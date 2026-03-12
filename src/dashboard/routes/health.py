@@ -11,6 +11,7 @@ import logging
 from datetime import datetime
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from src.utils.time import utc_now_naive
 
 # psutil is optional - graceful degradation if not installed
 try:
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Health"])
 
 # Track when the service started
-_start_time = datetime.utcnow()
+_start_time = utc_now_naive()
 
 
 @router.get("/health")
@@ -36,7 +37,7 @@ async def health_check():
     Returns 200 if healthy, 503 if degraded.
     """
     checks = {
-        "uptime_seconds": int((datetime.utcnow() - _start_time).total_seconds()),
+        "uptime_seconds": int((utc_now_naive() - _start_time).total_seconds()),
     }
 
     # Memory checks (optional - requires psutil)
@@ -101,7 +102,7 @@ async def health_check():
         status_code=status_code,
         content={
             "status": status,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now_naive().isoformat(),
             "checks": checks,
         }
     )
@@ -115,7 +116,7 @@ async def liveness():
     Returns 200 if the process is running.
     Used by orchestrators to detect crashed processes.
     """
-    return {"status": "alive", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "alive", "timestamp": utc_now_naive().isoformat()}
 
 
 @router.get("/health/ready")
@@ -149,11 +150,11 @@ async def readiness():
             content={
                 "status": "not_ready",
                 "errors": errors,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_naive().isoformat(),
             }
         )
 
     return {
         "status": "ready",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utc_now_naive().isoformat(),
     }

@@ -21,6 +21,7 @@ from typing import Optional, Dict
 import hashlib
 
 from .models import PromptContext, CachedPrompt, ResolvedPrompt, PromptSource
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,7 @@ class PromptCacheManager:
         cached = self._memory_cache.get(cache_key)
         if cached:
             # Check if within stale threshold
-            age_seconds = (datetime.utcnow() - cached.cached_at).total_seconds()
+            age_seconds = (utc_now_naive() - cached.cached_at).total_seconds()
             if age_seconds < self.stale_ttl:
                 logger.info(
                     f"Cache HIT (stale, age={cached.age_minutes:.1f}m) for guild {guild_id}"
@@ -137,7 +138,7 @@ class PromptCacheManager:
         cache_key = self._generate_cache_key(guild_id, context)
         ttl = ttl or self.ttl
 
-        now = datetime.utcnow()
+        now = utc_now_naive()
         cached = CachedPrompt(
             content=prompt.content,
             source=prompt.source.value,
@@ -320,7 +321,7 @@ class PromptCacheManager:
     @property
     def cache_stats(self) -> Dict:
         """Get cache statistics."""
-        now = datetime.utcnow()
+        now = utc_now_naive()
         fresh_count = sum(
             1 for cached in self._memory_cache.values()
             if cached.is_fresh

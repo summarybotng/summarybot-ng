@@ -13,6 +13,7 @@ from ..config.settings import BotConfig
 from ..config.constants import DEFAULT_SUMMARIZATION_MODEL
 from ..summarization.engine import SummarizationEngine
 from ..models.summary import SummaryOptions, SummaryLength
+from src.utils.time import utc_now_naive
 from ..exceptions import (
     SummarizationError,
     InsufficientContentError,
@@ -79,7 +80,7 @@ def create_summary_router(
         Raises:
             HTTPException: On validation or processing errors
         """
-        request_id = x_request_id or f"req-{datetime.utcnow().timestamp()}"
+        request_id = x_request_id or f"req-{utc_now_naive().timestamp()}"
 
         try:
             logger.info(f"Processing summary request {request_id}")
@@ -158,7 +159,7 @@ def create_summary_router(
                     author_name=msg.get("author_name", "Unknown"),
                     author_id=msg.get("author_id", ""),
                     content=msg.get("content", ""),
-                    timestamp=datetime.fromisoformat(msg.get("timestamp", datetime.utcnow().isoformat())),
+                    timestamp=datetime.fromisoformat(msg.get("timestamp", utc_now_naive().isoformat())),
                     attachments=msg.get("attachments", []),
                     references=msg.get("references", []),
                     mentions=msg.get("mentions", [])
@@ -201,7 +202,7 @@ def create_summary_router(
 
             # Build response
             response = SummaryResponseModel(
-                id=f"sum_{int(datetime.utcnow().timestamp())}",
+                id=f"sum_{int(utc_now_naive().timestamp())}",
                 channel_id=channel_id or "unknown",
                 guild_id=guild_id,
                 summary_text=summary_result.summary_text,
@@ -210,9 +211,9 @@ def create_summary_router(
                 technical_terms=[],
                 participants=[],
                 message_count=len(messages),
-                start_time=processed_messages[0].timestamp if processed_messages else datetime.utcnow(),
-                end_time=processed_messages[-1].timestamp if processed_messages else datetime.utcnow(),
-                created_at=datetime.utcnow(),
+                start_time=processed_messages[0].timestamp if processed_messages else utc_now_naive(),
+                end_time=processed_messages[-1].timestamp if processed_messages else utc_now_naive(),
+                created_at=utc_now_naive(),
                 metadata={
                     "input_tokens": summary_result.metadata.get("input_tokens", 0),
                     "output_tokens": summary_result.metadata.get("output_tokens", 0),
@@ -291,7 +292,7 @@ def create_summary_router(
         Raises:
             HTTPException: On validation or processing errors
         """
-        request_id = x_request_id or f"req-{datetime.utcnow().timestamp()}"
+        request_id = x_request_id or f"req-{utc_now_naive().timestamp()}"
 
         try:
             logger.info(f"Processing summary request {request_id}")
@@ -445,7 +446,7 @@ def create_summary_router(
         Raises:
             HTTPException: On validation or scheduling errors
         """
-        request_id = x_request_id or f"req-{datetime.utcnow().timestamp()}"
+        request_id = x_request_id or f"req-{utc_now_naive().timestamp()}"
 
         try:
             logger.info(f"Processing schedule request {request_id}")

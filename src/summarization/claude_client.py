@@ -5,6 +5,7 @@ Claude API client for AI summarization.
 import asyncio
 import logging
 import time
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
@@ -82,7 +83,7 @@ class UsageStats(BaseModel):
         self.total_input_tokens += response.input_tokens
         self.total_output_tokens += response.output_tokens
         self.total_cost_usd += cost
-        self.last_request_time = datetime.utcnow()
+        self.last_request_time = utc_now_naive()
     
     def add_error(self, is_rate_limit: bool = False):
         """Add an error to stats."""

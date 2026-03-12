@@ -10,6 +10,7 @@ from typing import Optional, Dict, Any, List
 from enum import Enum
 
 from ..models.base import BaseModel, generate_id
+from src.utils.time import utc_now_naive
 
 
 class CommandType(Enum):
@@ -66,7 +67,7 @@ class CommandLog(BaseModel):
 
     def mark_completed(self, result_summary: Dict[str, Any] = None) -> None:
         """Mark command execution as completed successfully."""
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now_naive()
         self.duration_ms = int(
             (self.completed_at - self.started_at).total_seconds() * 1000
         )
@@ -76,7 +77,7 @@ class CommandLog(BaseModel):
 
     def mark_failed(self, error_code: str, error_message: str) -> None:
         """Mark command execution as failed."""
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now_naive()
         self.duration_ms = int(
             (self.completed_at - self.started_at).total_seconds() * 1000
         )

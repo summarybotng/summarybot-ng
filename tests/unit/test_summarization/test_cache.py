@@ -208,7 +208,8 @@ class TestSummaryCache:
             channel_id=sample_summary.channel_id,
             start_time=sample_summary.start_time,
             end_time=sample_summary.end_time,
-            options_hash=summary_cache._hash_summary_options(sample_summary)
+            options_hash=summary_cache._hash_summary_options(sample_summary),
+            guild_id=sample_summary.guild_id
         )
 
         assert cached is not None
@@ -238,7 +239,8 @@ class TestSummaryCache:
             channel_id=sample_summary.channel_id,
             start_time=sample_summary.start_time,
             end_time=sample_summary.end_time,
-            options_hash=summary_cache._hash_summary_options(sample_summary)
+            options_hash=summary_cache._hash_summary_options(sample_summary),
+            guild_id=sample_summary.guild_id
         )
         assert cached1 is not None
 
@@ -250,7 +252,8 @@ class TestSummaryCache:
             channel_id=sample_summary.channel_id,
             start_time=sample_summary.start_time,
             end_time=sample_summary.end_time,
-            options_hash=summary_cache._hash_summary_options(sample_summary)
+            options_hash=summary_cache._hash_summary_options(sample_summary),
+            guild_id=sample_summary.guild_id
         )
         assert cached2 is None
 
@@ -406,7 +409,8 @@ class TestSummaryCache:
             channel_id=sample_summary.channel_id,
             start_time=sample_summary.start_time,
             end_time=sample_summary.end_time,
-            options_hash=summary_cache._hash_summary_options(sample_summary)
+            options_hash=summary_cache._hash_summary_options(sample_summary),
+            guild_id=sample_summary.guild_id
         )
 
         # Verify all fields preserved
@@ -449,7 +453,8 @@ class TestSummaryCache:
                 channel_id=sample_summary.channel_id,
                 start_time=sample_summary.start_time,
                 end_time=sample_summary.end_time,
-                options_hash=summary_cache._hash_summary_options(sample_summary)
+                options_hash=summary_cache._hash_summary_options(sample_summary),
+                guild_id=sample_summary.guild_id
             )
             tasks.append(task)
 

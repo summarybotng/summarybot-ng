@@ -9,6 +9,7 @@ from datetime import datetime, date
 from enum import Enum
 from typing import Any, Dict, List, Optional
 import json
+from src.utils.time import utc_now_naive
 
 
 class JobType(Enum):
@@ -114,25 +115,25 @@ class SummaryJob:
     def start(self) -> None:
         """Mark job as started."""
         self.status = JobStatus.RUNNING
-        self.started_at = datetime.utcnow()
+        self.started_at = utc_now_naive()
 
     def complete(self, summary_id: Optional[str] = None) -> None:
         """Mark job as completed."""
         self.status = JobStatus.COMPLETED
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now_naive()
         if summary_id:
             self.summary_id = summary_id
 
     def fail(self, error: str) -> None:
         """Mark job as failed."""
         self.status = JobStatus.FAILED
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now_naive()
         self.error = error
 
     def cancel(self) -> None:
         """Mark job as cancelled."""
         self.status = JobStatus.CANCELLED
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now_naive()
 
     def pause(self, reason: str = "user_requested") -> None:
         """Mark job as paused."""
@@ -273,7 +274,7 @@ class SummaryJob:
             summary_ids=summary_ids or [],
             error=data.get("error"),
             pause_reason=data.get("pause_reason"),
-            created_at=parse_dt(data.get("created_at")) or datetime.utcnow(),
+            created_at=parse_dt(data.get("created_at")) or utc_now_naive(),
             started_at=parse_dt(data.get("started_at")),
             completed_at=parse_dt(data.get("completed_at")),
             created_by=data.get("created_by"),

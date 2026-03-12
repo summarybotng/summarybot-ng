@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
+from src.utils.time import utc_now_naive
 from .models import (
     SourceType,
     ArchiveSource,
@@ -323,7 +324,7 @@ class SourceRegistry:
         Args:
             manifest: Manifest to save
         """
-        manifest.last_updated = datetime.utcnow()
+        manifest.last_updated = utc_now_naive()
         manifest_path = self.archive_root / "manifest.json"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest.save(manifest_path)

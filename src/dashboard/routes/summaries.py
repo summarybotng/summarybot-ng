@@ -9,6 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from ..auth import get_current_user, require_guild_admin
+from src.utils.time import utc_now_naive
 from ..models import (
     SummariesResponse,
     SummaryListItem,
@@ -467,7 +468,7 @@ async def generate_summary(
     job_id = f"job_{secrets.token_urlsafe(16)}"
 
     # Calculate time range
-    now = datetime.utcnow()
+    now = utc_now_naive()
     if body.time_range.type == "hours":
         start_time = now - timedelta(hours=body.time_range.value or 24)
         end_time = now
@@ -678,7 +679,7 @@ async def generate_summary(
                         channel_names.append(f"#{ch.name}")
                 if len(channel_ids) > 3:
                     channel_names.append(f"+{len(channel_ids) - 3} more")
-                title = f"{', '.join(channel_names) or 'Summary'} — {datetime.utcnow().strftime('%b %d, %H:%M')}"
+                title = f"{', '.join(channel_names) or 'Summary'} — {utc_now_naive().strftime('%b %d, %H:%M')}"
 
                 # Create StoredSummary with source=MANUAL for generate button
                 stored_summary = StoredSummary(
@@ -688,7 +689,7 @@ async def generate_summary(
                     summary_result=result,
                     title=title,
                     source=SummarySource.MANUAL,  # From Generate button
-                    created_at=datetime.utcnow(),
+                    created_at=utc_now_naive(),
                 )
 
                 logger.info(f"[{job_id}] Saving to stored_summaries...")
@@ -1531,7 +1532,7 @@ async def regenerate_stored_summary(
         "status": "processing",
         "guild_id": guild_id,
         "channel_ids": channel_ids,
-        "started_at": datetime.utcnow(),
+        "started_at": utc_now_naive(),
         "summary_id": summary_id,
         "error": None,
         "regenerate": True,
@@ -1598,7 +1599,7 @@ async def regenerate_stored_summary(
                                 timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M')
                             except ValueError:
                                 # SEC-005: Specific exception for date parsing
-                                timestamp = stored.created_at or datetime.utcnow()
+                                timestamp = stored.created_at or utc_now_naive()
 
                             processed.append(ProcessedMessage(
                                 id=f"src_{i}",
@@ -1998,7 +1999,7 @@ async def bulk_regenerate_summaries(
         "summary_ids": queued_ids,
         "completed": 0,
         "total": len(queued_ids),
-        "started_at": datetime.utcnow(),
+        "started_at": utc_now_naive(),
         "errors": [],
     }
 

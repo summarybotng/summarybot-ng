@@ -14,6 +14,7 @@ from typing import Optional
 import uuid
 
 from .models import GenerationLock, SummaryStatus
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ class LockManager:
                         )
 
                         # Lock still valid
-                        if datetime.utcnow() < expires_at:
+                        if utc_now_naive() < expires_at:
                             logger.debug(
                                 f"Lock held by {lock_data.get('job_id')}: {meta_path}"
                             )
@@ -93,9 +94,9 @@ class LockManager:
             # Acquire lock
             lock = GenerationLock(
                 job_id=job_id,
-                acquired_at=datetime.utcnow(),
+                acquired_at=utc_now_naive(),
                 acquired_by=self.worker_id,
-                expires_at=datetime.utcnow() + timedelta(seconds=self.lock_ttl_seconds),
+                expires_at=utc_now_naive() + timedelta(seconds=self.lock_ttl_seconds),
             )
 
             meta = self._create_lock_meta(lock)
@@ -168,7 +169,7 @@ class LockManager:
 
             # Extend expiration
             extension = extension_seconds or self.lock_ttl_seconds
-            new_expiry = datetime.utcnow() + timedelta(seconds=extension)
+            new_expiry = utc_now_naive() + timedelta(seconds=extension)
             lock_data["expires_at"] = new_expiry.isoformat()
             meta["lock"] = lock_data
 

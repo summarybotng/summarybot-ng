@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, Dict, List, Any
 from enum import Enum
+from src.utils.time import utc_now_naive
 
 
 class PromptSource(Enum):
@@ -79,7 +80,7 @@ class ResolvedPrompt:
 
     def get_age_seconds(self) -> float:
         """Get age of this resolved prompt in seconds."""
-        return (datetime.utcnow() - self.resolved_at).total_seconds()
+        return (utc_now_naive() - self.resolved_at).total_seconds()
 
     def to_source_info(self) -> Dict[str, Any]:
         """Get prompt source information for API responses."""
@@ -113,7 +114,7 @@ class CachedPrompt:
     @property
     def is_fresh(self) -> bool:
         """Check if cache entry is still fresh."""
-        return datetime.utcnow() < self.expires_at
+        return utc_now_naive() < self.expires_at
 
     @property
     def is_stale(self) -> bool:
@@ -123,7 +124,7 @@ class CachedPrompt:
     @property
     def age_minutes(self) -> float:
         """Get age of cache entry in minutes."""
-        return (datetime.utcnow() - self.cached_at).total_seconds() / 60
+        return (utc_now_naive() - self.cached_at).total_seconds() / 60
 
 
 @dataclass

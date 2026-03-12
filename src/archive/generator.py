@@ -19,6 +19,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, AsyncIterator, TYPE_CHECKING
 
+from src.utils.time import utc_now_naive
 from .models import (
     SourceType,
     ArchiveSource,
@@ -344,7 +345,7 @@ class RetrospectiveGenerator:
             raise ValueError(f"Job not found: {job_id}")
 
         job.status = JobStatus.RUNNING
-        job.started_at = datetime.utcnow()
+        job.started_at = utc_now_naive()
         await self._persist_job(job)  # ADR-013
 
         try:
@@ -397,7 +398,7 @@ class RetrospectiveGenerator:
             # Mark complete if not paused/cancelled
             if job.status == JobStatus.RUNNING:
                 job.status = JobStatus.COMPLETED
-                job.completed_at = datetime.utcnow()
+                job.completed_at = utc_now_naive()
 
                 # Trigger sync if configured
                 await self._trigger_sync(job)
@@ -408,7 +409,7 @@ class RetrospectiveGenerator:
         except Exception as e:
             job.status = JobStatus.FAILED
             job.error = str(e)
-            job.completed_at = datetime.utcnow()
+            job.completed_at = utc_now_naive()
             logger.error(f"Job {job_id} failed: {e}")
             await self._persist_job(job)  # ADR-013
 
@@ -516,7 +517,7 @@ class RetrospectiveGenerator:
 
             # Generate summary
             # ADR-014: Pass guild_id for jump link generation in references
-            start_time = datetime.utcnow()
+            start_time = utc_now_naive()
             summary_result = await self.summarization_service.generate_summary(
                 messages=messages,
                 api_key=resolved_key.key,
@@ -524,7 +525,7 @@ class RetrospectiveGenerator:
                 perspective=job.perspective,
                 guild_id=job.source.server_id or "",
             )
-            duration = (datetime.utcnow() - start_time).total_seconds()
+            duration = (utc_now_naive() - start_time).total_seconds()
 
             # Calculate cost
             cost, pricing_version = self.cost_tracker.pricing.calculate_cost(
@@ -537,7 +538,7 @@ class RetrospectiveGenerator:
             cost_entry = CostEntry(
                 source_key=job.source.source_key,
                 summary_id=f"sum_{uuid.uuid4().hex[:12]}",
-                timestamp=datetime.utcnow(),
+                timestamp=utc_now_naive(),
                 model=summary_result.model,
                 tokens_input=summary_result.tokens_input,
                 tokens_output=summary_result.tokens_output,

@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, List
 from enum import Enum
 
 from .base import BaseModel, generate_id
+from src.utils.time import utc_now_naive
 
 
 class WebhookEvent(Enum):
@@ -176,7 +177,7 @@ class WebhookDelivery(BaseModel):
     def calculate_next_retry(self) -> datetime:
         """Calculate next retry time with exponential backoff."""
         delay = self.retry_delay_seconds * (2 ** (self.attempt_count - 1))
-        return datetime.utcnow() + timedelta(seconds=delay)
+        return utc_now_naive() + timedelta(seconds=delay)
     
     def mark_attempt(self) -> None:
         """Mark delivery attempt."""
@@ -187,7 +188,7 @@ class WebhookDelivery(BaseModel):
                       response_headers: Dict[str, str] = None) -> None:
         """Mark delivery as successful."""
         self.status = WebhookStatus.DELIVERED
-        self.delivered_at = datetime.utcnow()
+        self.delivered_at = utc_now_naive()
         self.response_status = response_status
         self.response_body = response_body
         self.response_headers = response_headers or {}
@@ -207,7 +208,7 @@ class WebhookDelivery(BaseModel):
         """Get formatted payload for the webhook event."""
         base_payload = {
             "event": self.event.value,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now_naive().isoformat(),
             "delivery_id": self.id,
             "data": data
         }

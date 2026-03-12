@@ -9,6 +9,7 @@ import logging
 from datetime import datetime
 from typing import Optional, List
 
+from src.utils.time import utc_now_naive
 from ..models.push_template import (
     PushTemplate, GuildPushTemplate, DEFAULT_PUSH_TEMPLATE,
     validate_template,
@@ -84,8 +85,8 @@ class PushTemplateRepository:
             return GuildPushTemplate(
                 guild_id=row['guild_id'],
                 template=PushTemplate.from_dict(template_data),
-                created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else datetime.utcnow(),
-                updated_at=datetime.fromisoformat(row['updated_at']) if row['updated_at'] else datetime.utcnow(),
+                created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else utc_now_naive(),
+                updated_at=datetime.fromisoformat(row['updated_at']) if row['updated_at'] else utc_now_naive(),
                 created_by=row.get('created_by'),
             )
         except Exception as e:
@@ -126,7 +127,7 @@ class PushTemplateRepository:
             updated_at = excluded.updated_at
         """
 
-        now = datetime.utcnow().isoformat()
+        now = utc_now_naive().isoformat()
         params = (
             guild_id,
             template.schema_version,

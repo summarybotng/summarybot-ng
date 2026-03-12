@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
 from .models import CostEntry
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +127,7 @@ class PricingTable:
             Tuple of (input_cost_per_1k, output_cost_per_1k, pricing_version)
         """
         if timestamp is None:
-            timestamp = datetime.utcnow()
+            timestamp = utc_now_naive()
 
         # Find the applicable pricing version
         applicable_version = None
@@ -208,7 +209,7 @@ class PricingTable:
                     return False
 
                 data = response.json()
-                today = datetime.utcnow().strftime("%Y-%m-%d")
+                today = utc_now_naive().strftime("%Y-%m-%d")
 
                 # Parse model pricing
                 models = {}
@@ -316,7 +317,7 @@ class CostTracker:
                     api_key_source=source_data.get("api_key_source", "default"),
                     api_key_ref=source_data.get("api_key_ref"),
                     monthly=monthly,
-                    last_updated=datetime.fromisoformat(source_data["last_updated"]) if source_data.get("last_updated") else datetime.utcnow(),
+                    last_updated=datetime.fromisoformat(source_data["last_updated"]) if source_data.get("last_updated") else utc_now_naive(),
                 )
 
             logger.info(f"Loaded cost ledger: {len(self._sources)} sources, ${self._total_cost:.2f} total")
@@ -368,7 +369,7 @@ class CostTracker:
         # Update totals
         source.total_cost_usd += entry.cost_usd
         source.summary_count += 1
-        source.last_updated = datetime.utcnow()
+        source.last_updated = utc_now_naive()
 
         monthly.cost_usd += entry.cost_usd
         monthly.summaries += 1
@@ -423,7 +424,7 @@ class CostTracker:
 
     def get_current_month_cost(self, source_key: str) -> float:
         """Get current month's cost for a source."""
-        now = datetime.utcnow()
+        now = utc_now_naive()
         monthly = self.get_monthly_cost(source_key, now.year, now.month)
         return monthly.cost_usd if monthly else 0.0
 
@@ -495,7 +496,7 @@ class CostTracker:
         Returns:
             Cost report dictionary
         """
-        now = datetime.utcnow()
+        now = utc_now_naive()
         month_key = now.strftime("%Y-%m")
 
         report = {

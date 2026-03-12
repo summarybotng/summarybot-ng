@@ -16,6 +16,7 @@ from typing import List, Optional, Dict, Any
 
 from .base import BaseModel, generate_id
 from .summary import SummaryResult
+from src.utils.time import utc_now_naive
 
 
 class SummarySource(Enum):
@@ -123,7 +124,7 @@ class StoredSummary(BaseModel):
         """Record a push delivery to a channel."""
         delivery = PushDelivery(
             channel_id=channel_id,
-            pushed_at=datetime.utcnow(),
+            pushed_at=utc_now_naive(),
             message_id=message_id,
             success=success,
             error=error
@@ -135,7 +136,7 @@ class StoredSummary(BaseModel):
     def mark_viewed(self) -> None:
         """Mark the summary as viewed (only sets first view time)."""
         if self.viewed_at is None:
-            self.viewed_at = datetime.utcnow()
+            self.viewed_at = utc_now_naive()
 
     def pin(self) -> None:
         """Pin the summary."""
@@ -362,7 +363,7 @@ class StoredSummary(BaseModel):
             source_channel_ids=data.get("source_channel_ids", []),
             schedule_id=data.get("schedule_id"),
             summary_result=SummaryResult.from_dict(data["summary_result"]) if data.get("summary_result") else None,
-            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else datetime.utcnow(),
+            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else utc_now_naive(),
             viewed_at=datetime.fromisoformat(data["viewed_at"]) if data.get("viewed_at") else None,
             pushed_at=datetime.fromisoformat(data["pushed_at"]) if data.get("pushed_at") else None,
             push_deliveries=[PushDelivery.from_dict(d) for d in data.get("push_deliveries", [])],

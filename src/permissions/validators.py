@@ -10,6 +10,7 @@ from typing import Optional, List, Dict, Any
 import discord
 import logging
 
+from src.utils.time import utc_now_naive
 from ..exceptions.discord_errors import (
     DiscordPermissionError,
     BotPermissionError,
@@ -333,7 +334,7 @@ class PermissionValidator:
                 result.add_error("Start time must be before end time")
 
             # Check if range is too old
-            now = datetime.utcnow()
+            now = utc_now_naive()
             days_old = (now - start_time).days
 
             if days_old > max_days:

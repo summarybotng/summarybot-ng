@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 import httpx
 
 from ..auth import get_current_user
+from src.utils.time import utc_now_naive
 from ..models import (
     WebhooksResponse,
     WebhookListItem,
@@ -151,7 +152,7 @@ async def create_webhook(
         "last_delivery": None,
         "last_status": None,
         "created_by": user["sub"],
-        "created_at": datetime.utcnow(),
+        "created_at": utc_now_naive(),
     }
 
     await webhook_repo.save_webhook(webhook)
@@ -358,7 +359,7 @@ async def test_webhook(
         test_payload = {
             "type": "test",
             "message": test_message,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now_naive().isoformat(),
         }
 
     start_time = time.time()
@@ -378,7 +379,7 @@ async def test_webhook(
 
             # Update webhook status in database
             status = "success" if response.is_success else "failed"
-            await webhook_repo.update_delivery_status(webhook_id, status, datetime.utcnow())
+            await webhook_repo.update_delivery_status(webhook_id, status, utc_now_naive())
 
             # ADR-031: Log webhook test result
             if response.is_success:
@@ -406,7 +407,7 @@ async def test_webhook(
             f"Webhook test timeout: webhook_id={webhook_id}, "
             f"guild_id={guild_id}, url={_mask_url(webhook['url'])}"
         )
-        await webhook_repo.update_delivery_status(webhook_id, "failed", datetime.utcnow())
+        await webhook_repo.update_delivery_status(webhook_id, "failed", utc_now_naive())
         return WebhookTestResponse(
             success=False,
             response_code=None,
@@ -421,7 +422,7 @@ async def test_webhook(
             f"guild_id={guild_id}, url={_mask_url(webhook['url'])}, "
             f"error={type(e).__name__}: {e}"
         )
-        await webhook_repo.update_delivery_status(webhook_id, "failed", datetime.utcnow())
+        await webhook_repo.update_delivery_status(webhook_id, "failed", utc_now_naive())
         return WebhookTestResponse(
             success=False,
             response_code=None,

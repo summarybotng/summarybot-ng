@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import discord
 from abc import ABC, abstractmethod
 
+from src.utils.time import utc_now_naive
 from ..exceptions import (
     SummaryBotException,
     UserError,
@@ -37,7 +38,7 @@ class RateLimitTracker:
         Returns:
             Tuple of (is_allowed, seconds_until_reset)
         """
-        now = datetime.utcnow()
+        now = utc_now_naive()
 
         # Clean up old entries
         if user_id in self._user_requests:
@@ -235,7 +236,7 @@ class BaseCommandHandler(ABC):
             title="❌ Error",
             description=bot_error.get_user_response(),
             color=0xFF0000,  # Red
-            timestamp=datetime.utcnow()
+            timestamp=utc_now_naive()
         )
 
         # Add error code footer
@@ -288,7 +289,7 @@ class BaseCommandHandler(ABC):
                 title=f"✅ {title}",
                 description=description,
                 color=0x00FF00,  # Green
-                timestamp=datetime.utcnow()
+                timestamp=utc_now_naive()
             )
 
         try:
@@ -324,7 +325,7 @@ class BaseCommandHandler(ABC):
             title="⏱️ Rate Limit Exceeded",
             description=f"You're sending commands too quickly. Please wait {reset_seconds} seconds before trying again.",
             color=0xFFA500,  # Orange
-            timestamp=datetime.utcnow()
+            timestamp=utc_now_naive()
         )
 
         embed.add_field(
@@ -360,7 +361,7 @@ class BaseCommandHandler(ABC):
             title="🔒 Permission Denied",
             description="You don't have permission to use this command.",
             color=0xFF0000,  # Red
-            timestamp=datetime.utcnow()
+            timestamp=utc_now_naive()
         )
 
         embed.add_field(

@@ -10,6 +10,7 @@ from .base import DeliveryStrategy, DeliveryResult, DeliveryContext
 from ...models.summary import SummaryResult
 from ...models.stored_summary import StoredSummary, SummarySource
 from ...models.task import Destination
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
         context: DeliveryContext,
     ) -> str:
         """Generate smart title based on scope and content."""
-        timestamp = datetime.utcnow().strftime('%b %d, %H:%M')
+        timestamp = utc_now_naive().strftime('%b %d, %H:%M')
         scope_type = summary.metadata.get("scope_type") if summary.metadata else None
 
         if scope_type == "guild" or len(scope_channel_ids) > 10:

@@ -13,6 +13,7 @@ from typing import Optional, List, Dict, Any
 import discord
 
 from .tasks import SummaryTask, CleanupTask
+from src.utils.time import utc_now_naive
 from .delivery import (
     DeliveryStrategy,
     DeliveryResult,
@@ -124,7 +125,7 @@ class TaskExecutor:
         Returns:
             Task execution result
         """
-        start_time = datetime.utcnow()
+        start_time = utc_now_naive()
         task.mark_started()
 
         # ADR-011: Check if this task needs runtime scope resolution
@@ -317,7 +318,7 @@ class TaskExecutor:
         else:
             task.mark_failed(f"Failed to generate summaries for all {len(channel_ids)} channels")
 
-        execution_time = (datetime.utcnow() - start_time).total_seconds()
+        execution_time = (utc_now_naive() - start_time).total_seconds()
 
         return TaskExecutionResult(
             task_id=task.scheduled_task.id,
@@ -443,7 +444,7 @@ class TaskExecutor:
             # Mark task as completed
             task.mark_completed()
 
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now_naive() - start_time).total_seconds()
 
             return TaskExecutionResult(
                 task_id=task.scheduled_task.id,
@@ -465,7 +466,7 @@ class TaskExecutor:
                 error_message=e.user_message,
             )
 
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now_naive() - start_time).total_seconds()
 
             return TaskExecutionResult(
                 task_id=task.scheduled_task.id,
@@ -487,7 +488,7 @@ class TaskExecutor:
                 error_message=str(e),
             )
 
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now_naive() - start_time).total_seconds()
 
             return TaskExecutionResult(
                 task_id=task.scheduled_task.id,
@@ -507,7 +508,7 @@ class TaskExecutor:
         Returns:
             Task execution result
         """
-        start_time = datetime.utcnow()
+        start_time = utc_now_naive()
         task.mark_started()
 
         logger.info(f"Executing cleanup task {task.task_id}")
@@ -530,7 +531,7 @@ class TaskExecutor:
             # Mark task as completed
             task.mark_completed(items_deleted)
 
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now_naive() - start_time).total_seconds()
 
             return TaskExecutionResult(
                 task_id=task.task_id,
@@ -542,7 +543,7 @@ class TaskExecutor:
             logger.exception(f"Failed to execute cleanup task: {e}")
             task.mark_failed(str(e))
 
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now_naive() - start_time).total_seconds()
 
             return TaskExecutionResult(
                 task_id=task.task_id,
@@ -604,7 +605,7 @@ class TaskExecutor:
             "error_type": type(error).__name__,
             "error_message": str(error),
             "failure_count": task.failure_count,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": utc_now_naive().isoformat()
         }
 
         logger.error(f"Task failure details: {error_details}")

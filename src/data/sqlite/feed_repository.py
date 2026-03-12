@@ -9,6 +9,7 @@ from datetime import datetime
 from ..base import FeedRepository
 from ...models.feed import FeedConfig, FeedType
 from .connection import SQLiteConnection
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ class SQLiteFeedRepository(FeedRepository):
         SET last_accessed = ?, access_count = access_count + 1
         WHERE id = ?
         """
-        await self.connection.execute(query, (datetime.utcnow().isoformat(), feed_id))
+        await self.connection.execute(query, (utc_now_naive().isoformat(), feed_id))
 
     def _row_to_feed(self, row: Dict[str, Any]) -> FeedConfig:
         """Convert database row to FeedConfig object."""

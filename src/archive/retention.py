@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .models import ArchiveSource, SummaryStatus
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,7 @@ class RetentionManager:
             period = md_path.stem[:10]
 
         # Create deleted directory structure
-        now = datetime.utcnow()
+        now = utc_now_naive()
         permanent_delete_at = now + timedelta(days=self.config.soft_delete_grace_days)
 
         # Destination path in .deleted/
@@ -276,7 +277,7 @@ class RetentionManager:
             Number of summaries permanently deleted
         """
         manifest = self._load_manifest()
-        now = datetime.utcnow()
+        now = utc_now_naive()
         deleted_count = 0
 
         expired = []
@@ -303,7 +304,7 @@ class RetentionManager:
         if self.config.retention_days is None:
             return 0
 
-        cutoff = datetime.utcnow() - timedelta(days=self.config.retention_days)
+        cutoff = utc_now_naive() - timedelta(days=self.config.retention_days)
         deleted_count = 0
 
         sources_dir = self.archive_root / "sources"
@@ -385,7 +386,7 @@ class RetentionManager:
         backup_dir = self.archive_root / ".backups"
         backup_dir.mkdir(parents=True, exist_ok=True)
 
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = utc_now_naive().strftime("%Y%m%d_%H%M%S")
         backup_name = f"{safe_source}_{period}_{timestamp}"
 
         if self.config.archive_format == "zip":

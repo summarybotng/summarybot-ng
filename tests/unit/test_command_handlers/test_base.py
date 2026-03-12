@@ -111,10 +111,10 @@ class TestRateLimitTracker:
         """Test that rate limit resets after window expires."""
         user_id = "user123"
 
-        # Mock datetime to control time
-        with patch('src.command_handlers.base.datetime') as mock_datetime:
+        # Mock utc_now_naive to control time
+        with patch('src.command_handlers.base.utc_now_naive') as mock_utc_now:
             base_time = datetime(2024, 1, 1, 12, 0, 0)
-            mock_datetime.utcnow.return_value = base_time
+            mock_utc_now.return_value = base_time
 
             # Make 5 requests
             for i in range(5):
@@ -125,7 +125,7 @@ class TestRateLimitTracker:
             assert allowed is False
 
             # Move time forward past window
-            mock_datetime.utcnow.return_value = base_time + timedelta(seconds=61)
+            mock_utc_now.return_value = base_time + timedelta(seconds=61)
 
             # Should be allowed again
             allowed, _ = rate_limiter.check_rate_limit(user_id, max_requests=5, window_seconds=60)

@@ -10,6 +10,7 @@ from xml.dom import minidom
 
 from ..models.summary import SummaryResult
 from ..models.feed import FeedConfig, FeedType
+from src.utils.time import utc_now_naive
 
 # Register namespace prefixes to avoid duplicate/ns0 declarations
 register_namespace('atom', 'http://www.w3.org/2005/Atom')
@@ -153,7 +154,7 @@ class FeedGenerator:
             updated = max(s.created_at for s in summaries)
             SubElement(feed, 'updated').text = self._format_atom_date(updated)
         else:
-            SubElement(feed, 'updated').text = self._format_atom_date(datetime.utcnow())
+            SubElement(feed, 'updated').text = self._format_atom_date(utc_now_naive())
 
         # Author
         author = SubElement(feed, 'author')
@@ -363,4 +364,4 @@ class FeedGenerator:
         """
         if summaries:
             return max(s.created_at for s in summaries)
-        return datetime.utcnow()
+        return utc_now_naive()

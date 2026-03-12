@@ -8,6 +8,7 @@ from datetime import datetime
 from enum import Enum
 
 from ..models.summary import SummaryResult, ActionItem, TechnicalTerm, Participant
+from src.utils.time import utc_now_naive
 
 
 class OutputFormat(str, Enum):
@@ -257,7 +258,7 @@ class ResponseFormatter:
         error_response = {
             "error": error_code,
             "message": message,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": utc_now_naive().isoformat()
         }
 
         if details:
@@ -287,7 +288,7 @@ class ResponseFormatter:
         response = {
             "success": True,
             "message": message,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now_naive().isoformat(),
             "data": data
         }
 

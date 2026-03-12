@@ -9,6 +9,7 @@ from typing import Optional, List
 import discord
 
 from .base import BaseCommandHandler
+from src.utils.time import utc_now_naive
 from .utils import (
     parse_time_string,
     validate_time_range,
@@ -316,7 +317,7 @@ class SummarizeCommandHandler(BaseCommandHandler):
             ChannelAccessError: If the bot lacks permissions to read messages
         """
         try:
-            now = datetime.utcnow()
+            now = utc_now_naive()
             after_time = now - time_delta
 
             messages = []
@@ -399,7 +400,7 @@ class SummarizeCommandHandler(BaseCommandHandler):
                 )
 
             # Parse time range
-            now = datetime.utcnow()
+            now = utc_now_naive()
 
             if start_time:
                 parsed_start = parse_time_string(start_time)
@@ -438,7 +439,7 @@ class SummarizeCommandHandler(BaseCommandHandler):
                 title="🔄 Generating Summary",
                 description=f"Analyzing messages in {target_channel.mention}...",
                 color=0x4A90E2,
-                timestamp=datetime.utcnow()
+                timestamp=utc_now_naive()
             )
             status_embed.add_field(
                 name="Time Range",
@@ -1054,7 +1055,7 @@ class SummarizeCommandHandler(BaseCommandHandler):
 
         try:
             target_channel = channel or interaction.channel
-            end_time = datetime.utcnow()
+            end_time = utc_now_naive()
             start_time = end_time - timedelta(hours=hours)
 
             # Fetch messages to estimate
@@ -1077,7 +1078,7 @@ class SummarizeCommandHandler(BaseCommandHandler):
                 title="💰 Summary Cost Estimate",
                 description=f"Estimated cost for summarizing {target_channel.mention}",
                 color=0x4A90E2,
-                timestamp=datetime.utcnow()
+                timestamp=utc_now_naive()
             )
 
             embed.add_field(

@@ -9,6 +9,7 @@ from datetime import datetime
 
 from ..base import WebhookRepository
 from .connection import SQLiteConnection
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ class SQLiteWebhookRepository(WebhookRepository):
         delivery_time: Optional[datetime] = None
     ) -> None:
         """Update delivery status for a webhook."""
-        delivery_time = delivery_time or datetime.utcnow()
+        delivery_time = delivery_time or utc_now_naive()
         query = """
         UPDATE webhooks
         SET last_delivery = ?, last_status = ?

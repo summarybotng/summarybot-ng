@@ -21,6 +21,7 @@ from ..summarization.engine import SummarizationEngine
 from ..exceptions.webhook import WebhookError
 from .endpoints import create_summary_router
 from .auth import setup_rate_limiting, set_config
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +182,7 @@ class WebhookServer:
                         "version": "2.0.0",
                         "build": build_number,
                         "build_date": build_date,
-                        "server_time": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "server_time": utc_now_naive().strftime("%Y-%m-%dT%H:%M:%SZ"),
                         "services": {
                             "summarization_engine": engine_health.get("status"),
                             "claude_api": engine_health.get("claude_api"),
@@ -201,7 +202,7 @@ class WebhookServer:
                         "version": "2.0.0",
                         "build": build_number,
                         "build_date": build_date,
-                        "server_time": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "server_time": utc_now_naive().strftime("%Y-%m-%dT%H:%M:%SZ"),
                         "error": str(e)
                     }
                 )

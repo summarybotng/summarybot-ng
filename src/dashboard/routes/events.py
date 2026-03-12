@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Path, Request
 from fastapi.responses import StreamingResponse
 
 from ..auth import get_current_user
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ async def _event_generator(
     """
     try:
         # Send initial connection event
-        yield f"event: connected\ndata: {json.dumps({'guild_id': guild_id, 'timestamp': datetime.utcnow().isoformat()})}\n\n"
+        yield f"event: connected\ndata: {json.dumps({'guild_id': guild_id, 'timestamp': utc_now_naive().isoformat()})}\n\n"
 
         while True:
             # Check if client disconnected
@@ -129,7 +130,7 @@ async def publish_event(guild_id: str, event_type: str, data: dict):
         "type": event_type,
         "data": {
             **data,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now_naive().isoformat(),
         },
     }
 

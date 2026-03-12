@@ -10,6 +10,7 @@ import discord
 from fastapi import APIRouter, Depends, HTTPException, Path
 
 from ..auth import get_current_user
+from src.utils.time import utc_now_naive
 from ..models import (
     GuildsResponse,
     GuildListItem,
@@ -299,7 +300,7 @@ async def get_guild(
                 realtime_count += 1
 
         # Get summaries this week
-        week_ago = datetime.utcnow() - timedelta(days=7)
+        week_ago = utc_now_naive() - timedelta(days=7)
         week_summaries = await stored_repo.find_by_guild(
             guild_id=guild_id,
             created_after=week_ago,

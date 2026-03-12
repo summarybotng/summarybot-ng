@@ -8,6 +8,7 @@ from typing import Optional
 
 from .repository import CommandLogRepository
 from .models import LoggingConfig
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class LogCleanupService:
         if not self.config.enabled:
             return 0
 
-        cutoff_date = datetime.utcnow() - timedelta(days=self.config.retention_days)
+        cutoff_date = utc_now_naive() - timedelta(days=self.config.retention_days)
 
         logger.info(f"Starting log cleanup. Deleting logs older than {cutoff_date}")
 
@@ -77,7 +78,7 @@ class LogCleanupService:
             Count of deleted records
         """
         days = retention_days or self.config.retention_days
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = utc_now_naive() - timedelta(days=days)
 
         query = """
         DELETE FROM command_logs

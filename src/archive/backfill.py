@@ -13,6 +13,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from src.utils.time import utc_now_naive
 from .models import (
     ArchiveSource,
     PeriodInfo,
@@ -300,7 +301,7 @@ class BackfillManager:
             raise ValueError("Message fetcher and summarizer must be configured")
 
         job.status = BackfillStatus.RUNNING
-        job.started_at = datetime.utcnow()
+        job.started_at = utc_now_naive()
 
         try:
             # PERF-003: Parallelize backfill processing with controlled concurrency
@@ -370,7 +371,7 @@ class BackfillManager:
             logger.error(f"Backfill job {job_id} failed: {e}")
 
         finally:
-            job.completed_at = datetime.utcnow()
+            job.completed_at = utc_now_naive()
             job.progress.current_period = None
 
         return job
@@ -487,7 +488,7 @@ class BackfillManager:
             self.cost_tracker.record_cost(CostEntry(
                 source_key=source.source_key,
                 summary_id=f"sum_{target_date.isoformat()}",
-                timestamp=datetime.utcnow(),
+                timestamp=utc_now_naive(),
                 model=model,
                 tokens_input=tokens_in,
                 tokens_output=tokens_out,

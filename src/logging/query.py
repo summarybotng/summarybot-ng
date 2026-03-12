@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 from .models import CommandLog, CommandType, CommandStatus
 from .repository import CommandLogRepository
+from src.utils.time import utc_now_naive
 
 
 class CommandLogQuery:
@@ -77,13 +78,13 @@ class CommandLogQuery:
 
     def in_last_hours(self, hours: int) -> 'CommandLogQuery':
         """Filter to last N hours."""
-        self._end_time = datetime.utcnow()
+        self._end_time = utc_now_naive()
         self._start_time = self._end_time - timedelta(hours=hours)
         return self
 
     def in_last_days(self, days: int) -> 'CommandLogQuery':
         """Filter to last N days."""
-        self._end_time = datetime.utcnow()
+        self._end_time = utc_now_naive()
         self._start_time = self._end_time - timedelta(days=days)
         return self
 

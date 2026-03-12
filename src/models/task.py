@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from enum import Enum
+from src.utils.time import utc_now_naive
 
 try:
     from zoneinfo import ZoneInfo
@@ -292,7 +293,7 @@ class ScheduledTask(BaseModel):
     
     def mark_run_started(self) -> None:
         """Mark that a run has started."""
-        self.last_run = datetime.utcnow()
+        self.last_run = utc_now_naive()
         self.run_count += 1
     
     def mark_run_completed(self) -> None:
@@ -309,7 +310,7 @@ class ScheduledTask(BaseModel):
             self.is_active = False
         else:
             # Schedule retry
-            retry_time = datetime.utcnow() + timedelta(minutes=self.retry_delay_minutes)
+            retry_time = utc_now_naive() + timedelta(minutes=self.retry_delay_minutes)
             self.next_run = retry_time
 
     def get_all_channel_ids(self) -> List[str]:
@@ -433,14 +434,14 @@ class TaskResult(BaseModel):
     def mark_completed(self, summary_id: str) -> None:
         """Mark task as completed successfully."""
         self.status = TaskStatus.COMPLETED
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now_naive()
         self.summary_id = summary_id
         self.execution_time_seconds = (self.completed_at - self.started_at).total_seconds()
     
     def mark_failed(self, error: str, details: Optional[Dict[str, Any]] = None) -> None:
         """Mark task as failed."""
         self.status = TaskStatus.FAILED
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now_naive()
         self.error_message = error
         self.error_details = details
         self.execution_time_seconds = (self.completed_at - self.started_at).total_seconds()
@@ -453,7 +454,7 @@ class TaskResult(BaseModel):
             "target": target,
             "success": success,
             "message": message,
-            "timestamp": datetime.utcnow()
+            "timestamp": utc_now_naive()
         })
     
     def get_summary_text(self) -> str:
@@ -467,7 +468,7 @@ class TaskResult(BaseModel):
             return f"❌ Failed after {self.execution_time_seconds:.1f}s: {self.error_message}"
         
         if self.status == TaskStatus.RUNNING:
-            elapsed = (datetime.utcnow() - self.started_at).total_seconds()
+            elapsed = (utc_now_naive() - self.started_at).total_seconds()
             return f"🔄 Running for {elapsed:.1f}s"
         
         return f"⏳ {self.status.value.title()}"

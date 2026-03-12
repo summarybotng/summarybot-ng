@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional
 from urllib.parse import urlencode
 
 from cryptography.fernet import Fernet
+from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class OAuthTokens:
         if not self.expires_at:
             return True
         # Consider expired 5 minutes before actual expiry
-        return datetime.utcnow() >= (self.expires_at - timedelta(minutes=5))
+        return utc_now_naive() >= (self.expires_at - timedelta(minutes=5))
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -71,7 +72,7 @@ class OAuthState:
 
     def is_expired(self) -> bool:
         """State tokens expire after 10 minutes."""
-        return datetime.utcnow() > (self.created_at + timedelta(minutes=10))
+        return utc_now_naive() > (self.created_at + timedelta(minutes=10))
 
 
 class SecureTokenStore:
@@ -339,7 +340,7 @@ class GoogleOAuthFlow:
             # Calculate expiry time
             expires_at = None
             if "expires_in" in data:
-                expires_at = datetime.utcnow() + timedelta(seconds=data["expires_in"])
+                expires_at = utc_now_naive() + timedelta(seconds=data["expires_in"])
 
             tokens = OAuthTokens(
                 access_token=data["access_token"],
@@ -391,7 +392,7 @@ class GoogleOAuthFlow:
             # Calculate expiry time
             expires_at = None
             if "expires_in" in data:
-                expires_at = datetime.utcnow() + timedelta(seconds=data["expires_in"])
+                expires_at = utc_now_naive() + timedelta(seconds=data["expires_in"])
 
             # Update tokens (keep existing refresh token if not returned)
             new_tokens = OAuthTokens(

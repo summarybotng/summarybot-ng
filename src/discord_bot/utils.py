@@ -5,6 +5,7 @@ Utility functions for Discord bot operations.
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import discord
+from src.utils.time import utc_now_naive
 
 
 def create_embed(
@@ -104,7 +105,7 @@ def create_error_embed(
         color=0xE74C3C,  # Red
         fields=fields if fields else None,
         footer=footer_text,
-        timestamp=datetime.utcnow()
+        timestamp=utc_now_naive()
     )
 
 
@@ -129,7 +130,7 @@ def create_success_embed(
         description=description,
         color=0x2ECC71,  # Green
         fields=fields,
-        timestamp=datetime.utcnow()
+        timestamp=utc_now_naive()
     )
 
 
@@ -154,7 +155,7 @@ def create_info_embed(
         description=description,
         color=0x3498DB,  # Blue
         fields=fields,
-        timestamp=datetime.utcnow()
+        timestamp=utc_now_naive()
     )
 
 

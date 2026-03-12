@@ -6,6 +6,7 @@ import traceback
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
+from src.utils.time import utc_now_naive
 
 
 @dataclass
@@ -59,7 +60,7 @@ class SummaryBotException(Exception):
         self.user_message = user_message or message
         self.retryable = retryable
         self.cause = cause
-        self.timestamp = datetime.utcnow()
+        self.timestamp = utc_now_naive()
         self.traceback_str = traceback.format_exc() if cause else None
     
     def to_dict(self) -> Dict[str, Any]:

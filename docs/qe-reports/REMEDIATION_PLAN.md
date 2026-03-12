@@ -343,7 +343,7 @@ Fixed test_email_delivery.py (2026-03-12):
 - [ ] No module-level mutable globals (except ServiceContainer)
 - [x] Security headers present on all responses (2026-03-12)
 - [x] CORS requires explicit configuration (2026-03-12)
-- [ ] Cost budget actually prevents API calls when exceeded
+- [x] Cost budget actually prevents API calls when exceeded (2026-03-12 - pre-emptive check in generator.py)
 - [x] Log files rotate automatically (2026-03-12 - RotatingFileHandler in src/main.py)
 - [x] Cache eviction is O(1) (2026-03-12 - OrderedDict in both caches)
 - [x] Health check makes no paid API calls (2026-03-12)
@@ -362,6 +362,7 @@ Phase 4 Completed Items (2026-03-12):
 8. Created src/utils/time.py with utc_now() helper for datetime.utcnow() migration
 9. Completed datetime.utcnow() migration - all 227 occurrences now use utc_now_naive()
 10. Added log rotation with RotatingFileHandler (10MB default, 5 backups)
+11. Cost budget enforcement - pre-emptive check before API calls in archive generator
 
 ---
 

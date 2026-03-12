@@ -515,6 +515,27 @@ class RetrospectiveGenerator:
                 manifest.to_dict() if manifest else None,
             )
 
+            # Pre-emptive budget check: estimate cost BEFORE making API call
+            # This prevents exceeding budget by checking if estimated cost fits
+            if job.max_cost_usd:
+                # Estimate cost based on message count (avg ~10 tokens per message)
+                estimated_tokens = len(messages) * 10 + 500  # +500 for prompt overhead
+                estimated_cost, _ = self.cost_tracker.pricing.calculate_cost(
+                    model="anthropic/claude-3-haiku",  # Use cheapest model for estimate
+                    tokens_input=estimated_tokens,
+                    tokens_output=int(estimated_tokens * 0.2),
+                )
+                remaining_budget = job.max_cost_usd - job.cost.cost_usd
+                if estimated_cost > remaining_budget:
+                    logger.warning(
+                        f"Budget enforcement: estimated ${estimated_cost:.4f} > remaining ${remaining_budget:.4f}. "
+                        f"Pausing job {job.job_id} before API call."
+                    )
+                    job.status = JobStatus.PAUSED
+                    job.pause_reason = "budget_exceeded"
+                    await self.lock_manager.release_lock(meta_path, SummaryStatus.INCOMPLETE)
+                    return "skipped"
+
             # Generate summary
             # ADR-014: Pass guild_id for jump link generation in references
             start_time = utc_now_naive()

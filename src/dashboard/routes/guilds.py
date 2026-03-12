@@ -69,17 +69,22 @@ def _check_guild_access(guild_id: str, user: dict):
 )
 async def list_guilds(user: dict = Depends(get_current_user)):
     """List guilds user can manage."""
-    bot = get_discord_bot()
-    config_repo = await get_config_repository()
-    config_manager = get_config_manager()
-    # Use stored_summary_repository which includes both realtime and archive summaries
-    from . import get_stored_summary_repository
-    stored_repo = await get_stored_summary_repository()
+    try:
+        bot = get_discord_bot()
+        config_repo = await get_config_repository()
+        config_manager = get_config_manager()
+        # Use stored_summary_repository which includes both realtime and archive summaries
+        from . import get_stored_summary_repository
+        stored_repo = await get_stored_summary_repository()
 
-    # Get repositories for counts
-    task_repo = await get_task_repository()
-    webhook_repo = await get_webhook_repository()
-    feed_repo = await get_feed_repository()
+        # Get repositories for counts
+        task_repo = await get_task_repository()
+        webhook_repo = await get_webhook_repository()
+        feed_repo = await get_feed_repository()
+    except Exception as e:
+        logger.error(f"Failed to initialize repositories for list_guilds: {e}")
+        # Return empty list rather than 500 error
+        return GuildsResponse(guilds=[])
 
     guild_items = []
     for guild_id in user.get("guilds", []):

@@ -622,13 +622,23 @@ async def get_current_user(
             # Return a mock user - TEST_GUILD_ID can be comma-separated list or "*" for all
             test_guild_config = os.getenv("TEST_GUILD_ID", "*")
             if test_guild_config == "*":
-                # Extract guild_id from path if present, allow all access
+                # Extract guild_id from path if present
                 path_parts = request.url.path.split("/")
                 guilds = []
                 for i, part in enumerate(path_parts):
                     if part == "guilds" and i + 1 < len(path_parts):
-                        guilds.append(path_parts[i + 1])
+                        next_part = path_parts[i + 1]
+                        # Only add if it looks like a guild ID (all digits)
+                        if next_part.isdigit():
+                            guilds.append(next_part)
                         break
+
+                # If no guild in path, include all bot guilds for list endpoints
+                if not guilds:
+                    from dashboard.routes import get_discord_bot
+                    bot = get_discord_bot()
+                    if bot and bot.client:
+                        guilds = [str(g.id) for g in bot.client.guilds]
             else:
                 guilds = [g.strip() for g in test_guild_config.split(",")]
 

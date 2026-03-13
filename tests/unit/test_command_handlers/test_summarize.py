@@ -460,8 +460,22 @@ class TestSummarizeCommandHandler:
     async def test_fetch_and_process_messages_with_fetcher(self, mock_summarization_engine,
                                                           mock_text_channel, sample_processed_messages):
         """Test message fetching with MessageFetcher."""
+        # Create Discord-like mock messages (fetcher returns raw messages, not ProcessedMessage)
+        raw_messages = []
+        for msg in sample_processed_messages:
+            discord_msg = MagicMock()
+            discord_msg.id = msg.id
+            discord_msg.author = MagicMock()
+            discord_msg.author.display_name = msg.author_name
+            discord_msg.author.id = msg.author_id
+            discord_msg.author.bot = False
+            discord_msg.content = msg.content
+            discord_msg.created_at = msg.timestamp
+            discord_msg.attachments = []
+            raw_messages.append(discord_msg)
+
         mock_fetcher = AsyncMock()
-        mock_fetcher.fetch_messages.return_value = sample_processed_messages
+        mock_fetcher.fetch_messages.return_value = raw_messages
 
         handler = SummarizeCommandHandler(
             summarization_engine=mock_summarization_engine,

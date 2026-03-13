@@ -130,8 +130,9 @@ class TestJWTAuth:
         assert isinstance(token, str)
         assert len(token) > 0
 
-        # Decode to verify structure
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        # Decode to verify structure - use module-level ref after set_config
+        import src.webhook_service.auth as auth_mod
+        payload = jwt.decode(token, auth_mod.JWT_SECRET, algorithms=[JWT_ALGORITHM])
         assert payload["sub"] == "user_123"
         assert payload["guild_id"] == "guild_456"
         assert payload["permissions"] == ["read", "write"]
@@ -166,17 +167,18 @@ class TestJWTAuth:
     @pytest.mark.asyncio
     async def test_verify_token_missing_user_id(self, setup_auth_config):
         """Test token without user ID."""
-        # Create token without 'sub' claim
+        # Create token without 'sub' claim - use module-level ref after set_config
+        import src.webhook_service.auth as auth_mod
         payload = {
             "iat": datetime.utcnow().timestamp(),
             "exp": (datetime.utcnow() + timedelta(hours=1)).timestamp()
         }
-        token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        token = jwt.encode(payload, auth_mod.JWT_SECRET, algorithm=JWT_ALGORITHM)
 
         with pytest.raises(JWTError) as exc_info:
             await verify_jwt_token(token)
 
-        assert "missing user ID" in str(exc_info.value).lower()
+        assert "missing user id" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
     async def test_get_jwt_auth_valid(self, setup_auth_config):
@@ -459,6 +461,9 @@ class TestConfigManagement:
         assert _config == bot_config
         assert JWT_SECRET == bot_config.webhook_config.jwt_secret
 
+        # Cleanup to avoid polluting other tests
+        set_config(None)
+
     def test_config_updates_jwt_settings(self, bot_config):
         """Test config updates JWT settings."""
         bot_config.webhook_config.jwt_expiration_minutes = 120
@@ -468,3 +473,6 @@ class TestConfigManagement:
         from src.webhook_service.auth import JWT_EXPIRATION_MINUTES
 
         assert JWT_EXPIRATION_MINUTES == 120
+
+        # Cleanup to avoid polluting other tests
+        set_config(None)

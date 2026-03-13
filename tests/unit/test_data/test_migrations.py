@@ -297,7 +297,8 @@ class TestSchemaIntegrity:
             "summaries",
             "guild_configs",
             "scheduled_tasks",
-            "task_results"
+            "task_results",
+            "stored_summaries"
         ]
 
         # All tables should be expected
@@ -315,7 +316,7 @@ class TestSchemaIntegrity:
         """)
 
         # Verify all table definitions are present
-        assert len(schema1) == 4
+        assert len(schema1) == 5
 
 
 class TestMigrationScenarios:

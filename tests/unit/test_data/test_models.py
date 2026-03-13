@@ -73,7 +73,7 @@ class TestActionItem:
         item_dict = item.to_dict()
 
         assert item_dict["description"] == "Test task"
-        assert item_dict["priority"] == Priority.MEDIUM
+        assert item_dict["priority"] == Priority.MEDIUM.value
         assert "source_message_ids" in item_dict
 
     def test_action_item_to_markdown(self):
@@ -261,7 +261,7 @@ class TestSummaryOptions:
 
         options_dict = options.to_dict()
 
-        assert options_dict["summary_length"] == SummaryLength.COMPREHENSIVE
+        assert options_dict["summary_length"] == SummaryLength.COMPREHENSIVE.value
         assert options_dict["include_bots"] is True
 
 

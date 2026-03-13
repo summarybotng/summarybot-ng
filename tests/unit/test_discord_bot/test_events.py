@@ -61,23 +61,29 @@ class TestOnReady:
         mock_guild.member_count = 100
 
         mock_bot.client.guilds = [mock_guild]
+        mock_bot.client.tree.clear_commands = Mock()
+        mock_bot.client.tree.copy_global_to = Mock()
 
-        with patch.object(event_handler, '_update_presence', new=AsyncMock()):
+        mock_update = AsyncMock()
+        with patch.object(event_handler, '_update_presence', mock_update):
             await event_handler.on_ready()
 
-        mock_bot.sync_commands.assert_called_once()
-        event_handler._update_presence.assert_called_once()
+        mock_bot.sync_commands.assert_called_once_with(guild_id=str(mock_guild.id))
+        mock_update.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_on_ready_sync_failure(self, event_handler, mock_bot):
         """Test on_ready when command sync fails."""
         mock_bot.sync_commands = AsyncMock(side_effect=Exception("Sync failed"))
+        mock_bot.client.tree.clear_commands = Mock()
+        mock_bot.client.tree.copy_global_to = Mock()
 
-        with patch.object(event_handler, '_update_presence', new=AsyncMock()):
+        mock_update = AsyncMock()
+        with patch.object(event_handler, '_update_presence', mock_update):
             # Should not raise exception
             await event_handler.on_ready()
 
-        event_handler._update_presence.assert_called_once()
+        mock_update.assert_called_once()
 
 
 class TestOnGuildJoin:
@@ -132,7 +138,10 @@ class TestOnGuildJoin:
         mock_guild.me = Mock()
 
         mock_channel = Mock()
-        mock_channel.send = AsyncMock(side_effect=discord.Forbidden(Mock(), Mock()))
+        mock_resp = Mock()
+        mock_resp.status = 403
+        mock_resp.headers = {}
+        mock_channel.send = AsyncMock(side_effect=discord.Forbidden(mock_resp, "Forbidden"))
         mock_channel.permissions_for = Mock(return_value=Mock(send_messages=True))
         mock_guild.system_channel = mock_channel
         mock_guild.text_channels = []
@@ -194,7 +203,10 @@ class TestOnApplicationCommandError:
         mock_interaction.response.is_done = Mock(return_value=False)
         mock_interaction.response.send_message = AsyncMock()
 
-        error = discord.Forbidden(Mock(), Mock())
+        mock_resp = Mock()
+        mock_resp.status = 403
+        mock_resp.headers = {}
+        error = discord.Forbidden(mock_resp, "Forbidden")
 
         await event_handler.on_application_command_error(mock_interaction, error)
 
@@ -212,7 +224,10 @@ class TestOnApplicationCommandError:
         mock_interaction.response.is_done = Mock(return_value=False)
         mock_interaction.response.send_message = AsyncMock()
 
-        error = discord.NotFound(Mock(), Mock())
+        mock_resp = Mock()
+        mock_resp.status = 404
+        mock_resp.headers = {}
+        error = discord.NotFound(mock_resp, "Not Found")
 
         await event_handler.on_application_command_error(mock_interaction, error)
 

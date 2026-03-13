@@ -41,8 +41,9 @@ router = APIRouter()
 async def login():
     """Get Discord OAuth authorization URL."""
     auth = get_auth()
-    redirect_url = auth.get_oauth_url()
-    return AuthLoginResponse(redirect_url=redirect_url)
+    state = auth.create_oauth_state()
+    redirect_url = auth.get_oauth_url(state=state)
+    return AuthLoginResponse(redirect_url=redirect_url, state=state)
 
 
 @router.post(
@@ -58,6 +59,13 @@ async def login():
 async def callback(request: Request, body: AuthCallbackRequest):
     """Handle Discord OAuth callback."""
     auth = get_auth()
+
+    # Validate CSRF state
+    if not auth.validate_oauth_state(body.state):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_STATE", "message": "Invalid or expired OAuth state parameter"},
+        )
 
     # Exchange code for tokens
     access_token, refresh_token, expires_in = await auth.exchange_code(body.code)

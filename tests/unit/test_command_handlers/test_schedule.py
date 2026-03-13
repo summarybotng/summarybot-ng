@@ -15,8 +15,8 @@ from datetime import datetime, time
 import discord
 
 from src.command_handlers.schedule import ScheduleCommandHandler
-from src.models.task import ScheduledTask, TaskType, TaskStatus
-from src.models.summary import SummaryLength
+from src.models.task import ScheduledTask, TaskType, TaskStatus, ScheduleType
+from src.models.summary import SummaryLength, SummaryOptions
 from src.exceptions import UserError
 
 
@@ -111,10 +111,10 @@ class TestScheduleCommandHandler:
 
         # Verify task configuration
         scheduled_task = mock_task_scheduler.schedule_task.call_args[0][0]
-        assert scheduled_task.frequency == "daily"
-        assert scheduled_task.schedule_time == time(9, 0)
+        assert scheduled_task.schedule_type == ScheduleType.DAILY
+        assert scheduled_task.schedule_time == "09:00"
         assert scheduled_task.task_type == TaskType.SUMMARY
-        assert scheduled_task.enabled is True
+        assert scheduled_task.is_active is True
 
         # Should send success message
         mock_interaction.response.send_message.assert_called_once()
@@ -134,8 +134,8 @@ class TestScheduleCommandHandler:
 
         mock_task_scheduler.schedule_task.assert_called_once()
         scheduled_task = mock_task_scheduler.schedule_task.call_args[0][0]
-        assert scheduled_task.frequency == "weekly"
-        assert scheduled_task.schedule_time == time(14, 30)
+        assert scheduled_task.schedule_type == ScheduleType.WEEKLY
+        assert scheduled_task.schedule_time == "14:30"
 
     @pytest.mark.asyncio
     async def test_handle_schedule_create_hourly(self, schedule_handler, mock_interaction,
@@ -151,7 +151,7 @@ class TestScheduleCommandHandler:
 
         mock_task_scheduler.schedule_task.assert_called_once()
         scheduled_task = mock_task_scheduler.schedule_task.call_args[0][0]
-        assert scheduled_task.frequency == "hourly"
+        assert scheduled_task.schedule_type == ScheduleType.CUSTOM
 
     @pytest.mark.asyncio
     async def test_handle_schedule_create_invalid_frequency(self, schedule_handler, mock_interaction,
@@ -203,7 +203,7 @@ class TestScheduleCommandHandler:
 
             mock_task_scheduler.schedule_task.assert_called_once()
             scheduled_task = mock_task_scheduler.schedule_task.call_args[0][0]
-            assert scheduled_task.metadata["summary_length"] == length
+            assert scheduled_task.summary_options.summary_length == SummaryLength(length)
 
     @pytest.mark.asyncio
     async def test_handle_schedule_create_invalid_length(self, schedule_handler, mock_interaction,
@@ -280,20 +280,20 @@ class TestScheduleCommandHandler:
                 guild_id="987654321",
                 channel_id="111222333",
                 task_type=TaskType.SUMMARY,
-                frequency="daily",
-                schedule_time=time(9, 0),
-                enabled=True,
-                metadata={"summary_length": "detailed"}
+                schedule_type=ScheduleType.DAILY,
+                schedule_time="09:00",
+                is_active=True,
+                summary_options=SummaryOptions(summary_length=SummaryLength.DETAILED),
             ),
             ScheduledTask(
                 id="task2",
                 guild_id="987654321",
                 channel_id="444555666",
                 task_type=TaskType.SUMMARY,
-                frequency="weekly",
-                schedule_time=time(14, 30),
-                enabled=False,
-                metadata={"summary_length": "brief"}
+                schedule_type=ScheduleType.WEEKLY,
+                schedule_time="14:30",
+                is_active=False,
+                summary_options=SummaryOptions(summary_length=SummaryLength.BRIEF),
             )
         ]
 
@@ -332,9 +332,9 @@ class TestScheduleCommandHandler:
                 guild_id="987654321",
                 channel_id="111222333",
                 task_type=TaskType.SUMMARY,
-                frequency="daily",
-                enabled=True,
-                metadata={"summary_length": "detailed"}
+                schedule_type=ScheduleType.DAILY,
+                is_active=True,
+                summary_options=SummaryOptions(summary_length=SummaryLength.DETAILED),
             )
             for i in range(15)
         ]
@@ -456,7 +456,7 @@ class TestScheduleCommandHandler:
     @pytest.mark.asyncio
     async def test_schedule_metadata_includes_creator(self, schedule_handler, mock_interaction,
                                                       mock_text_channel, mock_admin_member, mock_task_scheduler):
-        """Test that scheduled task metadata includes creator."""
+        """Test that scheduled task includes creator info."""
         mock_interaction.guild.get_member.return_value = mock_admin_member
 
         await schedule_handler.handle_schedule_create(
@@ -466,10 +466,7 @@ class TestScheduleCommandHandler:
         )
 
         scheduled_task = mock_task_scheduler.schedule_task.call_args[0][0]
-        assert "created_by" in scheduled_task.metadata
-        assert scheduled_task.metadata["created_by"] == str(mock_interaction.user.id)
-        assert "channel_name" in scheduled_task.metadata
-        assert scheduled_task.metadata["channel_name"] == mock_text_channel.name
+        assert scheduled_task.created_by == str(mock_interaction.user.id)
 
     @pytest.mark.asyncio
     async def test_schedule_without_time_of_day(self, schedule_handler, mock_interaction,

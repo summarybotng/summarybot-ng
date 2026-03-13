@@ -52,6 +52,7 @@ def mock_anthropic_response():
     response.content = [Mock(text="This is a test summary.")]
     response.usage = Mock(input_tokens=1000, output_tokens=200)
     response.stop_reason = "end_turn"
+    response.model = "claude-3-sonnet-20240229"
     response.id = "msg_test_123"
     return response
 
@@ -333,24 +334,20 @@ class TestClaudeClient:
         assert exc_info.value.model_name == "invalid-model"
 
     @pytest.mark.asyncio
-    async def test_health_check_success(self, claude_client, mock_anthropic_response):
-        """Test health check with healthy API."""
-        with patch.object(
-            claude_client._client.messages, 'create',
-            new=AsyncMock(return_value=mock_anthropic_response)
-        ):
-            is_healthy = await claude_client.health_check()
-            assert is_healthy is True
+    async def test_health_check_success(self, claude_client):
+        """Test health check with properly configured client."""
+        # health_check verifies local config: api_key, primary_model, _client
+        claude_client.primary_model = "claude-3-sonnet-20240229"
+        is_healthy = await claude_client.health_check()
+        assert is_healthy is True
 
     @pytest.mark.asyncio
     async def test_health_check_failure(self, claude_client):
-        """Test health check with unhealthy API."""
-        with patch.object(
-            claude_client._client.messages, 'create',
-            new=AsyncMock(side_effect=Exception("API down"))
-        ):
-            is_healthy = await claude_client.health_check()
-            assert is_healthy is False
+        """Test health check with missing configuration."""
+        # No primary_model set → health check returns False
+        claude_client.primary_model = None
+        is_healthy = await claude_client.health_check()
+        assert is_healthy is False
 
     def test_estimate_cost_sonnet(self, claude_client):
         """Test cost estimation for Sonnet model."""

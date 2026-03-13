@@ -115,10 +115,8 @@ async def list_guilds(user: dict = Depends(get_current_user)):
             summary_count = 0
             last_summary_at = None
             if stored_repo:
-                all_summaries = await stored_repo.find_by_guild(guild_id=guild_id, limit=10000)
-                summary_count = len(all_summaries)
+                summary_count = await stored_repo.count_by_guild(guild_id=guild_id)
                 if summary_count > 0:
-                    # Get most recent by created_at
                     recent = await stored_repo.find_by_guild(
                         guild_id=guild_id,
                         limit=1,
@@ -294,40 +292,34 @@ async def get_guild(
     manual_count = 0
 
     if stored_repo:
-        # Get total count of all summaries (realtime + archive)
-        all_summaries = await stored_repo.find_by_guild(guild_id=guild_id, limit=10000)
-        total_summaries = len(all_summaries)
-
-        # Count by source type
+        import asyncio
         from ...models.stored_summary import SummarySource
-        for s in all_summaries:
-            if s.source == SummarySource.ARCHIVE:
-                archive_count += 1
-            elif s.source == SummarySource.SCHEDULED:
-                scheduled_count += 1
-            elif s.source == SummarySource.MANUAL:
-                manual_count += 1
-            else:  # REALTIME or others
-                realtime_count += 1
-
-        # Get summaries this week
         week_ago = utc_now_naive() - timedelta(days=7)
-        week_summaries = await stored_repo.find_by_guild(
-            guild_id=guild_id,
-            created_after=week_ago,
-            limit=10000,
-        )
-        summaries_this_week = len(week_summaries)
 
-        # Get last summary
-        recent = await stored_repo.find_by_guild(
-            guild_id=guild_id,
-            limit=1,
-            sort_by="created_at",
-            sort_order="desc",
+        # Use count queries instead of fetching all objects
+        count_results = await asyncio.gather(
+            stored_repo.count_by_guild(guild_id=guild_id),
+            stored_repo.count_by_guild(guild_id=guild_id, created_after=week_ago),
+            stored_repo.find_by_guild(guild_id=guild_id, limit=1, sort_by="created_at", sort_order="desc"),
         )
+        total_summaries = count_results[0]
+        summaries_this_week = count_results[1]
+        recent = count_results[2]
         if recent:
             last_summary_at = recent[0].created_at
+
+        # Count by source type if there are summaries
+        if total_summaries > 0:
+            source_counts = await asyncio.gather(
+                stored_repo.count_by_guild(guild_id=guild_id, source=SummarySource.REALTIME.value),
+                stored_repo.count_by_guild(guild_id=guild_id, source=SummarySource.ARCHIVE.value),
+                stored_repo.count_by_guild(guild_id=guild_id, source=SummarySource.SCHEDULED.value),
+                stored_repo.count_by_guild(guild_id=guild_id, source=SummarySource.MANUAL.value),
+            )
+            realtime_count = source_counts[0]
+            archive_count = source_counts[1]
+            scheduled_count = source_counts[2]
+            manual_count = source_counts[3]
 
     if task_repo:
         tasks = await task_repo.get_tasks_by_guild(guild_id)

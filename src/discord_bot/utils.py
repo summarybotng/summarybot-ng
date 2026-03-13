@@ -36,7 +36,7 @@ def create_embed(
     """
     embed = discord.Embed(
         title=title,
-        description=description or discord.Embed.Empty,
+        description=description,
         color=color,
         timestamp=timestamp
     )

@@ -29,7 +29,7 @@ class TestSummaryOptions:
         assert options.include_attachments is True
         assert options.excluded_users == []
         assert options.min_messages == 5
-        assert options.claude_model == "claude-3-sonnet-20240229"
+        assert options.summarization_model == "anthropic/claude-3-haiku"
         assert options.temperature == 0.3
         assert options.max_tokens == 4000
     
@@ -42,7 +42,7 @@ class TestSummaryOptions:
             include_attachments=False,
             excluded_users=["user1", "user2"],
             min_messages=10,
-            claude_model="claude-3-opus-20240229",
+            summarization_model="claude-3-opus-20240229",
             temperature=0.5,
             max_tokens=8000
         )
@@ -52,7 +52,7 @@ class TestSummaryOptions:
         assert options.include_attachments is False
         assert options.excluded_users == ["user1", "user2"]
         assert options.min_messages == 10
-        assert options.claude_model == "claude-3-opus-20240229"
+        assert options.summarization_model == "claude-3-opus-20240229"
         assert options.temperature == 0.5
         assert options.max_tokens == 8000
 
@@ -120,12 +120,10 @@ class TestBotConfig:
 
         config = BotConfig(
             discord_token="test_token",
-            claude_api_key="test_api_key",
             guild_configs={"123456789": guild_config}
         )
 
         assert config.discord_token == "test_token"
-        assert config.claude_api_key == "test_api_key"
         assert config.webhook_config.port == 5000
         assert config.max_message_batch == 10000
         assert config.cache_ttl == 3600
@@ -138,7 +136,6 @@ class TestBotConfig:
 
         config = BotConfig(
             discord_token="custom_token",
-            claude_api_key="custom_api_key",
             guild_configs={},
             webhook_config=webhook_config,
             max_message_batch=5000,
@@ -152,7 +149,6 @@ class TestBotConfig:
     
     @patch.dict(os.environ, {
         'DISCORD_TOKEN': 'env_discord_token',
-        'CLAUDE_API_KEY': 'env_claude_key',
         'WEBHOOK_PORT': '9000',
         'MAX_MESSAGE_BATCH': '20000',
         'CACHE_TTL': '1800'
@@ -162,7 +158,6 @@ class TestBotConfig:
         config = BotConfig.load_from_env()
 
         assert config.discord_token == "env_discord_token"
-        assert config.claude_api_key == "env_claude_key"
         assert config.webhook_config.port == 9000
         assert config.max_message_batch == 20000
         assert config.cache_ttl == 1800
@@ -193,7 +188,6 @@ class TestBotConfig:
 
         config = BotConfig(
             discord_token="test_token",
-            claude_api_key="test_api_key",
             guild_configs={"123456789": guild_config}
         )
 
@@ -204,7 +198,6 @@ class TestBotConfig:
         """Test getting non-existent guild configuration - creates default config."""
         config = BotConfig(
             discord_token="test_token",
-            claude_api_key="test_api_key",
             guild_configs={}
         )
 
@@ -227,37 +220,22 @@ class TestBotConfig:
 
         config = BotConfig(
             discord_token="MTIzNDU2Nzg5MDEyMzQ1Njc4OTAuAbCdEf.GhIjKlMnOpQrStUvWxYz1234567890123456",
-            claude_api_key="sk-ant-api03-test1234567890abcdefghijklmnop",
             guild_configs={"123456789012345678": guild_config}
         )
 
         errors = config.validate_configuration()
         assert len(errors) == 0
     
-    def test_validate_configuration_invalid_token(self):
-        """Test validation with invalid Discord token."""
+    def test_validate_configuration_empty_token_allowed(self):
+        """Test validation with empty Discord token (webhook-only mode)."""
         config = BotConfig(
-            discord_token="",  # Empty token (invalid)
-            claude_api_key="sk-ant-api03-test1234567890abcdefghijklmnop",
+            discord_token="",  # Empty token is valid for webhook-only mode
             guild_configs={}
         )
 
         errors = config.validate_configuration()
-        assert len(errors) > 0
-        # Check for Discord token error (errors are returned as strings)
-        assert any("discord" in str(error).lower() or "token" in str(error).lower() for error in errors)
-    
-    def test_validate_configuration_invalid_api_key(self):
-        """Test validation with invalid Claude API key."""
-        config = BotConfig(
-            discord_token="valid_token",
-            claude_api_key="",  # Empty API key
-            guild_configs={}
-        )
-
-        errors = config.validate_configuration()
-        assert len(errors) > 0
-        assert any("claude_api_key" in str(error).lower() or "api" in str(error).lower() for error in errors)
+        # Empty token is now allowed (webhook-only mode)
+        assert len(errors) == 0
     
     def test_validate_configuration_invalid_ports(self):
         """Test validation with invalid port values."""
@@ -266,7 +244,6 @@ class TestBotConfig:
 
         config = BotConfig(
             discord_token="valid_token",
-            claude_api_key="valid_api_key",
             guild_configs={},
             webhook_config=webhook_config
         )
@@ -303,7 +280,6 @@ class TestConfigManager:
         config_path = os.path.join(temp_dir, "config.json")
         config_data = {
             "discord_token": "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAuAbCdEf.GhIjKlMnOpQrStUvWxYz1234567890123456",
-            "claude_api_key": "sk-ant-api03-test1234567890abcdefghijklmnop",
             "webhook_config": {
                 "port": 6000,
                 "host": "0.0.0.0",
@@ -319,7 +295,6 @@ class TestConfigManager:
         # Set environment variables as they're loaded first (env takes precedence)
         with patch.dict(os.environ, {
             'DISCORD_TOKEN': 'MTIzNDU2Nzg5MDEyMzQ1Njc4OTAuAbCdEf.GhIjKlMnOpQrStUvWxYz1234567890123456',
-            'CLAUDE_API_KEY': 'sk-ant-api03-test1234567890abcdefghijklmnop',
             'WEBHOOK_PORT': '6000'
         }):
             manager = ConfigManager(config_path)
@@ -327,7 +302,6 @@ class TestConfigManager:
 
             # Config should be loaded successfully
             assert config.discord_token is not None
-            assert config.claude_api_key is not None
             # Webhook config should be loaded (either from env or file)
             assert config.webhook_config.port in [5000, 6000]
     
@@ -339,11 +313,9 @@ class TestConfigManager:
 
         with patch.dict(os.environ, {
             'DISCORD_TOKEN': 'MTIzNDU2Nzg5MDEyMzQ1Njc4OTAuAbCdEf.GhIjKlMnOpQrStUvWxYz1234567890123456',
-            'CLAUDE_API_KEY': 'sk-ant-api03-test1234567890abcdefghijklmnop'
         }):
             config = await manager.load_config()
             assert config.discord_token is not None
-            assert config.claude_api_key is not None
     
     @pytest.mark.asyncio
     async def test_save_config(self, temp_dir):
@@ -362,7 +334,6 @@ class TestConfigManager:
 
         config = BotConfig(
             discord_token="MTIzNDU2Nzg5MDEyMzQ1Njc4OTAuAbCdEf.GhIjKlMnOpQrStUvWxYz1234567890123456",
-            claude_api_key="sk-ant-api03-test1234567890abcdefghijklmnop",
             guild_configs={"123456789012345678": guild_config}
         )
 
@@ -385,10 +356,8 @@ class TestConfigManager:
 
         # Create initial config
         initial_token = "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAuAbCdEf.GhIjKlMnOpQrStUvWxYz1234567890111111"
-        initial_key = "sk-ant-api03-initial1234567890abcdefghij"
         initial_data = {
             "discord_token": initial_token,
-            "claude_api_key": initial_key,
             "guild_configs": {}
         }
 
@@ -399,17 +368,14 @@ class TestConfigManager:
         # Set environment variables for validation
         with patch.dict(os.environ, {
             'DISCORD_TOKEN': initial_token,
-            'CLAUDE_API_KEY': initial_key
         }):
             config1 = await manager.load_config()
             assert config1.discord_token is not None
 
         # Modify file
         updated_token = "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAuAbCdEf.GhIjKlMnOpQrStUvWxYz1234567890222222"
-        updated_key = "sk-ant-api03-updated1234567890abcdefghij"
         updated_data = {
             "discord_token": updated_token,
-            "claude_api_key": updated_key,
             "guild_configs": {}
         }
 
@@ -419,7 +385,6 @@ class TestConfigManager:
         # Reload with updated env vars
         with patch.dict(os.environ, {
             'DISCORD_TOKEN': updated_token,
-            'CLAUDE_API_KEY': updated_key
         }):
             config2 = await manager.reload_config()
         assert config2.discord_token is not None
@@ -439,7 +404,6 @@ class TestConfigManager:
 
         config = BotConfig(
             discord_token="MTIzNDU2Nzg5MDEyMzQ1Njc4OTAuAbCdEf.GhIjKlMnOpQrStUvWxYz1234567890123456",
-            claude_api_key="sk-ant-api03-test1234567890abcdefghijklmnop",
             guild_configs={"123456789012345678": guild_config}
         )
 
@@ -448,13 +412,14 @@ class TestConfigManager:
     
     def test_validate_config_invalid(self):
         """Test configuration validation with invalid config."""
+        from src.config.settings import WebhookConfig
         manager = ConfigManager()
-        
+
         config = BotConfig(
-            discord_token="",  # Invalid empty token
-            claude_api_key="valid_api_key",
-            guild_configs={}
+            discord_token="valid_token",
+            guild_configs={},
+            webhook_config=WebhookConfig(port=-1)  # Invalid port
         )
-        
+
         result = manager.validate_config(config)
         assert result is False

@@ -107,11 +107,13 @@ class DashboardSession:
 class AuthLoginResponse(BaseModel):
     """Response for login initiation."""
     redirect_url: str
+    state: str
 
 
 class AuthCallbackRequest(BaseModel):
     """Request for OAuth callback."""
     code: str
+    state: str
 
 
 class UserResponse(BaseModel):

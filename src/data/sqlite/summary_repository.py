@@ -14,7 +14,8 @@ from ...models.summary import (
     TechnicalTerm,
     Participant,
     SummarizationContext,
-    SummaryWarning
+    SummaryWarning,
+    Priority
 )
 from .connection import SQLiteConnection
 
@@ -169,6 +170,16 @@ class SQLiteSummaryRepository(SummaryRepository):
         )
         return await self.find_summaries(criteria)
 
+    @staticmethod
+    def _reconstruct_action_item(item: Dict[str, Any]) -> Dict[str, Any]:
+        """Reconstruct enum fields in an action item dict from their string values."""
+        if 'priority' in item and isinstance(item['priority'], str):
+            try:
+                item['priority'] = Priority(item['priority'])
+            except ValueError:
+                item['priority'] = Priority.MEDIUM
+        return item
+
     def _row_to_summary(self, row: Dict[str, Any]) -> SummaryResult:
         """Convert database row to SummaryResult object."""
         context_data = json.loads(row['context'])
@@ -186,7 +197,7 @@ class SQLiteSummaryRepository(SummaryRepository):
             end_time=datetime.fromisoformat(row['end_time']),
             message_count=row['message_count'],
             key_points=json.loads(row['key_points']),
-            action_items=[ActionItem(**item) for item in json.loads(row['action_items'])],
+            action_items=[ActionItem(**self._reconstruct_action_item(item)) for item in json.loads(row['action_items'])],
             technical_terms=[TechnicalTerm(**term) for term in json.loads(row['technical_terms'])],
             participants=[Participant(**p) for p in json.loads(row['participants'])],
             summary_text=row['summary_text'],

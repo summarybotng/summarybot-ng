@@ -43,8 +43,7 @@ def sample_messages() -> List[ProcessedMessage]:
             author_id=f"user_{i}",
             author_name=f"TestUser{i}",
             timestamp=datetime.utcnow() - timedelta(minutes=10-i),
-            channel_id="channel_1",
-            guild_id="guild_1"
+            channel_id="channel_1"
         )
         messages.append(msg)
     return messages
@@ -217,17 +216,18 @@ class TestResponseParser:
         assert isinstance(parsed, ParsedSummary)
         assert len(parsed.summary_text) > 0
 
-    def test_parse_empty_response_error(
+    def test_parse_empty_response_fallback(
         self, response_parser, sample_messages
     ):
-        """Test error on completely unparseable response."""
-        with pytest.raises(SummarizationError) as exc_info:
-            response_parser.parse_summary_response(
-                response_content="",
-                original_messages=sample_messages
-            )
+        """Test empty response falls back to freeform parser with fallback text."""
+        parsed = response_parser.parse_summary_response(
+            response_content="",
+            original_messages=sample_messages
+        )
 
-        assert "parse" in exc_info.value.message.lower()
+        # Freeform parser handles empty content with a fallback message
+        assert isinstance(parsed, ParsedSummary)
+        assert len(parsed.summary_text) > 0
 
     def test_action_item_parsing(
         self, response_parser, valid_json_response, sample_messages
@@ -379,7 +379,7 @@ class TestResponseParser:
         context = SummarizationContext(
             channel_name="test-channel",
             guild_name="Test Guild",
-            time_range="1 hour",
+            time_span_hours=1.0,
             total_participants=3
         )
 
@@ -561,8 +561,7 @@ This is the conclusion."""
                 author_id="user_1" if i < 7 else "user_2",
                 author_name="User1" if i < 7 else "User2",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             )
             messages.append(msg)
 

@@ -28,10 +28,10 @@ from src.models.summary import (
 def sample_summary():
     """Create sample summary result for testing."""
     context = SummarizationContext(
-        channel_id="123456789",
         channel_name="test-channel",
-        guild_id="987654321",
-        guild_name="Test Guild"
+        guild_name="Test Guild",
+        total_participants=2,
+        time_span_hours=2.0
     )
 
     action_items = [
@@ -51,11 +51,14 @@ def sample_summary():
         TechnicalTerm(
             term="JWT",
             definition="JSON Web Token for authentication",
-            context="Used in API security"
+            context="Used in API security",
+            source_message_id="msg_001"
         ),
         TechnicalTerm(
             term="REST",
-            definition="Representational State Transfer"
+            definition="Representational State Transfer",
+            context="API architecture style",
+            source_message_id="msg_002"
         )
     ]
 
@@ -478,10 +481,10 @@ class TestEdgeCases:
     def test_empty_lists_in_summary(self):
         """Test formatting summary with empty lists."""
         context = SummarizationContext(
-            channel_id="123",
             channel_name="test",
-            guild_id="456",
-            guild_name="Test Guild"
+            guild_name="Test Guild",
+            total_participants=0,
+            time_span_hours=1.0
         )
 
         summary = SummaryResult(
@@ -513,10 +516,10 @@ class TestEdgeCases:
     def test_special_characters_in_html(self):
         """Test HTML escaping of special characters."""
         context = SummarizationContext(
-            channel_id="123",
             channel_name="test-<script>",
-            guild_id="456",
-            guild_name="Test & Guild"
+            guild_name="Test & Guild",
+            total_participants=0,
+            time_span_hours=1.0
         )
 
         summary = SummaryResult(
@@ -538,10 +541,10 @@ class TestEdgeCases:
     def test_unicode_in_formatting(self):
         """Test handling of Unicode characters."""
         context = SummarizationContext(
-            channel_id="123",
             channel_name="test-🚀",
-            guild_id="456",
-            guild_name="Test Guild"
+            guild_name="Test Guild",
+            total_participants=0,
+            time_span_hours=1.0
         )
 
         summary = SummaryResult(

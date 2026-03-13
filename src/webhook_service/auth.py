@@ -54,6 +54,11 @@ def set_config(config: BotConfig) -> None:
     global _config, JWT_SECRET, JWT_EXPIRATION_MINUTES
     _config = config
 
+    if config is None:
+        JWT_SECRET = None
+        JWT_EXPIRATION_MINUTES = 60
+        return
+
     import os
     environment = os.getenv("ENVIRONMENT", "development").lower()
     testing_enabled = os.getenv("TESTING", "").lower() in ("true", "1", "yes")

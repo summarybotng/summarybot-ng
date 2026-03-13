@@ -42,7 +42,9 @@ export function Landing() {
 
   const handleLogin = async () => {
     try {
-      const data = await api.get<{ redirect_url: string }>("/auth/login");
+      const data = await api.get<{ redirect_url: string; state: string }>("/auth/login");
+      // Store OAuth state for CSRF validation in callback
+      sessionStorage.setItem("oauth_state", data.state);
       window.location.href = data.redirect_url;
     } catch (error) {
       console.error("Login failed:", error);

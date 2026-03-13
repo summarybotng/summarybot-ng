@@ -19,7 +19,7 @@ from src.summarization.prompt_builder import (
 )
 from src.models.summary import SummaryOptions, SummaryLength
 from src.models.message import (
-    ProcessedMessage, AttachmentInfo, CodeBlock, ThreadInfo
+    ProcessedMessage, AttachmentInfo, AttachmentType, CodeBlock, ThreadInfo
 )
 
 
@@ -43,12 +43,9 @@ def sample_messages() -> List[ProcessedMessage]:
             author_name=f"User{i % 2}",
             timestamp=base_time + timedelta(minutes=i*10),
             channel_id="channel_1",
-            guild_id="guild_1",
-            is_bot=False,
             attachments=[],
             code_blocks=[],
             mentions=[],
-            reactions=[],
             thread_info=None
         )
         messages.append(msg)
@@ -188,14 +185,14 @@ class TestPromptBuilder:
                 author_name="User1",
                 timestamp=datetime.utcnow(),
                 channel_id="channel_1",
-                guild_id="guild_1",
                 attachments=[
                     AttachmentInfo(
                         id="att_1",
                         filename="document.pdf",
-                        url="https://example.com/document.pdf",
                         size=1024,
-                        type="application/pdf"
+                        url="https://example.com/document.pdf",
+                        proxy_url="https://example.com/document.pdf",
+                        type=AttachmentType.DOCUMENT
                     )
                 ]
             )
@@ -220,11 +217,12 @@ class TestPromptBuilder:
                 author_name="User1",
                 timestamp=datetime.utcnow(),
                 channel_id="channel_1",
-                guild_id="guild_1",
                 code_blocks=[
                     CodeBlock(
                         language="python",
-                        code="def hello():\n    print('Hello')"
+                        code="def hello():\n    print('Hello')",
+                        start_line=0,
+                        end_line=2
                     )
                 ]
             )
@@ -244,17 +242,16 @@ class TestPromptBuilder:
         messages = [
             ProcessedMessage(
                 id="msg_1",
-                content="Thread message",
+                content="This is a thread message with substantial content for testing.",
                 author_id="user_1",
                 author_name="User1",
                 timestamp=datetime.utcnow(),
                 channel_id="channel_1",
-                guild_id="guild_1",
                 thread_info=ThreadInfo(
                     thread_id="thread_1",
                     thread_name="Discussion Thread",
-                    starter_message_id="msg_0",
-                    parent_channel_id="channel_1"
+                    parent_channel_id="channel_1",
+                    starter_message_id="msg_0"
                 )
             )
         ]
@@ -386,8 +383,7 @@ class TestPromptBuilder:
                 author_id="user_1",
                 author_name="User1",
                 timestamp=now - timedelta(hours=2),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             ),
             ProcessedMessage(
                 id="msg_2",
@@ -395,8 +391,7 @@ class TestPromptBuilder:
                 author_id="user_2",
                 author_name="User2",
                 timestamp=now,
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             )
         ]
 
@@ -414,8 +409,7 @@ class TestPromptBuilder:
                 author_id="user_1",
                 author_name="User1",
                 timestamp=now - timedelta(minutes=30),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             ),
             ProcessedMessage(
                 id="msg_2",
@@ -423,8 +417,7 @@ class TestPromptBuilder:
                 author_id="user_2",
                 author_name="User2",
                 timestamp=now,
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             )
         ]
 
@@ -442,8 +435,7 @@ class TestPromptBuilder:
                 author_id="user_1",
                 author_name="User1",
                 timestamp=now - timedelta(days=3, hours=5),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             ),
             ProcessedMessage(
                 id="msg_2",
@@ -451,8 +443,7 @@ class TestPromptBuilder:
                 author_id="user_2",
                 author_name="User2",
                 timestamp=now,
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             )
         ]
 
@@ -504,9 +495,9 @@ class TestPromptBuilder:
 
     def test_system_prompts_are_different(self, prompt_builder):
         """Test that different summary lengths have different system prompts."""
-        brief_prompt = prompt_builder.system_prompts[SummaryLength.BRIEF]
-        detailed_prompt = prompt_builder.system_prompts[SummaryLength.DETAILED]
-        comprehensive_prompt = prompt_builder.system_prompts[SummaryLength.COMPREHENSIVE]
+        brief_prompt = prompt_builder.system_prompts[("discord", SummaryLength.BRIEF)]
+        detailed_prompt = prompt_builder.system_prompts[("discord", SummaryLength.DETAILED)]
+        comprehensive_prompt = prompt_builder.system_prompts[("discord", SummaryLength.COMPREHENSIVE)]
 
         assert brief_prompt != detailed_prompt
         assert detailed_prompt != comprehensive_prompt
@@ -523,8 +514,7 @@ class TestPromptBuilder:
                 author_id=f"user_{i % 5}",
                 author_name=f"User{i % 5}",
                 timestamp=datetime.utcnow() - timedelta(minutes=100-i),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             )
             messages.append(msg)
 

@@ -355,17 +355,24 @@ class TestAuthenticationMethods:
 
     def test_auth_with_bearer_token(self, client):
         """Test authentication with Bearer token."""
-        from src.webhook_service.auth import create_jwt_token
+        import src.webhook_service.auth as auth_mod
+        # Ensure JWT_SECRET is set for token creation
+        original_secret = auth_mod.JWT_SECRET
+        if auth_mod.JWT_SECRET is None:
+            auth_mod.JWT_SECRET = "test-secret-for-unit-tests-only"
+        try:
+            from src.webhook_service.auth import create_jwt_token
+            token = create_jwt_token(user_id="user_123")
 
-        token = create_jwt_token(user_id="user_123")
+            response = client.get(
+                "/summary/sum_123",
+                headers={"Authorization": f"Bearer {token}"}
+            )
 
-        response = client.get(
-            "/summary/sum_123",
-            headers={"Authorization": f"Bearer {token}"}
-        )
-
-        # Should authenticate
-        assert response.status_code == 404  # Not 401
+            # Should authenticate
+            assert response.status_code == 404  # Not 401
+        finally:
+            auth_mod.JWT_SECRET = original_secret
 
     def test_auth_invalid_bearer_format(self, client):
         """Test invalid bearer token format."""
@@ -378,17 +385,24 @@ class TestAuthenticationMethods:
 
     def test_auth_expired_token(self, client):
         """Test expired JWT token."""
-        from src.webhook_service.auth import create_jwt_token
+        import src.webhook_service.auth as auth_mod
+        # Ensure JWT_SECRET is set for token creation
+        original_secret = auth_mod.JWT_SECRET
+        if auth_mod.JWT_SECRET is None:
+            auth_mod.JWT_SECRET = "test-secret-for-unit-tests-only"
+        try:
+            from src.webhook_service.auth import create_jwt_token
+            # Create token with negative expiration
+            token = create_jwt_token(user_id="user_123", expires_minutes=-10)
 
-        # Create token with negative expiration
-        token = create_jwt_token(user_id="user_123", expires_minutes=-10)
+            response = client.get(
+                "/summary/sum_123",
+                headers={"Authorization": f"Bearer {token}"}
+            )
 
-        response = client.get(
-            "/summary/sum_123",
-            headers={"Authorization": f"Bearer {token}"}
-        )
-
-        assert response.status_code == 401
+            assert response.status_code == 401
+        finally:
+            auth_mod.JWT_SECRET = original_secret
 
 
 class TestErrorHandling:

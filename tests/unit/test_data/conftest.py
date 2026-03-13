@@ -56,7 +56,12 @@ async def _create_schema(connection: SQLiteConnection) -> None:
             participants TEXT NOT NULL,
             metadata TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            context TEXT
+            context TEXT,
+            prompt_system TEXT,
+            prompt_user TEXT,
+            prompt_template_id TEXT,
+            source_content TEXT,
+            warnings TEXT DEFAULT '[]'
         )
     """)
 
@@ -94,7 +99,13 @@ async def _create_schema(connection: SQLiteConnection) -> None:
             run_count INTEGER DEFAULT 0,
             failure_count INTEGER DEFAULT 0,
             max_failures INTEGER DEFAULT 3,
-            retry_delay_minutes INTEGER DEFAULT 5
+            retry_delay_minutes INTEGER DEFAULT 5,
+            scope TEXT,
+            channel_ids TEXT DEFAULT '[]',
+            category_id TEXT,
+            excluded_channel_ids TEXT DEFAULT '[]',
+            resolve_category_at_runtime INTEGER DEFAULT 0,
+            timezone TEXT DEFAULT 'UTC'
         )
     """)
 
@@ -265,8 +276,8 @@ def sample_guild_config() -> GuildConfig:
         ),
         permission_settings=PermissionSettings(
             admin_roles=["admin", "moderator"],
-            allowed_channels=["channel-456"],
-            denied_users=["spammer123"]
+            allowed_roles=["member"],
+            allowed_users=["user-456"]
         ),
         webhook_enabled=True,
         webhook_secret="test-secret-key"

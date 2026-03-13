@@ -38,7 +38,7 @@ class TestEmbedFormatters:
         assert isinstance(embed, discord.Embed)
         assert "Error" in embed.title
         assert embed.description == "Test error message"
-        assert embed.color == 0xFF0000  # Red
+        assert embed.color == discord.Colour(0xFF0000)  # Red
         assert "TEST_ERROR" in embed.footer.text
 
     def test_format_error_response_default_code(self):
@@ -58,7 +58,7 @@ class TestEmbedFormatters:
         assert isinstance(embed, discord.Embed)
         assert "Operation Complete" in embed.title
         assert embed.description == "Successfully completed the operation"
-        assert embed.color == 0x00FF00  # Green
+        assert embed.color == discord.Colour(0x00FF00)  # Green
 
     def test_format_success_response_with_fields(self):
         """Test success response with fields."""
@@ -89,7 +89,7 @@ class TestEmbedFormatters:
         assert isinstance(embed, discord.Embed)
         assert "Information" in embed.title
         assert embed.description == "Here is some information"
-        assert embed.color == 0x4A90E2  # Blue
+        assert embed.color == discord.Colour(0x4A90E2)  # Blue
 
     def test_format_info_response_with_fields(self):
         """Test info response with fields."""

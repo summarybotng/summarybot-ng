@@ -61,7 +61,7 @@ def mock_regular_member():
 @pytest.fixture
 def mock_config_manager():
     """Create mock config manager."""
-    manager = AsyncMock()
+    manager = MagicMock()
 
     # Default guild config
     guild_config = GuildConfig(
@@ -72,12 +72,18 @@ def mock_config_manager():
             summary_length=SummaryLength.DETAILED,
             include_bots=False,
             min_messages=5,
-            claude_model="claude-3-sonnet-20240229"
+            summarization_model="anthropic/claude-3-haiku"
         )
     )
 
-    manager.get_guild_config.return_value = guild_config
-    manager.save_guild_config.return_value = None
+    # Source code calls self.config_manager.get_current_config() -> bot_config
+    # then bot_config.get_guild_config(guild_id) -> GuildConfig
+    mock_bot_config = MagicMock()
+    mock_bot_config.get_guild_config.return_value = guild_config
+    manager.get_current_config.return_value = mock_bot_config
+
+    # update_guild_config is async
+    manager.update_guild_config = AsyncMock()
     return manager
 
 
@@ -198,7 +204,7 @@ class TestConfigCommandHandler:
         )
 
         # Should update config
-        mock_config_manager.save_guild_config.assert_called_once()
+        mock_config_manager.update_guild_config.assert_called_once()
 
         # Should send success message
         mock_interaction.response.send_message.assert_called_once()
@@ -220,7 +226,7 @@ class TestConfigCommandHandler:
         )
 
         # Should update config
-        mock_config_manager.save_guild_config.assert_called_once()
+        mock_config_manager.update_guild_config.assert_called_once()
 
         # Should send success message
         mock_interaction.response.send_message.assert_called_once()
@@ -295,10 +301,10 @@ class TestConfigCommandHandler:
         )
 
         # Should save config
-        mock_config_manager.save_guild_config.assert_called_once()
+        mock_config_manager.update_guild_config.assert_called_once()
 
         # Verify the config was updated correctly
-        saved_config = mock_config_manager.save_guild_config.call_args[0][0]
+        saved_config = mock_config_manager.update_guild_config.call_args[0][1]
         assert saved_config.default_summary_options.summary_length == SummaryLength.BRIEF
 
         mock_interaction.response.send_message.assert_called_once()
@@ -327,8 +333,8 @@ class TestConfigCommandHandler:
             include_bots=True
         )
 
-        mock_config_manager.save_guild_config.assert_called_once()
-        saved_config = mock_config_manager.save_guild_config.call_args[0][0]
+        mock_config_manager.update_guild_config.assert_called_once()
+        saved_config = mock_config_manager.update_guild_config.call_args[0][1]
         assert saved_config.default_summary_options.include_bots is True
 
     @pytest.mark.asyncio
@@ -342,8 +348,8 @@ class TestConfigCommandHandler:
             min_messages=10
         )
 
-        mock_config_manager.save_guild_config.assert_called_once()
-        saved_config = mock_config_manager.save_guild_config.call_args[0][0]
+        mock_config_manager.update_guild_config.assert_called_once()
+        saved_config = mock_config_manager.update_guild_config.call_args[0][1]
         assert saved_config.default_summary_options.min_messages == 10
 
     @pytest.mark.asyncio
@@ -381,9 +387,9 @@ class TestConfigCommandHandler:
             model="claude-3-opus-20240229"
         )
 
-        mock_config_manager.save_guild_config.assert_called_once()
-        saved_config = mock_config_manager.save_guild_config.call_args[0][0]
-        assert saved_config.default_summary_options.claude_model == "claude-3-opus-20240229"
+        mock_config_manager.update_guild_config.assert_called_once()
+        saved_config = mock_config_manager.update_guild_config.call_args[0][1]
+        assert saved_config.default_summary_options.summarization_model == "claude-3-opus-20240229"
 
     @pytest.mark.asyncio
     async def test_handle_config_set_defaults_invalid_model(self, config_handler, mock_interaction, mock_admin_member):
@@ -411,8 +417,8 @@ class TestConfigCommandHandler:
             min_messages=15
         )
 
-        mock_config_manager.save_guild_config.assert_called_once()
-        saved_config = mock_config_manager.save_guild_config.call_args[0][0]
+        mock_config_manager.update_guild_config.assert_called_once()
+        saved_config = mock_config_manager.update_guild_config.call_args[0][1]
 
         assert saved_config.default_summary_options.summary_length == SummaryLength.COMPREHENSIVE
         assert saved_config.default_summary_options.include_bots is True
@@ -452,7 +458,7 @@ class TestConfigCommandHandler:
         await config_handler.handle_config_reset(mock_interaction)
 
         # Should save default config
-        mock_config_manager.save_guild_config.assert_called_once()
+        mock_config_manager.update_guild_config.assert_called_once()
 
         # Should send success message
         mock_interaction.response.send_message.assert_called_once()

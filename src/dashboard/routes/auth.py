@@ -67,18 +67,24 @@ async def callback(request: Request, body: AuthCallbackRequest):
 
     # Get user's guilds
     all_guilds = await auth.get_user_guilds(access_token)
+    logger.info(f"OAuth callback: User {user.username} has {len(all_guilds)} Discord guilds")
 
     # Filter to guilds where bot is present (allow members, not just admins)
     bot = get_discord_bot()
     bot_guild_ids = set()
     if bot and bot.client:
         bot_guild_ids = {str(g.id) for g in bot.client.guilds}
+    logger.info(f"OAuth callback: Bot is in {len(bot_guild_ids)} guilds: {bot_guild_ids}")
 
     # Include all guilds where the bot is present (members can now access)
     accessible_guilds = [
         g for g in all_guilds
         if g.id in bot_guild_ids
     ]
+    logger.info(
+        f"OAuth callback: {len(accessible_guilds)} accessible guilds for {user.username}: "
+        f"{[g.id for g in accessible_guilds]}"
+    )
 
     # Create session
     ip_address = request.client.host if request.client else None

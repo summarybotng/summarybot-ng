@@ -92,11 +92,11 @@ async def bot_status():
 
 @router.get(
     "/diagnose",
-    summary="Diagnose guild visibility issues",
+    summary="Diagnose guild visibility issues (public)",
     include_in_schema=False,
 )
-async def diagnose_guilds(user: dict = Depends(get_current_user)):
-    """Diagnose why a guild might not appear in the dashboard."""
+async def diagnose_guilds():
+    """Public endpoint to check bot's guild cache."""
     bot = get_discord_bot()
 
     # Get bot's guild IDs
@@ -106,29 +106,14 @@ async def diagnose_guilds(user: dict = Depends(get_current_user)):
         bot_guild_ids = {str(g.id) for g in bot.client.guilds}
         bot_guilds_info = [{"id": str(g.id), "name": g.name} for g in bot.client.guilds]
 
-    # Get user's OAuth guild IDs
-    user_guild_ids = set(user.get("guilds", []))
-
-    # Find intersection and differences
-    common = user_guild_ids & bot_guild_ids
-    user_only = user_guild_ids - bot_guild_ids  # User is in, bot is not
-    bot_only = bot_guild_ids - user_guild_ids   # Bot is in, user is not (in their OAuth)
-
     # Check specifically for Agentics Foundation
     agentics_id = "1283874310720716890"
 
     return {
         "status": "ok",
-        "user_oauth_guilds": list(user_guild_ids),
         "bot_guilds": bot_guilds_info,
-        "intersection": list(common),
-        "user_only_not_bot": list(user_only),
-        "bot_only_not_user_oauth": list(bot_only),
-        "agentics_check": {
-            "guild_id": agentics_id,
-            "in_user_oauth": agentics_id in user_guild_ids,
-            "in_bot_cache": agentics_id in bot_guild_ids,
-        }
+        "agentics_in_bot": agentics_id in bot_guild_ids,
+        "instructions": "Open browser DevTools > Network tab, login to dashboard, find /api/v1/auth/callback response to see your OAuth guilds"
     }
 
 

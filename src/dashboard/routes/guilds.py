@@ -69,6 +69,7 @@ def _check_guild_access(guild_id: str, user: dict):
 )
 async def list_guilds(user: dict = Depends(get_current_user)):
     """List guilds user can manage."""
+    # Wrap entire function in try/except to catch any errors and return useful response
     try:
         bot = get_discord_bot()
         config_repo = await get_config_repository()
@@ -82,90 +83,94 @@ async def list_guilds(user: dict = Depends(get_current_user)):
         webhook_repo = await get_webhook_repository()
         feed_repo = await get_feed_repository()
     except Exception as e:
-        logger.error(f"Failed to initialize repositories for list_guilds: {e}")
+        logger.error(f"Failed to initialize repositories for list_guilds: {e}", exc_info=True)
         # Return empty list rather than 500 error
         return GuildsResponse(guilds=[])
 
     guild_items = []
     for guild_id in user.get("guilds", []):
-        guild = bot.client.get_guild(int(guild_id)) if bot and bot.client else None
-        if not guild:
-            continue
+        try:
+            guild = bot.client.get_guild(int(guild_id)) if bot and bot.client else None
+            if not guild:
+                continue
 
-        # Get config status - check database first, then in-memory
-        config_status = ConfigStatus.NEEDS_SETUP
-        guild_config = None
+            # Get config status - check database first, then in-memory
+            config_status = ConfigStatus.NEEDS_SETUP
+            guild_config = None
 
-        if config_repo:
-            guild_config = await config_repo.get_guild_config(guild_id)
+            if config_repo:
+                guild_config = await config_repo.get_guild_config(guild_id)
 
-        if not guild_config and config_manager:
-            current_config = config_manager.get_current_config()
-            if current_config:
-                guild_config = current_config.guild_configs.get(guild_id)
+            if not guild_config and config_manager:
+                current_config = config_manager.get_current_config()
+                if current_config:
+                    guild_config = current_config.guild_configs.get(guild_id)
 
-        if guild_config and guild_config.enabled_channels:
-            config_status = ConfigStatus.CONFIGURED
+            if guild_config and guild_config.enabled_channels:
+                config_status = ConfigStatus.CONFIGURED
 
-        # Get actual summary count and last summary from stored summaries
-        # This includes both realtime and archive summaries
-        summary_count = 0
-        last_summary_at = None
-        if stored_repo:
-            all_summaries = await stored_repo.find_by_guild(guild_id=guild_id, limit=10000)
-            summary_count = len(all_summaries)
-            if summary_count > 0:
-                # Get most recent by created_at
-                recent = await stored_repo.find_by_guild(
-                    guild_id=guild_id,
-                    limit=1,
-                    sort_by="created_at",
-                    sort_order="desc",
+            # Get actual summary count and last summary from stored summaries
+            # This includes both realtime and archive summaries
+            summary_count = 0
+            last_summary_at = None
+            if stored_repo:
+                all_summaries = await stored_repo.find_by_guild(guild_id=guild_id, limit=10000)
+                summary_count = len(all_summaries)
+                if summary_count > 0:
+                    # Get most recent by created_at
+                    recent = await stored_repo.find_by_guild(
+                        guild_id=guild_id,
+                        limit=1,
+                        sort_by="created_at",
+                        sort_order="desc",
+                    )
+                    if recent:
+                        last_summary_at = recent[0].created_at
+
+            # Get schedule count (active schedules only)
+            schedule_count = 0
+            if task_repo:
+                try:
+                    tasks = await task_repo.get_tasks_by_guild(guild_id)
+                    schedule_count = len([t for t in tasks if t.is_active])
+                except Exception as e:
+                    logger.warning(f"Failed to get schedules for guild {guild_id}: {e}")
+
+            # Get webhook count
+            webhook_count = 0
+            if webhook_repo:
+                try:
+                    webhooks = await webhook_repo.get_webhooks_by_guild(guild_id)
+                    webhook_count = len(webhooks)
+                except Exception as e:
+                    logger.warning(f"Failed to get webhooks for guild {guild_id}: {e}")
+
+            # Get feed count
+            feed_count = 0
+            if feed_repo:
+                try:
+                    feeds = await feed_repo.get_feeds_by_guild(guild_id)
+                    feed_count = len(feeds)
+                except Exception as e:
+                    logger.warning(f"Failed to get feeds for guild {guild_id}: {e}")
+
+            guild_items.append(
+                GuildListItem(
+                    id=str(guild.id),
+                    name=guild.name,
+                    icon_url=str(guild.icon.url) if guild.icon else None,
+                    member_count=guild.member_count or 0,
+                    summary_count=summary_count,
+                    last_summary_at=last_summary_at,
+                    config_status=config_status,
+                    schedule_count=schedule_count,
+                    webhook_count=webhook_count,
+                    feed_count=feed_count,
                 )
-                if recent:
-                    last_summary_at = recent[0].created_at
-
-        # Get schedule count (active schedules only)
-        schedule_count = 0
-        if task_repo:
-            try:
-                tasks = await task_repo.get_tasks_by_guild(guild_id)
-                schedule_count = len([t for t in tasks if t.is_active])
-            except Exception as e:
-                logger.warning(f"Failed to get schedules for guild {guild_id}: {e}")
-
-        # Get webhook count
-        webhook_count = 0
-        if webhook_repo:
-            try:
-                webhooks = await webhook_repo.get_webhooks_by_guild(guild_id)
-                webhook_count = len(webhooks)
-            except Exception as e:
-                logger.warning(f"Failed to get webhooks for guild {guild_id}: {e}")
-
-        # Get feed count
-        feed_count = 0
-        if feed_repo:
-            try:
-                feeds = await feed_repo.get_feeds_by_guild(guild_id)
-                feed_count = len(feeds)
-            except Exception as e:
-                logger.warning(f"Failed to get feeds for guild {guild_id}: {e}")
-
-        guild_items.append(
-            GuildListItem(
-                id=str(guild.id),
-                name=guild.name,
-                icon_url=str(guild.icon.url) if guild.icon else None,
-                member_count=guild.member_count or 0,
-                summary_count=summary_count,
-                last_summary_at=last_summary_at,
-                config_status=config_status,
-                schedule_count=schedule_count,
-                webhook_count=webhook_count,
-                feed_count=feed_count,
             )
-        )
+        except Exception as e:
+            logger.error(f"Failed to process guild {guild_id}: {e}", exc_info=True)
+            continue
 
     return GuildsResponse(guilds=guild_items)
 

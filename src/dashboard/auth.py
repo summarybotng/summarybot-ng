@@ -593,11 +593,9 @@ async def get_current_user(
     #
     # SEC-002: Only allow test bypass in non-production environments or when TESTING=true
     provided_key = request.headers.get("X-Test-Auth-Key")
-    logger.info(f"Test auth check: provided_key={'SET' if provided_key else 'NOT SET'}, len={len(provided_key) if provided_key else 0}")
     if provided_key:
         environment = os.getenv("ENVIRONMENT", "development").lower()
         testing_enabled = os.getenv("TESTING", "").lower() in ("true", "1", "yes")
-        logger.info(f"Test auth: environment={environment}, testing_enabled={testing_enabled}")
 
         # Block test auth in production unless explicitly testing
         if environment == "production" and not testing_enabled:
@@ -615,8 +613,6 @@ async def get_current_user(
 
         is_admin = admin_secret and provided_key == admin_secret
         is_user = user_secret and provided_key == user_secret
-        logger.info(f"Test auth: admin_secret_set={bool(admin_secret)}, user_secret_set={bool(user_secret)}, is_admin={is_admin}, is_user={is_user}")
-        logger.info(f"Test auth: provided_key[:8]={provided_key[:8] if provided_key else None}, user_secret[:8]={user_secret[:8] if user_secret else None}")
 
         if is_admin or is_user:
             # Return a mock user - TEST_GUILD_ID can be comma-separated list or "*" for all
@@ -637,10 +633,8 @@ async def get_current_user(
                 if not guilds:
                     from dashboard.routes import get_discord_bot
                     bot = get_discord_bot()
-                    logger.info(f"Test auth: bot={bot is not None}, client={bot.client is not None if bot else False}")
                     if bot and bot.client:
                         guilds = [str(g.id) for g in bot.client.guilds]
-                        logger.info(f"Test auth: fetched {len(guilds)} bot guilds: {guilds}")
             else:
                 guilds = [g.strip() for g in test_guild_config.split(",")]
 

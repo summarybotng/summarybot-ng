@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import discord
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from fastapi import APIRouter, Depends, HTTPException, Path
 
 from ..auth import get_current_user
 from src.utils.time import utc_now_naive
@@ -62,109 +62,6 @@ def _check_guild_access(guild_id: str, user: dict):
 
 
 @router.get(
-    "/bot-status",
-    summary="Bot connection status (public)",
-    include_in_schema=False,
-)
-async def bot_status():
-    """Public endpoint to check Discord bot connection status."""
-    bot = get_discord_bot()
-    if bot is None:
-        return {
-            "status": "error",
-            "error": "bot_not_initialized",
-            "message": "get_discord_bot() returned None",
-        }
-    if bot.client is None:
-        return {
-            "status": "error",
-            "error": "client_not_initialized",
-            "message": "bot.client is None",
-        }
-    return {
-        "status": "ok",
-        "client_ready": bot.client.is_ready(),
-        "client_user": str(bot.client.user) if bot.client.user else None,
-        "guilds_cached": len(bot.client.guilds),
-        "guilds": [{"id": str(g.id), "name": g.name} for g in bot.client.guilds],
-    }
-
-
-@router.get(
-    "/env-check",
-    summary="Check env vars (public)",
-    include_in_schema=False,
-)
-async def env_check(request: Request):
-    """Public endpoint to check if required env vars are set."""
-    import os
-    provided_key = request.headers.get("X-Test-Auth-Key", "")
-    user_secret = os.getenv("TEST_AUTH_SECRET", "")
-    return {
-        "TESTING": os.getenv("TESTING", "NOT_SET"),
-        "ENVIRONMENT": os.getenv("ENVIRONMENT", "NOT_SET"),
-        "TEST_GUILD_ID": os.getenv("TEST_GUILD_ID", "NOT_SET"),
-        "TEST_AUTH_SECRET_set": bool(user_secret),
-        "TEST_AUTH_SECRET_len": len(user_secret),
-        "TEST_AUTH_SECRET_prefix": user_secret[:4] if user_secret else None,
-        "provided_key_set": bool(provided_key),
-        "provided_key_len": len(provided_key),
-        "provided_key_prefix": provided_key[:4] if provided_key else None,
-        "keys_match": provided_key == user_secret if provided_key and user_secret else False,
-    }
-
-
-@router.get(
-    "/diagnose",
-    summary="Diagnose guild visibility issues (public)",
-    include_in_schema=False,
-)
-async def diagnose_guilds():
-    """Public endpoint to check bot's guild cache."""
-    bot = get_discord_bot()
-
-    # Get bot's guild IDs
-    bot_guild_ids = set()
-    bot_guilds_info = []
-    if bot and bot.client:
-        bot_guild_ids = {str(g.id) for g in bot.client.guilds}
-        bot_guilds_info = [{"id": str(g.id), "name": g.name} for g in bot.client.guilds]
-
-    # Check specifically for Agentics Foundation
-    agentics_id = "1283874310720716890"
-
-    return {
-        "status": "ok",
-        "bot_guilds": bot_guilds_info,
-        "agentics_in_bot": agentics_id in bot_guild_ids,
-        "instructions": "Open browser DevTools > Network tab, login to dashboard, find /api/v1/auth/callback response to see your OAuth guilds"
-    }
-
-
-@router.get(
-    "/debug",
-    summary="Debug endpoint",
-    include_in_schema=False,
-)
-async def debug_guilds(user: dict = Depends(get_current_user)):
-    """Simple debug endpoint to test router."""
-    bot = get_discord_bot()
-    bot_info = {
-        "bot_exists": bot is not None,
-        "client_exists": bot.client is not None if bot else False,
-        "client_ready": bot.client.is_ready() if bot and bot.client else False,
-        "client_user": str(bot.client.user) if bot and bot.client and bot.client.user else None,
-        "guilds_cached": len(bot.client.guilds) if bot and bot.client else 0,
-    }
-    return {
-        "status": "ok",
-        "user_guilds_count": len(user.get("guilds", [])),
-        "user_guilds": user.get("guilds", []),
-        "bot": bot_info,
-    }
-
-
-@router.get(
     "",
     response_model=GuildsResponse,
     summary="List manageable guilds",
@@ -192,18 +89,11 @@ async def list_guilds(user: dict = Depends(get_current_user)):
 
     guild_items = []
     user_guilds = user.get("guilds", [])
-    logger.info(f"list_guilds: Processing {len(user_guilds)} user guilds: {user_guilds}")
-    logger.info(f"list_guilds: bot={bot is not None}, client={bot.client if bot else None}, ready={bot.client.is_ready() if bot and bot.client else False}")
-    if bot and bot.client:
-        logger.info(f"list_guilds: bot has {len(bot.client.guilds)} guilds: {[str(g.id) for g in bot.client.guilds]}")
     for guild_id in user_guilds:
         try:
             guild = bot.client.get_guild(int(guild_id)) if bot and bot.client else None
-            logger.info(f"list_guilds: get_guild({guild_id}) returned: {guild}")
             if not guild:
-                logger.info(f"list_guilds: Skipping guild {guild_id} - bot not in guild or guild not cached")
                 continue
-            logger.info(f"list_guilds: Processing guild {guild_id} ({guild.name})")
 
             # Get config status - check database first, then in-memory
             config_status = ConfigStatus.NEEDS_SETUP

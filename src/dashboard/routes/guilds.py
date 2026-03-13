@@ -193,13 +193,17 @@ async def list_guilds(user: dict = Depends(get_current_user)):
     guild_items = []
     user_guilds = user.get("guilds", [])
     logger.info(f"list_guilds: Processing {len(user_guilds)} user guilds: {user_guilds}")
+    logger.info(f"list_guilds: bot={bot is not None}, client={bot.client if bot else None}, ready={bot.client.is_ready() if bot and bot.client else False}")
+    if bot and bot.client:
+        logger.info(f"list_guilds: bot has {len(bot.client.guilds)} guilds: {[str(g.id) for g in bot.client.guilds]}")
     for guild_id in user_guilds:
         try:
             guild = bot.client.get_guild(int(guild_id)) if bot and bot.client else None
+            logger.info(f"list_guilds: get_guild({guild_id}) returned: {guild}")
             if not guild:
-                logger.debug(f"list_guilds: Skipping guild {guild_id} - bot not in guild or guild not cached")
+                logger.info(f"list_guilds: Skipping guild {guild_id} - bot not in guild or guild not cached")
                 continue
-            logger.debug(f"list_guilds: Processing guild {guild_id} ({guild.name})")
+            logger.info(f"list_guilds: Processing guild {guild_id} ({guild.name})")
 
             # Get config status - check database first, then in-memory
             config_status = ConfigStatus.NEEDS_SETUP

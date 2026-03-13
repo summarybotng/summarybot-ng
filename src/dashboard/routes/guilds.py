@@ -62,6 +62,16 @@ def _check_guild_access(guild_id: str, user: dict):
 
 
 @router.get(
+    "/debug",
+    summary="Debug endpoint",
+    include_in_schema=False,
+)
+async def debug_guilds(user: dict = Depends(get_current_user)):
+    """Simple debug endpoint to test router."""
+    return {"status": "ok", "user_guilds_count": len(user.get("guilds", []))}
+
+
+@router.get(
     "",
     response_model=GuildsResponse,
     summary="List manageable guilds",

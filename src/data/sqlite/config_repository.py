@@ -75,6 +75,11 @@ class SQLiteConfigRepository(ConfigRepository):
         if 'claude_model' in options_data:
             options_data['summarization_model'] = options_data.pop('claude_model')
 
+        # Filter out unknown fields (e.g., deprecated 'perspective' field)
+        from dataclasses import fields as dataclass_fields
+        valid_fields = {f.name for f in dataclass_fields(SummaryOptions)}
+        options_data = {k: v for k, v in options_data.items() if k in valid_fields}
+
         summary_options = SummaryOptions(**options_data)
 
         # Convert permission settings

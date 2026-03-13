@@ -91,6 +91,23 @@ async def bot_status():
 
 
 @router.get(
+    "/env-check",
+    summary="Check env vars (public)",
+    include_in_schema=False,
+)
+async def env_check():
+    """Public endpoint to check if required env vars are set."""
+    import os
+    return {
+        "TESTING": os.getenv("TESTING", "NOT_SET"),
+        "ENVIRONMENT": os.getenv("ENVIRONMENT", "NOT_SET"),
+        "TEST_AUTH_SECRET_set": bool(os.getenv("TEST_AUTH_SECRET")),
+        "TEST_AUTH_SECRET_len": len(os.getenv("TEST_AUTH_SECRET", "")),
+        "TEST_AUTH_SECRET_prefix": os.getenv("TEST_AUTH_SECRET", "")[:4] if os.getenv("TEST_AUTH_SECRET") else None,
+    }
+
+
+@router.get(
     "/diagnose",
     summary="Diagnose guild visibility issues (public)",
     include_in_schema=False,

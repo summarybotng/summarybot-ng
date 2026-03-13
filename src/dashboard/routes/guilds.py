@@ -62,6 +62,35 @@ def _check_guild_access(guild_id: str, user: dict):
 
 
 @router.get(
+    "/bot-status",
+    summary="Bot connection status (public)",
+    include_in_schema=False,
+)
+async def bot_status():
+    """Public endpoint to check Discord bot connection status."""
+    bot = get_discord_bot()
+    if bot is None:
+        return {
+            "status": "error",
+            "error": "bot_not_initialized",
+            "message": "get_discord_bot() returned None",
+        }
+    if bot.client is None:
+        return {
+            "status": "error",
+            "error": "client_not_initialized",
+            "message": "bot.client is None",
+        }
+    return {
+        "status": "ok",
+        "client_ready": bot.client.is_ready(),
+        "client_user": str(bot.client.user) if bot.client.user else None,
+        "guilds_cached": len(bot.client.guilds),
+        "guild_ids": [str(g.id) for g in bot.client.guilds],
+    }
+
+
+@router.get(
     "/debug",
     summary="Debug endpoint",
     include_in_schema=False,

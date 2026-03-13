@@ -103,6 +103,7 @@ async def env_check(request: Request):
     return {
         "TESTING": os.getenv("TESTING", "NOT_SET"),
         "ENVIRONMENT": os.getenv("ENVIRONMENT", "NOT_SET"),
+        "TEST_GUILD_ID": os.getenv("TEST_GUILD_ID", "NOT_SET"),
         "TEST_AUTH_SECRET_set": bool(user_secret),
         "TEST_AUTH_SECRET_len": len(user_secret),
         "TEST_AUTH_SECRET_prefix": user_secret[:4] if user_secret else None,

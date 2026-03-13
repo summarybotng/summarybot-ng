@@ -637,8 +637,10 @@ async def get_current_user(
                 if not guilds:
                     from dashboard.routes import get_discord_bot
                     bot = get_discord_bot()
+                    logger.info(f"Test auth: bot={bot is not None}, client={bot.client is not None if bot else False}")
                     if bot and bot.client:
                         guilds = [str(g.id) for g in bot.client.guilds]
+                        logger.info(f"Test auth: fetched {len(guilds)} bot guilds: {guilds}")
             else:
                 guilds = [g.strip() for g in test_guild_config.split(",")]
 

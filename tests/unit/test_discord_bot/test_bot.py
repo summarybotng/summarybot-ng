@@ -26,8 +26,8 @@ def summary_bot(mock_config):
     """Create a SummaryBot instance with mocked Discord client."""
     with patch('discord.Client'), patch('discord.app_commands.CommandTree'):
         bot = SummaryBot(config=mock_config)
-        bot.client = Mock(spec=discord.Client)
-        bot.client.tree = Mock(spec=discord.app_commands.CommandTree)
+        bot.client = MagicMock()
+        bot.client.tree = MagicMock()
         bot.client.user = Mock()
         bot.client.user.name = "TestBot"
         bot.client.user.id = 123456789
@@ -272,8 +272,11 @@ class TestGuildAndChannelAccess:
     async def test_get_or_fetch_guild_not_found(self, summary_bot):
         """Test fetching a guild that doesn't exist."""
         summary_bot.client.get_guild = Mock(return_value=None)
+        mock_response = Mock()
+        mock_response.status = 404
+        mock_response.reason = "Not Found"
         summary_bot.client.fetch_guild = AsyncMock(
-            side_effect=discord.NotFound(Mock(), Mock())
+            side_effect=discord.NotFound(mock_response, "Not Found")
         )
 
         result = await summary_bot.get_or_fetch_guild(123456789)

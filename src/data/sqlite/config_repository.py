@@ -8,6 +8,7 @@ from typing import List, Optional, Dict, Any
 
 from ..base import ConfigRepository
 from ...config.settings import GuildConfig, PermissionSettings, SummaryOptions, SummaryLength
+from ...utils.encryption import encrypt_value, decrypt_value
 from .connection import SQLiteConnection
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ class SQLiteConfigRepository(ConfigRepository):
             json.dumps(config.default_summary_options.to_dict()),
             json.dumps(config.permission_settings.to_dict()),
             config.webhook_enabled,
-            config.webhook_secret
+            encrypt_value(config.webhook_secret)
         )
 
         await self.connection.execute(query, params)
@@ -92,5 +93,5 @@ class SQLiteConfigRepository(ConfigRepository):
             default_summary_options=summary_options,
             permission_settings=permission_settings,
             webhook_enabled=bool(row['webhook_enabled']),
-            webhook_secret=row['webhook_secret']
+            webhook_secret=decrypt_value(row['webhook_secret'])
         )

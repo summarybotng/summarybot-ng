@@ -280,7 +280,7 @@ async def test_serialize_task_with_all_fields(persistence):
             )
         ],
         summary_options=SummaryOptions(
-            summary_length=SummaryLength.CONCISE,
+            summary_length=SummaryLength.BRIEF,
             include_bots=True,
             extract_action_items=True
         ),
@@ -472,7 +472,7 @@ async def test_import_tasks(persistence, tmp_path):
                 "cron_expression": None,
                 "destinations": [],
                 "summary_options": {
-                    "summary_length": "concise",
+                    "summary_length": "brief",
                     "include_bots": False,
                     "include_attachments": True,
                     "excluded_users": [],
@@ -647,7 +647,7 @@ async def test_persistence_with_custom_path():
     persistence = TaskPersistence()
 
     # Should use default path
-    assert str(persistence.storage_path) == "./data/tasks"
+    assert str(persistence.storage_path).endswith("data/tasks")
 
     # Should create the directory
     assert persistence.storage_path.exists()

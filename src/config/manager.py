@@ -26,6 +26,7 @@ class ConfigManager:
         self.config_path = Path(config_path) if config_path else None
         self._config: Optional[BotConfig] = None
         self._file_watcher_task: Optional[asyncio.Task] = None
+        self._save_lock = asyncio.Lock()
     
     async def load_config(self) -> BotConfig:
         """Load configuration from environment and/or file."""
@@ -70,7 +71,7 @@ class ConfigManager:
         # Write to file atomically
         temp_path = self.config_path.with_suffix('.tmp')
         try:
-            async with asyncio.Lock():
+            async with self._save_lock:
                 with open(temp_path, 'w') as f:
                     json.dump(config_dict, f, indent=2, default=str)
                 temp_path.replace(self.config_path)

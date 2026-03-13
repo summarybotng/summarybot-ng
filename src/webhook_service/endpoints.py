@@ -303,7 +303,7 @@ def create_summary_router(
             # Convert request to internal models
             options = SummaryOptions(
                 summary_length=SummaryLength(request.summary_type),
-                claude_model=request.model or DEFAULT_SUMMARIZATION_MODEL,
+                summarization_model=request.model or DEFAULT_SUMMARIZATION_MODEL,
                 temperature=request.temperature,
                 max_tokens=request.max_length,
                 include_bots=not request.exclude_bots,

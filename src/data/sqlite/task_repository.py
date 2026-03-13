@@ -5,7 +5,17 @@ SQLite implementation of task repository.
 import json
 import logging
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, date
+
+
+class DateTimeEncoder(json.JSONEncoder):
+    """JSON encoder that handles datetime objects."""
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, date):
+            return obj.isoformat()
+        return super().default(obj)
 
 from ..base import TaskRepository
 from ...models.summary import SummaryOptions, SummaryLength
@@ -125,8 +135,8 @@ class SQLiteTaskRepository(TaskRepository):
             result.completed_at.isoformat() if result.completed_at else None,
             result.summary_id,
             result.error_message,
-            json.dumps(result.error_details) if result.error_details else None,
-            json.dumps(result.delivery_results),
+            json.dumps(result.error_details, cls=DateTimeEncoder) if result.error_details else None,
+            json.dumps(result.delivery_results, cls=DateTimeEncoder),
             result.execution_time_seconds
         )
 

@@ -36,7 +36,7 @@ def log_command(
         @functools.wraps(func)
         async def wrapper(self, *args, **kwargs) -> Any:
             # Get command logger from handler instance
-            if not hasattr(self, 'command_logger'):
+            if not hasattr(self, 'command_logger') or self.command_logger is None:
                 # No logger configured, execute without logging
                 return await func(self, *args, **kwargs)
 

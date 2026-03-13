@@ -485,7 +485,7 @@ class TestConfigRepository:
 
         retrieved = await config_repository.get_guild_config(sample_guild_config.guild_id)
 
-        assert retrieved.default_summary_options.summary_length == SummaryLength.DETAILED
+        assert retrieved.default_summary_options.summary_length.value == SummaryLength.DETAILED.value
         assert retrieved.default_summary_options.include_bots is False
         assert retrieved.default_summary_options.extract_action_items is True
 
@@ -653,9 +653,11 @@ class TestTaskRepository:
     async def test_save_task_result(
         self,
         task_repository: SQLiteTaskRepository,
+        sample_scheduled_task: ScheduledTask,
         sample_task_result: TaskResult
     ):
         """Test saving a task execution result."""
+        await task_repository.save_task(sample_scheduled_task)
         execution_id = await task_repository.save_task_result(sample_task_result)
 
         assert execution_id == sample_task_result.execution_id
@@ -706,9 +708,11 @@ class TestTaskRepository:
     async def test_task_result_with_delivery_results(
         self,
         task_repository: SQLiteTaskRepository,
+        sample_scheduled_task: ScheduledTask,
         sample_task_result: TaskResult
     ):
         """Test saving task result with delivery results."""
+        await task_repository.save_task(sample_scheduled_task)
         await task_repository.save_task_result(sample_task_result)
 
         results = await task_repository.get_task_results(sample_task_result.task_id)

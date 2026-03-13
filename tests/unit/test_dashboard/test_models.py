@@ -270,12 +270,12 @@ class TestPydanticModels:
 
     def test_auth_login_response(self):
         """AuthLoginResponse validates correctly."""
-        response = AuthLoginResponse(redirect_url="https://discord.com/oauth2/authorize")
+        response = AuthLoginResponse(redirect_url="https://discord.com/oauth2/authorize", state="test-state")
         assert response.redirect_url.startswith("https://")
 
     def test_auth_callback_request(self):
         """AuthCallbackRequest validates correctly."""
-        request = AuthCallbackRequest(code="abc123")
+        request = AuthCallbackRequest(code="abc123", state="test-state")
         assert request.code == "abc123"
 
     def test_user_response(self):

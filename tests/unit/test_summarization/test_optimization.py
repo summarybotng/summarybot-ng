@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from typing import List
 
 from src.summarization.optimization import SummaryOptimizer
-from src.models.message import ProcessedMessage
+from src.models.message import ProcessedMessage, AttachmentInfo, AttachmentType
 from src.models.summary import SummaryOptions, SummaryLength
 
 
@@ -39,12 +39,9 @@ def sample_messages() -> List[ProcessedMessage]:
             author_name=f"User{i % 5}",
             timestamp=base_time + timedelta(minutes=i*2),
             channel_id="channel_1",
-            guild_id="guild_1",
-            is_bot=False,
             attachments=[],
             code_blocks=[],
             mentions=[],
-            reactions=[],
             thread_info=None
         )
         messages.append(msg)
@@ -90,8 +87,7 @@ class TestSummaryOptimizer:
                 author_id="user_1",
                 author_name="User1",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             ),
             ProcessedMessage(
                 id="msg_2",
@@ -99,8 +95,7 @@ class TestSummaryOptimizer:
                 author_id="user_2",
                 author_name="User2",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             ),
             ProcessedMessage(
                 id="msg_3",
@@ -108,8 +103,7 @@ class TestSummaryOptimizer:
                 author_id="user_3",
                 author_name="User3",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             )
         ]
 
@@ -131,23 +125,19 @@ class TestSummaryOptimizer:
         messages = [
             ProcessedMessage(
                 id="msg_1",
-                content="Human message",
+                content="This is a human message with substantial content for testing",
                 author_id="user_1",
                 author_name="User1",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1",
-                is_bot=False
+                channel_id="channel_1"
             ),
             ProcessedMessage(
                 id="msg_2",
-                content="Bot message",
+                content="This is a bot message with substantial content for testing",
                 author_id="bot_1",
                 author_name="BotUser [BOT]",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1",
-                is_bot=True
+                channel_id="channel_1"
             )
         ]
 
@@ -170,21 +160,19 @@ class TestSummaryOptimizer:
         messages = [
             ProcessedMessage(
                 id="msg_1",
-                content="Keep this",
+                content="Keep this message because it has substantial content for testing",
                 author_id="user_1",
                 author_name="User1",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             ),
             ProcessedMessage(
                 id="msg_2",
-                content="Remove this",
+                content="Remove this message because this user is excluded from summary",
                 author_id="user_2",
                 author_name="User2",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             )
         ]
 
@@ -203,30 +191,27 @@ class TestSummaryOptimizer:
         messages = [
             ProcessedMessage(
                 id="msg_1",
-                content="Hello world",
+                content="Hello world this is a substantial message for deduplication testing",
                 author_id="user_1",
                 author_name="User1",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             ),
             ProcessedMessage(
                 id="msg_2",
-                content="Hello world",  # Duplicate
+                content="Hello world this is a substantial message for deduplication testing",  # Duplicate
                 author_id="user_1",
                 author_name="User1",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             ),
             ProcessedMessage(
                 id="msg_3",
-                content="Different message",
+                content="This is a completely different message with unique content",
                 author_id="user_1",
                 author_name="User1",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             )
         ]
 
@@ -264,8 +249,7 @@ class TestSummaryOptimizer:
                 author_id="user_1",
                 author_name="User1",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             ),
             ProcessedMessage(
                 id="msg_2",
@@ -273,8 +257,7 @@ class TestSummaryOptimizer:
                 author_id="user_2",
                 author_name="User2",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             )
         ]
 
@@ -323,8 +306,7 @@ class TestSummaryOptimizer:
                 author_id="user_1",
                 author_name="User1",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             ),
             ProcessedMessage(
                 id="msg_2",
@@ -332,8 +314,7 @@ class TestSummaryOptimizer:
                 author_id="user_2",
                 author_name="User2",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             )
         ]
 
@@ -382,8 +363,7 @@ class TestSummaryOptimizer:
             author_id="user_1",
             author_name="User1",
             timestamp=datetime.utcnow(),
-            channel_id="channel_1",
-            guild_id="guild_1"
+            channel_id="channel_1"
         )
 
         msg2 = ProcessedMessage(
@@ -392,8 +372,7 @@ class TestSummaryOptimizer:
             author_id="user_1",
             author_name="User1",  # Same author
             timestamp=datetime.utcnow(),
-            channel_id="channel_1",
-            guild_id="guild_1"
+            channel_id="channel_1"
         )
 
         hash1 = optimizer._get_content_hash(msg1)
@@ -409,8 +388,7 @@ class TestSummaryOptimizer:
             author_id="user_1",
             author_name="User1",
             timestamp=datetime.utcnow(),
-            channel_id="channel_1",
-            guild_id="guild_1"
+            channel_id="channel_1"
         )
 
         msg2 = ProcessedMessage(
@@ -419,8 +397,7 @@ class TestSummaryOptimizer:
             author_id="user_1",
             author_name="User1",
             timestamp=datetime.utcnow(),
-            channel_id="channel_1",
-            guild_id="guild_1"
+            channel_id="channel_1"
         )
 
         hash1 = optimizer._get_content_hash(msg1)
@@ -436,12 +413,11 @@ class TestSummaryOptimizer:
             "messages": [
                 ProcessedMessage(
                     id="msg_1",
-                    content="Test",
+                    content="Test message with substantial content for request signature testing",
                     author_id="user_1",
                     author_name="User1",
                     timestamp=datetime.utcnow(),
-                    channel_id="channel_1",
-                    guild_id="guild_1"
+                    channel_id="channel_1"
                 )
             ],
             "options": SummaryOptions()
@@ -477,21 +453,19 @@ class TestSummaryOptimizer:
         messages = [
             ProcessedMessage(
                 id="msg_1",
-                content="Recent message",
+                content="This is a recent message with substantial content for age filtering test",
                 author_id="user_1",
                 author_name="User1",
                 timestamp=datetime.utcnow(),
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             ),
             ProcessedMessage(
                 id="msg_2",
-                content="Old message",
+                content="This is an old message with substantial content for age filtering test",
                 author_id="user_2",
                 author_name="User2",
                 timestamp=old_time,
-                channel_id="channel_1",
-                guild_id="guild_1"
+                channel_id="channel_1"
             )
         ]
 
@@ -508,8 +482,6 @@ class TestSummaryOptimizer:
         self, optimizer, summary_options
     ):
         """Test messages with attachments are prioritized."""
-        from src.models.message import AttachmentInfo
-
         messages = [
             ProcessedMessage(
                 id="msg_1",
@@ -518,7 +490,6 @@ class TestSummaryOptimizer:
                 author_name="User1",
                 timestamp=datetime.utcnow(),
                 channel_id="channel_1",
-                guild_id="guild_1",
                 attachments=[]
             ),
             ProcessedMessage(
@@ -528,14 +499,14 @@ class TestSummaryOptimizer:
                 author_name="User2",
                 timestamp=datetime.utcnow(),
                 channel_id="channel_1",
-                guild_id="guild_1",
                 attachments=[
                     AttachmentInfo(
                         id="att_1",
                         filename="file.pdf",
-                        url="https://example.com/file.pdf",
                         size=1024,
-                        type="application/pdf"
+                        url="https://example.com/file.pdf",
+                        proxy_url="https://example.com/file.pdf",
+                        type=AttachmentType.DOCUMENT
                     )
                 ]
             )
@@ -560,7 +531,6 @@ class TestSummaryOptimizer:
                 author_name="User1",
                 timestamp=datetime.utcnow(),
                 channel_id="channel_1",
-                guild_id="guild_1",
                 code_blocks=[]
             ),
             ProcessedMessage(
@@ -570,9 +540,8 @@ class TestSummaryOptimizer:
                 author_name="User2",
                 timestamp=datetime.utcnow(),
                 channel_id="channel_1",
-                guild_id="guild_1",
                 code_blocks=[
-                    CodeBlock(language="python", code="print('hello')")
+                    CodeBlock(language="python", code="print('hello')", start_line=0, end_line=1)
                 ]
             )
         ]

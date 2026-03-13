@@ -29,7 +29,14 @@ export function Callback() {
 
     const handleCallback = async () => {
       try {
-        const response = await api.post<CallbackResponse>("/auth/callback", { code });
+        // Retrieve OAuth state for CSRF validation
+        const state = sessionStorage.getItem("oauth_state");
+        sessionStorage.removeItem("oauth_state");
+        if (!state) {
+          setError("Missing OAuth state. Please try logging in again.");
+          return;
+        }
+        const response = await api.post<CallbackResponse>("/auth/callback", { code, state });
         setAuth(response.token, response.user, response.guilds);
         navigate("/guilds");
       } catch (err) {

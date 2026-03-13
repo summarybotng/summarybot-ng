@@ -140,9 +140,12 @@ class TestSQLiteConnection:
         assert results == []
 
     @pytest.mark.asyncio
-    async def test_connection_pool_concurrency(self):
+    async def test_connection_pool_concurrency(self, tmp_path):
         """Test concurrent access to connection pool."""
-        connection = SQLiteConnection(":memory:", pool_size=2)
+        # Use file-based DB because :memory: with pool_size>1 creates
+        # separate in-memory databases per connection
+        db_path = str(tmp_path / "concurrency_test.db")
+        connection = SQLiteConnection(db_path, pool_size=2)
         await connection.connect()
 
         await connection.execute(
@@ -310,13 +313,8 @@ class TestSQLiteTransaction:
         async with transaction:
             conn = transaction.connection
             await conn.execute("UPDATE counter SET value = 100 WHERE id = 1")
-
-            # Outside the transaction, value should still be 0
-            # (This tests isolation, though in SQLite with default settings
-            # this might not always be strictly isolated)
-            result = await in_memory_db.fetch_one("SELECT value FROM counter WHERE id = 1")
-
-            # After commit, value should be 100
+            # Note: Cannot read from pool mid-transaction with pool_size=1
+            # (the transaction holds the only connection, so fetch_one would deadlock)
 
         final_result = await in_memory_db.fetch_one("SELECT value FROM counter WHERE id = 1")
         assert final_result["value"] == 100
@@ -380,9 +378,12 @@ class TestSQLitePerformance:
         assert result["count"] == 1000
 
     @pytest.mark.asyncio
-    async def test_connection_pool_reuse(self):
+    async def test_connection_pool_reuse(self, tmp_path):
         """Test that connections are reused from pool."""
-        connection = SQLiteConnection(":memory:", pool_size=2)
+        # Use file-based DB because :memory: with pool_size>1 creates
+        # separate in-memory databases per connection
+        db_path = str(tmp_path / "reuse_test.db")
+        connection = SQLiteConnection(db_path, pool_size=2)
         await connection.connect()
 
         await connection.execute(
@@ -397,3 +398,31 @@ class TestSQLitePerformance:
         assert len(connection._connections) == 2
 
         await connection.disconnect()
+
+
+class TestPoolSizeDefaults:
+    """Test default pool size after P1-5 fix (changed from 1 to 3)."""
+
+    def test_default_pool_size_is_3(self):
+        """Test that the default pool_size is 3."""
+        conn = SQLiteConnection(":memory:")
+        assert conn.pool_size == 3
+
+    @pytest.mark.asyncio
+    async def test_concurrent_reads_complete_without_timeout(self):
+        """Test that 3 concurrent reads complete without deadlock."""
+        conn = SQLiteConnection(":memory:", pool_size=3)
+        await conn.connect()
+        try:
+            await conn.execute("CREATE TABLE test (id INTEGER PRIMARY KEY)")
+            results = await asyncio.wait_for(
+                asyncio.gather(
+                    conn.fetch_one("SELECT 1 as val"),
+                    conn.fetch_one("SELECT 2 as val"),
+                    conn.fetch_one("SELECT 3 as val"),
+                ),
+                timeout=5.0,
+            )
+            assert len(results) == 3
+        finally:
+            await conn.disconnect()

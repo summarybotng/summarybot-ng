@@ -224,8 +224,10 @@ class TestBaseCommandHandler:
 
         # Should send permission error
         assert mock_interaction.response.send_message.called
-        call_args = str(mock_interaction.response.send_message.call_args)
-        assert "Permission Denied" in call_args or "permission" in call_args.lower()
+        call_kwargs = mock_interaction.response.send_message.call_args[1]
+        embed = call_kwargs.get('embed')
+        assert embed is not None
+        assert "Permission Denied" in embed.title
 
     @pytest.mark.asyncio
     async def test_permission_check_without_manager(self, mock_summarization_engine, mock_interaction):

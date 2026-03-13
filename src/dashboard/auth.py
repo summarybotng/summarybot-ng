@@ -71,6 +71,9 @@ class DashboardAuth:
         # In-memory session store (replace with database in production)
         self._sessions: dict[str, DashboardSession] = {}
 
+        # Pending OAuth states for CSRF protection (state_token -> created_at)
+        self._pending_states: dict[str, datetime] = {}
+
         # HTTP client for Discord API
         self._http_client: Optional[httpx.AsyncClient] = None
 
@@ -549,6 +552,22 @@ class DashboardAuth:
         for token_hash in expired:
             del self._sessions[token_hash]
 
+    def create_oauth_state(self) -> str:
+        """Generate and store a CSRF state token for OAuth flow."""
+        state = secrets.token_urlsafe(32)
+        self._pending_states[state] = utc_now_naive()
+        # Cleanup expired states (>10 min)
+        cutoff = utc_now_naive() - timedelta(minutes=10)
+        self._pending_states = {s: t for s, t in self._pending_states.items() if t > cutoff}
+        return state
+
+    def validate_oauth_state(self, state: str) -> bool:
+        """Validate and consume an OAuth state token. Returns True if valid."""
+        created_at = self._pending_states.pop(state, None)
+        if created_at is None:
+            return False
+        return utc_now_naive() - created_at <= timedelta(minutes=10)
+
 
 # ============================================================================
 # FastAPI Dependencies
@@ -595,17 +614,18 @@ async def get_current_user(
     provided_key = request.headers.get("X-Test-Auth-Key")
     if provided_key:
         environment = os.getenv("ENVIRONMENT", "development").lower()
-        testing_enabled = os.getenv("TESTING", "").lower() in ("true", "1", "yes")
-
-        # Block test auth in production unless explicitly testing
-        if environment == "production" and not testing_enabled:
+        # SEC-FIX: Only allow test auth in explicit dev/test environments.
+        # Never in production, regardless of TESTING flag.
+        allowed_environments = ("development", "test", "testing", "ci")
+        if environment not in allowed_environments:
             logger.warning(
-                "Test auth bypass attempted in production without TESTING=true. "
+                "Test auth bypass attempted in non-development environment. "
+                f"Environment: {environment}, "
                 f"Client IP: {request.client.host if request.client else 'unknown'}"
             )
             raise HTTPException(
                 status_code=401,
-                detail={"code": "UNAUTHORIZED", "message": "Test authentication not available in production"},
+                detail={"code": "UNAUTHORIZED", "message": "Test authentication not available"},
             )
 
         admin_secret = os.getenv("TEST_AUTH_ADMIN_SECRET")

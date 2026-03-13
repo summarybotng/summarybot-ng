@@ -4,13 +4,15 @@ Unit tests for dashboard/auth.py.
 Tests DashboardAuth for OAuth, JWT, and session management.
 """
 
+import os
+
 import pytest
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
 from jose import jwt
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 from src.dashboard.auth import DashboardAuth, OAUTH_SCOPES
 from src.dashboard.models import DashboardUser, DashboardGuild, GuildRole
@@ -139,9 +141,9 @@ class TestJWT:
 
     def test_verify_jwt_expired(self, auth, sample_user):
         """Verify expired JWT raises exception."""
-        # Create token with negative expiration
-        with patch('src.dashboard.auth.datetime') as mock_dt:
-            mock_dt.utcnow.return_value = datetime.utcnow() - timedelta(hours=48)
+        # Create token with negative expiration by patching utc_now_naive
+        with patch('src.dashboard.auth.utc_now_naive') as mock_utc:
+            mock_utc.return_value = datetime.utcnow() - timedelta(hours=48)
             token = auth.create_jwt(sample_user, ["guild1"])
 
         with pytest.raises(HTTPException) as exc_info:
@@ -390,3 +392,122 @@ class TestTokenHashing:
             hash1 = auth._hash_token("token-1")
             hash2 = auth._hash_token("token-2")
             assert hash1 != hash2
+
+
+class TestOAuthCSRF:
+    """Tests for OAuth CSRF state token management."""
+
+    @pytest.fixture
+    def auth(self):
+        """Create auth handler."""
+        return DashboardAuth(
+            client_id="123456",
+            client_secret="secret",
+            redirect_uri="https://example.com/callback",
+            jwt_secret="jwt-secret-key",
+        )
+
+    def test_login_returns_state_token(self, auth):
+        """create_oauth_state() returns a non-empty string."""
+        state = auth.create_oauth_state()
+        assert isinstance(state, str)
+        assert len(state) > 0
+
+    def test_state_validated_successfully(self, auth):
+        """Created state token validates successfully."""
+        state = auth.create_oauth_state()
+        assert auth.validate_oauth_state(state) is True
+
+    def test_state_cannot_be_reused(self, auth):
+        """State token is consumed on first validation and cannot be reused."""
+        state = auth.create_oauth_state()
+        assert auth.validate_oauth_state(state) is True
+        assert auth.validate_oauth_state(state) is False
+
+    def test_invalid_state_rejected(self, auth):
+        """A fabricated state token is rejected."""
+        assert auth.validate_oauth_state("bogus") is False
+
+    def test_expired_state_rejected(self, auth):
+        """State token older than 10 minutes is rejected."""
+        state = auth.create_oauth_state()
+        # Fast-forward time so the state is expired when validated
+        expired_time = datetime.utcnow() + timedelta(minutes=11)
+        with patch("src.dashboard.auth.utc_now_naive", return_value=expired_time):
+            assert auth.validate_oauth_state(state) is False
+
+    def test_callback_rejects_missing_state(self):
+        """AuthCallbackRequest requires a state field (Pydantic validation)."""
+        from pydantic import ValidationError
+        from src.dashboard.models import AuthCallbackRequest
+
+        with pytest.raises(ValidationError):
+            AuthCallbackRequest(code="some-code")  # missing 'state'
+
+
+class TestAuthBypassSecurity:
+    """Tests that test-auth bypass is blocked outside allowed environments."""
+
+    def _make_mock_request(self, test_key: str):
+        """Build a mock FastAPI Request with X-Test-Auth-Key header."""
+        request = MagicMock(spec=Request)
+        request.headers = {"X-Test-Auth-Key": test_key}
+        request.client = MagicMock()
+        request.client.host = "127.0.0.1"
+        request.cookies = {}
+        request.url = MagicMock()
+        request.url.path = "/api/guilds/123456"
+        return request
+
+    @pytest.mark.asyncio
+    @patch.dict(os.environ, {"ENVIRONMENT": "production", "TESTING": "true", "TEST_AUTH_SECRET": "my-key"})
+    async def test_test_auth_blocked_in_production_even_with_testing_flag(self):
+        """TESTING=true must NOT bypass auth in production."""
+        from src.dashboard.auth import get_current_user
+
+        request = self._make_mock_request("my-key")
+        with pytest.raises(HTTPException) as exc_info:
+            await get_current_user(request=request, credentials=None)
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    @patch.dict(os.environ, {"ENVIRONMENT": "staging", "TEST_AUTH_SECRET": "my-key"})
+    async def test_test_auth_blocked_in_staging(self):
+        """Test auth bypass must be blocked in staging."""
+        from src.dashboard.auth import get_current_user
+
+        request = self._make_mock_request("my-key")
+        with pytest.raises(HTTPException) as exc_info:
+            await get_current_user(request=request, credentials=None)
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    @patch.dict(os.environ, {"ENVIRONMENT": "development", "TEST_AUTH_SECRET": "my-key"}, clear=False)
+    async def test_test_auth_allowed_in_development(self):
+        """Test auth bypass is allowed in development."""
+        from src.dashboard.auth import get_current_user
+
+        request = self._make_mock_request("my-key")
+        result = await get_current_user(request=request, credentials=None)
+        assert result["sub"] == "test_member_user_id"
+        assert result["username"] == "test_member_user"
+
+    @pytest.mark.asyncio
+    @patch.dict(os.environ, {"ENVIRONMENT": "ci", "TEST_AUTH_SECRET": "my-key"}, clear=False)
+    async def test_test_auth_allowed_in_ci(self):
+        """Test auth bypass is allowed in CI environment."""
+        from src.dashboard.auth import get_current_user
+
+        request = self._make_mock_request("my-key")
+        result = await get_current_user(request=request, credentials=None)
+        assert result["sub"] == "test_member_user_id"
+
+    @pytest.mark.asyncio
+    @patch.dict(os.environ, {"TEST_AUTH_SECRET": "my-key"}, clear=True)
+    async def test_test_auth_default_env_is_development(self):
+        """When ENVIRONMENT is not set, default is 'development' (allowed)."""
+        from src.dashboard.auth import get_current_user
+
+        request = self._make_mock_request("my-key")
+        result = await get_current_user(request=request, credentials=None)
+        assert result["sub"] == "test_member_user_id"

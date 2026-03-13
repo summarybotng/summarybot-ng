@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 class SQLiteTransaction(Transaction):
     """SQLite transaction implementation."""
 
-    def __init__(self, connection: aiosqlite.Connection):
+    def __init__(self, connection: aiosqlite.Connection, pool: asyncio.Queue = None):
         self.connection = connection
+        self._pool = pool
         self._active = False
 
     async def commit(self) -> None:
@@ -48,6 +49,9 @@ class SQLiteTransaction(Transaction):
             await self.rollback()
         else:
             await self.commit()
+        # Return the connection to the pool
+        if self._pool is not None:
+            await self._pool.put(self.connection)
 
 
 # Module-level write lock - shared across all SQLiteConnection instances
@@ -64,14 +68,14 @@ def _get_global_write_lock() -> asyncio.Lock:
 
 
 class SQLiteConnection(DatabaseConnection):
-    """SQLite database connection with single-connection mode for safety.
+    """SQLite database connection with connection pooling.
 
-    Note: Pool size of 1 is used to prevent database locking issues.
-    aiosqlite uses worker threads per connection, and multiple connections
-    can cause database lock errors even with asyncio locks.
+    Uses WAL mode for read concurrency with a global write lock to
+    serialize writes (SQLite single-writer constraint). Default pool
+    size of 3 allows concurrent reads while writes are serialized.
     """
 
-    def __init__(self, db_path: str, pool_size: int = 1):
+    def __init__(self, db_path: str, pool_size: int = 3):
         self.db_path = db_path
         self.pool_size = pool_size
         self._connections: List[aiosqlite.Connection] = []
@@ -220,5 +224,7 @@ class SQLiteConnection(DatabaseConnection):
 
     async def begin_transaction(self) -> Transaction:
         """Begin a new database transaction."""
+        if not self._initialized:
+            await self.connect()
         conn = await self._available.get()
-        return SQLiteTransaction(conn)
+        return SQLiteTransaction(conn, self._available)

@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Header, Depends
+from fastapi import APIRouter, HTTPException, Header, Depends, Request
 
 from ..models.ingest import IngestDocument, IngestResponse, SourceType
 from ..message_processing.whatsapp_processor import WhatsAppMessageProcessor
@@ -45,6 +45,26 @@ def _validate_api_key(x_api_key: str = Header(..., alias="X-API-Key")) -> str:
     return x_api_key
 
 
+async def _validate_signature(request: Request):
+    """Validate HMAC signature when INGEST_WEBHOOK_SECRET is configured."""
+    webhook_secret = os.environ.get("INGEST_WEBHOOK_SECRET")
+    if not webhook_secret:
+        return  # Backward compat: no secret = no signature check
+
+    signature = request.headers.get("X-Signature")
+    if not signature:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing X-Signature header",
+        )
+
+    body = await request.body()  # Starlette caches this internally
+
+    from ..webhook_service.auth import verify_webhook_signature
+    if not verify_webhook_signature(body, signature, webhook_secret):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+
 @router.post(
     "/ingest",
     response_model=IngestResponse,
@@ -57,8 +77,10 @@ def _validate_api_key(x_api_key: str = Header(..., alias="X-API-Key")) -> str:
     },
 )
 async def ingest_messages(
+    request: Request,
     payload: IngestDocument,
     api_key: str = Depends(_validate_api_key),
+    _sig: None = Depends(_validate_signature),
 ):
     """Receive a batch of normalized messages from any external source.
 

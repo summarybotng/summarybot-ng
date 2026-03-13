@@ -84,10 +84,9 @@ class TaskScheduler:
         except Exception as e:
             logger.error(f"Failed to start task scheduler: {e}")
             raise ConfigurationError(
-                message=f"Failed to start scheduler: {str(e)}",
-                error_code="SCHEDULER_START_FAILED",
+                config_key="scheduler",
+                issue=f"Failed to start scheduler: {str(e)}",
                 context=create_error_context(operation="scheduler_start"),
-                user_message="Failed to start the task scheduler. Please check the configuration."
             )
 
     async def stop(self, wait: bool = True) -> None:
@@ -127,10 +126,9 @@ class TaskScheduler:
         """
         if not self._running:
             raise ConfigurationError(
-                message="Cannot schedule task: scheduler not running",
-                error_code="SCHEDULER_NOT_RUNNING",
+                config_key="scheduler",
+                issue="Cannot schedule task: scheduler not running",
                 context=create_error_context(operation="schedule_task"),
-                user_message="The scheduler is not running. Please start it first."
             )
 
         try:
@@ -178,10 +176,9 @@ class TaskScheduler:
         except Exception as e:
             logger.error(f"Failed to schedule task {task.id}: {e}")
             raise ConfigurationError(
-                message=f"Failed to schedule task: {str(e)}",
-                error_code="TASK_SCHEDULE_FAILED",
+                config_key="task_schedule",
+                issue=f"Failed to schedule task: {str(e)}",
                 context=create_error_context(operation="schedule_task"),
-                user_message=f"Failed to schedule task: {str(e)}"
             )
 
     async def cancel_task(self, task_id: str) -> bool:

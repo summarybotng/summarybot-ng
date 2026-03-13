@@ -70,7 +70,7 @@ class TestSyncCommands:
         """Test syncing commands globally."""
         result = await command_registry.sync_commands()
 
-        mock_bot.client.tree.sync.assert_called_once_with(guild=None)
+        mock_bot.client.tree.sync.assert_called_once_with()
         assert result == 3
 
     @pytest.mark.asyncio
@@ -90,8 +90,11 @@ class TestSyncCommands:
     @pytest.mark.asyncio
     async def test_sync_commands_http_error(self, command_registry, mock_bot):
         """Test sync_commands with HTTP error."""
+        mock_response = Mock()
+        mock_response.status = 500
+        mock_response.headers = {}
         mock_bot.client.tree.sync = AsyncMock(
-            side_effect=discord.HTTPException(Mock(), Mock())
+            side_effect=discord.HTTPException(mock_response, "Internal Server Error")
         )
 
         with pytest.raises(discord.HTTPException):

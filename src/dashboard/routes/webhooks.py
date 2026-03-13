@@ -125,11 +125,13 @@ async def create_webhook(
     _check_guild_access(guild_id, user)
     _get_guild_or_404(guild_id)
 
-    # Validate URL
-    if not body.url.startswith(("http://", "https://")):
+    # Validate URL (SSRF protection)
+    from ...utils.url_validation import validate_webhook_url
+    is_valid, error_msg = validate_webhook_url(body.url)
+    if not is_valid:
         raise HTTPException(
             status_code=400,
-            detail={"code": "INVALID_URL", "message": "URL must start with http:// or https://"},
+            detail={"code": "INVALID_URL", "message": error_msg},
         )
 
     webhook_repo = await get_webhook_repository()
@@ -239,10 +241,12 @@ async def update_webhook(
         webhook["name"] = body.name
 
     if body.url is not None:
-        if not body.url.startswith(("http://", "https://")):
+        from ...utils.url_validation import validate_webhook_url
+        is_valid, error_msg = validate_webhook_url(body.url)
+        if not is_valid:
             raise HTTPException(
                 status_code=400,
-                detail={"code": "INVALID_URL", "message": "URL must start with http:// or https://"},
+                detail={"code": "INVALID_URL", "message": error_msg},
             )
         webhook["url"] = body.url
 
@@ -361,6 +365,15 @@ async def test_webhook(
             "message": test_message,
             "timestamp": utc_now_naive().isoformat(),
         }
+
+    # SSRF protection: validate URL before making request
+    from ...utils.url_validation import validate_webhook_url
+    is_valid, error_msg = validate_webhook_url(webhook["url"])
+    if not is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_URL", "message": f"Unsafe webhook URL: {error_msg}"},
+        )
 
     start_time = time.time()
 

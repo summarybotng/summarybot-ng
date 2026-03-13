@@ -62,7 +62,8 @@ class TestEmbedCreation:
         now = datetime.utcnow()
         embed = create_embed(title="Test", timestamp=now)
 
-        assert embed.timestamp == now
+        # discord.py may attach UTC tzinfo to naive datetimes
+        assert embed.timestamp.replace(tzinfo=None) == now
 
     def test_create_error_embed(self):
         """Test error embed creation."""

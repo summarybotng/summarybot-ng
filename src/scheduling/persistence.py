@@ -49,10 +49,9 @@ class TaskPersistence:
         except Exception as e:
             logger.error(f"Failed to save task {task.id}: {e}")
             raise ConfigurationError(
-                message=f"Failed to persist task: {str(e)}",
-                error_code="TASK_PERSISTENCE_FAILED",
+                config_key="task_persistence",
+                issue=f"Failed to persist task: {str(e)}",
                 context=create_error_context(operation="save_task"),
-                user_message="Failed to save task configuration."
             )
 
     async def load_task(self, task_id: str) -> Optional[ScheduledTask]:

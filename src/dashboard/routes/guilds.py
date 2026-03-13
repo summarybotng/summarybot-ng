@@ -68,7 +68,20 @@ def _check_guild_access(guild_id: str, user: dict):
 )
 async def debug_guilds(user: dict = Depends(get_current_user)):
     """Simple debug endpoint to test router."""
-    return {"status": "ok", "user_guilds_count": len(user.get("guilds", []))}
+    bot = get_discord_bot()
+    bot_info = {
+        "bot_exists": bot is not None,
+        "client_exists": bot.client is not None if bot else False,
+        "client_ready": bot.client.is_ready() if bot and bot.client else False,
+        "client_user": str(bot.client.user) if bot and bot.client and bot.client.user else None,
+        "guilds_cached": len(bot.client.guilds) if bot and bot.client else 0,
+    }
+    return {
+        "status": "ok",
+        "user_guilds_count": len(user.get("guilds", [])),
+        "user_guilds": user.get("guilds", []),
+        "bot": bot_info,
+    }
 
 
 @router.get(

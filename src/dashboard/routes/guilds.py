@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import discord
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 
 from ..auth import get_current_user
 from src.utils.time import utc_now_naive
@@ -95,15 +95,21 @@ async def bot_status():
     summary="Check env vars (public)",
     include_in_schema=False,
 )
-async def env_check():
+async def env_check(request: Request):
     """Public endpoint to check if required env vars are set."""
     import os
+    provided_key = request.headers.get("X-Test-Auth-Key", "")
+    user_secret = os.getenv("TEST_AUTH_SECRET", "")
     return {
         "TESTING": os.getenv("TESTING", "NOT_SET"),
         "ENVIRONMENT": os.getenv("ENVIRONMENT", "NOT_SET"),
-        "TEST_AUTH_SECRET_set": bool(os.getenv("TEST_AUTH_SECRET")),
-        "TEST_AUTH_SECRET_len": len(os.getenv("TEST_AUTH_SECRET", "")),
-        "TEST_AUTH_SECRET_prefix": os.getenv("TEST_AUTH_SECRET", "")[:4] if os.getenv("TEST_AUTH_SECRET") else None,
+        "TEST_AUTH_SECRET_set": bool(user_secret),
+        "TEST_AUTH_SECRET_len": len(user_secret),
+        "TEST_AUTH_SECRET_prefix": user_secret[:4] if user_secret else None,
+        "provided_key_set": bool(provided_key),
+        "provided_key_len": len(provided_key),
+        "provided_key_prefix": provided_key[:4] if provided_key else None,
+        "keys_match": provided_key == user_secret if provided_key and user_secret else False,
     }
 
 

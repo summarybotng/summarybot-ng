@@ -6,7 +6,7 @@ throughout the application.
 """
 
 from typing import Optional
-from ..base import SummaryRepository, ConfigRepository, TaskRepository, FeedRepository, WebhookRepository, ErrorRepository, StoredSummaryRepository, SummaryJobRepository, IngestRepository
+from ..base import SummaryRepository, ConfigRepository, TaskRepository, FeedRepository, WebhookRepository, ErrorRepository, StoredSummaryRepository, SummaryJobRepository, IngestRepository, PromptTemplateRepository
 from ..sqlite import (
     SQLiteConnection,
     SQLiteSummaryRepository,
@@ -17,7 +17,8 @@ from ..sqlite import (
     SQLiteErrorRepository,
     SQLiteStoredSummaryRepository,
     SQLiteSummaryJobRepository,
-    SQLiteIngestRepository
+    SQLiteIngestRepository,
+    SQLitePromptTemplateRepository
 )
 
 
@@ -152,6 +153,17 @@ class RepositoryFactory:
         else:
             raise ValueError(f"Unsupported backend: {self.backend}")
 
+    async def get_prompt_template_repository(self) -> PromptTemplateRepository:
+        """Create and return a prompt template repository instance (ADR-034)."""
+        connection = await self.get_connection()
+
+        if self.backend == "sqlite":
+            return SQLitePromptTemplateRepository(connection)
+        elif self.backend == "postgresql":
+            raise NotImplementedError("PostgreSQL support is not yet implemented")
+        else:
+            raise ValueError(f"Unsupported backend: {self.backend}")
+
     async def close(self) -> None:
         """Close database connections."""
         if self._connection:
@@ -248,3 +260,9 @@ async def get_summary_job_repository() -> SummaryJobRepository:
     """Get the default summary job repository instance (ADR-013)."""
     factory = get_repository_factory()
     return await factory.get_summary_job_repository()
+
+
+async def get_prompt_template_repository() -> PromptTemplateRepository:
+    """Get the default prompt template repository instance (ADR-034)."""
+    factory = get_repository_factory()
+    return await factory.get_prompt_template_repository()

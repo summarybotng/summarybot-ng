@@ -17,6 +17,7 @@ from ..models.stored_summary import StoredSummary
 from ..models.ingest import IngestDocument, IngestBatch
 from ..models.message import ProcessedMessage
 from ..models.summary_job import SummaryJob
+from ..models.prompt_template import GuildPromptTemplate
 from ..config.settings import GuildConfig
 
 
@@ -966,6 +967,58 @@ class SummaryJobRepository(ABC):
         Returns:
             Number of jobs that were marked as paused
         """
+        pass
+
+
+class PromptTemplateRepository(ABC):
+    """Abstract repository for guild prompt templates (ADR-034)."""
+
+    @abstractmethod
+    async def save_template(self, template: GuildPromptTemplate) -> GuildPromptTemplate:
+        """Save or update a prompt template."""
+        pass
+
+    @abstractmethod
+    async def get_template(self, template_id: str) -> Optional[GuildPromptTemplate]:
+        """Retrieve a template by its ID."""
+        pass
+
+    @abstractmethod
+    async def get_templates_by_guild(self, guild_id: str) -> List[GuildPromptTemplate]:
+        """Retrieve all templates for a guild."""
+        pass
+
+    @abstractmethod
+    async def delete_template(self, template_id: str) -> bool:
+        """Delete a template by its ID."""
+        pass
+
+    @abstractmethod
+    async def get_template_usage(self, template_id: str) -> List[Dict[str, str]]:
+        """Get schedules using this template.
+
+        Returns:
+            List of dicts with schedule_id and schedule_name
+        """
+        pass
+
+    @abstractmethod
+    async def get_usage_count(self, template_id: str) -> int:
+        """Get count of schedules using this template."""
+        pass
+
+    @abstractmethod
+    async def duplicate_template(
+        self, template_id: str, new_name: str, user_id: str
+    ) -> Optional[GuildPromptTemplate]:
+        """Duplicate a template with a new name."""
+        pass
+
+    @abstractmethod
+    async def template_name_exists(
+        self, guild_id: str, name: str, exclude_id: Optional[str] = None
+    ) -> bool:
+        """Check if a template name already exists in a guild."""
         pass
 
 

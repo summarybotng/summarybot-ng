@@ -173,6 +173,45 @@ export interface Schedule {
   next_run: string | null;
   run_count: number;
   failure_count: number;
+  // ADR-034: Guild prompt templates
+  prompt_template_id?: string;
+  prompt_template_name?: string;
+}
+
+// ADR-034: Guild Prompt Template types
+export interface PromptTemplate {
+  id: string;
+  guild_id: string;
+  name: string;
+  description: string | null;
+  content: string;
+  based_on_default: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  usage_count: number;
+}
+
+export interface CreatePromptTemplateRequest {
+  name: string;
+  description?: string;
+  content: string;
+  based_on_default?: string;
+}
+
+export interface UpdatePromptTemplateRequest {
+  name?: string;
+  description?: string;
+  content?: string;
+}
+
+export interface PromptTemplateUsage {
+  template_id: string;
+  schedules: Array<{
+    schedule_id: string;
+    schedule_name: string;
+  }>;
+  total: number;
 }
 
 export interface Destination {

@@ -54,8 +54,8 @@ class SQLiteTaskRepository(TaskRepository):
             created_at, created_by, last_run, next_run,
             run_count, failure_count, max_failures, retry_delay_minutes,
             scope, channel_ids, category_id, excluded_channel_ids,
-            resolve_category_at_runtime, timezone
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            resolve_category_at_runtime, timezone, prompt_template_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -83,7 +83,8 @@ class SQLiteTaskRepository(TaskRepository):
             getattr(task, 'category_id', None),
             json.dumps(getattr(task, 'excluded_channel_ids', [])),
             1 if getattr(task, 'resolve_category_at_runtime', False) else 0,
-            getattr(task, 'timezone', 'UTC')
+            getattr(task, 'timezone', 'UTC'),
+            getattr(task, 'prompt_template_id', None)
         )
 
         await self.connection.execute(query, params)
@@ -213,7 +214,8 @@ class SQLiteTaskRepository(TaskRepository):
             run_count=row['run_count'],
             failure_count=row['failure_count'],
             max_failures=row['max_failures'],
-            retry_delay_minutes=row['retry_delay_minutes']
+            retry_delay_minutes=row['retry_delay_minutes'],
+            prompt_template_id=row.get('prompt_template_id')
         )
 
     def _row_to_task_result(self, row: Dict[str, Any]) -> TaskResult:

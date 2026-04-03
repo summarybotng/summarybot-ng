@@ -9,6 +9,7 @@ import {
   useRunSchedule,
 } from "@/hooks/useSchedules";
 import { useGuild } from "@/hooks/useGuilds";
+import { usePromptTemplates } from "@/hooks/usePromptTemplates";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -38,6 +39,7 @@ export function Schedules() {
   const { id } = useParams<{ id: string }>();
   const { data: schedules, isLoading } = useSchedules(id || "");
   const { data: guild } = useGuild(id || "");
+  const { data: promptTemplates } = usePromptTemplates(id || "");  // ADR-034
   const createSchedule = useCreateSchedule(id || "");
   const updateSchedule = useUpdateSchedule(id || "");
   const deleteSchedule = useDeleteSchedule(id || "");
@@ -85,6 +87,7 @@ export function Schedules() {
         schedule_days: formData.schedule_type === "weekly" ? formData.schedule_days : undefined,
         timezone: formData.timezone,
         destinations: formDataToDestinations(formData),
+        prompt_template_id: formData.prompt_template_id || undefined,  // ADR-034
         summary_options: {
           summary_length: formData.summary_length,
           perspective: formData.perspective,
@@ -132,6 +135,7 @@ export function Schedules() {
           schedule_days: formData.schedule_type === "weekly" ? formData.schedule_days : undefined,
           timezone: formData.timezone,
           destinations: formDataToDestinations(formData),
+          prompt_template_id: formData.prompt_template_id || undefined,  // ADR-034
           summary_options: {
             summary_length: formData.summary_length,
             perspective: formData.perspective,
@@ -240,6 +244,7 @@ export function Schedules() {
               onChange={setFormData}
               channels={guild?.channels || []}
               categories={guild?.categories || []}
+              promptTemplates={promptTemplates || []}
             />
             <DialogFooter>
               <Button variant="outline" onClick={() => setCreateOpen(false)}>
@@ -283,6 +288,7 @@ export function Schedules() {
             onChange={setFormData}
             channels={guild?.channels || []}
             categories={guild?.categories || []}
+            promptTemplates={promptTemplates || []}
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingSchedule(null)}>

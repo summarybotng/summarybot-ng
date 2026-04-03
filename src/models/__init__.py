@@ -33,6 +33,7 @@ from .push_template import (
     DEFAULT_PUSH_TEMPLATE, format_scope, format_date_range, validate_template,
     SectionType, ReferenceStyle,
 )
+from .prompt_template import GuildPromptTemplate
 
 __all__ = [
     # Base models
@@ -113,4 +114,7 @@ __all__ = [
     'validate_template',
     'SectionType',
     'ReferenceStyle',
+
+    # Prompt template models (ADR-034)
+    'GuildPromptTemplate',
 ]

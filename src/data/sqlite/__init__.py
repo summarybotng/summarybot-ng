@@ -41,6 +41,7 @@ from .error_repository import SQLiteErrorRepository
 from .stored_summary_repository import SQLiteStoredSummaryRepository
 from .ingest_repository import SQLiteIngestRepository
 from .summary_job_repository import SQLiteSummaryJobRepository
+from .prompt_template_repository import SQLitePromptTemplateRepository
 
 __all__ = [
     # Connection
@@ -58,4 +59,5 @@ __all__ = [
     'SQLiteStoredSummaryRepository',
     'SQLiteIngestRepository',
     'SQLiteSummaryJobRepository',
+    'SQLitePromptTemplateRepository',
 ]

@@ -356,7 +356,8 @@ class SummarizationEngine:
                                context: SummarizationContext,
                                channel_id: str = "",
                                guild_id: str = "",
-                               skip_cache: bool = False) -> SummaryResult:
+                               skip_cache: bool = False,
+                               custom_system_prompt: Optional[str] = None) -> SummaryResult:
         """Summarize a list of messages.
 
         Args:
@@ -415,9 +416,17 @@ class SummarizationEngine:
         
         try:
             # Get custom prompt if configured
-            custom_prompt = None
+            # ADR-034: custom_system_prompt parameter takes precedence over prompt resolver
+            custom_prompt = custom_system_prompt
             prompt_source_info = None
-            if self.prompt_resolver and context:
+            if custom_system_prompt:
+                # ADR-034: Using explicit custom system prompt (from guild template)
+                prompt_source_info = {
+                    "source": "guild_template",
+                    "file_path": None,
+                    "tried_paths": [],
+                }
+            elif self.prompt_resolver and context:
                 try:
                     from ..prompts.models import PromptContext
                     prompt_context = PromptContext(

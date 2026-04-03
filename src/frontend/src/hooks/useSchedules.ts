@@ -15,6 +15,8 @@ interface ScheduleRequest {
   timezone: string;
   destinations: Destination[];
   summary_options: SummaryOptions;
+  // ADR-034: Guild prompt templates
+  prompt_template_id?: string | null;
 }
 
 export function useSchedules(guildId: string) {

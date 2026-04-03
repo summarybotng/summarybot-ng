@@ -19,6 +19,7 @@ import { Webhooks } from "@/pages/Webhooks";
 import { Feeds } from "@/pages/Feeds";
 import { Errors } from "@/pages/Errors";
 import { Settings } from "@/pages/Settings";
+import { PromptTemplates } from "@/pages/PromptTemplates";
 import NotFound from "./pages/NotFound";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -73,6 +74,7 @@ const App = () => (
               <Route path="feeds" element={<Feeds />} />
               <Route path="errors" element={<Errors />} />
               <Route path="settings" element={<Settings />} />
+              <Route path="prompt-templates" element={<PromptTemplates />} />
               <Route path="archive" element={<Suspense fallback={<PageLoader />}><Archive /></Suspense>} />
             </Route>
           </Route>

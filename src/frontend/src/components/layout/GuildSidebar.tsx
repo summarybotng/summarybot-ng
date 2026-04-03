@@ -27,6 +27,7 @@ import {
   Settings,
   ChevronLeft,
   Archive,
+  FileCode,
 } from "lucide-react";
 
 const navItems = [
@@ -34,6 +35,7 @@ const navItems = [
   { icon: Hash, label: "Channels", path: "/channels" },
   { icon: FileText, label: "Summaries", path: "/summaries" },
   { icon: Calendar, label: "Schedules", path: "/schedules" },
+  { icon: FileCode, label: "Prompts", path: "/prompt-templates" },
   { icon: Webhook, label: "Webhooks", path: "/webhooks" },
   { icon: Rss, label: "Feeds", path: "/feeds" },
   { icon: AlertTriangle, label: "Errors", path: "/errors", showBadge: true },

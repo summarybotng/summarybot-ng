@@ -37,6 +37,7 @@ from .base import (
     ErrorRepository,
     IngestRepository,
     StoredSummaryRepository,
+    PromptTemplateRepository,
     DatabaseConnection,
     Transaction,
     SearchCriteria
@@ -53,6 +54,7 @@ from .sqlite import (
     SQLiteErrorRepository,
     SQLiteStoredSummaryRepository,
     SQLiteIngestRepository,
+    SQLitePromptTemplateRepository,
     SQLiteTransaction
 )
 
@@ -68,7 +70,8 @@ from .repositories import (
     get_webhook_repository,
     get_error_repository,
     get_stored_summary_repository,
-    get_ingest_repository
+    get_ingest_repository,
+    get_prompt_template_repository
 )
 
 # Migration utilities
@@ -88,6 +91,7 @@ __all__ = [
     "ErrorRepository",
     "IngestRepository",
     "StoredSummaryRepository",
+    "PromptTemplateRepository",
     "DatabaseConnection",
     "Transaction",
     "SearchCriteria",
@@ -102,6 +106,7 @@ __all__ = [
     "SQLiteErrorRepository",
     "SQLiteStoredSummaryRepository",
     "SQLiteIngestRepository",
+    "SQLitePromptTemplateRepository",
     "SQLiteTransaction",
 
     # Repository factory
@@ -116,6 +121,7 @@ __all__ = [
     "get_error_repository",
     "get_stored_summary_repository",
     "get_ingest_repository",
+    "get_prompt_template_repository",
 
     # Migrations
     "MigrationRunner",

@@ -57,7 +57,7 @@ def _get_guild_or_404(guild_id: str):
     return guild
 
 
-def _task_to_response(task, category_name: str = None) -> ScheduleListItem:
+def _task_to_response(task, category_name: str = None, template_name: str = None) -> ScheduleListItem:
     """Convert ScheduledTask to API response."""
     destinations = []
     for dest in task.destinations:
@@ -108,6 +108,9 @@ def _task_to_response(task, category_name: str = None) -> ScheduleListItem:
         next_run=task.next_run,
         run_count=task.run_count,
         failure_count=task.failure_count,
+        # ADR-034: Guild prompt templates
+        prompt_template_id=getattr(task, 'prompt_template_id', None),
+        prompt_template_name=template_name,
     )
 
 
@@ -136,6 +139,15 @@ async def list_schedules(
     # Get tasks for this guild
     tasks = await scheduler.get_scheduled_tasks(guild_id)
 
+    # ADR-034: Get prompt template repository for resolving template names
+    template_repo = None
+    template_cache = {}
+    try:
+        from ...data.repositories import get_prompt_template_repository
+        template_repo = await get_prompt_template_repository()
+    except Exception:
+        pass
+
     # Build category name lookup
     schedules = []
     for task in tasks:
@@ -147,7 +159,20 @@ async def list_schedules(
                     category_name = category.name
             except Exception:
                 pass
-        schedules.append(_task_to_response(task, category_name=category_name))
+
+        # ADR-034: Resolve template name
+        template_name = None
+        template_id = getattr(task, 'prompt_template_id', None)
+        if template_id and template_repo:
+            if template_id not in template_cache:
+                try:
+                    template = await template_repo.get_template(template_id)
+                    template_cache[template_id] = template.name if template else None
+                except Exception:
+                    template_cache[template_id] = None
+            template_name = template_cache.get(template_id)
+
+        schedules.append(_task_to_response(task, category_name=category_name, template_name=template_name))
 
     return SchedulesResponse(schedules=schedules)
 
@@ -245,6 +270,7 @@ async def create_schedule(
         is_active=True,
         created_by=user["sub"],
         resolve_category_at_runtime=(task_scope in (TaskScope.CATEGORY, TaskScope.GUILD)),
+        prompt_template_id=body.prompt_template_id,  # ADR-034
     )
 
     # Calculate next run
@@ -253,7 +279,19 @@ async def create_schedule(
     # Add to scheduler
     await scheduler.schedule_task(task)
 
-    return _task_to_response(task, category_name=category_name)
+    # ADR-034: Resolve template name for response
+    template_name = None
+    if body.prompt_template_id:
+        try:
+            from ...data.repositories import get_prompt_template_repository
+            template_repo = await get_prompt_template_repository()
+            template = await template_repo.get_template(body.prompt_template_id)
+            if template:
+                template_name = template.name
+        except Exception:
+            pass
+
+    return _task_to_response(task, category_name=category_name, template_name=template_name)
 
 
 @router.get(
@@ -299,7 +337,20 @@ async def get_schedule(
         except Exception:
             pass
 
-    return _task_to_response(task, category_name=category_name)
+    # ADR-034: Resolve template name
+    template_name = None
+    template_id = getattr(task, 'prompt_template_id', None)
+    if template_id:
+        try:
+            from ...data.repositories import get_prompt_template_repository
+            template_repo = await get_prompt_template_repository()
+            template = await template_repo.get_template(template_id)
+            if template:
+                template_name = template.name
+        except Exception:
+            pass
+
+    return _task_to_response(task, category_name=category_name, template_name=template_name)
 
 
 @router.patch(
@@ -427,13 +478,30 @@ async def update_schedule(
         task.summary_options.extract_technical_terms = body.summary_options.include_technical_terms
         task.summary_options.min_messages = body.summary_options.min_messages
 
+    # ADR-034: Update prompt template
+    if body.prompt_template_id is not None:
+        task.prompt_template_id = body.prompt_template_id if body.prompt_template_id else None
+
     # Recalculate next run
     task.next_run = task.calculate_next_run()
 
     # Update in scheduler
     await scheduler.update_task(task)
 
-    return _task_to_response(task, category_name=category_name)
+    # ADR-034: Resolve template name for response
+    template_name = None
+    template_id = getattr(task, 'prompt_template_id', None)
+    if template_id:
+        try:
+            from ...data.repositories import get_prompt_template_repository
+            template_repo = await get_prompt_template_repository()
+            template = await template_repo.get_template(template_id)
+            if template:
+                template_name = template.name
+        except Exception:
+            pass
+
+    return _task_to_response(task, category_name=category_name, template_name=template_name)
 
 
 @router.delete(

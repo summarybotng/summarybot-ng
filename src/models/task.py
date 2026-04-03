@@ -161,7 +161,10 @@ class ScheduledTask(BaseModel):
     excluded_channel_ids: List[str] = field(default_factory=list)  # Channels to exclude from category
     category_mode: str = "combined"  # "combined" (one summary) or "individual" (per-channel summaries)
     resolve_category_at_runtime: bool = True  # Resolve channels at execution time (default for dynamic scope)
-    
+
+    # ADR-034: Guild prompt templates
+    prompt_template_id: Optional[str] = None  # Reference to guild_prompt_templates table
+
     def calculate_next_run(self, from_time: Optional[datetime] = None) -> Optional[datetime]:
         """Calculate the next run time for this task.
 

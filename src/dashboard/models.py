@@ -433,6 +433,9 @@ class ScheduleListItem(BaseModel):
     next_run: Optional[datetime]
     run_count: int
     failure_count: int
+    # ADR-034: Guild prompt templates
+    prompt_template_id: Optional[str] = None
+    prompt_template_name: Optional[str] = None  # Resolved for display
 
 
 class SchedulesResponse(BaseModel):
@@ -454,6 +457,8 @@ class ScheduleCreateRequest(BaseModel):
     timezone: str = "UTC"
     destinations: List[DestinationResponse]
     summary_options: Optional[SummaryOptionsResponse] = None
+    # ADR-034: Guild prompt templates
+    prompt_template_id: Optional[str] = None
 
 
 class ScheduleUpdateRequest(BaseModel):
@@ -470,6 +475,8 @@ class ScheduleUpdateRequest(BaseModel):
     is_active: Optional[bool] = None
     destinations: Optional[List[DestinationResponse]] = None
     summary_options: Optional[SummaryOptionsResponse] = None
+    # ADR-034: Guild prompt templates
+    prompt_template_id: Optional[str] = None
 
 
 class ScheduleRunResponse(BaseModel):

@@ -115,6 +115,33 @@ class TaskExecutor:
             DestinationType.DASHBOARD: DashboardDeliveryStrategy(),
         }
 
+    async def _get_template_content(self, task: SummaryTask) -> Optional[str]:
+        """ADR-034: Get custom system prompt from guild template if configured.
+
+        Args:
+            task: Summary task with scheduled task reference
+
+        Returns:
+            Template content if configured, None otherwise
+        """
+        template_id = getattr(task.scheduled_task, 'prompt_template_id', None)
+        if not template_id:
+            return None
+
+        try:
+            from ..data.repositories import get_prompt_template_repository
+            repo = await get_prompt_template_repository()
+            template = await repo.get_template(template_id)
+            if template:
+                logger.info(f"Using guild prompt template '{template.name}' for task {task.scheduled_task.id}")
+                return template.content
+            else:
+                logger.warning(f"Template {template_id} not found for task {task.scheduled_task.id}")
+                return None
+        except Exception as e:
+            logger.warning(f"Failed to fetch template {template_id}: {e}")
+            return None
+
     @log_command(CommandType.SCHEDULED_TASK, command_name="execute_summary_task")
     async def execute_summary_task(self, task: SummaryTask) -> TaskExecutionResult:
         """Execute a summary task.
@@ -228,6 +255,9 @@ class TaskExecutor:
         channel_ids = task.get_all_channel_ids()
         logger.info(f"Executing individual mode for {len(channel_ids)} channels")
 
+        # ADR-034: Get custom template content if configured
+        custom_system_prompt = await self._get_template_content(task)
+
         results = []
         summaries_created = []
 
@@ -275,12 +305,14 @@ class TaskExecutor:
                 )
 
                 # Generate summary
+                # ADR-034: Pass custom system prompt from guild template if configured
                 summary_result = await self.summarization_engine.summarize_messages(
                     messages=channel_messages,
                     options=task.summary_options,
                     context=context,
                     channel_id=channel_id,
-                    guild_id=task.guild_id
+                    guild_id=task.guild_id,
+                    custom_system_prompt=custom_system_prompt
                 )
 
                 logger.info(f"Generated summary {summary_result.id} for channel {channel_id}")
@@ -341,6 +373,9 @@ class TaskExecutor:
         channel_ids = task.get_all_channel_ids()
         is_multi_channel = len(channel_ids) > 1
         logger.info(f"Executing combined mode for {len(channel_ids)} channel(s): {channel_ids[:5]}{'...' if len(channel_ids) > 5 else ''}")
+
+        # ADR-034: Get custom template content if configured
+        custom_system_prompt = await self._get_template_content(task)
 
         try:
             # Get time range for messages
@@ -415,12 +450,14 @@ class TaskExecutor:
             )
 
             # Generate summary
+            # ADR-034: Pass custom system prompt from guild template if configured
             summary_result = await self.summarization_engine.summarize_messages(
                 messages=all_messages,
                 options=task.summary_options,
                 context=context,
                 channel_id=task.channel_id,  # Primary channel for storage
-                guild_id=task.guild_id
+                guild_id=task.guild_id,
+                custom_system_prompt=custom_system_prompt
             )
 
             logger.info(f"Generated summary {summary_result.id}")

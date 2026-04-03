@@ -8,8 +8,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Archive, Hash, Globe, Mail } from "lucide-react";
-import type { Schedule, SummaryOptions, Destination, Channel, Category } from "@/types";
+import { Archive, Hash, Globe, Mail, FileCode } from "lucide-react";
+import type { Schedule, SummaryOptions, Destination, Channel, Category, PromptTemplate } from "@/types";
 import { ScopeSelector, type ScopeSelectorValue, type ScopeType } from "@/components/ScopeSelector";
 
 const TIMEZONES = [
@@ -59,6 +59,8 @@ export interface ScheduleFormData {
   summary_length: SummaryOptions["summary_length"];
   perspective: SummaryOptions["perspective"];
   min_messages: number;  // Minimum messages required (default 5, set to 1 for low-activity)
+  // ADR-034: Guild prompt templates
+  prompt_template_id: string | null;
   // ADR-005: Delivery destinations
   destinations: {
     dashboard: boolean;
@@ -76,9 +78,10 @@ interface ScheduleFormProps {
   onChange: (data: ScheduleFormData) => void;
   channels?: Channel[];
   categories?: Category[];
+  promptTemplates?: PromptTemplate[];  // ADR-034
 }
 
-export function ScheduleForm({ formData, onChange, channels = [], categories = [] }: ScheduleFormProps) {
+export function ScheduleForm({ formData, onChange, channels = [], categories = [], promptTemplates = [] }: ScheduleFormProps) {
   const textChannels = channels.filter((c) => c.type === "text");
 
   // Convert form data to ScopeSelector value
@@ -234,6 +237,42 @@ export function ScheduleForm({ formData, onChange, channels = [], categories = [
           </SelectContent>
         </Select>
       </div>
+
+      {/* ADR-034: Prompt Template Selection */}
+      {promptTemplates.length > 0 && (
+        <div className="space-y-2">
+          <label className="text-sm font-medium flex items-center gap-2">
+            <FileCode className="h-4 w-4" />
+            Prompt Template
+          </label>
+          <Select
+            value={formData.prompt_template_id || "default"}
+            onValueChange={(v) =>
+              onChange({ ...formData, prompt_template_id: v === "default" ? null : v })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Use default prompt" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">Use default prompt</SelectItem>
+              {promptTemplates.map((template) => (
+                <SelectItem key={template.id} value={template.id}>
+                  {template.name}
+                  {template.based_on_default && (
+                    <span className="text-muted-foreground text-xs ml-1">
+                      (based on {template.based_on_default})
+                    </span>
+                  )}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Select a custom prompt template or use the system default
+          </p>
+        </div>
+      )}
 
       {/* Low Activity Mode */}
       <div className="flex items-start space-x-3 rounded-md border p-3">
@@ -427,6 +466,7 @@ export const getInitialFormData = (): ScheduleFormData => ({
   summary_length: "detailed",
   perspective: "general",
   min_messages: 5,  // Default: require 5 messages
+  prompt_template_id: null,  // ADR-034: Use default prompt
   destinations: {
     dashboard: true, // Default to dashboard
     discord_channel: false,
@@ -463,6 +503,7 @@ export function scheduleToFormData(schedule: Schedule): ScheduleFormData {
     summary_length: schedule.summary_options.summary_length,
     perspective: schedule.summary_options.perspective,
     min_messages: schedule.summary_options.min_messages ?? 5,
+    prompt_template_id: schedule.prompt_template_id || null,  // ADR-034
     destinations: {
       dashboard: !!dashboardDest,
       discord_channel: !!discordDest,

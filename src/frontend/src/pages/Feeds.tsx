@@ -31,6 +31,39 @@ import {
   type FeedFormData,
 } from "@/components/feeds/FeedForm";
 import type { Feed } from "@/types";
+import { criteriaToApiBody, getDefaultCriteria } from "@/types/filters";
+import type { SummaryFilterCriteria } from "@/types/filters";
+import { ScrollArea } from "@/components/ui/scroll-area";
+
+/** Convert API snake_case criteria to form camelCase criteria */
+function apiCriteriaToForm(apiCriteria: Record<string, unknown> | null | undefined): SummaryFilterCriteria {
+  if (!apiCriteria) return getDefaultCriteria();
+
+  return {
+    source: apiCriteria.source as SummaryFilterCriteria["source"],
+    archived: apiCriteria.archived as boolean | undefined,
+    createdAfter: apiCriteria.created_after as string | undefined,
+    createdBefore: apiCriteria.created_before as string | undefined,
+    archivePeriod: apiCriteria.archive_period as string | undefined,
+    channelMode: apiCriteria.channel_mode as SummaryFilterCriteria["channelMode"],
+    channelIds: apiCriteria.channel_ids as string[] | undefined,
+    hasGrounding: apiCriteria.has_grounding as boolean | undefined,
+    hasKeyPoints: apiCriteria.has_key_points as boolean | undefined,
+    hasActionItems: apiCriteria.has_action_items as boolean | undefined,
+    hasParticipants: apiCriteria.has_participants as boolean | undefined,
+    minMessageCount: apiCriteria.min_message_count as number | undefined,
+    maxMessageCount: apiCriteria.max_message_count as number | undefined,
+    minKeyPoints: apiCriteria.min_key_points as number | undefined,
+    maxKeyPoints: apiCriteria.max_key_points as number | undefined,
+    minActionItems: apiCriteria.min_action_items as number | undefined,
+    maxActionItems: apiCriteria.max_action_items as number | undefined,
+    minParticipants: apiCriteria.min_participants as number | undefined,
+    maxParticipants: apiCriteria.max_participants as number | undefined,
+    platform: apiCriteria.platform as string | undefined,
+    summaryLength: apiCriteria.summary_length as string | undefined,
+    perspective: apiCriteria.perspective as string | undefined,
+  };
+}
 
 export function Feeds() {
   const { id } = useParams<{ id: string }>();
@@ -60,8 +93,8 @@ export function Feeds() {
       description: feed.description || "",
       max_items: feed.max_items || 50,
       include_full_content: feed.include_full_content ?? true,
-      // ADR-037: Include filter criteria
-      criteria: feed.criteria || initialFeedFormData.criteria,
+      // ADR-037: Include filter criteria (convert from API snake_case to form camelCase)
+      criteria: apiCriteriaToForm(feed.criteria as Record<string, unknown> | null),
     });
     setEditingFeed(feed);
   };
@@ -76,8 +109,8 @@ export function Feeds() {
         description: formData.description || undefined,
         max_items: formData.max_items,
         include_full_content: formData.include_full_content,
-        // ADR-037: Include filter criteria
-        criteria: formData.criteria,
+        // ADR-037: Include filter criteria (convert to snake_case for API)
+        criteria: criteriaToApiBody(formData.criteria) as any,
       });
       setCreateOpen(false);
       resetForm();
@@ -109,8 +142,8 @@ export function Feeds() {
           is_public: formData.is_public,
           max_items: formData.max_items,
           include_full_content: formData.include_full_content,
-          // ADR-037: Include filter criteria
-          criteria: formData.criteria,
+          // ADR-037: Include filter criteria (convert to snake_case for API)
+          criteria: criteriaToApiBody(formData.criteria) as any,
         },
       });
       setEditingFeed(null);
@@ -189,20 +222,22 @@ export function Feeds() {
               Create Feed
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>Create Feed</DialogTitle>
               <DialogDescription>
                 Create an RSS or Atom feed for your summaries
               </DialogDescription>
             </DialogHeader>
-            <FeedForm
-              formData={formData}
-              onChange={setFormData}
-              channels={guild?.channels || []}
-              guildId={id}
-            />
-            <DialogFooter>
+            <ScrollArea className="flex-1 max-h-[60vh] pr-4">
+              <FeedForm
+                formData={formData}
+                onChange={setFormData}
+                channels={guild?.channels || []}
+                guildId={id}
+              />
+            </ScrollArea>
+            <DialogFooter className="pt-4 border-t">
               <Button variant="outline" onClick={() => setCreateOpen(false)}>
                 Cancel
               </Button>
@@ -229,21 +264,23 @@ export function Feeds() {
           }
         }}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Edit Feed</DialogTitle>
             <DialogDescription>
               Update your feed settings
             </DialogDescription>
           </DialogHeader>
-          <FeedForm
-            formData={formData}
-            onChange={setFormData}
-            channels={guild?.channels || []}
-            guildId={id}
-            isEdit
-          />
-          <DialogFooter>
+          <ScrollArea className="flex-1 max-h-[60vh] pr-4">
+            <FeedForm
+              formData={formData}
+              onChange={setFormData}
+              channels={guild?.channels || []}
+              guildId={id}
+              isEdit
+            />
+          </ScrollArea>
+          <DialogFooter className="pt-4 border-t">
             <Button variant="outline" onClick={() => setEditingFeed(null)}>
               Cancel
             </Button>

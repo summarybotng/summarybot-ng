@@ -264,8 +264,7 @@ export function JobsTab({ guildId }: JobsTabProps) {
       params.set("limit", "50");
       if (typeFilter !== "all") params.set("job_type", typeFilter);
       if (statusFilter !== "all") params.set("status", statusFilter);
-      const res = await api.get(`/guilds/${guildId}/jobs?${params.toString()}`);
-      return res.data;
+      return api.get<JobsResponse>(`/guilds/${guildId}/jobs?${params.toString()}`);
     },
     refetchInterval: (query) => {
       // Auto-refresh every 3 seconds if there are active jobs

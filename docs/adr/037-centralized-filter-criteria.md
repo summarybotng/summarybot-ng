@@ -6,6 +6,13 @@ Proposed
 
 ## Context
 
+Multiple features need to filter summaries, but each implements filtering differently:
+
+1. **Summary List** (`SummaryFilters.tsx`) - Full filtering UI
+2. **Bulk Operations** (`BulkActionBar.tsx`) - Uses `BulkFilters` type
+3. **Feeds** - Only channel filtering
+4. **Webhooks** - No filtering (fires for all summaries)
+
 Currently, the summary list view (`SummaryFilters.tsx`) has extensive filtering capabilities:
 - Source type (manual, scheduled, archive, etc.)
 - Archived status
@@ -32,9 +39,11 @@ Users should be able to create feeds with the same powerful filtering as the lis
 
 Define all filter criteria in a single location that can be used by:
 - Summary list UI (`SummaryFilters.tsx`)
+- Bulk operations (`BulkActionBar.tsx`) - replaces current `BulkFilters`
 - Feed creation/editing
-- API endpoints for both lists and feeds
-- Future: Scheduled report filters, webhook filters, etc.
+- Webhook filtering ("only notify when criteria match")
+- API endpoints
+- Future: Email digests, scheduled reports
 
 ```typescript
 // src/frontend/src/types/filters.ts
@@ -141,45 +150,105 @@ GET /guilds/{guild_id}/feeds/{feed_id}/content
 # Returns summaries matching criteria, formatted as RSS/Atom/JSON
 ```
 
-### 5. Migration Path
+### 5. Update Webhook Model
+
+Webhooks currently fire for all summaries. Add criteria to filter:
+
+```python
+class Webhook(BaseModel):
+    id: str
+    guild_id: str
+    name: str
+    url: str
+    type: Literal["generic", "slack", "discord"]
+    enabled: bool
+
+    # New: Only fire when criteria match
+    criteria: Optional[SummaryFilterCriteria]
+```
+
+Use cases:
+- "Notify Slack only for summaries with action items"
+- "Webhook fires only for scheduled summaries from #engineering"
+- "Alert on archive summaries only"
+
+### 6. Unify BulkFilters
+
+Replace the existing `BulkFilters` type with `SummaryFilterCriteria`:
+
+```typescript
+// Before (hooks/useStoredSummaries.ts)
+export interface BulkFilters {
+  source?: string;
+  archived?: boolean;
+  created_after?: string;
+  // ... duplicated definition
+}
+
+// After - just use SummaryFilterCriteria
+import { SummaryFilterCriteria } from "@/types/filters";
+```
+
+### 7. Migration Path
 
 1. Existing feeds with `channel_id` continue to work
 2. New feeds use `criteria.channelIds`
-3. UI shows migration prompt for old feeds
-4. Eventually deprecate `channel_id` field
+3. Existing webhooks with no criteria fire for all (backward compatible)
+4. UI shows migration prompt for old feeds
+5. Eventually deprecate `channel_id` field
 
 ## Implementation Plan
 
 ### Phase 1: Foundation
-- [ ] Create `SummaryFilterCriteria` type definition
-- [ ] Create shared filter components
+- [ ] Create `SummaryFilterCriteria` type definition in `types/filters.ts`
+- [ ] Create shared filter components in `components/filters/`
 - [ ] Refactor `SummaryFilters.tsx` to use shared components
+- [ ] Replace `BulkFilters` with `SummaryFilterCriteria`
 
 ### Phase 2: Feed Integration
 - [ ] Update Feed model with criteria field
 - [ ] Update feed creation/edit UI with filter form
 - [ ] Update feed content endpoint to apply criteria
 
-### Phase 3: Polish
+### Phase 3: Webhook Integration
+- [ ] Update Webhook model with criteria field
+- [ ] Update webhook creation/edit UI with filter form
+- [ ] Update webhook trigger logic to check criteria
+
+### Phase 4: Polish
 - [ ] Add filter presets (common combinations)
 - [ ] Add "Copy filters from list" feature
 - [ ] Add filter validation and helpful error messages
+- [ ] Add "Test filter" preview showing matching summary count
 
 ## Consequences
 
 ### Positive
 
 - Single source of truth for filter criteria
-- Feeds get same powerful filtering as list view
+- All features get same powerful filtering as list view
 - Easy to add new filter criteria in one place
-- Consistent behavior across lists and feeds
-- Foundation for future filtering (schedules, webhooks, reports)
+- Consistent behavior across all features
+- Eliminates code duplication (`BulkFilters` vs `SummaryFilters` state)
+- Webhook notifications become much more useful
 
 ### Negative
 
-- More complex feed model
+- More complex feed and webhook models
 - Migration needed for existing feeds
 - Larger API payloads
+- UI complexity for webhook/feed creation
+
+## Consumers Summary
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Summary List | Existing | Refactor to shared components |
+| Bulk Operations | Existing | Replace `BulkFilters` type |
+| Feeds | New | Full criteria support |
+| Webhooks | New | "Only notify when..." |
+| Email Digests | Future | Scheduled filtered digests |
+| Reports | Future | Periodic filtered reports |
 
 ## UI Mockup
 

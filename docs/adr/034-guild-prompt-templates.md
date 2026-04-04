@@ -1,6 +1,6 @@
 # ADR-034: Guild Prompt Templates
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-04-03
 **Depends on:** ADR-010 (Prompt Repository Navigation)
 
@@ -135,6 +135,222 @@ async def _resolve_prompt(self, guild_id: str, template_id: Optional[str], conte
     # Priority 3: System defaults (via prompt_builder)
     return None  # Let prompt_builder use defaults
 ```
+
+### 2.8 Template Authoring Guide
+
+Templates use markdown format with a specific structure. The system injects conversation messages where `{messages}` appears.
+
+#### 2.8.1 Template Structure
+
+```markdown
+# [Template Name]
+
+[Role statement - who is the AI acting as]
+
+## Task
+
+[What kind of summary to create]
+
+## Messages
+
+{messages}
+
+## Instructions
+
+[What to focus on, what to ignore, special handling]
+
+### Citation Requirements
+
+[How to reference source messages]
+
+## Output Format
+
+[Expected structure of the response]
+```
+
+#### 2.8.2 Available Placeholder
+
+| Placeholder | Description |
+|-------------|-------------|
+| `{messages}` | **Required.** The conversation content with citation markers [1], [2], etc. |
+
+#### 2.8.3 Sample Templates
+
+**Daily Standup Summary**
+```markdown
+# Daily Standup Summary
+
+You are a scrum master assistant creating standup summaries.
+
+## Task
+
+Create a **standup-style summary** organized by what was done, what's planned, and blockers.
+
+## Messages
+
+{messages}
+
+## Instructions
+
+- Group updates by person when possible
+- Focus on completed work and planned work
+- Highlight blockers and dependencies
+- Keep it concise and actionable
+- Ignore off-topic chat
+
+### Citation Requirements
+
+Cite specific work items and blockers (e.g., "Completed auth refactor [3]").
+
+## Output Format
+
+### Yesterday's Progress
+- **@person**: Accomplishment [N]
+
+### Today's Plan
+- **@person**: Planned work [N]
+
+### Blockers & Dependencies
+- Blocker description [N]
+
+### Sources
+
+| # | Who | Said |
+|---|-----|------|
+| [N] | dev | "Quote..." |
+```
+
+**Weekly Product Update**
+```markdown
+# Weekly Product Update
+
+You are a product manager assistant creating stakeholder updates.
+
+## Task
+
+Create a **weekly product summary** for stakeholders, focusing on feature progress, user feedback, and upcoming milestones.
+
+## Messages
+
+{messages}
+
+## Instructions
+
+- Summarize feature development progress
+- Highlight user feedback and requests
+- Note any scope changes or pivots
+- Track milestone progress
+- Flag risks to timeline
+
+### Citation Requirements
+
+Cite key decisions, feedback, and milestone updates.
+
+## Output Format
+
+### This Week's Highlights
+[2-3 sentence executive summary]
+
+### Feature Progress
+| Feature | Status | Notes | Citation |
+|---------|--------|-------|----------|
+| Name | On track/At risk/Blocked | Details | [N] |
+
+### User Feedback
+- Feedback theme [N]
+
+### Upcoming Milestones
+- Milestone and target date [N]
+
+### Risks & Concerns
+- Risk description [N]
+
+### Sources
+
+| # | Who | Said |
+|---|-----|------|
+| [N] | person | "Quote..." |
+```
+
+**Incident Response Log**
+```markdown
+# Incident Response Summary
+
+You are an SRE assistant documenting incident response.
+
+## Task
+
+Create an **incident timeline and response summary** for post-mortems.
+
+## Messages
+
+{messages}
+
+## Instructions
+
+- Build a chronological timeline of events
+- Document detection, response, and resolution steps
+- Note who took what actions
+- Capture root cause discussion
+- Identify follow-up items
+
+### Citation Requirements
+
+Cite all timeline events, actions, and findings with timestamps.
+
+## Output Format
+
+### Incident Overview
+- **Severity**: [Inferred from discussion]
+- **Duration**: [If mentioned]
+- **Impact**: [Described impact]
+
+### Timeline
+| Time | Event | Who | Citation |
+|------|-------|-----|----------|
+| HH:MM | What happened | person | [N] |
+
+### Response Actions
+- Action taken [N]
+
+### Root Cause
+[Discussion of what caused the issue] [N]
+
+### Follow-up Items
+- [ ] Action item [N]
+
+### Sources
+
+| # | Who | Time | Said |
+|---|-----|------|------|
+| [N] | responder | HH:MM | "Quote..." |
+```
+
+#### 2.8.4 Best Practices
+
+1. **Always include `{messages}`** — Without this placeholder, the AI won't see the conversation.
+
+2. **Set clear expectations** — Tell the AI exactly what kind of summary you want in the Task section.
+
+3. **Guide the focus** — Use Instructions to tell the AI what to emphasize and what to skip.
+
+4. **Define output structure** — Provide a clear Output Format so summaries are consistent.
+
+5. **Request citations** — Ask for `[N]` references to source messages for traceability.
+
+6. **Keep it focused** — Shorter, specific prompts often work better than lengthy ones.
+
+7. **Test with real data** — Create a schedule, run it, and iterate on the template.
+
+#### 2.8.5 Customization Ideas
+
+| Use Case | Key Customizations |
+|----------|-------------------|
+| **Security Team** | Focus on vulnerabilities, CVEs, patch discussions |
+| **Sales Team** | Track deals, objections, competitor mentions |
+| **Design Team** | Capture feedback, iteration decisions, asset references |
+| **Community** | Highlight FAQs, sentiment, feature requests |
+| **Research** | Document hypotheses, findings, paper references |
 
 ---
 

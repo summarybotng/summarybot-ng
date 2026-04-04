@@ -6,6 +6,14 @@
  */
 
 import { format, parse } from "date-fns";
+
+// Debug: verify date-fns functions are loaded
+if (typeof parse !== 'function') {
+  console.error('date-fns parse is not a function:', typeof parse, parse);
+}
+if (typeof format !== 'function') {
+  console.error('date-fns format is not a function:', typeof format, format);
+}
 import { X, Calendar as CalendarIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { SummaryFilterCriteria } from "@/types/filters";
@@ -22,6 +30,11 @@ export function FilterCriteriaSummary({
   onUpdate,
   compact = false,
 }: FilterCriteriaSummaryProps) {
+  // Debug logging
+  console.log('[FilterCriteriaSummary] criteria:', criteria);
+  console.log('[FilterCriteriaSummary] typeof criteria:', typeof criteria);
+  console.log('[FilterCriteriaSummary] onUpdate:', typeof onUpdate);
+
   const filters: Array<{
     key: string;
     label: string;
@@ -49,9 +62,16 @@ export function FilterCriteriaSummary({
 
   // Archive period
   if (criteria.archivePeriod) {
+    let archiveLabel = criteria.archivePeriod;
+    try {
+      const parsed = parse(criteria.archivePeriod, "yyyy-MM-dd", new Date());
+      archiveLabel = format(parsed, "MMM d, yyyy");
+    } catch (e) {
+      console.error("Failed to parse archivePeriod:", criteria.archivePeriod, e);
+    }
     filters.push({
       key: "archivePeriod",
-      label: format(parse(criteria.archivePeriod, "yyyy-MM-dd", new Date()), "MMM d, yyyy"),
+      label: archiveLabel,
       icon: <CalendarIcon className="h-3 w-3 mr-1" />,
       onRemove: () => onUpdate({ archivePeriod: undefined }),
     });

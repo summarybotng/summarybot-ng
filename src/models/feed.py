@@ -1,14 +1,91 @@
 """
 Feed configuration models for RSS/Atom distribution.
+
+ADR-037: Extended with filter criteria for powerful feed filtering.
 """
 
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from enum import Enum
 
 from .base import BaseModel, generate_id, utc_now
+
+
+@dataclass
+class FeedCriteria:
+    """Filter criteria for feed content (ADR-037).
+
+    Defines which summaries appear in the feed based on various filters.
+    """
+    # Source filtering
+    source: Optional[str] = None  # realtime, scheduled, archive, manual, all
+    archived: Optional[bool] = None
+
+    # Time filtering
+    created_after: Optional[str] = None  # ISO date
+    created_before: Optional[str] = None  # ISO date
+    archive_period: Optional[str] = None  # YYYY-MM-DD
+
+    # Channel filtering
+    channel_mode: Optional[str] = None  # all, single, multi
+    channel_ids: Optional[List[str]] = None
+
+    # Content flags
+    has_grounding: Optional[bool] = None
+    has_key_points: Optional[bool] = None
+    has_action_items: Optional[bool] = None
+    has_participants: Optional[bool] = None
+
+    # Content counts
+    min_message_count: Optional[int] = None
+    max_message_count: Optional[int] = None
+    min_key_points: Optional[int] = None
+    max_key_points: Optional[int] = None
+    min_action_items: Optional[int] = None
+    max_action_items: Optional[int] = None
+    min_participants: Optional[int] = None
+    max_participants: Optional[int] = None
+
+    # Other
+    platform: Optional[str] = None
+    summary_length: Optional[str] = None
+    perspective: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary, excluding None values."""
+        return {k: v for k, v in {
+            "source": self.source,
+            "archived": self.archived,
+            "created_after": self.created_after,
+            "created_before": self.created_before,
+            "archive_period": self.archive_period,
+            "channel_mode": self.channel_mode,
+            "channel_ids": self.channel_ids,
+            "has_grounding": self.has_grounding,
+            "has_key_points": self.has_key_points,
+            "has_action_items": self.has_action_items,
+            "has_participants": self.has_participants,
+            "min_message_count": self.min_message_count,
+            "max_message_count": self.max_message_count,
+            "min_key_points": self.min_key_points,
+            "max_key_points": self.max_key_points,
+            "min_action_items": self.min_action_items,
+            "max_action_items": self.max_action_items,
+            "min_participants": self.min_participants,
+            "max_participants": self.max_participants,
+            "platform": self.platform,
+            "summary_length": self.summary_length,
+            "perspective": self.perspective,
+        }.items() if v is not None}
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> Optional['FeedCriteria']:
+        """Create instance from dictionary."""
+        if not data:
+            return None
+        return cls(**{k: v for k, v in data.items() if hasattr(cls, k)})
 
 
 class FeedType(Enum):
@@ -39,7 +116,7 @@ class FeedConfig(BaseModel):
     """
     id: str = field(default_factory=generate_id)
     guild_id: str = ""
-    channel_id: Optional[str] = None
+    channel_id: Optional[str] = None  # Deprecated: use criteria.channel_ids
     feed_type: FeedType = FeedType.RSS
     is_public: bool = False
     token: Optional[str] = None
@@ -51,6 +128,8 @@ class FeedConfig(BaseModel):
     created_by: str = ""
     last_accessed: Optional[datetime] = None
     access_count: int = 0
+    # ADR-037: Filter criteria for feed content
+    criteria: Optional[FeedCriteria] = None
 
     def __post_init__(self):
         """Generate token for private feeds if not provided."""
@@ -116,6 +195,8 @@ class FeedConfig(BaseModel):
             "created_by": self.created_by,
             "last_accessed": self.last_accessed.isoformat() if self.last_accessed else None,
             "access_count": self.access_count,
+            # ADR-037: Include criteria
+            "criteria": self.criteria.to_dict() if self.criteria else None,
         }
         return data
 
@@ -131,5 +212,9 @@ class FeedConfig(BaseModel):
         # Handle enum conversion
         if isinstance(data.get("feed_type"), str):
             data["feed_type"] = FeedType(data["feed_type"])
+
+        # ADR-037: Handle criteria conversion
+        if data.get("criteria") and isinstance(data["criteria"], dict):
+            data["criteria"] = FeedCriteria.from_dict(data["criteria"])
 
         return cls(**data)

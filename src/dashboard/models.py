@@ -547,6 +547,33 @@ class WebhookTestResponse(BaseModel):
 
 # --- Feeds ---
 
+# ADR-037: Filter criteria for feeds
+class FeedCriteriaRequest(BaseModel):
+    """Filter criteria for feed content (ADR-037)."""
+    source: Optional[str] = None  # realtime, scheduled, archive, manual, all
+    archived: Optional[bool] = None
+    created_after: Optional[str] = None  # ISO date
+    created_before: Optional[str] = None  # ISO date
+    archive_period: Optional[str] = None  # YYYY-MM-DD
+    channel_mode: Optional[str] = None  # all, single, multi
+    channel_ids: Optional[List[str]] = None
+    has_grounding: Optional[bool] = None
+    has_key_points: Optional[bool] = None
+    has_action_items: Optional[bool] = None
+    has_participants: Optional[bool] = None
+    min_message_count: Optional[int] = None
+    max_message_count: Optional[int] = None
+    min_key_points: Optional[int] = None
+    max_key_points: Optional[int] = None
+    min_action_items: Optional[int] = None
+    max_action_items: Optional[int] = None
+    min_participants: Optional[int] = None
+    max_participants: Optional[int] = None
+    platform: Optional[str] = None
+    summary_length: Optional[str] = None
+    perspective: Optional[str] = None
+
+
 class FeedListItem(BaseModel):
     """Feed item in list."""
     id: str
@@ -559,6 +586,8 @@ class FeedListItem(BaseModel):
     created_at: datetime
     last_accessed: Optional[datetime]
     access_count: int
+    # ADR-037: Include criteria summary
+    criteria: Optional[FeedCriteriaRequest] = None
 
 
 class FeedsResponse(BaseModel):
@@ -568,13 +597,15 @@ class FeedsResponse(BaseModel):
 
 class FeedCreateRequest(BaseModel):
     """Request to create feed."""
-    channel_id: Optional[str] = None
+    channel_id: Optional[str] = None  # Deprecated: use criteria.channel_ids
     feed_type: str = "rss"
     is_public: bool = False
     title: Optional[str] = None
     description: Optional[str] = None
     max_items: int = Field(default=50, ge=1, le=100)
     include_full_content: bool = True
+    # ADR-037: Filter criteria
+    criteria: Optional[FeedCriteriaRequest] = None
 
 
 class FeedUpdateRequest(BaseModel):
@@ -584,6 +615,8 @@ class FeedUpdateRequest(BaseModel):
     is_public: Optional[bool] = None
     max_items: Optional[int] = Field(default=None, ge=1, le=100)
     include_full_content: Optional[bool] = None
+    # ADR-037: Filter criteria
+    criteria: Optional[FeedCriteriaRequest] = None
 
 
 class FeedDetailResponse(BaseModel):
@@ -604,6 +637,37 @@ class FeedDetailResponse(BaseModel):
     created_by: str
     last_accessed: Optional[datetime]
     access_count: int
+    # ADR-037: Filter criteria
+    criteria: Optional[FeedCriteriaRequest] = None
+
+
+# ADR-037: Feed preview response
+class FeedPreviewItem(BaseModel):
+    """Summary item in feed preview."""
+    id: str
+    title: str
+    channel_name: Optional[str]
+    created_at: datetime
+    message_count: int
+    preview: str
+    has_action_items: bool
+    has_key_points: bool
+    source: Optional[str] = None
+    perspective: Optional[str] = None
+    summary_length: Optional[str] = None
+
+
+class FeedPreviewResponse(BaseModel):
+    """Response for feed preview."""
+    feed_id: str
+    title: str
+    description: str
+    feed_type: str
+    item_count: int
+    last_updated: Optional[datetime]
+    items: List[FeedPreviewItem]
+    criteria: Optional[FeedCriteriaRequest] = None
+    has_more: bool = False
 
 
 class FeedTokenResponse(BaseModel):

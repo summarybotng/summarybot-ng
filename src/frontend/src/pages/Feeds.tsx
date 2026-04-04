@@ -24,6 +24,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Rss, Loader2, Pencil } from "lucide-react";
 import { FeedCard } from "@/components/feeds/FeedCard";
+import { FeedPreviewSheet } from "@/components/feeds/FeedPreviewSheet";
 import {
   FeedForm,
   initialFeedFormData,
@@ -43,6 +44,7 @@ export function Feeds() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editingFeed, setEditingFeed] = useState<Feed | null>(null);
+  const [previewFeed, setPreviewFeed] = useState<Feed | null>(null);
   const [formData, setFormData] = useState<FeedFormData>(initialFeedFormData);
 
   const resetForm = () => {
@@ -286,12 +288,23 @@ export function Feeds() {
               onEdit={openEditDialog}
               onDelete={handleDelete}
               onRegenerateToken={handleRegenerateToken}
+              onPreview={setPreviewFeed}
               isDeleting={deleteFeed.isPending}
               isRegenerating={regenerateToken.isPending}
             />
           ))}
         </div>
       )}
+
+      {/* Feed Preview Sheet */}
+      <FeedPreviewSheet
+        feed={previewFeed}
+        guildId={id || ""}
+        open={!!previewFeed}
+        onOpenChange={(open) => {
+          if (!open) setPreviewFeed(null);
+        }}
+      />
     </div>
   );
 }

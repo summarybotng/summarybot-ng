@@ -29,6 +29,7 @@ import {
   Globe,
   Lock,
   ExternalLink,
+  Eye,
 } from "lucide-react";
 import type { Feed } from "@/types";
 import { useToast } from "@/hooks/use-toast";
@@ -39,6 +40,7 @@ interface FeedCardProps {
   onEdit: (feed: Feed) => void;
   onDelete: (feedId: string) => void;
   onRegenerateToken: (feedId: string) => void;
+  onPreview: (feed: Feed) => void;
   isDeleting: boolean;
   isRegenerating: boolean;
 }
@@ -49,6 +51,7 @@ export function FeedCard({
   onEdit,
   onDelete,
   onRegenerateToken,
+  onPreview,
   isDeleting,
   isRegenerating,
 }: FeedCardProps) {
@@ -124,6 +127,15 @@ export function FeedCard({
 
             {/* Actions */}
             <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={() => onPreview(feed)}>
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Preview</TooltipContent>
+              </Tooltip>
+
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon" onClick={copyUrl}>

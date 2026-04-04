@@ -16,10 +16,13 @@ from ..models import (
     FeedUpdateRequest,
     FeedDetailResponse,
     FeedTokenResponse,
+    FeedCriteriaRequest,
+    FeedPreviewResponse,
+    FeedPreviewItem,
     ErrorResponse,
 )
-from . import get_discord_bot, get_summarization_engine, get_feed_repository, get_summary_repository
-from ...models.feed import FeedConfig, FeedType
+from . import get_discord_bot, get_summarization_engine, get_feed_repository, get_summary_repository, get_stored_summary_repository
+from ...models.feed import FeedConfig, FeedType, FeedCriteria
 from ...feeds.generator import FeedGenerator
 from ...data.base import SearchCriteria
 
@@ -80,6 +83,11 @@ def _get_channel_name(guild, channel_id: Optional[str]) -> Optional[str]:
 def _feed_to_list_item(feed: FeedConfig, channel_name: Optional[str] = None) -> FeedListItem:
     """Convert FeedConfig to API list response."""
     generator = _get_feed_generator()
+    # ADR-037: Convert criteria to API model
+    criteria_response = None
+    if feed.criteria:
+        criteria_response = FeedCriteriaRequest(**feed.criteria.to_dict())
+
     return FeedListItem(
         id=feed.id,
         channel_id=feed.channel_id,
@@ -91,6 +99,7 @@ def _feed_to_list_item(feed: FeedConfig, channel_name: Optional[str] = None) -> 
         created_at=feed.created_at,
         last_accessed=feed.last_accessed,
         access_count=feed.access_count,
+        criteria=criteria_response,
     )
 
 
@@ -99,6 +108,11 @@ def _feed_to_detail(feed: FeedConfig, guild_name: str, channel_name: Optional[st
     generator = _get_feed_generator()
     default_title = f"{guild_name} - {'#' + channel_name if channel_name else 'All Channels'} Summaries"
     default_desc = f"AI-generated summaries from {guild_name}"
+
+    # ADR-037: Convert criteria to API model
+    criteria_response = None
+    if feed.criteria:
+        criteria_response = FeedCriteriaRequest(**feed.criteria.to_dict())
 
     return FeedDetailResponse(
         id=feed.id,
@@ -117,6 +131,7 @@ def _feed_to_detail(feed: FeedConfig, guild_name: str, channel_name: Optional[st
         created_by=feed.created_by,
         last_accessed=feed.last_accessed,
         access_count=feed.access_count,
+        criteria=criteria_response,
     )
 
 
@@ -195,6 +210,34 @@ async def create_feed(
             )
         channel_name = channel.name
 
+    # ADR-037: Convert criteria from request
+    feed_criteria = None
+    if body.criteria:
+        feed_criteria = FeedCriteria(
+            source=body.criteria.source,
+            archived=body.criteria.archived,
+            created_after=body.criteria.created_after,
+            created_before=body.criteria.created_before,
+            archive_period=body.criteria.archive_period,
+            channel_mode=body.criteria.channel_mode,
+            channel_ids=body.criteria.channel_ids,
+            has_grounding=body.criteria.has_grounding,
+            has_key_points=body.criteria.has_key_points,
+            has_action_items=body.criteria.has_action_items,
+            has_participants=body.criteria.has_participants,
+            min_message_count=body.criteria.min_message_count,
+            max_message_count=body.criteria.max_message_count,
+            min_key_points=body.criteria.min_key_points,
+            max_key_points=body.criteria.max_key_points,
+            min_action_items=body.criteria.min_action_items,
+            max_action_items=body.criteria.max_action_items,
+            min_participants=body.criteria.min_participants,
+            max_participants=body.criteria.max_participants,
+            platform=body.criteria.platform,
+            summary_length=body.criteria.summary_length,
+            perspective=body.criteria.perspective,
+        )
+
     # Create feed
     feed = FeedConfig(
         guild_id=guild_id,
@@ -206,6 +249,7 @@ async def create_feed(
         max_items=body.max_items,
         include_full_content=body.include_full_content,
         created_by=user["sub"],
+        criteria=feed_criteria,
     )
 
     # Save to database
@@ -312,6 +356,33 @@ async def update_feed(
     if body.include_full_content is not None:
         feed.include_full_content = body.include_full_content
 
+    # ADR-037: Update criteria if provided
+    if body.criteria is not None:
+        feed.criteria = FeedCriteria(
+            source=body.criteria.source,
+            archived=body.criteria.archived,
+            created_after=body.criteria.created_after,
+            created_before=body.criteria.created_before,
+            archive_period=body.criteria.archive_period,
+            channel_mode=body.criteria.channel_mode,
+            channel_ids=body.criteria.channel_ids,
+            has_grounding=body.criteria.has_grounding,
+            has_key_points=body.criteria.has_key_points,
+            has_action_items=body.criteria.has_action_items,
+            has_participants=body.criteria.has_participants,
+            min_message_count=body.criteria.min_message_count,
+            max_message_count=body.criteria.max_message_count,
+            min_key_points=body.criteria.min_key_points,
+            max_key_points=body.criteria.max_key_points,
+            min_action_items=body.criteria.min_action_items,
+            max_action_items=body.criteria.max_action_items,
+            min_participants=body.criteria.min_participants,
+            max_participants=body.criteria.max_participants,
+            platform=body.criteria.platform,
+            summary_length=body.criteria.summary_length,
+            perspective=body.criteria.perspective,
+        )
+
     # Save updates to database
     await feed_repo.save_feed(feed)
 
@@ -400,6 +471,200 @@ async def regenerate_token(
 
 
 # ============================================================================
+# Feed Preview Endpoint (ADR-037 Phase 4)
+# ============================================================================
+
+@router.get(
+    "/guilds/{guild_id}/feeds/{feed_id}/preview",
+    response_model=FeedPreviewResponse,
+    summary="Preview feed content",
+    description="Get formatted preview of feed content for display in the UI.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Feed not found"},
+    },
+)
+async def preview_feed(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    feed_id: str = Path(..., description="Feed ID"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(10, ge=1, le=50, description="Items per page"),
+    user: dict = Depends(get_current_user),
+):
+    """Get formatted preview of feed content."""
+    _check_guild_access(guild_id, user)
+    guild = _get_guild_or_404(guild_id)
+
+    feed_repo = await get_feed_repository()
+    if not feed_repo:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "DATABASE_UNAVAILABLE", "message": "Database not available"},
+        )
+
+    feed = await feed_repo.get_feed(feed_id)
+    if not feed or feed.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Feed not found"},
+        )
+
+    channel_name = _get_channel_name(guild, feed.channel_id)
+    default_title = f"{guild.name} - {'#' + channel_name if channel_name else 'All Channels'} Summaries"
+    default_desc = f"AI-generated summaries from {guild.name}"
+
+    # Get summaries using stored_summary_repository with criteria filtering
+    stored_repo = await get_stored_summary_repository()
+    if not stored_repo:
+        return FeedPreviewResponse(
+            feed_id=feed.id,
+            title=feed.title or default_title,
+            description=feed.description or default_desc,
+            feed_type=feed.feed_type.value if isinstance(feed.feed_type, FeedType) else feed.feed_type,
+            item_count=0,
+            last_updated=None,
+            items=[],
+            criteria=FeedCriteriaRequest(**feed.criteria.to_dict()) if feed.criteria else None,
+            has_more=False,
+        )
+
+    # Extract criteria filters
+    c = feed.criteria
+
+    # Parse date strings to datetime objects
+    created_after = None
+    created_before = None
+    if c and c.created_after:
+        try:
+            created_after = datetime.fromisoformat(c.created_after.replace('Z', '+00:00'))
+        except ValueError:
+            pass
+    if c and c.created_before:
+        try:
+            created_before = datetime.fromisoformat(c.created_before.replace('Z', '+00:00'))
+        except ValueError:
+            pass
+
+    offset = (page - 1) * limit
+
+    stored_summaries = await stored_repo.find_by_guild(
+        guild_id=guild_id,
+        limit=limit + 1,  # Fetch one extra to check if there are more
+        offset=offset,
+        include_archived=c.archived if c else False,
+        source=c.source if c and c.source and c.source != "all" else None,
+        created_after=created_after,
+        created_before=created_before,
+        archive_period=c.archive_period if c else None,
+        channel_mode=c.channel_mode if c and c.channel_mode != "all" else None,
+        has_grounding=c.has_grounding if c else None,
+        has_key_points=c.has_key_points if c else None,
+        has_action_items=c.has_action_items if c else None,
+        has_participants=c.has_participants if c else None,
+        min_message_count=c.min_message_count if c else None,
+        max_message_count=c.max_message_count if c else None,
+        min_key_points=c.min_key_points if c else None,
+        max_key_points=c.max_key_points if c else None,
+        min_action_items=c.min_action_items if c else None,
+        max_action_items=c.max_action_items if c else None,
+        min_participants=c.min_participants if c else None,
+        max_participants=c.max_participants if c else None,
+        platform=c.platform if c else None,
+        summary_length=c.summary_length if c else None,
+        perspective=c.perspective if c else None,
+        sort_by="created_at",
+        sort_order="desc",
+    )
+
+    # Check if there are more items
+    has_more = len(stored_summaries) > limit
+    if has_more:
+        stored_summaries = stored_summaries[:limit]
+
+    # Get total count for the feed
+    total_count = await stored_repo.count_by_guild(
+        guild_id=guild_id,
+        include_archived=c.archived if c else False,
+        source=c.source if c and c.source and c.source != "all" else None,
+        created_after=created_after,
+        created_before=created_before,
+        archive_period=c.archive_period if c else None,
+        channel_mode=c.channel_mode if c and c.channel_mode != "all" else None,
+        has_grounding=c.has_grounding if c else None,
+        has_key_points=c.has_key_points if c else None,
+        has_action_items=c.has_action_items if c else None,
+        has_participants=c.has_participants if c else None,
+        min_message_count=c.min_message_count if c else None,
+        max_message_count=c.max_message_count if c else None,
+        min_key_points=c.min_key_points if c else None,
+        max_key_points=c.max_key_points if c else None,
+        min_action_items=c.min_action_items if c else None,
+        max_action_items=c.max_action_items if c else None,
+        min_participants=c.min_participants if c else None,
+        max_participants=c.max_participants if c else None,
+        platform=c.platform if c else None,
+        summary_length=c.summary_length if c else None,
+        perspective=c.perspective if c else None,
+    )
+
+    # Convert to preview items
+    items = []
+    last_updated = None
+
+    for stored in stored_summaries:
+        if stored.created_at and (not last_updated or stored.created_at > last_updated):
+            last_updated = stored.created_at
+
+        # Get channel name for this summary
+        item_channel_name = None
+        if stored.source_channel_ids and len(stored.source_channel_ids) == 1:
+            item_channel_name = _get_channel_name(guild, stored.source_channel_ids[0])
+        elif stored.source_channel_ids:
+            item_channel_name = f"{len(stored.source_channel_ids)} channels"
+
+        # Get preview text
+        preview = ""
+        has_action_items = False
+        has_key_points = False
+
+        if stored.summary_result:
+            preview = stored.summary_result.summary_text[:200]
+            if len(stored.summary_result.summary_text) > 200:
+                preview += "..."
+            has_action_items = bool(stored.summary_result.action_items)
+            has_key_points = bool(stored.summary_result.key_points)
+
+        # Get metadata
+        meta = stored.summary_result.metadata if stored.summary_result else {}
+
+        items.append(FeedPreviewItem(
+            id=stored.id,
+            title=stored.title or f"Summary - {stored.created_at.strftime('%b %d, %H:%M') if stored.created_at else 'Unknown'}",
+            channel_name=item_channel_name,
+            created_at=stored.created_at,
+            message_count=stored.message_count or 0,
+            preview=preview,
+            has_action_items=has_action_items,
+            has_key_points=has_key_points,
+            source=stored.source.value if stored.source else None,
+            perspective=meta.get("perspective"),
+            summary_length=meta.get("summary_length"),
+        ))
+
+    return FeedPreviewResponse(
+        feed_id=feed.id,
+        title=feed.title or default_title,
+        description=feed.description or default_desc,
+        feed_type=feed.feed_type.value if isinstance(feed.feed_type, FeedType) else feed.feed_type,
+        item_count=total_count,
+        last_updated=last_updated,
+        items=items,
+        criteria=FeedCriteriaRequest(**feed.criteria.to_dict()) if feed.criteria else None,
+        has_more=has_more,
+    )
+
+
+# ============================================================================
 # Public Feed Serving Endpoints (Token Auth or Public)
 # ============================================================================
 
@@ -479,18 +744,60 @@ async def _serve_feed(
     guild_name = guild.name
     channel_name = _get_channel_name(guild, feed.channel_id)
 
-    # Get summaries from database
+    # ADR-037: Get summaries using stored_summary_repository with criteria filtering
     summaries = []
-    summary_repo = await get_summary_repository()
-    if summary_repo:
-        criteria = SearchCriteria(
+    stored_repo = await get_stored_summary_repository()
+    if stored_repo:
+        # Extract criteria filters if present
+        c = feed.criteria
+
+        # Parse date strings to datetime objects
+        created_after = None
+        created_before = None
+        if c and c.created_after:
+            try:
+                created_after = datetime.fromisoformat(c.created_after.replace('Z', '+00:00'))
+            except ValueError:
+                pass
+        if c and c.created_before:
+            try:
+                created_before = datetime.fromisoformat(c.created_before.replace('Z', '+00:00'))
+            except ValueError:
+                pass
+
+        stored_summaries = await stored_repo.find_by_guild(
             guild_id=feed.guild_id,
-            channel_id=feed.channel_id,
             limit=feed.max_items,
-            order_by="created_at",
-            order_direction="DESC",
+            offset=0,
+            include_archived=c.archived if c else False,
+            source=c.source if c and c.source and c.source != "all" else None,
+            created_after=created_after,
+            created_before=created_before,
+            archive_period=c.archive_period if c else None,
+            channel_mode=c.channel_mode if c and c.channel_mode != "all" else None,
+            has_grounding=c.has_grounding if c else None,
+            has_key_points=c.has_key_points if c else None,
+            has_action_items=c.has_action_items if c else None,
+            has_participants=c.has_participants if c else None,
+            min_message_count=c.min_message_count if c else None,
+            max_message_count=c.max_message_count if c else None,
+            min_key_points=c.min_key_points if c else None,
+            max_key_points=c.max_key_points if c else None,
+            min_action_items=c.min_action_items if c else None,
+            max_action_items=c.max_action_items if c else None,
+            min_participants=c.min_participants if c else None,
+            max_participants=c.max_participants if c else None,
+            platform=c.platform if c else None,
+            summary_length=c.summary_length if c else None,
+            perspective=c.perspective if c else None,
+            sort_by="created_at",
+            sort_order="desc",
         )
-        summaries = await summary_repo.find_summaries(criteria)
+
+        # Convert StoredSummary to SummaryResult for feed generator
+        for stored in stored_summaries:
+            if stored.summary_result:
+                summaries.append(stored.summary_result)
 
     # Generate feed content
     generator = _get_feed_generator()

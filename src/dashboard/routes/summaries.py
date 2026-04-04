@@ -1556,15 +1556,45 @@ async def regenerate_stored_summary(
                     detail={"code": "NO_DISCORD_ACCESS", "message": "Cannot access Discord and no source_content fallback"},
                 )
 
-    # Create task ID
+    # Create job ID
     import secrets
-    task_id = f"regen_{secrets.token_urlsafe(16)}"
+    job_id = f"regen_{secrets.token_urlsafe(16)}"
 
     # Determine regeneration method
     regen_method = "discord" if can_use_discord else "source_content"
 
-    # Store task info
-    _generation_tasks[task_id] = {
+    # ADR-013: Create persistent job record for regeneration
+    job = SummaryJob(
+        id=job_id,
+        guild_id=guild_id,
+        job_type=JobType.REGENERATE,
+        status=JobStatus.PENDING,
+        scope="regenerate",
+        channel_ids=channel_ids,
+        period_start=start_time,
+        period_end=end_time,
+        summary_id=summary_id,  # Track which summary is being regenerated
+        created_by=user.get("id"),
+        metadata={
+            "original_summary_id": summary_id,
+            "method": regen_method,
+            "repairs": repairs_made,
+            "summary_length": body.summary_length if body and body.summary_length else None,
+            "perspective": body.perspective if body and body.perspective else None,
+        },
+    )
+
+    # Persist job to database
+    job_repo = await get_summary_job_repository()
+    if job_repo:
+        try:
+            await job_repo.save(job)
+            logger.info(f"[{job_id}] Created regeneration job record in database")
+        except Exception as e:
+            logger.warning(f"[{job_id}] Failed to persist job: {e}")
+
+    # Also store in memory for task status polling (backwards compatibility)
+    _generation_tasks[job_id] = {
         "status": "processing",
         "guild_id": guild_id,
         "channel_ids": channel_ids,
@@ -1577,8 +1607,17 @@ async def regenerate_stored_summary(
     }
 
     async def run_regeneration():
-        logger.info(f"[{task_id}] Starting regeneration for summary {summary_id}")
-        logger.info(f"[{task_id}] Method: {regen_method}, Repairs: {repairs_made}")
+        logger.info(f"[{job_id}] Starting regeneration for summary {summary_id}")
+        logger.info(f"[{job_id}] Method: {regen_method}, Repairs: {repairs_made}")
+
+        # Mark job as running
+        job.start()
+        job.update_progress(0, 3, "Fetching messages")  # 3 steps: fetch, summarize, save
+        if job_repo:
+            try:
+                await job_repo.update(job)
+            except Exception as e:
+                logger.warning(f"[{job_id}] Failed to update job status: {e}")
 
         try:
             from ...message_processing import MessageProcessor
@@ -1588,8 +1627,8 @@ async def regenerate_stored_summary(
             processed = []
 
             if regen_method == "discord" and can_use_discord:
-                logger.info(f"[{task_id}] Fetching from Discord: {start_time} to {end_time}")
-                logger.info(f"[{task_id}] Channels: {channel_ids}")
+                logger.info(f"[{job_id}] Fetching from Discord: {start_time} to {end_time}")
+                logger.info(f"[{job_id}] Channels: {channel_ids}")
 
                 # Collect messages from all channels
                 all_messages = []
@@ -1604,9 +1643,9 @@ async def regenerate_stored_summary(
                             ):
                                 all_messages.append(message)
                         except Exception as e:
-                            logger.warning(f"[{task_id}] Error fetching from channel {channel_id}: {e}")
+                            logger.warning(f"[{job_id}] Error fetching from channel {channel_id}: {e}")
 
-                logger.info(f"[{task_id}] Fetched {len(all_messages)} messages from Discord")
+                logger.info(f"[{job_id}] Fetched {len(all_messages)} messages from Discord")
 
                 if all_messages:
                     processor = MessageProcessor(bot.client)
@@ -1614,7 +1653,7 @@ async def regenerate_stored_summary(
 
             # Fallback to source_content if Discord fetch failed or returned no messages
             if not processed and has_source_content:
-                logger.info(f"[{task_id}] Using source_content fallback")
+                logger.info(f"[{job_id}] Using source_content fallback")
                 # Parse source_content back to messages
                 lines = summary_result.source_content.strip().split('\n')
                 i = 0
@@ -1648,13 +1687,21 @@ async def regenerate_stored_summary(
                             ))
                             i += 1
                         except Exception as e:
-                            logger.debug(f"[{task_id}] Could not parse line: {e}")
+                            logger.debug(f"[{job_id}] Could not parse line: {e}")
 
-                logger.info(f"[{task_id}] Parsed {len(processed)} messages from source_content")
+                logger.info(f"[{job_id}] Parsed {len(processed)} messages from source_content")
 
             if not processed:
-                _generation_tasks[task_id]["status"] = "failed"
-                _generation_tasks[task_id]["error"] = "No messages found (Discord fetch failed and no valid source_content)"
+                error_msg = "No messages found (Discord fetch failed and no valid source_content)"
+                _generation_tasks[job_id]["status"] = "failed"
+                _generation_tasks[job_id]["error"] = error_msg
+                # Update job record
+                job.fail(error_msg)
+                if job_repo:
+                    try:
+                        await job_repo.update(job)
+                    except Exception:
+                        pass
                 return
 
             # Get options from request body or fall back to original metadata
@@ -1671,6 +1718,14 @@ async def regenerate_stored_summary(
             else:
                 perspective = meta.get("perspective", "general")
 
+            # Update progress
+            job.update_progress(1, 3, "Generating summary")
+            if job_repo:
+                try:
+                    await job_repo.update(job)
+                except Exception:
+                    pass
+
             # Model override from body
             model_override = body.model if body and body.model else None
 
@@ -1683,7 +1738,7 @@ async def regenerate_stored_summary(
             # Apply model override if specified
             if model_override:
                 options.summarization_model = model_override
-                logger.info(f"[{task_id}] Using custom model: {model_override}")
+                logger.info(f"[{job_id}] Using custom model: {model_override}")
 
             # Build context (handle case where guild might be None for source_content regen)
             channel_name = "regenerated"
@@ -1706,7 +1761,7 @@ async def regenerate_stored_summary(
             )
 
             # Generate new summary with grounding (skip cache for regeneration)
-            logger.info(f"[{task_id}] Generating summary with grounding...")
+            logger.info(f"[{job_id}] Generating summary with grounding...")
             new_result = await engine.summarize_messages(
                 messages=processed,
                 options=options,
@@ -1718,7 +1773,15 @@ async def regenerate_stored_summary(
 
             # Check grounding
             has_refs = bool(new_result.reference_index)
-            logger.info(f"[{task_id}] New summary has {len(new_result.reference_index)} references, grounded={has_refs}")
+            logger.info(f"[{job_id}] New summary has {len(new_result.reference_index)} references, grounded={has_refs}")
+
+            # Update progress
+            job.update_progress(2, 3, "Saving summary")
+            if job_repo:
+                try:
+                    await job_repo.update(job)
+                except Exception:
+                    pass
 
             # Preserve original ID but update the summary_result
             new_result.id = summary_id
@@ -1727,22 +1790,39 @@ async def regenerate_stored_summary(
             stored.summary_result = new_result
             await stored_repo.update(stored)
 
-            _generation_tasks[task_id]["status"] = "completed"
-            _generation_tasks[task_id]["summary_id"] = summary_id
-            _generation_tasks[task_id]["grounded"] = has_refs
-            _generation_tasks[task_id]["reference_count"] = len(new_result.reference_index)
-            logger.info(f"[{task_id}] Regeneration complete")
+            _generation_tasks[job_id]["status"] = "completed"
+            _generation_tasks[job_id]["summary_id"] = summary_id
+            _generation_tasks[job_id]["grounded"] = has_refs
+            _generation_tasks[job_id]["reference_count"] = len(new_result.reference_index)
+
+            # Mark job as completed
+            job.complete(summary_id)
+            if job_repo:
+                try:
+                    await job_repo.update(job)
+                except Exception:
+                    pass
+
+            logger.info(f"[{job_id}] Regeneration complete")
 
         except Exception as e:
-            logger.error(f"[{task_id}] Regeneration failed: {e}", exc_info=True)
-            _generation_tasks[task_id]["status"] = "failed"
-            _generation_tasks[task_id]["error"] = str(e)
+            logger.error(f"[{job_id}] Regeneration failed: {e}", exc_info=True)
+            _generation_tasks[job_id]["status"] = "failed"
+            _generation_tasks[job_id]["error"] = str(e)
+
+            # Mark job as failed
+            job.fail(str(e))
+            if job_repo:
+                try:
+                    await job_repo.update(job)
+                except Exception:
+                    pass
 
     # Start background task
     asyncio.create_task(run_regeneration())
 
     return GenerateSummaryResponse(
-        task_id=task_id,
+        task_id=job_id,
         status="processing",
     )
 

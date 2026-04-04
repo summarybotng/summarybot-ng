@@ -46,7 +46,7 @@ interface JobProgress {
 interface Job {
   job_id: string;
   guild_id: string;
-  job_type: "manual" | "scheduled" | "retrospective";
+  job_type: "manual" | "scheduled" | "retrospective" | "regenerate";
   status: "pending" | "running" | "completed" | "failed" | "cancelled" | "paused";
   scope: string | null;
   schedule_id: string | null;
@@ -75,6 +75,8 @@ function getJobTypeBadge(jobType: Job["job_type"]) {
       return { label: "Scheduled", className: "bg-blue-500/10 text-blue-600 border-blue-500/30", icon: Clock };
     case "retrospective":
       return { label: "Retrospective", className: "bg-orange-500/10 text-orange-600 border-orange-500/30", icon: History };
+    case "regenerate":
+      return { label: "Regenerate", className: "bg-green-500/10 text-green-600 border-green-500/30", icon: RefreshCw };
     default:
       return { label: jobType, className: "", icon: null };
   }
@@ -342,6 +344,7 @@ export function JobsTab({ guildId }: JobsTabProps) {
               <SelectItem value="manual">Manual</SelectItem>
               <SelectItem value="scheduled">Scheduled</SelectItem>
               <SelectItem value="retrospective">Retrospective</SelectItem>
+              <SelectItem value="regenerate">Regenerate</SelectItem>
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>

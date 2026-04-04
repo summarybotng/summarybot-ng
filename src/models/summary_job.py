@@ -17,6 +17,7 @@ class JobType(Enum):
     MANUAL = "manual"           # Generate button in UI
     SCHEDULED = "scheduled"     # Scheduled task
     RETROSPECTIVE = "retrospective"  # Archive backfill
+    REGENERATE = "regenerate"   # Regenerate existing summary
 
 
 class JobStatus(Enum):

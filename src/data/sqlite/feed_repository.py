@@ -2,12 +2,13 @@
 SQLite implementation of feed repository.
 """
 
+import json
 import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 from ..base import FeedRepository
-from ...models.feed import FeedConfig, FeedType
+from ...models.feed import FeedConfig, FeedType, FeedCriteria
 from .connection import SQLiteConnection
 from src.utils.time import utc_now_naive
 
@@ -26,9 +27,14 @@ class SQLiteFeedRepository(FeedRepository):
         INSERT OR REPLACE INTO feed_configs (
             id, guild_id, channel_id, feed_type, is_public, token,
             title, description, max_items, include_full_content,
-            created_at, created_by, last_accessed, access_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            created_at, created_by, last_accessed, access_count, criteria
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
+
+        # Serialize criteria to JSON if present
+        criteria_json = None
+        if feed.criteria:
+            criteria_json = json.dumps(feed.criteria.to_dict())
 
         params = (
             feed.id,
@@ -44,7 +50,8 @@ class SQLiteFeedRepository(FeedRepository):
             feed.created_at.isoformat(),
             feed.created_by,
             feed.last_accessed.isoformat() if feed.last_accessed else None,
-            feed.access_count
+            feed.access_count,
+            criteria_json
         )
 
         await self.connection.execute(query, params)
@@ -97,6 +104,15 @@ class SQLiteFeedRepository(FeedRepository):
 
     def _row_to_feed(self, row: Dict[str, Any]) -> FeedConfig:
         """Convert database row to FeedConfig object."""
+        # Parse criteria from JSON if present
+        criteria = None
+        if row.get('criteria'):
+            try:
+                criteria_dict = json.loads(row['criteria'])
+                criteria = FeedCriteria.from_dict(criteria_dict)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(f"Failed to parse criteria for feed {row['id']}")
+
         return FeedConfig(
             id=row['id'],
             guild_id=row['guild_id'],
@@ -111,5 +127,6 @@ class SQLiteFeedRepository(FeedRepository):
             created_at=datetime.fromisoformat(row['created_at']),
             created_by=row['created_by'],
             last_accessed=datetime.fromisoformat(row['last_accessed']) if row['last_accessed'] else None,
-            access_count=row['access_count']
+            access_count=row['access_count'],
+            criteria=criteria
         )

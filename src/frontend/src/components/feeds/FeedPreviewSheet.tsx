@@ -4,9 +4,8 @@
  * Displays formatted feed content in a side sheet for preview.
  */
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { formatDistanceToNow } from "date-fns";
 import {
   ExternalLink,
   Copy,
@@ -34,7 +33,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { useFeedPreview, type FeedPreviewItem } from "@/hooks/useFeedPreview";
 import { FilterCriteriaSummary } from "@/components/filters";
-import { parseAsUTC, useTimezone } from "@/contexts/TimezoneContext";
+import { useTimezone } from "@/contexts/TimezoneContext";
 import type { Feed } from "@/types";
 
 interface FeedPreviewSheetProps {
@@ -55,6 +54,15 @@ export function FeedPreviewSheet({
   const { formatRelativeTime } = useTimezone();
   const [page, setPage] = useState(1);
   const [copied, setCopied] = useState(false);
+  const prevFeedIdRef = useRef<string | null>(null);
+
+  // Reset page when feed changes
+  useEffect(() => {
+    if (feed?.id && feed.id !== prevFeedIdRef.current) {
+      setPage(1);
+      prevFeedIdRef.current = feed.id;
+    }
+  }, [feed?.id]);
 
   const { data, isLoading, isError } = useFeedPreview(
     guildId,
@@ -95,11 +103,6 @@ export function FeedPreviewSheet({
   const handleLoadMore = () => {
     setPage((p) => p + 1);
   };
-
-  // Reset page when feed changes
-  if (feed?.id && data?.feed_id !== feed.id) {
-    setPage(1);
-  }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

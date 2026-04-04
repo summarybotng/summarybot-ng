@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGenerateSummary, useTaskStatus } from "@/hooks/useSummaries";
 import { useGuild } from "@/hooks/useGuilds";
+import { usePromptTemplates } from "@/hooks/usePromptTemplates";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,7 +30,7 @@ import {
 } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, FileText, Loader2, Hash, FolderOpen, Server, Search, Archive as ArchiveIcon, Briefcase } from "lucide-react";
+import { Sparkles, FileText, Loader2, Hash, FolderOpen, Server, Search, Archive as ArchiveIcon, Briefcase, FileCode } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { StoredSummariesTab } from "@/components/summaries/StoredSummariesTab";
 import { JobsTab } from "@/components/summaries/JobsTab";
@@ -39,6 +40,7 @@ export function Summaries() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const { data: guild } = useGuild(id || "");
+  const { data: promptTemplates = [] } = usePromptTemplates(id || "");
   const generateSummary = useGenerateSummary(id || "");
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -57,6 +59,7 @@ export function Summaries() {
   const [timeRange, setTimeRange] = useState("24h");
   const [summaryLength, setSummaryLength] = useState<SummaryOptions["summary_length"]>("detailed");
   const [perspective, setPerspective] = useState<SummaryOptions["perspective"]>("general");
+  const [promptTemplateId, setPromptTemplateId] = useState<string | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [channelSearch, setChannelSearch] = useState("");
 
@@ -140,6 +143,8 @@ export function Summaries() {
           include_action_items: true,
           include_technical_terms: true,
         },
+        // ADR-034: Include custom template if selected
+        ...(promptTemplateId && { prompt_template_id: promptTemplateId }),
       };
 
       // Add scope-specific fields
@@ -345,9 +350,21 @@ export function Summaries() {
                 </Select>
               </div>
 
+              {/* ADR-034: Combined Perspective + Custom Templates */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">Perspective</label>
-                <Select value={perspective} onValueChange={(v) => setPerspective(v as SummaryOptions["perspective"])}>
+                <Select
+                  value={promptTemplateId ? `template:${promptTemplateId}` : perspective}
+                  onValueChange={(v) => {
+                    if (v.startsWith("template:")) {
+                      setPromptTemplateId(v.replace("template:", ""));
+                      setPerspective("general");
+                    } else {
+                      setPromptTemplateId(null);
+                      setPerspective(v as SummaryOptions["perspective"]);
+                    }
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -357,8 +374,28 @@ export function Summaries() {
                     <SelectItem value="marketing">Marketing</SelectItem>
                     <SelectItem value="executive">Executive</SelectItem>
                     <SelectItem value="support">Support</SelectItem>
+                    {promptTemplates.length > 0 && (
+                      <>
+                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-2">
+                          Custom Perspectives
+                        </div>
+                        {promptTemplates.map((template) => (
+                          <SelectItem key={template.id} value={`template:${template.id}`}>
+                            <span className="flex items-center gap-2">
+                              <FileCode className="h-3 w-3" />
+                              {template.name}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
+                {promptTemplateId && (
+                  <p className="text-xs text-muted-foreground">
+                    Using custom template. Summary length still controls model selection.
+                  </p>
+                )}
               </div>
 
               <Button 

@@ -388,6 +388,7 @@ class GenerateSummaryRequest(BaseModel):
     category_id: Optional[str] = None           # Required for CATEGORY scope
     time_range: TimeRangeRequest
     options: Optional[SummaryOptionsResponse] = None
+    prompt_template_id: Optional[str] = None  # ADR-034: Custom template ID
 
 
 class GenerateSummaryResponse(BaseModel):

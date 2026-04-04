@@ -648,6 +648,21 @@ async def generate_summary(
                 time_span_hours=time_span_hours,
             )
 
+            # ADR-034: Resolve custom prompt template if specified
+            custom_system_prompt = None
+            if body.prompt_template_id:
+                try:
+                    from ...data.repositories import get_prompt_template_repository
+                    template_repo = await get_prompt_template_repository()
+                    template = await template_repo.get_template(body.prompt_template_id)
+                    if template:
+                        custom_system_prompt = template.content
+                        logger.info(f"[{job_id}] Using custom template '{template.name}'")
+                    else:
+                        logger.warning(f"[{job_id}] Template {body.prompt_template_id} not found")
+                except Exception as e:
+                    logger.warning(f"[{job_id}] Failed to fetch template: {e}")
+
             # ADR-013: Update progress - summarizing
             job.update_progress(len(channel_ids) + 1, None, "Generating summary")
             if job_repo:
@@ -663,6 +678,7 @@ async def generate_summary(
                 context=context,
                 guild_id=guild_id,
                 channel_id=channel_ids[0],  # Primary channel for storage
+                custom_system_prompt=custom_system_prompt,  # ADR-034
             )
             logger.info(f"[{job_id}] Summarization complete, result id: {result.id}")
 

@@ -217,13 +217,20 @@ export function ScheduleForm({ formData, onChange, channels = [], categories = [
         </Select>
       </div>
 
+      {/* ADR-034: Combined Perspective + Custom Templates */}
       <div className="space-y-2">
         <label className="text-sm font-medium">Perspective</label>
         <Select
-          value={formData.perspective}
-          onValueChange={(v) =>
-            onChange({ ...formData, perspective: v as SummaryOptions["perspective"] })
-          }
+          value={formData.prompt_template_id ? `template:${formData.prompt_template_id}` : formData.perspective}
+          onValueChange={(v) => {
+            if (v.startsWith("template:")) {
+              // Custom template selected - clear perspective influence
+              onChange({ ...formData, prompt_template_id: v.replace("template:", ""), perspective: "general" });
+            } else {
+              // Built-in perspective selected - clear template
+              onChange({ ...formData, perspective: v as SummaryOptions["perspective"], prompt_template_id: null });
+            }
+          }}
         >
           <SelectTrigger>
             <SelectValue />
@@ -234,45 +241,29 @@ export function ScheduleForm({ formData, onChange, channels = [], categories = [
             <SelectItem value="marketing">Marketing</SelectItem>
             <SelectItem value="executive">Executive</SelectItem>
             <SelectItem value="support">Support</SelectItem>
+            {promptTemplates.length > 0 && (
+              <>
+                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-2">
+                  Custom Perspectives
+                </div>
+                {promptTemplates.map((template) => (
+                  <SelectItem key={template.id} value={`template:${template.id}`}>
+                    <span className="flex items-center gap-2">
+                      <FileCode className="h-3 w-3" />
+                      {template.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </>
+            )}
           </SelectContent>
         </Select>
-      </div>
-
-      {/* ADR-034: Prompt Template Selection */}
-      {promptTemplates.length > 0 && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium flex items-center gap-2">
-            <FileCode className="h-4 w-4" />
-            Prompt Template
-          </label>
-          <Select
-            value={formData.prompt_template_id || "default"}
-            onValueChange={(v) =>
-              onChange({ ...formData, prompt_template_id: v === "default" ? null : v })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Use default prompt" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="default">Use default prompt</SelectItem>
-              {promptTemplates.map((template) => (
-                <SelectItem key={template.id} value={template.id}>
-                  {template.name}
-                  {template.based_on_default && (
-                    <span className="text-muted-foreground text-xs ml-1">
-                      (based on {template.based_on_default})
-                    </span>
-                  )}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {formData.prompt_template_id && (
           <p className="text-xs text-muted-foreground">
-            Select a custom prompt template or use the system default
+            Using custom template. Summary length still controls model selection.
           </p>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Low Activity Mode */}
       <div className="flex items-start space-x-3 rounded-md border p-3">

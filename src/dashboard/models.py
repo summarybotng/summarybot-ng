@@ -646,12 +646,12 @@ class FeedPreviewItem(BaseModel):
     """Summary item in feed preview."""
     id: str
     title: str
-    channel_name: Optional[str]
-    created_at: datetime
-    message_count: int
-    preview: str
-    has_action_items: bool
-    has_key_points: bool
+    channel_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+    message_count: int = 0
+    preview: str = ""
+    has_action_items: bool = False
+    has_key_points: bool = False
     source: Optional[str] = None
     perspective: Optional[str] = None
     summary_length: Optional[str] = None

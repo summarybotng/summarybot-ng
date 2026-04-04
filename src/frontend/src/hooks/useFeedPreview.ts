@@ -12,7 +12,7 @@ export interface FeedPreviewItem {
   id: string;
   title: string;
   channel_name: string | null;
-  created_at: string;
+  created_at: string | null;
   message_count: number;
   preview: string;
   has_action_items: boolean;

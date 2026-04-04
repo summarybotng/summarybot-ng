@@ -227,7 +227,9 @@ function FeedPreviewCard({ item, formatRelativeTime, onClick }: FeedPreviewCardP
               {item.channel_name && (
                 <span className="text-primary">#{item.channel_name}</span>
               )}
-              <span>{formatRelativeTime(item.created_at)}</span>
+              {item.created_at && (
+                <span>{formatRelativeTime(item.created_at)}</span>
+              )}
               <span className="flex items-center gap-1">
                 <MessageSquare className="h-3 w-3" />
                 {item.message_count}

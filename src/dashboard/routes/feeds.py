@@ -642,7 +642,7 @@ async def preview_feed(
             title=stored.title or f"Summary - {stored.created_at.strftime('%b %d, %H:%M') if stored.created_at else 'Unknown'}",
             channel_name=item_channel_name,
             created_at=stored.created_at,
-            message_count=stored.message_count or 0,
+            message_count=stored.get_message_count(),
             preview=preview,
             has_action_items=has_action_items,
             has_key_points=has_key_points,

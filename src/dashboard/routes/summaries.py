@@ -650,6 +650,8 @@ async def generate_summary(
 
             # ADR-034: Resolve custom prompt template if specified
             custom_system_prompt = None
+            template_name = None
+            template_id = None
             if body.prompt_template_id:
                 try:
                     from ...data.repositories import get_prompt_template_repository
@@ -657,6 +659,8 @@ async def generate_summary(
                     template = await template_repo.get_template(body.prompt_template_id)
                     if template:
                         custom_system_prompt = template.content
+                        template_name = template.name
+                        template_id = template.id
                         logger.info(f"[{job_id}] Using custom template '{template.name}'")
                     else:
                         logger.warning(f"[{job_id}] Template {body.prompt_template_id} not found")
@@ -681,6 +685,12 @@ async def generate_summary(
                 custom_system_prompt=custom_system_prompt,  # ADR-034
             )
             logger.info(f"[{job_id}] Summarization complete, result id: {result.id}")
+
+            # ADR-035: Store custom template info in metadata when used
+            if template_name:
+                result.metadata["perspective"] = template_name
+                result.metadata["prompt_template_id"] = template_id
+                result.metadata["prompt_template_name"] = template_name
 
             # ADR-012: Save to StoredSummaryRepository (unified storage)
             # This ensures all summaries appear in the same tab with consistent features

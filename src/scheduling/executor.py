@@ -134,13 +134,14 @@ class TaskExecutor:
             template = await repo.get_template(template_id)
             if template:
                 logger.info(f"Using guild prompt template '{template.name}' for task {task.scheduled_task.id}")
-                return template.content
+                # ADR-035: Return tuple with content, name, and id
+                return (template.content, template.name, template.id)
             else:
                 logger.warning(f"Template {template_id} not found for task {task.scheduled_task.id}")
-                return None
+                return (None, None, None)
         except Exception as e:
             logger.warning(f"Failed to fetch template {template_id}: {e}")
-            return None
+            return (None, None, None)
 
     @log_command(CommandType.SCHEDULED_TASK, command_name="execute_summary_task")
     async def execute_summary_task(self, task: SummaryTask) -> TaskExecutionResult:
@@ -256,7 +257,8 @@ class TaskExecutor:
         logger.info(f"Executing individual mode for {len(channel_ids)} channels")
 
         # ADR-034: Get custom template content if configured
-        custom_system_prompt = await self._get_template_content(task)
+        # ADR-035: Returns tuple (content, name, id)
+        template_content, template_name, template_id = await self._get_template_content(task)
 
         results = []
         summaries_created = []
@@ -312,10 +314,16 @@ class TaskExecutor:
                     context=context,
                     channel_id=channel_id,
                     guild_id=task.guild_id,
-                    custom_system_prompt=custom_system_prompt
+                    custom_system_prompt=template_content
                 )
 
                 logger.info(f"Generated summary {summary_result.id} for channel {channel_id}")
+
+                # ADR-035: Store custom template info in metadata when used
+                if template_name:
+                    summary_result.metadata["perspective"] = template_name
+                    summary_result.metadata["prompt_template_id"] = template_id
+                    summary_result.metadata["prompt_template_name"] = template_name
 
                 # Deliver to channel
                 if self.discord_client:
@@ -375,7 +383,8 @@ class TaskExecutor:
         logger.info(f"Executing combined mode for {len(channel_ids)} channel(s): {channel_ids[:5]}{'...' if len(channel_ids) > 5 else ''}")
 
         # ADR-034: Get custom template content if configured
-        custom_system_prompt = await self._get_template_content(task)
+        # ADR-035: Returns tuple (content, name, id)
+        template_content, template_name, template_id = await self._get_template_content(task)
 
         try:
             # Get time range for messages
@@ -457,10 +466,16 @@ class TaskExecutor:
                 context=context,
                 channel_id=task.channel_id,  # Primary channel for storage
                 guild_id=task.guild_id,
-                custom_system_prompt=custom_system_prompt
+                custom_system_prompt=template_content
             )
 
             logger.info(f"Generated summary {summary_result.id}")
+
+            # ADR-035: Store custom template info in metadata when used
+            if template_name:
+                summary_result.metadata["perspective"] = template_name
+                summary_result.metadata["prompt_template_id"] = template_id
+                summary_result.metadata["prompt_template_name"] = template_name
 
             # Store channels_with_content in metadata for title generation
             if summary_result.metadata is None:

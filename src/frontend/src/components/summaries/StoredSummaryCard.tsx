@@ -11,31 +11,19 @@ import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { useTimezone, parseAsUTC, formatRelativeTime } from "@/contexts/TimezoneContext";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Pin,
-  Archive,
-  Trash2,
-  MoreVertical,
   MessageSquare,
   Calendar,
   Send,
-  Eye,
   Tag,
   History,
   Clock,
   Sparkles,
   Settings2,
-  Mail,
 } from "lucide-react";
+import { SummaryActions } from "./SummaryActions";
 import type { StoredSummary, SummarySourceType } from "@/types";
 
 // ADR-008: Helper to get source badge styling
@@ -141,44 +129,22 @@ export function StoredSummaryCard({
               >
                 {relativeTime}
               </span>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onView(); }}>
-                    <Eye className="mr-2 h-4 w-4" />
-                    View Details
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onPush(); }}>
-                    <Send className="mr-2 h-4 w-4" />
-                    Push to Channel
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEmail(); }}>
-                    <Mail className="mr-2 h-4 w-4" />
-                    Send to Email
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onPin(); }}>
-                    <Pin className="mr-2 h-4 w-4" />
-                    {summary.is_pinned ? "Unpin" : "Pin"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onArchive(); }}>
-                    <Archive className="mr-2 h-4 w-4" />
-                    {summary.is_archived ? "Unarchive" : "Archive"}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                    className="text-destructive"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <SummaryActions
+                variant="dropdown"
+                stopPropagation
+                handlers={{
+                  onView,
+                  onPush,
+                  onEmail,
+                  onPin,
+                  onArchive,
+                  onDelete,
+                }}
+                state={{
+                  isPinned: summary.is_pinned,
+                  isArchived: summary.is_archived,
+                }}
+              />
             </div>
           </div>
 

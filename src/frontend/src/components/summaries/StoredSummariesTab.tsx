@@ -41,7 +41,6 @@ import {
   FileText,
   MessageSquare,
   Users,
-  Send,
   Calendar,
   Pin,
   Clock,
@@ -60,8 +59,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Mail,
-  Trash2,
 } from "lucide-react";
 import {
   Select,
@@ -80,6 +77,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { StoredSummaryCard } from "./StoredSummaryCard";
+import { SummaryActions } from "./SummaryActions";
 import { PushToChannelModal } from "./PushToChannelModal";
 import { SendToEmailModal, type SendToEmailRequest } from "./SendToEmailModal";
 import { SummaryFilters, type FilterState } from "./SummaryFilters";
@@ -848,54 +846,23 @@ function StoredSummaryDetailSheet({
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={() => onPush(summary.id)} className="w-full sm:w-auto">
-                  <Send className="mr-2 h-4 w-4" />
-                  Push to Channel
-                </Button>
-                {/* ADR-030: Email button */}
-                <Button variant="outline" onClick={() => onEmail(summary.id)} className="w-full sm:w-auto">
-                  <Mail className="mr-2 h-4 w-4" />
-                  Send to Email
-                </Button>
-                {/* ADR-004: Regenerate button - now always available with options */}
-                <Button
-                  variant="outline"
-                  onClick={() => setRegenerateDialogOpen(true)}
-                  disabled={isRegenerating}
-                  className="w-full sm:w-auto"
-                >
-                  <RefreshCw className={`mr-2 h-4 w-4 ${isRegenerating ? 'animate-spin' : ''}`} />
-                  {isRegenerating ? 'Regenerating...' : 'Regenerate'}
-                  <ChevronDown className="ml-1 h-3 w-3" />
-                </Button>
-                {/* Pin/Archive/Delete - same as card actions */}
-                <Button
-                  variant="outline"
-                  onClick={() => onPin(summary)}
-                  className="w-full sm:w-auto"
-                >
-                  <Pin className={`mr-2 h-4 w-4 ${summary.is_pinned ? 'fill-current' : ''}`} />
-                  {summary.is_pinned ? 'Unpin' : 'Pin'}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => onArchive(summary)}
-                  className="w-full sm:w-auto"
-                >
-                  <Archive className="mr-2 h-4 w-4" />
-                  {summary.is_archived ? 'Unarchive' : 'Archive'}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => onDelete(summary.id)}
-                  className="w-full sm:w-auto text-destructive hover:text-destructive"
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
-                </Button>
-              </div>
+              {/* Action Buttons - using shared SummaryActions component */}
+              <SummaryActions
+                variant="buttons"
+                handlers={{
+                  onPush: () => onPush(summary.id),
+                  onEmail: () => onEmail(summary.id),
+                  onRegenerate: () => setRegenerateDialogOpen(true),
+                  onPin: () => onPin(summary),
+                  onArchive: () => onArchive(summary),
+                  onDelete: () => onDelete(summary.id),
+                }}
+                state={{
+                  isPinned: summary.is_pinned,
+                  isArchived: summary.is_archived,
+                  isRegenerating,
+                }}
+              />
 
               {/* Regenerate Options Dialog */}
               <Dialog open={regenerateDialogOpen} onOpenChange={setRegenerateDialogOpen}>

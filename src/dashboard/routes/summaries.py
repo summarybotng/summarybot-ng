@@ -877,6 +877,9 @@ async def list_stored_summaries(
     max_participants: Optional[int] = Query(None, ge=0, description="Maximum number of participants"),
     # ADR-026: Platform filter
     platform: Optional[str] = Query(None, description="Filter by platform (discord, whatsapp, slack, all)"),
+    # ADR-035: Generation settings filters
+    summary_length: Optional[str] = Query(None, description="Filter by summary length (brief, detailed, comprehensive)"),
+    perspective: Optional[str] = Query(None, description="Filter by perspective (general, developer, etc.)"),
     user: dict = Depends(get_current_user),
 ):
     """List stored summaries for a guild.
@@ -885,6 +888,7 @@ async def list_stored_summaries(
     ADR-017: Enhanced filtering by date, channel mode, grounding, and sorting.
     ADR-018: Content-based filtering by key points, action items, participants.
     ADR-026: Platform filtering by archive_source_key prefix.
+    ADR-035: Generation settings filtering by summary_length, perspective.
     """
     _check_guild_access(guild_id, user)
     _get_guild_or_404(guild_id)
@@ -942,6 +946,9 @@ async def list_stored_summaries(
         max_participants=max_participants,
         # ADR-026: Platform filter
         platform=platform,
+        # ADR-035: Generation settings filters
+        summary_length=summary_length,
+        perspective=perspective,
     )
 
     total = await stored_repo.count_by_guild(
@@ -968,6 +975,9 @@ async def list_stored_summaries(
         max_participants=max_participants,
         # ADR-026: Platform filter
         platform=platform,
+        # ADR-035: Generation settings filters
+        summary_length=summary_length,
+        perspective=perspective,
     )
 
     # ADR-009: Build schedule name lookup for summaries with schedule_ids

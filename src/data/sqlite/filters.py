@@ -41,3 +41,6 @@ class StoredSummaryFilter:
     max_participants: Optional[int] = None
     # ADR-026: Platform filter
     platform: Optional[str] = None
+    # ADR-035: Generation settings filters
+    summary_length: Optional[str] = None  # 'brief' | 'detailed' | 'comprehensive'
+    perspective: Optional[str] = None  # 'general' | 'developer' | etc.

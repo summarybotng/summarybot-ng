@@ -297,10 +297,11 @@ export interface GenerateRequest {
   time_range: {
     type: "hours" | "days" | "custom";
     value?: number;
-    start?: string;
-    end?: string;
+    start?: string;  // ADR-035: ISO datetime for custom range
+    end?: string;    // ADR-035: ISO datetime for custom range
   };
   options?: Partial<SummaryOptions>;
+  prompt_template_id?: string;  // ADR-034: Custom template ID
 }
 
 // ADR-005, ADR-008: Stored Summary types

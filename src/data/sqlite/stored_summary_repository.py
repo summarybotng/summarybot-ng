@@ -245,6 +245,15 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             conditions.append("archive_source_key LIKE ?")
             params.append(f"{filter.platform}:%")
 
+        # ADR-035: Generation settings filters (stored in summary_json.metadata)
+        if filter.summary_length:
+            conditions.append("json_extract(summary_json, '$.metadata.summary_length') = ?")
+            params.append(filter.summary_length)
+
+        if filter.perspective:
+            conditions.append("json_extract(summary_json, '$.metadata.perspective') = ?")
+            params.append(filter.perspective)
+
         where_clause = " AND ".join(conditions)
         return where_clause, params
 
@@ -280,6 +289,9 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         max_participants: Optional[int] = None,
         # ADR-026: Platform filter (discord, whatsapp, etc.)
         platform: Optional[str] = None,
+        # ADR-035: Generation settings filters
+        summary_length: Optional[str] = None,
+        perspective: Optional[str] = None,
     ) -> List[StoredSummary]:
         """Find stored summaries for a guild.
 
@@ -327,6 +339,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             min_participants=min_participants,
             max_participants=max_participants,
             platform=platform,
+            summary_length=summary_length,
+            perspective=perspective,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 
@@ -391,8 +405,11 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         max_participants: Optional[int] = None,
         # ADR-026: Platform filter
         platform: Optional[str] = None,
+        # ADR-035: Generation settings filters
+        summary_length: Optional[str] = None,
+        perspective: Optional[str] = None,
     ) -> int:
-        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026)."""
+        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026, ADR-035)."""
         # CS-002: Use shared filter builder
         filter_obj = StoredSummaryFilter(
             guild_id=guild_id,
@@ -415,6 +432,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             min_participants=min_participants,
             max_participants=max_participants,
             platform=platform,
+            summary_length=summary_length,
+            perspective=perspective,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 

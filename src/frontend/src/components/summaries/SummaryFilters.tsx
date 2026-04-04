@@ -57,6 +57,9 @@ export interface FilterState {
   maxParticipants?: number;
   // ADR-026: Platform filter
   platform?: string;
+  // ADR-035: Generation settings filters
+  summaryLength?: string;
+  perspective?: string;
 }
 
 interface SummaryFiltersProps {
@@ -191,6 +194,46 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
               <SelectItem value="all">All Platforms</SelectItem>
               <SelectItem value="discord">Discord</SelectItem>
               <SelectItem value="whatsapp">WhatsApp</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* ADR-035: Summary Length filter */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Length:</span>
+          <Select
+            value={filters.summaryLength || "all"}
+            onValueChange={(v) => onFiltersChange({ ...filters, summaryLength: v === "all" ? undefined : v })}
+          >
+            <SelectTrigger className="w-[130px] h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Lengths</SelectItem>
+              <SelectItem value="brief">Brief</SelectItem>
+              <SelectItem value="detailed">Detailed</SelectItem>
+              <SelectItem value="comprehensive">Comprehensive</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* ADR-035: Perspective filter */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Perspective:</span>
+          <Select
+            value={filters.perspective || "all"}
+            onValueChange={(v) => onFiltersChange({ ...filters, perspective: v === "all" ? undefined : v })}
+          >
+            <SelectTrigger className="w-[130px] h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Perspectives</SelectItem>
+              <SelectItem value="general">General</SelectItem>
+              <SelectItem value="developer">Developer</SelectItem>
+              <SelectItem value="marketing">Marketing</SelectItem>
+              <SelectItem value="executive">Executive</SelectItem>
+              <SelectItem value="support">Support</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -702,6 +745,30 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
               Participants: {filters.minParticipants ?? 0} - {filters.maxParticipants ?? "∞"}
               <button
                 onClick={() => onFiltersChange({ ...filters, minParticipants: undefined, maxParticipants: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {/* ADR-035: Summary length filter badge */}
+          {filters.summaryLength && (
+            <Badge variant="secondary" className="gap-1">
+              Length: {filters.summaryLength}
+              <button
+                onClick={() => onFiltersChange({ ...filters, summaryLength: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {/* ADR-035: Perspective filter badge */}
+          {filters.perspective && (
+            <Badge variant="secondary" className="gap-1">
+              Perspective: {filters.perspective}
+              <button
+                onClick={() => onFiltersChange({ ...filters, perspective: undefined })}
                 className="ml-1 hover:text-destructive"
               >
                 <X className="h-3 w-3" />

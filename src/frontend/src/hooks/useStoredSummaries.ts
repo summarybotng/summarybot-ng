@@ -63,6 +63,9 @@ interface StoredSummariesParams {
   maxParticipants?: number;
   // ADR-026: Platform filter
   platform?: string;
+  // ADR-035: Generation settings filters
+  summaryLength?: string;
+  perspective?: string;
 }
 
 export function useStoredSummaries(
@@ -100,6 +103,9 @@ export function useStoredSummaries(
   if (params.maxParticipants !== undefined) queryParams.set("max_participants", params.maxParticipants.toString());
   // ADR-026: Platform filter
   if (params.platform && params.platform !== "all") queryParams.set("platform", params.platform);
+  // ADR-035: Generation settings filters
+  if (params.summaryLength) queryParams.set("summary_length", params.summaryLength);
+  if (params.perspective) queryParams.set("perspective", params.perspective);
 
   const queryString = queryParams.toString();
 

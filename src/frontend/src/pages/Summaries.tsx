@@ -30,7 +30,11 @@ import {
 } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, FileText, Loader2, Hash, FolderOpen, Server, Search, Archive as ArchiveIcon, Briefcase, FileCode } from "lucide-react";
+import { Sparkles, FileText, Loader2, Hash, FolderOpen, Server, Search, Archive as ArchiveIcon, Briefcase, FileCode, Calendar as CalendarIcon } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { StoredSummariesTab } from "@/components/summaries/StoredSummariesTab";
 import { JobsTab } from "@/components/summaries/JobsTab";
@@ -57,6 +61,10 @@ export function Summaries() {
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [timeRange, setTimeRange] = useState("24h");
+  // ADR-035: Custom date range state
+  const [useCustomDates, setUseCustomDates] = useState(false);
+  const [customStartDate, setCustomStartDate] = useState<Date | undefined>();
+  const [customEndDate, setCustomEndDate] = useState<Date | undefined>();
   const [summaryLength, setSummaryLength] = useState<SummaryOptions["summary_length"]>("detailed");
   const [perspective, setPerspective] = useState<SummaryOptions["perspective"]>("general");
   const [promptTemplateId, setPromptTemplateId] = useState<string | null>(null);
@@ -129,15 +137,34 @@ export function Summaries() {
 
   const handleGenerate = async () => {
     try {
-      const timeValue = parseInt(timeRange.replace(/\D/g, ""));
-      const timeType = timeRange.includes("d") ? "days" : "hours";
-      
-      const request: GenerateRequest = {
-        scope,
-        time_range: {
+      // ADR-035: Build time_range based on mode
+      let timeRangeParam: GenerateRequest["time_range"];
+
+      if (useCustomDates && customStartDate && customEndDate) {
+        // Custom date range - set times to start/end of day
+        const startOfDay = new Date(customStartDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(customEndDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        timeRangeParam = {
+          type: "custom",
+          start: startOfDay.toISOString(),
+          end: endOfDay.toISOString(),
+        };
+      } else {
+        // Relative time range (quick preset)
+        const timeValue = parseInt(timeRange.replace(/\D/g, ""));
+        const timeType = timeRange.includes("d") ? "days" : "hours";
+        timeRangeParam = {
           type: timeType as "hours" | "days",
           value: timeValue,
-        },
+        };
+      }
+
+      const request: GenerateRequest = {
+        scope,
+        time_range: timeRangeParam,
         options: {
           summary_length: summaryLength,
           include_action_items: true,
@@ -319,21 +346,101 @@ export function Summaries() {
                 </div>
               )}
 
-              <div className="space-y-2">
+              {/* ADR-035: Time Range with custom date support */}
+              <div className="space-y-3">
                 <label className="text-sm font-medium">Time Range</label>
-                <Select value={timeRange} onValueChange={setTimeRange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select time range" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1h">Last 1 hour</SelectItem>
-                    <SelectItem value="6h">Last 6 hours</SelectItem>
-                    <SelectItem value="12h">Last 12 hours</SelectItem>
-                    <SelectItem value="24h">Last 24 hours</SelectItem>
-                    <SelectItem value="48h">Last 48 hours</SelectItem>
-                    <SelectItem value="7d">Last 7 days</SelectItem>
-                  </SelectContent>
-                </Select>
+
+                {/* Quick presets */}
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { value: "1h", label: "1h" },
+                    { value: "6h", label: "6h" },
+                    { value: "12h", label: "12h" },
+                    { value: "24h", label: "24h" },
+                    { value: "48h", label: "48h" },
+                    { value: "7d", label: "7d" },
+                  ].map((preset) => (
+                    <Button
+                      key={preset.value}
+                      type="button"
+                      variant={!useCustomDates && timeRange === preset.value ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setUseCustomDates(false);
+                        setTimeRange(preset.value);
+                      }}
+                    >
+                      {preset.label}
+                    </Button>
+                  ))}
+                </div>
+
+                {/* Custom date range */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="custom-dates"
+                      checked={useCustomDates}
+                      onCheckedChange={(checked) => setUseCustomDates(checked === true)}
+                    />
+                    <label htmlFor="custom-dates" className="text-sm cursor-pointer">
+                      Custom date range
+                    </label>
+                  </div>
+
+                  {useCustomDates && (
+                    <div className="flex gap-2 items-center">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className={cn(
+                              "w-[130px] justify-start text-left font-normal",
+                              !customStartDate && "text-muted-foreground"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {customStartDate ? format(customStartDate, "MMM d, yyyy") : "Start date"}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={customStartDate}
+                            onSelect={setCustomStartDate}
+                            disabled={(date) => date > new Date() || (customEndDate ? date > customEndDate : false)}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <span className="text-muted-foreground">to</span>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className={cn(
+                              "w-[130px] justify-start text-left font-normal",
+                              !customEndDate && "text-muted-foreground"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {customEndDate ? format(customEndDate, "MMM d, yyyy") : "End date"}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={customEndDate}
+                            onSelect={setCustomEndDate}
+                            disabled={(date) => date > new Date() || (customStartDate ? date < customStartDate : false)}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-2">

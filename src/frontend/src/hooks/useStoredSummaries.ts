@@ -1,7 +1,8 @@
 /**
- * Hooks for stored summaries (ADR-005, ADR-008)
+ * Hooks for stored summaries (ADR-005, ADR-008, ADR-037)
  *
  * ADR-008: Extended to support unified summary experience with source filtering.
+ * ADR-037: Uses centralized SummaryFilterCriteria type.
  */
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -15,6 +16,17 @@ import type {
   SendToEmailRequest,
   SendToEmailResponse,
 } from "@/types";
+import type {
+  SummaryFilterCriteria,
+  SummarySourceType,
+  ChannelModeType,
+  SortByType,
+  SortOrderType,
+} from "@/types/filters";
+import { criteriaToApiBody } from "@/types/filters";
+
+// Re-export types for backward compatibility
+export type { SummarySourceType, ChannelModeType, SortByType, SortOrderType };
 
 interface StoredSummariesResponse {
   items: StoredSummary[];
@@ -22,16 +34,6 @@ interface StoredSummariesResponse {
   page: number;
   limit: number;
 }
-
-// ADR-008: Summary source types
-export type SummarySourceType = "realtime" | "scheduled" | "manual" | "archive" | "imported" | "all";
-
-// ADR-017: Channel mode types
-export type ChannelModeType = "single" | "multi" | "all";
-
-// ADR-017: Sort options
-export type SortByType = "created_at" | "message_count" | "archive_period";
-export type SortOrderType = "asc" | "desc";
 
 interface StoredSummariesParams {
   page?: number;
@@ -276,23 +278,11 @@ interface BulkDeleteResponse {
   errors: string[];
 }
 
-// ADR-018 Enhancement: Filters for bulk operations
-export interface BulkFilters {
-  source?: SummarySourceType;
-  archived?: boolean;
-  created_after?: string;
-  created_before?: string;
-  archive_period?: string;
-  channel_mode?: ChannelModeType;
-  has_grounding?: boolean;
-  has_key_points?: boolean;
-  has_action_items?: boolean;
-  has_participants?: boolean;
-  min_message_count?: number;
-  max_message_count?: number;
-}
+// ADR-037: Use centralized filter criteria for bulk operations
+// BulkFilters is now an alias for the API body format of SummaryFilterCriteria
+export type BulkFilters = ReturnType<typeof criteriaToApiBody>;
 
-// Request type for bulk operations - either IDs or filters
+// Request type for bulk operations - either IDs or filters (using API body format)
 export interface BulkDeleteRequest {
   summary_ids?: string[];
   filters?: BulkFilters;
@@ -302,6 +292,9 @@ export interface BulkRegenerateRequest {
   summary_ids?: string[];
   filters?: BulkFilters;
 }
+
+// Re-export for bulk operation consumers
+export { criteriaToApiBody };
 
 export function useBulkDeleteSummaries(guildId: string) {
   const queryClient = useQueryClient();

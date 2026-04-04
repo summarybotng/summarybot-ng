@@ -235,9 +235,12 @@ export interface Webhook {
   created_at: string;
 }
 
-// Feed types
+// Feed types (ADR-037: Extended with filter criteria)
+import type { SummaryFilterCriteria } from "./filters";
+
 export interface Feed {
   id: string;
+  /** @deprecated Use criteria.channelIds instead */
   channel_id: string | null;
   channel_name: string | null;
   feed_type: "rss" | "atom";
@@ -252,16 +255,21 @@ export interface Feed {
   created_by?: string;
   last_accessed: string | null;
   access_count: number;
+  /** ADR-037: Filter criteria for feed content */
+  criteria?: SummaryFilterCriteria;
 }
 
 export interface CreateFeedRequest {
-  channel_id: string | null;
+  /** @deprecated Use criteria.channelIds instead */
+  channel_id?: string | null;
   feed_type: "rss" | "atom";
   is_public: boolean;
   title?: string;
   description?: string;
   max_items?: number;
   include_full_content?: boolean;
+  /** ADR-037: Filter criteria for feed content */
+  criteria?: SummaryFilterCriteria;
 }
 
 export interface UpdateFeedRequest {
@@ -270,6 +278,8 @@ export interface UpdateFeedRequest {
   is_public?: boolean;
   max_items?: number;
   include_full_content?: boolean;
+  /** ADR-037: Filter criteria for feed content */
+  criteria?: SummaryFilterCriteria;
 }
 
 // API Error
@@ -436,3 +446,6 @@ export interface ExecutionHistoryItem {
 export interface ExecutionHistoryResponse {
   executions: ExecutionHistoryItem[];
 }
+
+// ADR-037: Re-export filter types for convenience
+export * from "./filters";

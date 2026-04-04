@@ -1,8 +1,9 @@
 /**
- * Summary Filters Component (ADR-017, ADR-018)
+ * Summary Filters Component (ADR-017, ADR-018, ADR-037)
  *
  * Provides filtering, sorting, and view options for the stored summaries list.
  * Includes date range, sort controls, channel mode, integrity filters, and content filters.
+ * ADR-037: Uses centralized SummaryFilterCriteria type.
  */
 
 import { useState, useEffect, useCallback } from "react";
@@ -26,40 +27,20 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type {
+  SummaryFilterCriteria,
   SummarySourceType,
   ChannelModeType,
   SortByType,
   SortOrderType,
-} from "@/hooks/useStoredSummaries";
+} from "@/types/filters";
 
-export interface FilterState {
+// ADR-037: FilterState is now an alias for SummaryFilterCriteria with required defaults
+export interface FilterState extends SummaryFilterCriteria {
   source: SummarySourceType;
-  archived: boolean;
-  createdAfter?: string;
-  createdBefore?: string;
-  archivePeriod?: string;
   channelMode: ChannelModeType;
-  hasGrounding?: boolean;
   sortBy: SortByType;
   sortOrder: SortOrderType;
-  // ADR-018: Content filters
-  hasKeyPoints?: boolean;
-  hasActionItems?: boolean;
-  hasParticipants?: boolean;
-  minMessageCount?: number;
-  maxMessageCount?: number;
-  // ADR-021: Content count filters
-  minKeyPoints?: number;
-  maxKeyPoints?: number;
-  minActionItems?: number;
-  maxActionItems?: number;
-  minParticipants?: number;
-  maxParticipants?: number;
-  // ADR-026: Platform filter
-  platform?: string;
-  // ADR-035: Generation settings filters
-  summaryLength?: string;
-  perspective?: string;
+  archived: boolean;
 }
 
 interface SummaryFiltersProps {

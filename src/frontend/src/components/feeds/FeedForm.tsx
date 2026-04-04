@@ -1,8 +1,19 @@
+/**
+ * Feed Form Component (ADR-037)
+ *
+ * Form for creating and editing RSS/Atom feeds with filter criteria support.
+ * ADR-037: Extended with full filter criteria for powerful feed filtering.
+ */
+
+import { useState } from "react";
+import { ChevronDown, ChevronUp, Filter } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -10,9 +21,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { FilterCriteriaForm, FilterCriteriaSummary } from "@/components/filters";
 import type { Channel } from "@/types";
+import type { SummaryFilterCriteria } from "@/types/filters";
+import { countActiveFilters, getDefaultCriteria } from "@/types/filters";
 
 export interface FeedFormData {
+  /** @deprecated Use criteria.channelIds instead */
   channel_id: string | null;
   feed_type: "rss" | "atom";
   is_public: boolean;
@@ -20,6 +40,8 @@ export interface FeedFormData {
   description: string;
   max_items: number;
   include_full_content: boolean;
+  /** ADR-037: Filter criteria for feed content */
+  criteria: SummaryFilterCriteria;
 }
 
 export const initialFeedFormData: FeedFormData = {
@@ -30,6 +52,7 @@ export const initialFeedFormData: FeedFormData = {
   description: "",
   max_items: 50,
   include_full_content: true,
+  criteria: getDefaultCriteria(),
 };
 
 interface FeedFormProps {
@@ -40,6 +63,31 @@ interface FeedFormProps {
 }
 
 export function FeedForm({ formData, onChange, channels = [], isEdit = false }: FeedFormProps) {
+  const [showFilters, setShowFilters] = useState(false);
+
+  const activeFilterCount = countActiveFilters(formData.criteria);
+
+  const updateCriteria = (updates: Partial<SummaryFilterCriteria>) => {
+    onChange({
+      ...formData,
+      criteria: { ...formData.criteria, ...updates },
+    });
+  };
+
+  // Handle channel selection - updates both legacy field and criteria
+  const handleChannelChange = (value: string) => {
+    const channelId = value === "all" ? null : value;
+    onChange({
+      ...formData,
+      channel_id: channelId,
+      criteria: {
+        ...formData.criteria,
+        channelIds: channelId ? [channelId] : undefined,
+        channelMode: channelId ? "single" : "all",
+      },
+    });
+  };
+
   return (
     <div className="space-y-4 py-4">
       {/* Channel Selector - only show on create */}
@@ -47,10 +95,8 @@ export function FeedForm({ formData, onChange, channels = [], isEdit = false }: 
         <div className="space-y-2">
           <Label htmlFor="channel">Channel</Label>
           <Select
-            value={formData.channel_id || "all"}
-            onValueChange={(value) =>
-              onChange({ ...formData, channel_id: value === "all" ? null : value })
-            }
+            value={formData.criteria.channelIds?.[0] || formData.channel_id || "all"}
+            onValueChange={handleChannelChange}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select channel" />
@@ -130,6 +176,57 @@ export function FeedForm({ formData, onChange, channels = [], isEdit = false }: 
           onCheckedChange={(checked) => onChange({ ...formData, is_public: checked })}
         />
       </div>
+
+      {/* ADR-037: Filter Criteria Section */}
+      <Collapsible open={showFilters} onOpenChange={setShowFilters}>
+        <CollapsibleTrigger asChild>
+          <Button
+            variant="outline"
+            className="w-full justify-between"
+            type="button"
+          >
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4" />
+              <span>Filter Criteria</span>
+              {activeFilterCount > 0 && (
+                <Badge variant="secondary" className="ml-2">
+                  {activeFilterCount} active
+                </Badge>
+              )}
+            </div>
+            {showFilters ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-4">
+          <div className="rounded-lg border border-border p-4 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Filter which summaries appear in this feed. Leave empty to include all summaries.
+            </p>
+
+            <FilterCriteriaForm
+              criteria={formData.criteria}
+              onChange={(criteria) => onChange({ ...formData, criteria })}
+              channels={channels}
+              compact
+              label=""
+            />
+
+            {activeFilterCount > 0 && (
+              <div className="pt-2 border-t">
+                <FilterCriteriaSummary
+                  criteria={formData.criteria}
+                  onUpdate={updateCriteria}
+                  compact
+                />
+              </div>
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
 
       {/* Max Items */}
       <div className="space-y-2">

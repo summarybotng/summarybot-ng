@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted (Phase 1 & 2 Implemented)
 
 ## Context
 
@@ -199,16 +199,16 @@ import { SummaryFilterCriteria } from "@/types/filters";
 
 ## Implementation Plan
 
-### Phase 1: Foundation
-- [ ] Create `SummaryFilterCriteria` type definition in `types/filters.ts`
-- [ ] Create shared filter components in `components/filters/`
-- [ ] Refactor `SummaryFilters.tsx` to use shared components
-- [ ] Replace `BulkFilters` with `SummaryFilterCriteria`
+### Phase 1: Foundation (Completed)
+- [x] Create `SummaryFilterCriteria` type definition in `types/filters.ts`
+- [x] Create shared filter components in `components/filters/`
+- [x] Refactor `SummaryFilters.tsx` to use shared components (uses shared types)
+- [x] Replace `BulkFilters` with `SummaryFilterCriteria` (now alias)
 
-### Phase 2: Feed Integration
-- [ ] Update Feed model with criteria field
-- [ ] Update feed creation/edit UI with filter form
-- [ ] Update feed content endpoint to apply criteria
+### Phase 2: Feed Integration (Completed)
+- [x] Update Feed model with criteria field
+- [x] Update feed creation/edit UI with filter form
+- [ ] Update feed content endpoint to apply criteria (backend pending)
 
 ### Phase 3: Webhook Integration
 - [ ] Update Webhook model with criteria field

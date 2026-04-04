@@ -58,6 +58,8 @@ export function Feeds() {
       description: feed.description || "",
       max_items: feed.max_items || 50,
       include_full_content: feed.include_full_content ?? true,
+      // ADR-037: Include filter criteria
+      criteria: feed.criteria || initialFeedFormData.criteria,
     });
     setEditingFeed(feed);
   };
@@ -72,10 +74,12 @@ export function Feeds() {
         description: formData.description || undefined,
         max_items: formData.max_items,
         include_full_content: formData.include_full_content,
+        // ADR-037: Include filter criteria
+        criteria: formData.criteria,
       });
       setCreateOpen(false);
       resetForm();
-      
+
       // Copy URL to clipboard
       await navigator.clipboard.writeText(newFeed.url);
       toast({
@@ -103,6 +107,8 @@ export function Feeds() {
           is_public: formData.is_public,
           max_items: formData.max_items,
           include_full_content: formData.include_full_content,
+          // ADR-037: Include filter criteria
+          criteria: formData.criteria,
         },
       });
       setEditingFeed(null);

@@ -61,6 +61,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Mail,
+  Trash2,
 } from "lucide-react";
 import {
   Select,
@@ -638,6 +639,9 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
             setEmailModalSummary(summary);
           }
         }}
+        onPin={(summary) => handlePin(summary as StoredSummary)}
+        onArchive={(summary) => handleArchive(summary as StoredSummary)}
+        onDelete={(summaryId) => setDeleteConfirmId(summaryId)}
         onRegenerate={handleRegenerate}
         isRegenerating={regenerateMutation.isPending}
         onNavigate={(newSummaryId) => setSelectedSummary(newSummaryId)}
@@ -755,6 +759,9 @@ function StoredSummaryDetailSheet({
   onOpenChange,
   onPush,
   onEmail,
+  onPin,
+  onArchive,
+  onDelete,
   onRegenerate,
   isRegenerating,
   onNavigate,
@@ -765,6 +772,9 @@ function StoredSummaryDetailSheet({
   onOpenChange: (open: boolean) => void;
   onPush: (summaryId: string) => void;
   onEmail: (summaryId: string) => void;
+  onPin: (summary: StoredSummaryDetail) => void;
+  onArchive: (summary: StoredSummaryDetail) => void;
+  onDelete: (summaryId: string) => void;
   onRegenerate: (summaryId: string, options?: RegenerateOptions) => void;
   isRegenerating: boolean;
   onNavigate?: (summaryId: string) => void;
@@ -859,6 +869,31 @@ function StoredSummaryDetailSheet({
                   <RefreshCw className={`mr-2 h-4 w-4 ${isRegenerating ? 'animate-spin' : ''}`} />
                   {isRegenerating ? 'Regenerating...' : 'Regenerate'}
                   <ChevronDown className="ml-1 h-3 w-3" />
+                </Button>
+                {/* Pin/Archive/Delete - same as card actions */}
+                <Button
+                  variant="outline"
+                  onClick={() => onPin(summary)}
+                  className="w-full sm:w-auto"
+                >
+                  <Pin className={`mr-2 h-4 w-4 ${summary.is_pinned ? 'fill-current' : ''}`} />
+                  {summary.is_pinned ? 'Unpin' : 'Pin'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => onArchive(summary)}
+                  className="w-full sm:w-auto"
+                >
+                  <Archive className="mr-2 h-4 w-4" />
+                  {summary.is_archived ? 'Unarchive' : 'Archive'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => onDelete(summary.id)}
+                  className="w-full sm:w-auto text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
                 </Button>
               </div>
 

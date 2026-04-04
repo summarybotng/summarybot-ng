@@ -240,3 +240,62 @@ export function clearFilters(criteria: SummaryFilterCriteria): SummaryFilterCrit
     sortOrder: criteria.sortOrder,
   };
 }
+
+/**
+ * API response format for criteria (snake_case from backend).
+ */
+export interface ApiCriteria {
+  source?: string;
+  archived?: boolean;
+  created_after?: string;
+  created_before?: string;
+  archive_period?: string;
+  channel_mode?: string;
+  channel_ids?: string[];
+  has_grounding?: boolean;
+  has_key_points?: boolean;
+  has_action_items?: boolean;
+  has_participants?: boolean;
+  min_message_count?: number;
+  max_message_count?: number;
+  min_key_points?: number;
+  max_key_points?: number;
+  min_action_items?: number;
+  max_action_items?: number;
+  min_participants?: number;
+  max_participants?: number;
+  platform?: string;
+  summary_length?: string;
+  perspective?: string;
+}
+
+/**
+ * Convert API criteria (snake_case) to frontend criteria (camelCase).
+ */
+export function apiCriteriaToFrontend(api: ApiCriteria | null | undefined): SummaryFilterCriteria {
+  if (!api) return {};
+  return {
+    source: api.source as SummarySourceType | undefined,
+    archived: api.archived,
+    createdAfter: api.created_after,
+    createdBefore: api.created_before,
+    archivePeriod: api.archive_period,
+    channelMode: api.channel_mode as ChannelModeType | undefined,
+    channelIds: api.channel_ids,
+    hasGrounding: api.has_grounding,
+    hasKeyPoints: api.has_key_points,
+    hasActionItems: api.has_action_items,
+    hasParticipants: api.has_participants,
+    minMessageCount: api.min_message_count,
+    maxMessageCount: api.max_message_count,
+    minKeyPoints: api.min_key_points,
+    maxKeyPoints: api.max_key_points,
+    minActionItems: api.min_action_items,
+    maxActionItems: api.max_action_items,
+    minParticipants: api.min_participants,
+    maxParticipants: api.max_participants,
+    platform: api.platform,
+    summaryLength: api.summary_length,
+    perspective: api.perspective,
+  };
+}

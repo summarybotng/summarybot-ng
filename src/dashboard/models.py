@@ -975,6 +975,7 @@ class JobType(str, Enum):
     MANUAL = "manual"
     SCHEDULED = "scheduled"
     RETROSPECTIVE = "retrospective"
+    REGENERATE = "regenerate"
 
 
 class JobStatus(str, Enum):

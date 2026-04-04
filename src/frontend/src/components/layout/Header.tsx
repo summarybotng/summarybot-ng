@@ -1,4 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
+import { formatDistanceToNow } from "date-fns";
 import { useAuthStore } from "@/stores/authStore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,26 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { LogOut, User } from "lucide-react";
+
+// Build info injected at build time
+const buildCommit = __BUILD_COMMIT__;
+const buildTime = __BUILD_TIME__;
+
+function getBuildAge(): string {
+  try {
+    const buildDate = new Date(buildTime);
+    return formatDistanceToNow(buildDate, { addSuffix: true });
+  } catch {
+    return "unknown";
+  }
+}
 
 export function Header() {
   const { user, logout, isAuthenticated } = useAuthStore();
@@ -23,12 +43,22 @@ export function Header() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-xl">
       <div className="container flex h-14 items-center justify-between">
-        <Link to="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-            <span className="text-lg font-bold text-primary-foreground">S</span>
-          </div>
-          <span className="text-lg font-semibold">SummaryBot</span>
-        </Link>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link to="/" className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
+                  <span className="text-lg font-bold text-primary-foreground">S</span>
+                </div>
+                <span className="text-lg font-semibold">SummaryBot</span>
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              <p className="font-medium">Build: {buildCommit}</p>
+              <p className="text-muted-foreground">Built {getBuildAge()}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
         {isAuthenticated() && user && (
           <DropdownMenu>

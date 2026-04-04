@@ -251,7 +251,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             params.append(filter.summary_length)
 
         if filter.perspective:
-            conditions.append("json_extract(summary_json, '$.metadata.perspective') = ?")
+            # Case-insensitive match for perspective
+            conditions.append("LOWER(json_extract(summary_json, '$.metadata.perspective')) = LOWER(?)")
             params.append(filter.perspective)
 
         where_clause = " AND ".join(conditions)

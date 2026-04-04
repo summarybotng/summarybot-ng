@@ -71,6 +71,14 @@ export function Summaries() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [channelSearch, setChannelSearch] = useState("");
 
+  // ADR-035: Track generation parameters for progress display
+  const [generationParams, setGenerationParams] = useState<{
+    scope: "channel" | "category" | "guild";
+    channelCount: number;
+    timeRange: string;
+    perspective: string;
+  } | null>(null);
+
   // Poll task status when generating
   const taskStatus = useTaskStatus(id || "", activeTaskId);
   const [taskStartTime, setTaskStartTime] = useState<number | null>(null);
@@ -81,6 +89,7 @@ export function Summaries() {
       setTaskStartTime(Date.now());
     } else if (!activeTaskId) {
       setTaskStartTime(null);
+      setGenerationParams(null);
     }
   }, [activeTaskId, taskStartTime]);
 
@@ -186,7 +195,27 @@ export function Summaries() {
       
       // Store task ID for polling
       setActiveTaskId(result.task_id);
-      
+
+      // ADR-035: Store generation parameters for progress display
+      const selectedTemplate = promptTemplateId
+        ? promptTemplates.find(t => t.id === promptTemplateId)?.name
+        : null;
+      const timeDisplay = useCustomDates && customStartDate && customEndDate
+        ? `${format(customStartDate, "MMM d")} - ${format(customEndDate, "MMM d")}`
+        : timeRange;
+      const channelCount = scope === "channel"
+        ? (selectedChannels.length || guild?.config.enabled_channels?.length || 0)
+        : scope === "category"
+        ? (guild?.categories.find(c => c.id === selectedCategory)?.channel_count || 0)
+        : (guild?.channels?.filter(c => c.type === "text").length || 0);
+
+      setGenerationParams({
+        scope,
+        channelCount,
+        timeRange: timeDisplay,
+        perspective: selectedTemplate || perspective,
+      });
+
       setGenerateOpen(false);
       toast({
         title: "Summary generation started",
@@ -527,15 +556,27 @@ export function Summaries() {
         </Dialog>
       </motion.div>
 
-      {/* Generation Progress */}
+      {/* Generation Progress - ADR-035: Show parameters */}
       {activeTaskId && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <Card className="border-primary/50 bg-primary/5">
             <CardContent className="flex items-center gap-3 p-4">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              <div>
+              <div className="flex-1">
                 <p className="font-medium">Generating summary...</p>
-                <p className="text-sm text-muted-foreground">This may take a moment</p>
+                {generationParams ? (
+                  <p className="text-sm text-muted-foreground">
+                    {generationParams.scope === "guild" ? "Server-wide" :
+                     generationParams.scope === "category" ? "Category" :
+                     `${generationParams.channelCount} channel${generationParams.channelCount !== 1 ? "s" : ""}`}
+                    {" · "}
+                    {generationParams.timeRange}
+                    {" · "}
+                    {generationParams.perspective}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">This may take a moment</p>
+                )}
               </div>
             </CardContent>
           </Card>

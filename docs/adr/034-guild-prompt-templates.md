@@ -352,6 +352,70 @@ Cite all timeline events, actions, and findings with timestamps.
 | **Community** | Highlight FAQs, sentiment, feature requests |
 | **Research** | Document hypotheses, findings, paper references |
 
+#### 2.8.6 JSON Output Format (Auto-Appended)
+
+**Good news: You don't need to include JSON output instructions in your custom templates.**
+
+The system automatically appends citation and JSON format instructions to all prompts (including custom templates). This ensures consistent, parseable output without requiring template authors to understand the internal format.
+
+Your custom template only needs to focus on:
+- **Role and context** — Who is the AI acting as?
+- **Focus areas** — What to emphasize or ignore?
+- **Structure hints** — How to organize the summary narrative?
+
+The system handles the technical output format automatically.
+
+##### What Gets Auto-Appended
+
+The following JSON structure is automatically requested at the end of every prompt:
+
+```json
+{
+  "summary_text": "Overview of the discussion",
+  "key_points": [
+    {"text": "The key point text", "references": [2, 4], "confidence": 0.95}
+  ],
+  "action_items": [
+    {"text": "Action item description", "references": [6], "assignee": "username", "priority": "high|medium|low"}
+  ],
+  "decisions": [
+    {"text": "Decision that was made", "references": [2, 5, 6], "confidence": 0.95}
+  ],
+  "participants": [
+    {"name": "username", "message_count": 5, "key_contributions": [
+      {"text": "Their main contribution", "references": [3]}
+    ]}
+  ],
+  "technical_terms": [
+    {"term": "concept", "definition": "explanation", "context": "usage"}
+  ],
+  "sources": [
+    {"position": 2, "author": "username", "time": "14:32", "snippet": "First 60 chars of the message..."}
+  ]
+}
+```
+
+**Important fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `summary_text` | Yes | Main narrative overview of the discussion |
+| `key_points` | Yes | Array of key points with citation references |
+| `action_items` | No | Tasks identified, with assignee and priority |
+| `decisions` | No | Decisions made during the discussion |
+| `participants` | Yes | Who contributed, with message counts |
+| `technical_terms` | No | Technical vocabulary mentioned |
+| `sources` | Yes | Maps `[N]` citations to actual messages |
+
+##### Why This Matters
+
+The auto-appended instructions tell the LLM to:
+- Output valid JSON (required for parsing)
+- Include `[N]` citation references to source messages
+- Populate the `sources` array mapping citations to message details
+
+This happens automatically, so your custom template can stay clean and focused on the *what* (content focus) rather than the *how* (output format).
+
 ---
 
 ## 3. Implementation Plan

@@ -142,7 +142,7 @@ export function FeedPreviewSheet({
         </div>
 
         {/* Active Filters */}
-        {data?.criteria && Object.keys(data.criteria).length > 0 && (
+        {data?.criteria && typeof data.criteria === 'object' && !Array.isArray(data.criteria) && Object.keys(data.criteria).length > 0 && (
           <div className="mb-4 p-3 bg-muted/50 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
               <Filter className="h-4 w-4 text-muted-foreground" />

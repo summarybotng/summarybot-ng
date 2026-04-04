@@ -273,7 +273,11 @@ export interface ApiCriteria {
  * Convert API criteria (snake_case) to frontend criteria (camelCase).
  */
 export function apiCriteriaToFrontend(api: ApiCriteria | null | undefined): SummaryFilterCriteria {
-  if (!api) return {};
+  // Defensive: ensure api is a proper object
+  if (!api || typeof api !== 'object' || Array.isArray(api)) {
+    console.warn('[apiCriteriaToFrontend] Invalid criteria input:', api);
+    return {};
+  }
   return {
     source: api.source as SummarySourceType | undefined,
     archived: api.archived,

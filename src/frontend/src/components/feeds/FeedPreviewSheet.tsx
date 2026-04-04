@@ -33,7 +33,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { useFeedPreview, type FeedPreviewItem } from "@/hooks/useFeedPreview";
 import { FilterCriteriaSummary } from "@/components/filters";
-import { useTimezone } from "@/contexts/TimezoneContext";
+import { formatRelativeTime } from "@/contexts/TimezoneContext";
 import type { Feed } from "@/types";
 
 interface FeedPreviewSheetProps {
@@ -51,7 +51,6 @@ export function FeedPreviewSheet({
 }: FeedPreviewSheetProps) {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { formatRelativeTime } = useTimezone();
   const [page, setPage] = useState(1);
   const [copied, setCopied] = useState(false);
   const prevFeedIdRef = useRef<string | null>(null);

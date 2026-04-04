@@ -382,18 +382,63 @@ class WebhookServer:
             channel = guild.get_channel(int(feed.channel_id))
             channel_name = channel.name if channel else None
 
-        # Get summaries from database
+        # ADR-037: Get summaries using stored_summary_repository with criteria filtering
+        from ..dashboard.routes import get_stored_summary_repository
+        from datetime import datetime
+
         summaries = []
-        summary_repo = await get_summary_repository()
-        if summary_repo:
-            criteria = SearchCriteria(
+        stored_repo = await get_stored_summary_repository()
+        if stored_repo:
+            # Extract criteria filters if present
+            c = feed.criteria
+
+            # Parse date strings to datetime objects
+            created_after = None
+            created_before = None
+            if c and c.created_after:
+                try:
+                    created_after = datetime.fromisoformat(c.created_after.replace('Z', '+00:00'))
+                except ValueError:
+                    pass
+            if c and c.created_before:
+                try:
+                    created_before = datetime.fromisoformat(c.created_before.replace('Z', '+00:00'))
+                except ValueError:
+                    pass
+
+            stored_summaries = await stored_repo.find_by_guild(
                 guild_id=feed.guild_id,
-                channel_id=feed.channel_id,
                 limit=feed.max_items,
-                order_by="created_at",
-                order_direction="DESC",
+                offset=0,
+                include_archived=c.archived if c else False,
+                source=c.source if c and c.source and c.source != "all" else None,
+                created_after=created_after,
+                created_before=created_before,
+                archive_period=c.archive_period if c else None,
+                channel_mode=c.channel_mode if c and c.channel_mode != "all" else None,
+                has_grounding=c.has_grounding if c else None,
+                has_key_points=c.has_key_points if c else None,
+                has_action_items=c.has_action_items if c else None,
+                has_participants=c.has_participants if c else None,
+                min_message_count=c.min_message_count if c else None,
+                max_message_count=c.max_message_count if c else None,
+                min_key_points=c.min_key_points if c else None,
+                max_key_points=c.max_key_points if c else None,
+                min_action_items=c.min_action_items if c else None,
+                max_action_items=c.max_action_items if c else None,
+                min_participants=c.min_participants if c else None,
+                max_participants=c.max_participants if c else None,
+                platform=c.platform if c else None,
+                summary_length=c.summary_length if c else None,
+                perspective=c.perspective if c else None,
+                sort_by="created_at",
+                sort_order="desc",
             )
-            summaries = await summary_repo.find_summaries(criteria)
+
+            # Convert StoredSummary to SummaryResult for feed generator
+            for stored in stored_summaries:
+                if stored.summary_result:
+                    summaries.append(stored.summary_result)
 
         # Generate feed content
         import os

@@ -1,8 +1,10 @@
 /**
- * ADR-034: Guild Prompt Templates Management Page
+ * ADR-034: Guild Prompt Templates (Custom Perspectives) Management Page
  *
  * Allows guild admins to create, edit, duplicate, and delete
- * reusable prompt templates for scheduled summaries.
+ * custom perspective templates. These extend the built-in perspectives
+ * (General, Developer, Marketing, Executive, Support) and can be used
+ * for both scheduled and on-demand summary generation.
  */
 import { useState } from "react";
 import { useParams } from "react-router-dom";
@@ -258,9 +260,10 @@ export function PromptTemplates() {
         className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
       >
         <div>
-          <h1 className="text-2xl font-bold">Prompt Templates</h1>
+          <h1 className="text-2xl font-bold">Custom Perspectives</h1>
           <p className="text-muted-foreground">
-            Create reusable prompt templates for scheduled summaries
+            Create custom perspectives beyond the built-in options (General, Developer, Marketing, Executive, Support).
+            Use them for scheduled or on-demand summaries.
           </p>
         </div>
         <DropdownMenu>
@@ -290,9 +293,10 @@ export function PromptTemplates() {
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-12">
             <FileText className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No templates yet</h3>
-            <p className="text-muted-foreground text-center mb-4">
-              Create custom prompt templates to use with your scheduled summaries
+            <h3 className="text-lg font-semibold mb-2">No custom perspectives yet</h3>
+            <p className="text-muted-foreground text-center mb-4 max-w-md">
+              Built-in perspectives: General, Developer, Marketing, Executive, Support.
+              Create your own for specialized use cases like Standup, Security, or Product updates.
             </p>
             <Button onClick={() => openCreateDialog()}>
               <Plus className="mr-2 h-4 w-4" />
@@ -386,7 +390,8 @@ export function PromptTemplates() {
                 }
               />
               <p className="text-xs text-muted-foreground">
-                This will be used as the system prompt when generating summaries
+                Focus on the role, context, and what to emphasize. JSON output format and citation
+                instructions are automatically appended — you don't need to include them.
               </p>
             </div>
           </div>

@@ -6,6 +6,7 @@
 
 export { DebouncedNumberInput } from "./DebouncedNumberInput";
 export { DateRangeSelector } from "./DateRangeSelector";
-export { FilterCriteriaForm } from "./FilterCriteriaForm";
+export { FilterCriteriaForm, type PerspectiveOption } from "./FilterCriteriaForm";
 export { FilterCriteriaSummary } from "./FilterCriteriaSummary";
 export { useFilterCriteria } from "./useFilterCriteria";
+export { usePerspectiveOptions } from "./usePerspectiveOptions";

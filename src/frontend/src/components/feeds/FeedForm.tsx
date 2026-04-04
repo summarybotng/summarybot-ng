@@ -26,7 +26,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { FilterCriteriaForm, FilterCriteriaSummary } from "@/components/filters";
+import { FilterCriteriaForm, FilterCriteriaSummary, usePerspectiveOptions } from "@/components/filters";
 import type { Channel } from "@/types";
 import type { SummaryFilterCriteria } from "@/types/filters";
 import { countActiveFilters, getDefaultCriteria } from "@/types/filters";
@@ -59,10 +59,12 @@ interface FeedFormProps {
   formData: FeedFormData;
   onChange: (data: FeedFormData) => void;
   channels?: Channel[];
+  guildId?: string;
   isEdit?: boolean;
 }
 
-export function FeedForm({ formData, onChange, channels = [], isEdit = false }: FeedFormProps) {
+export function FeedForm({ formData, onChange, channels = [], guildId, isEdit = false }: FeedFormProps) {
+  const { perspectives } = usePerspectiveOptions(guildId);
   const [showFilters, setShowFilters] = useState(false);
 
   const activeFilterCount = countActiveFilters(formData.criteria);
@@ -211,6 +213,7 @@ export function FeedForm({ formData, onChange, channels = [], isEdit = false }: 
               criteria={formData.criteria}
               onChange={(criteria) => onChange({ ...formData, criteria })}
               channels={channels}
+              perspectives={perspectives}
               compact
               label=""
             />

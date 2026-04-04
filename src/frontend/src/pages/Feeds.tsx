@@ -187,7 +187,7 @@ export function Feeds() {
               Create Feed
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Create Feed</DialogTitle>
               <DialogDescription>
@@ -198,6 +198,7 @@ export function Feeds() {
               formData={formData}
               onChange={setFormData}
               channels={guild?.channels || []}
+              guildId={id}
             />
             <DialogFooter>
               <Button variant="outline" onClick={() => setCreateOpen(false)}>
@@ -226,7 +227,7 @@ export function Feeds() {
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Feed</DialogTitle>
             <DialogDescription>
@@ -237,6 +238,7 @@ export function Feeds() {
             formData={formData}
             onChange={setFormData}
             channels={guild?.channels || []}
+            guildId={id}
             isEdit
           />
           <DialogFooter>

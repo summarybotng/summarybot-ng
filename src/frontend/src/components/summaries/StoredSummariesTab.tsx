@@ -450,6 +450,7 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
             setPage(1);  // Reset to first page when filters change
           }}
           totalCount={total}
+          guildId={guildId}
         />
       )}
 

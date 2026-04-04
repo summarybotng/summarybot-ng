@@ -39,11 +39,20 @@ import { DebouncedNumberInput } from "./DebouncedNumberInput";
 import { DateRangeSelector } from "./DateRangeSelector";
 import type { Channel } from "@/types";
 
+/** Perspective option for dynamic dropdown */
+export interface PerspectiveOption {
+  value: string;
+  label: string;
+  isCustom?: boolean;
+}
+
 interface FilterCriteriaFormProps {
   criteria: SummaryFilterCriteria;
   onChange: (criteria: SummaryFilterCriteria) => void;
   /** Available channels for channel filter */
   channels?: Channel[];
+  /** Available perspectives (system + custom) */
+  perspectives?: PerspectiveOption[];
   /** Show sort options */
   showSortOptions?: boolean;
   /** Compact layout for dialogs */
@@ -56,6 +65,7 @@ export function FilterCriteriaForm({
   criteria,
   onChange,
   channels = [],
+  perspectives = [],
   showSortOptions = false,
   compact = false,
   label = "Filter Criteria",
@@ -285,25 +295,27 @@ export function FilterCriteriaForm({
               </Select>
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Perspective:</span>
-              <Select
-                value={criteria.perspective || "all"}
-                onValueChange={(v) => updateCriteria({ perspective: v === "all" ? undefined : v })}
-              >
-                <SelectTrigger className="w-[120px] h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="general">General</SelectItem>
-                  <SelectItem value="developer">Developer</SelectItem>
-                  <SelectItem value="marketing">Marketing</SelectItem>
-                  <SelectItem value="executive">Executive</SelectItem>
-                  <SelectItem value="support">Support</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {perspectives.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Perspective:</span>
+                <Select
+                  value={criteria.perspective || "all"}
+                  onValueChange={(v) => updateCriteria({ perspective: v === "all" ? undefined : v })}
+                >
+                  <SelectTrigger className="w-[140px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {perspectives.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.label}{p.isCustom ? " *" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           {/* Channel mode */}

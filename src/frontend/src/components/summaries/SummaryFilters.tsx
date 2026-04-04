@@ -33,6 +33,7 @@ import type {
   SortByType,
   SortOrderType,
 } from "@/types/filters";
+import { usePerspectiveOptions } from "@/components/filters";
 
 // ADR-037: FilterState is now an alias for SummaryFilterCriteria with required defaults
 export interface FilterState extends SummaryFilterCriteria {
@@ -47,6 +48,7 @@ interface SummaryFiltersProps {
   filters: FilterState;
   onFiltersChange: (filters: FilterState) => void;
   totalCount: number;
+  guildId?: string;
 }
 
 // Number input that only submits on blur or Enter (prevents auto-submit while typing)
@@ -91,8 +93,9 @@ function DebouncedNumberInput({ value, onChange, placeholder, className, min }: 
   );
 }
 
-export function SummaryFilters({ filters, onFiltersChange, totalCount }: SummaryFiltersProps) {
+export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }: SummaryFiltersProps) {
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
+  const { perspectives } = usePerspectiveOptions(guildId);
 
   const activeFilterCount = [
     filters.archivePeriod,  // Calendar date selection
@@ -198,26 +201,28 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount }: Summary
           </Select>
         </div>
 
-        {/* ADR-035: Perspective filter */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Perspective:</span>
-          <Select
-            value={filters.perspective || "all"}
-            onValueChange={(v) => onFiltersChange({ ...filters, perspective: v === "all" ? undefined : v })}
-          >
-            <SelectTrigger className="w-[130px] h-8">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Perspectives</SelectItem>
-              <SelectItem value="general">General</SelectItem>
-              <SelectItem value="developer">Developer</SelectItem>
-              <SelectItem value="marketing">Marketing</SelectItem>
-              <SelectItem value="executive">Executive</SelectItem>
-              <SelectItem value="support">Support</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {/* ADR-035: Perspective filter - dynamic from system + custom */}
+        {perspectives.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Perspective:</span>
+            <Select
+              value={filters.perspective || "all"}
+              onValueChange={(v) => onFiltersChange({ ...filters, perspective: v === "all" ? undefined : v })}
+            >
+              <SelectTrigger className="w-[140px] h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Perspectives</SelectItem>
+                {perspectives.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}{p.isCustom ? " *" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Date range filter */}
         <Popover open={dateRangeOpen} onOpenChange={setDateRangeOpen}>

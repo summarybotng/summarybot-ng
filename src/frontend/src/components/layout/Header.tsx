@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { formatDistanceToNow } from "date-fns";
+import { formatRelativeTime } from "@/contexts/TimezoneContext";
 import { useAuthStore } from "@/stores/authStore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -24,8 +24,7 @@ const buildTime = __BUILD_TIME__;
 
 function getBuildAge(): string {
   try {
-    const buildDate = new Date(buildTime);
-    return formatDistanceToNow(buildDate, { addSuffix: true });
+    return formatRelativeTime(buildTime);
   } catch {
     return "unknown";
   }

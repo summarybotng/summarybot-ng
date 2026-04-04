@@ -8,9 +8,8 @@
 
 import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { formatDistanceToNow } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
-import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
+import { useTimezone, parseAsUTC, formatRelativeTime } from "@/contexts/TimezoneContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -94,7 +93,7 @@ export function StoredSummaryCard({
     hour: "2-digit",
     minute: "2-digit",
   });
-  const relativeTime = formatDistanceToNow(createdDate, { addSuffix: true });
+  const relativeTime = formatRelativeTime(summary.created_at);
 
   const handleScheduleClick = (e: React.MouseEvent) => {
     e.stopPropagation();

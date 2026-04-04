@@ -1,6 +1,5 @@
-import { formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
-import { parseAsUTC } from "@/contexts/TimezoneContext";
+import { parseAsUTC, formatRelativeTime } from "@/contexts/TimezoneContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -85,7 +84,7 @@ export function ScheduleCard({
                 {schedule.next_run && (
                   <span>
                     Next: {parseAsUTC(schedule.next_run).toLocaleString()} (
-                    {formatDistanceToNow(parseAsUTC(schedule.next_run), { addSuffix: true })}
+                    {formatRelativeTime(schedule.next_run)}
                     )
                   </span>
                 )}

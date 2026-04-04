@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
-import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
+import { useTimezone, formatRelativeTime } from "@/contexts/TimezoneContext";
 import {
   Drawer,
   DrawerContent,
@@ -151,7 +150,7 @@ export function ErrorDetailDrawer({
             {formatDateTime(error.created_at)}
           </p>
           <p className="text-xs text-muted-foreground">
-            {formatDistanceToNow(parseAsUTC(error.created_at), { addSuffix: true })}
+            {formatRelativeTime(error.created_at)}
           </p>
         </div>
         <div>

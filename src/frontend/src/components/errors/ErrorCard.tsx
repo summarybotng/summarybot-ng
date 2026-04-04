@@ -1,7 +1,6 @@
 import { motion } from "framer-motion";
-import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
-import { parseAsUTC } from "@/contexts/TimezoneContext";
+import { formatRelativeTime } from "@/contexts/TimezoneContext";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertCircle,
@@ -106,7 +105,7 @@ export function ErrorCard({ error, index, onClick }: ErrorCardProps) {
       </div>
 
       <div className="flex-shrink-0 text-xs text-muted-foreground">
-        {formatDistanceToNow(parseAsUTC(error.created_at), { addSuffix: true })}
+        {formatRelativeTime(error.created_at)}
       </div>
     </motion.div>
   );

@@ -9,7 +9,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { formatDistanceToNow } from "date-fns";
+import { formatRelativeTime } from "@/contexts/TimezoneContext";
 import {
   usePromptTemplates,
   useCreatePromptTemplate,
@@ -589,7 +589,7 @@ function TemplateCard({
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          Updated {formatDistanceToNow(new Date(template.updated_at), { addSuffix: true })}
+          Updated {formatRelativeTime(template.updated_at)}
         </p>
       </CardContent>
     </Card>

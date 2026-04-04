@@ -4,9 +4,8 @@
  * Shows execution history for a schedule with navigation to generated summaries.
  */
 
-import { formatDistanceToNow } from "date-fns";
 import { useNavigate, useParams } from "react-router-dom";
-import { parseAsUTC } from "@/contexts/TimezoneContext";
+import { formatRelativeTime } from "@/contexts/TimezoneContext";
 import {
   Sheet,
   SheetContent,
@@ -132,9 +131,7 @@ export function RunHistoryDrawer({
                     <div className="flex items-center gap-2 mb-1">
                       {getStatusBadge(execution.status)}
                       <span className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(parseAsUTC(execution.started_at), {
-                          addSuffix: true,
-                        })}
+                        {formatRelativeTime(execution.started_at)}
                       </span>
                     </div>
                     <p className="text-sm text-muted-foreground">

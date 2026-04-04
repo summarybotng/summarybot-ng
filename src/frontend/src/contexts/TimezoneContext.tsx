@@ -4,6 +4,7 @@
  */
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { formatDistanceToNow } from "date-fns";
 
 // Common timezones grouped by region
 export const TIMEZONE_OPTIONS = [
@@ -53,6 +54,22 @@ export function parseAsUTC(date: string | Date): Date {
     return new Date(date + 'Z');
   }
   return new Date(date);
+}
+
+/**
+ * Format a date as relative time (e.g., "2 hours ago", "in 5 minutes").
+ * ADR-036: Always parses the input as UTC to ensure correct relative times.
+ *
+ * @param date - ISO date string or Date object (assumed UTC if no timezone)
+ * @param options - Options to pass to formatDistanceToNow
+ * @returns Relative time string like "2 hours ago"
+ */
+export function formatRelativeTime(
+  date: string | Date,
+  options: { addSuffix?: boolean } = { addSuffix: true }
+): string {
+  const parsed = parseAsUTC(date);
+  return formatDistanceToNow(parsed, options);
 }
 
 interface TimezoneContextType {

@@ -338,7 +338,7 @@ async def update_prompt_template(
         updates["content"] = body.content
 
     if updates:
-        template.update(**updates)
+        template = template.update(**updates)  # update() returns a new instance
         await repo.save_template(template)
 
     usage_count = await repo.get_usage_count(template_id)

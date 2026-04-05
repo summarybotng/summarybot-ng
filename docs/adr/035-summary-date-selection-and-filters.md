@@ -61,6 +61,8 @@ Replace the relative time range selector with a comprehensive date/time picker:
 - **Quick presets** remain for convenience (1h, 6h, 12h, 24h, 48h, 7d)
 - **Custom date range** with calendar pickers for start/end
 - **Optional time selection** for precise control (defaults to 00:00-23:59)
+- **Auto-select end date**: When selecting a start date for the first time, automatically set the end date to the same day (single-day summary UX)
+- **Tooltip guidance**: Help icon explains that dates default to today and start date auto-sets end date
 - Reuse existing `DateRangeSelector` component from `SummaryFilters.tsx`
 
 ### 2.2 Summary Generation Metadata Storage

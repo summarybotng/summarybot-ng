@@ -30,7 +30,8 @@ import {
 } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, FileText, Loader2, Hash, FolderOpen, Server, Search, Archive as ArchiveIcon, FileCode, Calendar as CalendarIcon, ExternalLink } from "lucide-react";
+import { Sparkles, FileText, Loader2, Hash, FolderOpen, Server, Search, Archive as ArchiveIcon, FileCode, Calendar as CalendarIcon, ExternalLink, HelpCircle } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
@@ -414,6 +415,14 @@ export function Summaries() {
                     <label htmlFor="custom-dates" className="text-sm cursor-pointer">
                       Custom date range
                     </label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-[200px]">
+                        <p>Defaults to today. Selecting a start date will auto-set the end date to match.</p>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
 
                   {useCustomDates && (
@@ -436,7 +445,13 @@ export function Summaries() {
                           <Calendar
                             mode="single"
                             selected={customStartDate}
-                            onSelect={setCustomStartDate}
+                            onSelect={(date) => {
+                              setCustomStartDate(date);
+                              // Auto-set end date to match start date for single-day selection UX
+                              if (date && !customEndDate) {
+                                setCustomEndDate(date);
+                              }
+                            }}
                             disabled={(date) => date > new Date() || (customEndDate ? date > customEndDate : false)}
                             initialFocus
                           />

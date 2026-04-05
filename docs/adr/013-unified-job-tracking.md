@@ -266,12 +266,24 @@ POST /guilds/{guild_id}/jobs/{job_id}/retry     # Retry failed job
 - [x] **Manual generation creates job records** (`src/dashboard/routes/summaries.py`)
 - [x] **Scheduled jobs create job records** (`src/scheduling/scheduler.py`)
 - [x] **Jobs API endpoints** - list, get, cancel, retry (`/guilds/{guild_id}/jobs/*`)
-- [x] **Jobs tab in frontend Summaries page** (`src/frontend/src/components/summaries/JobsTab.tsx`)
+- [x] **Jobs page in left nav** (`src/frontend/src/pages/Jobs.tsx`) - ADR-040
 - [x] **Real-time status updates** (polling every 3s for active jobs)
 - [x] **Cancel/retry actions in UI**
+- [x] **Regenerate endpoint** - `POST /stored-summaries/{id}/regenerate`
+- [x] **Bulk regenerate endpoint** - `POST /stored-summaries/bulk-regenerate`
+- [x] **RegenerateOptionsRequest** - supports `model`, `summary_length`, `perspective`
+- [x] **Regeneration job tracking** - creates `JobType.REGENERATE` with metadata
 
 ### Pending
 - [ ] Job history cleanup cron (low priority)
+- [ ] "View Summary" link in Jobs UI (currently shows text only, no link)
+
+### Proposed Enhancements (Not Yet Implemented)
+The following features are documented in this ADR but not yet built:
+
+- [ ] **Parameter change diff display** - Track old→new values, not just new values
+- [ ] `ParameterChange` type with `old_value` and `new_value` fields
+- [ ] UI showing parameter changes in regeneration job cards
 
 ### Key Files
 - `src/models/summary_job.py` - Job model
@@ -280,7 +292,8 @@ POST /guilds/{guild_id}/jobs/{job_id}/retry     # Retry failed job
 - `src/data/migrations/015_summary_jobs.sql` - Database schema
 - `src/archive/generator.py` - Retrospective job persistence
 - `src/main.py` - Startup recovery via `_recover_interrupted_jobs()`
-- `src/dashboard/routes/summaries.py` - Manual job tracking + Jobs API endpoints
+- `src/dashboard/routes/summaries.py` - Manual job tracking + Jobs API endpoints + Regenerate endpoints
 - `src/scheduling/scheduler.py` - Scheduled job tracking
-- `src/frontend/src/components/summaries/JobsTab.tsx` - Jobs tab UI component
-- `src/frontend/src/pages/Summaries.tsx` - Integrated Jobs tab
+- `src/frontend/src/components/summaries/JobsTab.tsx` - Jobs list UI component
+- `src/frontend/src/pages/Jobs.tsx` - Jobs page (ADR-040)
+- `src/frontend/src/hooks/useJobs.ts` - Active job count hook for nav badge

@@ -533,6 +533,20 @@ class SummarizationEngine:
                 context=context
             )
             
+            # ADR-038: Determine actual perspective used (may differ from requested due to fallback)
+            requested_perspective = options.perspective
+            actual_perspective = requested_perspective  # Default to requested
+            if prompt_source_info:
+                resolved_vars = prompt_source_info.get("resolved_variables", {})
+                if "perspective" in resolved_vars:
+                    actual_perspective = resolved_vars["perspective"]
+                elif prompt_source_info.get("source") == "guild_template":
+                    # Guild template used - perspective comes from template name (set by caller)
+                    pass
+                else:
+                    # Fallback to category/default prompt was used
+                    actual_perspective = "general"
+
             # Add API usage metadata and summary options
             summary_result.metadata.update({
                 "claude_model": response.model,  # Actual model used (may differ due to fallback)
@@ -543,13 +557,26 @@ class SummarizationEngine:
                 "api_response_id": response.response_id,
                 "processing_time": (utc_now_naive() - summary_result.created_at).total_seconds(),
                 "summary_length": options.summary_length.value,
-                "perspective": options.perspective,
+                "perspective": actual_perspective,  # ADR-038: Use actual perspective, not requested
+                "requested_perspective": requested_perspective,  # ADR-038: Track what was requested
                 # ADR-004: Citation metadata
                 "citations_enabled": prompt_data.position_index is not None,
                 "grounded": summary_result.has_references(),
                 # ADR-024: Generation attempt tracking
                 "generation_attempts": generation_tracker.to_metadata(),
             })
+
+            # ADR-038: Warn if perspective fallback occurred
+            if actual_perspective != requested_perspective:
+                summary_result.add_warning(
+                    code="perspective_fallback",
+                    message=f"Requested perspective '{requested_perspective}' not available. Used '{actual_perspective}' instead.",
+                    details={
+                        "requested_perspective": requested_perspective,
+                        "actual_perspective": actual_perspective,
+                        "prompt_source": prompt_source_info.get("source") if prompt_source_info else "default",
+                    }
+                )
 
             # Add prompt source info for transparency
             if prompt_source_info:

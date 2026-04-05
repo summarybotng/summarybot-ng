@@ -276,7 +276,16 @@ POST /guilds/{guild_id}/jobs/{job_id}/retry     # Retry failed job
 
 ### Pending
 - [ ] Job history cleanup cron (low priority)
-- [ ] "View Summary" link in Jobs UI (currently shows text only, no link)
+- [x] "View Summary" link in Jobs UI - Added 2026-04-05
+
+### Known Issues (See ADR-042)
+The current retry mechanism has significant limitations:
+1. **Retry doesn't execute**: `retry_job` creates a job record but doesn't trigger execution
+2. **No failure classification**: All failures treated identically
+3. **No auto-retry**: Users must manually click "Retry" for every failure
+4. **No backoff strategy**: No exponential backoff for rate limits
+
+See **ADR-042: Intelligent Job Retry Strategy** for the proposed improvements.
 
 ### Proposed Enhancements (Not Yet Implemented)
 The following features are documented in this ADR but not yet built:

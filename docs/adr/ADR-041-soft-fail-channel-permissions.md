@@ -1,7 +1,7 @@
 # ADR-041: Soft-Fail Channel Permission Handling
 
 ## Status
-Proposed
+Partially Implemented
 
 ## Context
 
@@ -184,25 +184,25 @@ async def notify_permission_issues(schedule: ScheduledTask, skipped: list):
 ## Implementation Phases
 
 ### Phase 1: Backend - Soft Fail Logic
-- [ ] Catch 403 errors in message fetching
-- [ ] Continue with accessible channels instead of failing
-- [ ] Track skipped channels in generation context
-- [ ] Don't increment failure count for permission-only issues
+- [x] Catch 403 errors in message fetching
+- [x] Continue with accessible channels instead of failing
+- [x] Track skipped channels in generation context
+- [x] Don't increment failure count for permission-only issues
 
 ### Phase 2: Metadata Enhancement
-- [ ] Add `has_access_issues`, `channels_skipped`, `skipped_channels` to summary metadata
-- [ ] Add `access_coverage_percent` calculation
-- [ ] Store skipped channel details (id, name, reason)
+- [x] Add `has_access_issues`, `channels_skipped`, `skipped_channels` to summary metadata
+- [x] Add `access_coverage_percent` calculation
+- [x] Store skipped channel details (id, name, reason)
 
 ### Phase 3: API & Filtering
-- [ ] Add `has_access_issues` filter to stored summaries endpoint
-- [ ] Add `min_coverage_percent` filter
-- [ ] Update search/filter models
+- [x] Add `has_access_issues` filter to stored summaries endpoint
+- [ ] Add `min_coverage_percent` filter (deferred - low priority)
+- [x] Update search/filter models
 
 ### Phase 4: UI Indicators
-- [ ] Add "Partial Access" badge to summary cards
-- [ ] Add skipped channels section to summary detail
-- [ ] Add access status filter to summary list
+- [x] Add "Partial Access" badge to summary cards
+- [ ] Add skipped channels section to summary detail (future enhancement)
+- [x] Add access status filter to summary list
 
 ### Phase 5: Error Consolidation
 - [ ] Consolidate multiple permission errors into single log entry

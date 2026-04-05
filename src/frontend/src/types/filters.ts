@@ -72,6 +72,10 @@ export interface SummaryFilterCriteria {
   /** Filter by perspective (general, developer, marketing, etc.) */
   perspective?: string;
 
+  // === Access Issues (ADR-041) ===
+  /** Filter by channel access issues (true = partial access, false = full access) */
+  hasAccessIssues?: boolean;
+
   // === Sorting (for list views, not feeds) ===
   sortBy?: SortByType;
   sortOrder?: SortOrderType;
@@ -149,6 +153,11 @@ export function criteriaToSearchParams(criteria: SummaryFilterCriteria): URLSear
   if (criteria.summaryLength) params.set("summary_length", criteria.summaryLength);
   if (criteria.perspective) params.set("perspective", criteria.perspective);
 
+  // ADR-041: Access issues filter
+  if (criteria.hasAccessIssues !== undefined) {
+    params.set("has_access_issues", criteria.hasAccessIssues.toString());
+  }
+
   // Sorting
   if (criteria.sortBy) params.set("sort_by", criteria.sortBy);
   if (criteria.sortOrder) params.set("sort_order", criteria.sortOrder);
@@ -185,6 +194,8 @@ export function criteriaToApiBody(criteria: SummaryFilterCriteria): Record<strin
   if (criteria.platform) body.platform = criteria.platform;
   if (criteria.summaryLength) body.summary_length = criteria.summaryLength;
   if (criteria.perspective) body.perspective = criteria.perspective;
+  // ADR-041: Access issues filter
+  if (criteria.hasAccessIssues !== undefined) body.has_access_issues = criteria.hasAccessIssues;
 
   return body;
 }
@@ -212,6 +223,7 @@ export function countActiveFilters(criteria: SummaryFilterCriteria): number {
     criteria.platform,
     criteria.summaryLength,
     criteria.perspective,
+    criteria.hasAccessIssues !== undefined,
   ].filter(Boolean).length;
 }
 
@@ -267,6 +279,7 @@ export interface ApiCriteria {
   platform?: string;
   summary_length?: string;
   perspective?: string;
+  has_access_issues?: boolean;
 }
 
 /**
@@ -301,5 +314,6 @@ export function apiCriteriaToFrontend(api: ApiCriteria | null | undefined): Summ
     platform: api.platform,
     summaryLength: api.summary_length,
     perspective: api.perspective,
+    hasAccessIssues: api.has_access_issues,
   };
 }

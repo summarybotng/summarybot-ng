@@ -28,7 +28,7 @@ from ..models.stored_summary import StoredSummary
 from ..models.error_log import ErrorType, ErrorSeverity
 from ..exceptions import (
     SummaryBotException, InsufficientContentError,
-    MessageFetchError, create_error_context
+    MessageFetchError, ChannelAccessError, create_error_context
 )
 from ..logging import CommandLogger, log_command, CommandType
 from ..logging.error_tracker import get_error_tracker
@@ -392,8 +392,10 @@ class TaskExecutor:
 
             # Fetch and process messages from all channels
             # For multi-channel, skip per-channel min check and do aggregate check later
+            # ADR-041: Track skipped channels for soft-fail handling
             all_messages = []
             channels_with_content = []  # Track channels that actually had messages
+            channels_skipped = []  # ADR-041: Track channels skipped due to access issues
 
             for channel_id in channel_ids:
                 try:
@@ -407,6 +409,17 @@ class TaskExecutor:
                     if channel_messages:
                         all_messages.extend(channel_messages)
                         channels_with_content.append(channel_id)
+                except ChannelAccessError as e:
+                    # ADR-041: Soft-fail - skip this channel but continue with others
+                    channel_name = await self._get_channel_name(channel_id)
+                    channels_skipped.append({
+                        "channel_id": channel_id,
+                        "channel_name": channel_name,
+                        "reason": "missing_access",
+                        "error_code": getattr(e, 'error_code', 'CHANNEL_ACCESS_DENIED'),
+                        "message": str(e)[:100]
+                    })
+                    logger.warning(f"ADR-041: Skipping channel {channel_id} ({channel_name}) due to access error: {e}")
                 except InsufficientContentError:
                     # For single channel, re-raise; for multi-channel, continue to next channel
                     if not is_multi_channel:
@@ -485,6 +498,36 @@ class TaskExecutor:
             if task.scheduled_task and task.scheduled_task.scope:
                 summary_result.metadata["scope_type"] = task.scheduled_task.scope.value
             summary_result.metadata["scope_channel_ids"] = channel_ids
+
+            # ADR-041: Add soft-fail access tracking to metadata
+            if channels_skipped:
+                total_requested = len(channel_ids)
+                total_accessible = len(channels_with_content)
+                coverage_percent = (total_accessible / total_requested * 100) if total_requested > 0 else 100
+
+                summary_result.metadata["has_access_issues"] = True
+                summary_result.metadata["channels_requested"] = total_requested
+                summary_result.metadata["channels_accessible"] = total_accessible
+                summary_result.metadata["channels_skipped_count"] = len(channels_skipped)
+                summary_result.metadata["skipped_channels"] = channels_skipped
+                summary_result.metadata["access_coverage_percent"] = round(coverage_percent, 1)
+
+                # Log consolidated warning instead of per-channel errors
+                logger.warning(
+                    f"ADR-041: Summary {summary_result.id} generated with partial access: "
+                    f"{total_accessible}/{total_requested} channels ({coverage_percent:.1f}% coverage). "
+                    f"Skipped {len(channels_skipped)} channel(s) due to permission issues."
+                )
+
+                # Track consolidated error for admin visibility
+                await self._track_access_issues(
+                    task=task.scheduled_task,
+                    skipped_channels=channels_skipped,
+                    summary_id=summary_result.id,
+                    coverage_percent=coverage_percent
+                )
+            else:
+                summary_result.metadata["has_access_issues"] = False
 
             # Deliver to destinations
             delivery_results = await self._deliver_summary(
@@ -811,3 +854,73 @@ class TaskExecutor:
                 logger.warning(f"No Discord destinations configured for failure notification")
         except Exception as e:
             logger.error(f"Failed to send failure notification: {e}")
+
+    async def _get_channel_name(self, channel_id: str) -> str:
+        """ADR-041: Get channel name for display in skipped channels list.
+
+        Args:
+            channel_id: Discord channel ID
+
+        Returns:
+            Channel name or fallback string
+        """
+        if not self.discord_client:
+            return f"Channel {channel_id}"
+
+        try:
+            channel = self.discord_client.get_channel(int(channel_id))
+            if channel and hasattr(channel, 'name'):
+                return f"#{channel.name}"
+        except (ValueError, AttributeError):
+            pass
+
+        return f"Channel {channel_id}"
+
+    async def _track_access_issues(
+        self,
+        task: ScheduledTask,
+        skipped_channels: List[Dict[str, Any]],
+        summary_id: str,
+        coverage_percent: float
+    ) -> None:
+        """ADR-041: Track consolidated access issue as a single warning.
+
+        Instead of logging 12+ individual errors, log one consolidated warning
+        that helps admins understand the scope of the permission issue.
+
+        Args:
+            task: The scheduled task that had access issues
+            skipped_channels: List of channels that were skipped
+            summary_id: ID of the generated summary
+            coverage_percent: Percentage of channels that were accessible
+        """
+        try:
+            tracker = get_error_tracker()
+
+            # Only track once per unique set of skipped channels (7-day cache)
+            channel_ids_hash = hash(tuple(sorted(c['channel_id'] for c in skipped_channels)))
+
+            await tracker.capture_error(
+                error=Exception(f"Schedule has partial channel access: {len(skipped_channels)} channels inaccessible"),
+                error_type=ErrorType.DISCORD_PERMISSION,
+                severity=ErrorSeverity.WARNING,  # Warning, not error - schedule still succeeded
+                guild_id=task.guild_id,
+                channel_id=task.channel_id,
+                operation=f"scheduled_task:{task.name or task.id}",
+                details={
+                    "task_id": task.id,
+                    "task_name": task.name,
+                    "summary_id": summary_id,
+                    "skipped_count": len(skipped_channels),
+                    "coverage_percent": coverage_percent,
+                    "skipped_channels": [
+                        {"id": c["channel_id"], "name": c["channel_name"]}
+                        for c in skipped_channels[:10]  # Limit to 10 for storage
+                    ],
+                    "action_required": "Grant bot 'Read Message History' permission or exclude channels from schedule",
+                    "is_consolidated": True,  # Flag to indicate this is a consolidated report
+                },
+            )
+            logger.debug(f"Tracked consolidated access warning for task {task.id}")
+        except Exception as e:
+            logger.warning(f"Failed to track access issues: {e}")

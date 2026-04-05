@@ -22,6 +22,7 @@ import {
   Clock,
   Sparkles,
   Settings2,
+  AlertTriangle,
 } from "lucide-react";
 import { SummaryActions } from "./SummaryActions";
 import type { StoredSummary, SummarySourceType } from "@/types";
@@ -185,6 +186,13 @@ export function StoredSummaryCard({
               <Badge variant="outline" className="border-green-500/50 text-green-600">
                 <Send className="mr-1 h-3 w-3" />
                 Pushed
+              </Badge>
+            )}
+            {/* ADR-041: Partial access indicator */}
+            {summary.has_access_issues && (
+              <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
+                <AlertTriangle className="mr-1 h-3 w-3" />
+                Partial Access {summary.access_coverage_percent !== undefined && `(${Math.round(summary.access_coverage_percent)}%)`}
               </Badge>
             )}
           </div>

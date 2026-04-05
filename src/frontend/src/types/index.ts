@@ -151,6 +151,18 @@ export interface SummaryMetadata {
   // Legacy fields for backwards compatibility
   model?: string;
   processing_time_ms?: number;
+  // ADR-041: Access issues tracking
+  has_access_issues?: boolean;
+  channels_requested?: number;
+  channels_accessible?: number;
+  channels_skipped_count?: number;
+  access_coverage_percent?: number;
+  skipped_channels?: Array<{
+    channel_id: string;
+    channel_name: string;
+    reason: string;
+    error_code?: string;
+  }>;
 }
 
 // Schedule types
@@ -343,6 +355,9 @@ export interface StoredSummary {
   summary_length?: string;  // brief, detailed, comprehensive
   perspective?: string;  // general, developer, marketing, etc.
   model_used?: string;  // e.g., claude-3-5-sonnet
+  // ADR-041: Access issues indicator
+  has_access_issues?: boolean;
+  access_coverage_percent?: number;
 }
 
 // ADR-020: Navigation for prev/next summary

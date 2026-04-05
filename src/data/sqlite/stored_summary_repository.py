@@ -255,6 +255,12 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             conditions.append("LOWER(json_extract(summary_json, '$.metadata.perspective')) = LOWER(?)")
             params.append(filter.perspective)
 
+        # ADR-041: Access issues filter (partial coverage detection)
+        if filter.has_access_issues is True:
+            conditions.append("json_extract(summary_json, '$.metadata.has_access_issues') = 1")
+        elif filter.has_access_issues is False:
+            conditions.append("(json_extract(summary_json, '$.metadata.has_access_issues') IS NULL OR json_extract(summary_json, '$.metadata.has_access_issues') = 0)")
+
         where_clause = " AND ".join(conditions)
         return where_clause, params
 
@@ -293,6 +299,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         # ADR-035: Generation settings filters
         summary_length: Optional[str] = None,
         perspective: Optional[str] = None,
+        # ADR-041: Access issues filter
+        has_access_issues: Optional[bool] = None,
     ) -> List[StoredSummary]:
         """Find stored summaries for a guild.
 
@@ -342,6 +350,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             platform=platform,
             summary_length=summary_length,
             perspective=perspective,
+            has_access_issues=has_access_issues,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 
@@ -409,8 +418,10 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         # ADR-035: Generation settings filters
         summary_length: Optional[str] = None,
         perspective: Optional[str] = None,
+        # ADR-041: Access issues filter
+        has_access_issues: Optional[bool] = None,
     ) -> int:
-        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026, ADR-035)."""
+        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026, ADR-035, ADR-041)."""
         # CS-002: Use shared filter builder
         filter_obj = StoredSummaryFilter(
             guild_id=guild_id,
@@ -435,6 +446,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             platform=platform,
             summary_length=summary_length,
             perspective=perspective,
+            has_access_issues=has_access_issues,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 

@@ -113,6 +113,8 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
     filters.minKeyPoints !== undefined || filters.maxKeyPoints !== undefined,
     filters.minActionItems !== undefined || filters.maxActionItems !== undefined,
     filters.minParticipants !== undefined || filters.maxParticipants !== undefined,
+    // ADR-041: Access issues filter
+    filters.hasAccessIssues !== undefined,
   ].filter(Boolean).length;
 
   const handleClearFilters = () => {
@@ -136,6 +138,8 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
       maxActionItems: undefined,
       minParticipants: undefined,
       maxParticipants: undefined,
+      // ADR-041: Clear access issues filter
+      hasAccessIssues: undefined,
     });
   };
 
@@ -379,6 +383,39 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
                   >
                     <AlertTriangle className="mr-1 h-3 w-3" />
                     No Grounding
+                  </Button>
+                </div>
+              </div>
+
+              {/* ADR-041: Access issues filter */}
+              <div className="space-y-2">
+                <label className="text-sm text-muted-foreground">Channel Access</label>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={filters.hasAccessIssues === false ? "default" : "outline"}
+                    size="sm"
+                    onClick={() =>
+                      onFiltersChange({
+                        ...filters,
+                        hasAccessIssues: filters.hasAccessIssues === false ? undefined : false,
+                      })
+                    }
+                  >
+                    <CheckCircle2 className="mr-1 h-3 w-3" />
+                    Full Access
+                  </Button>
+                  <Button
+                    variant={filters.hasAccessIssues === true ? "default" : "outline"}
+                    size="sm"
+                    onClick={() =>
+                      onFiltersChange({
+                        ...filters,
+                        hasAccessIssues: filters.hasAccessIssues === true ? undefined : true,
+                      })
+                    }
+                  >
+                    <AlertTriangle className="mr-1 h-3 w-3" />
+                    Partial Access
                   </Button>
                 </div>
               </div>
@@ -755,6 +792,18 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
               Perspective: {filters.perspective}
               <button
                 onClick={() => onFiltersChange({ ...filters, perspective: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {/* ADR-041: Access issues filter badge */}
+          {filters.hasAccessIssues !== undefined && (
+            <Badge variant="secondary" className="gap-1">
+              {filters.hasAccessIssues ? "Partial Access" : "Full Access"}
+              <button
+                onClick={() => onFiltersChange({ ...filters, hasAccessIssues: undefined })}
                 className="ml-1 hover:text-destructive"
               >
                 <X className="h-3 w-3" />

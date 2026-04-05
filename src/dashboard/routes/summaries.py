@@ -890,6 +890,8 @@ async def list_stored_summaries(
     # ADR-035: Generation settings filters
     summary_length: Optional[str] = Query(None, description="Filter by summary length (brief, detailed, comprehensive)"),
     perspective: Optional[str] = Query(None, description="Filter by perspective (general, developer, etc.)"),
+    # ADR-041: Access issues filter
+    has_access_issues: Optional[bool] = Query(None, description="Filter by channel access issues (True = partial access, False = full access)"),
     user: dict = Depends(get_current_user),
 ):
     """List stored summaries for a guild.
@@ -899,6 +901,7 @@ async def list_stored_summaries(
     ADR-018: Content-based filtering by key points, action items, participants.
     ADR-026: Platform filtering by archive_source_key prefix.
     ADR-035: Generation settings filtering by summary_length, perspective.
+    ADR-041: Access issues filtering for partial coverage detection.
     """
     _check_guild_access(guild_id, user)
     _get_guild_or_404(guild_id)
@@ -959,6 +962,8 @@ async def list_stored_summaries(
         # ADR-035: Generation settings filters
         summary_length=summary_length,
         perspective=perspective,
+        # ADR-041: Access issues filter
+        has_access_issues=has_access_issues,
     )
 
     total = await stored_repo.count_by_guild(
@@ -988,6 +993,8 @@ async def list_stored_summaries(
         # ADR-035: Generation settings filters
         summary_length=summary_length,
         perspective=perspective,
+        # ADR-041: Access issues filter
+        has_access_issues=has_access_issues,
     )
 
     # ADR-009: Build schedule name lookup for summaries with schedule_ids

@@ -44,3 +44,5 @@ class StoredSummaryFilter:
     # ADR-035: Generation settings filters
     summary_length: Optional[str] = None  # 'brief' | 'detailed' | 'comprehensive'
     perspective: Optional[str] = None  # 'general' | 'developer' | etc.
+    # ADR-041: Access issues filter
+    has_access_issues: Optional[bool] = None  # True = partial access, False = full access

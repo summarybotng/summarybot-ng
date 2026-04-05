@@ -191,10 +191,14 @@ function JobCard({ job, onCancel, onRetry, isCancelling, isRetrying }: JobCardPr
               </div>
             )}
             {job.summary_id && (
-              <div className="flex items-center gap-1 text-green-600">
+              <a
+                href={`/guilds/${job.guild_id}/summaries?view=${job.summary_id}`}
+                className="flex items-center gap-1 text-green-600 hover:text-green-700 hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <CheckCircle2 className="h-3 w-3" />
-                <span>Summary created</span>
-              </div>
+                <span>View Summary</span>
+              </a>
             )}
           </div>
 

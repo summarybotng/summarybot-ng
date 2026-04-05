@@ -115,18 +115,18 @@ class TaskExecutor:
             DestinationType.DASHBOARD: DashboardDeliveryStrategy(),
         }
 
-    async def _get_template_content(self, task: SummaryTask) -> Optional[str]:
+    async def _get_template_content(self, task: SummaryTask) -> tuple[Optional[str], Optional[str], Optional[str]]:
         """ADR-034: Get custom system prompt from guild template if configured.
 
         Args:
             task: Summary task with scheduled task reference
 
         Returns:
-            Template content if configured, None otherwise
+            Tuple of (content, name, id) - all None if no template configured
         """
         template_id = getattr(task.scheduled_task, 'prompt_template_id', None)
         if not template_id:
-            return None
+            return (None, None, None)
 
         try:
             from ..data.repositories import get_prompt_template_repository

@@ -52,6 +52,8 @@ export function Summaries() {
   // ADR-009, ADR-012: Read source and highlight from URL params
   const sourceParam = searchParams.get("source");
   const highlightParam = searchParams.get("highlight");
+  // Deep link: open specific summary from Jobs page
+  const viewSummaryId = searchParams.get("view");
 
   // ADR-012: Default to "all" (All Summaries) tab - unified view
   const [activeTab, setActiveTab] = useState("all");
@@ -618,7 +620,7 @@ export function Summaries() {
 
         {/* All Summaries Tab - Unified view (ADR-012) */}
         <TabsContent value="all">
-          <StoredSummariesTab guildId={id || ""} initialSource={sourceParam as "archive" | "scheduled" | "manual" | undefined} />
+          <StoredSummariesTab guildId={id || ""} initialSource={sourceParam as "archive" | "scheduled" | "manual" | undefined} viewSummaryId={viewSummaryId} />
         </TabsContent>
 
         {/* Retrospective Jobs Tab - Archive job management */}

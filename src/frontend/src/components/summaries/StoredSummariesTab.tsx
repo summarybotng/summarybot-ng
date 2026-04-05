@@ -6,7 +6,7 @@
  * ADR-017: Enhanced with calendar view, filtering, sorting, and integrity indicators.
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, useSendToEmail, useRegenerateSummary, type SummarySourceType, type RegenerateOptions } from "@/hooks/useStoredSummaries";
@@ -123,9 +123,10 @@ function groupSummariesByRecency(summaries: StoredSummary[]): {
 interface StoredSummariesTabProps {
   guildId: string;
   initialSource?: SummarySourceType;  // ADR-009: For deep linking from Archive page
+  viewSummaryId?: string | null;  // For deep linking from Jobs page
 }
 
-export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTabProps) {
+export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: StoredSummariesTabProps) {
   const [page, setPage] = useState(1);
   const [viewMode, setViewMode] = useState<"list" | "calendar">("list");  // ADR-017
   const [selectedSummary, setSelectedSummary] = useState<string | null>(null);
@@ -149,6 +150,13 @@ export function StoredSummariesTab({ guildId, initialSource }: StoredSummariesTa
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: guild } = useGuild(guildId);
+
+  // Deep link: auto-open summary when viewSummaryId is provided (e.g., from Jobs page)
+  useEffect(() => {
+    if (viewSummaryId) {
+      setSelectedSummary(viewSummaryId);
+    }
+  }, [viewSummaryId]);
   const { data, isLoading, isError, refetch } = useStoredSummaries(guildId, {
     page,
     limit: 20,

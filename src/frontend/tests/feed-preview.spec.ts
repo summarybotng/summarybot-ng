@@ -18,6 +18,9 @@ test.describe('Feed Preview Feature', () => {
   const guildId = process.env.TEST_GUILD_ID || '1283874310720716890';
 
   test('API: feed list returns feeds with criteria', async ({ request }) => {
+    // Skip if no test auth key (production doesn't support test bypass)
+    test.skip(!testAuthKey, 'TEST_AUTH_KEY required for API tests');
+
     const response = await request.get(`${baseUrl}/api/v1/guilds/${guildId}/feeds`, {
       headers: { 'X-Test-Auth-Key': testAuthKey }
     });
@@ -38,6 +41,9 @@ test.describe('Feed Preview Feature', () => {
   });
 
   test('API: feed preview returns filtered summaries', async ({ request }) => {
+    // Skip if no test auth key (production doesn't support test bypass)
+    test.skip(!testAuthKey, 'TEST_AUTH_KEY required for API tests');
+
     // First get feeds to find one with criteria
     const feedsResponse = await request.get(`${baseUrl}/api/v1/guilds/${guildId}/feeds`, {
       headers: { 'X-Test-Auth-Key': testAuthKey }
@@ -84,6 +90,9 @@ test.describe('Feed Preview Feature', () => {
   });
 
   test('API: RSS feed returns filtered content', async ({ request }) => {
+    // Skip if no test auth key (production doesn't support test bypass)
+    test.skip(!testAuthKey, 'TEST_AUTH_KEY required for API tests');
+
     // Get feeds to find one with a token
     const feedsResponse = await request.get(`${baseUrl}/api/v1/guilds/${guildId}/feeds`, {
       headers: { 'X-Test-Auth-Key': testAuthKey }

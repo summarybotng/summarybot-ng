@@ -58,7 +58,10 @@ Currently, summary generation jobs have inconsistent visibility:
 
 ## 3. UI Changes
 
-### Summaries Page Tabs (Updated from ADR-012):
+### Navigation Placement
+> **Note:** See ADR-040 for planned UI rethink moving Jobs to left nav bar.
+
+Current placement (Summaries Page Tabs):
 ```
 [ All Summaries ] [ Jobs ] [ Retrospective Setup ]
 ```
@@ -96,6 +99,65 @@ Currently, summary generation jobs have inconsistent visibility:
 │ Status: ✗ Failed - Database locked                  │
 │                                          [Retry]    │
 └─────────────────────────────────────────────────────┘
+```
+
+### Regeneration Jobs - Parameter Change Tracking
+
+When a summary is regenerated (via Retry or manual re-run), jobs should track which parameters changed:
+
+```
+┌─────────────────────────────────────────────────────┐
+│ [Regeneration] #general Summary                     │
+│ Regenerating from: summary-abc123                   │
+│ Started: 1 minute ago                               │
+│ Status: ████░░░░░░ 40% - Fetching messages...       │
+│                                                     │
+│ Parameter Changes:                                  │
+│   perspective: general → security                   │
+│   summary_length: brief → detailed                  │
+│   prompt_template: (none) → "Security Review v2"    │
+│                                          [Cancel]   │
+└─────────────────────────────────────────────────────┘
+```
+
+#### Regeneration Metadata
+
+Jobs for regeneration should include:
+
+```python
+class RegenerationMetadata(TypedDict):
+    original_summary_id: str
+    parameter_changes: list[ParameterChange]
+    reason: str  # "retry_failed", "parameter_update", "manual_regen"
+
+class ParameterChange(TypedDict):
+    field: str       # "perspective", "summary_length", "prompt_template_id"
+    old_value: Any
+    new_value: Any
+```
+
+#### API Extension
+
+```python
+@router.post("/guilds/{guild_id}/summaries/{summary_id}/regenerate")
+async def regenerate_summary(
+    guild_id: str,
+    summary_id: str,
+    body: RegenerationRequest,
+    user: dict = Depends(get_current_user)
+) -> JobResponse:
+    """
+    Regenerate a summary with optionally modified parameters.
+    Tracks old vs new parameter values in the job record.
+    """
+    pass
+
+class RegenerationRequest(BaseModel):
+    # Optional overrides - if not provided, uses original values
+    perspective: Optional[str] = None
+    summary_length: Optional[str] = None
+    prompt_template_id: Optional[str] = None
+    reason: str = "manual_regen"
 ```
 
 ## 4. Database Schema

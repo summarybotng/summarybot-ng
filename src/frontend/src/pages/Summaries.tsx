@@ -30,14 +30,13 @@ import {
 } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, FileText, Loader2, Hash, FolderOpen, Server, Search, Archive as ArchiveIcon, Briefcase, FileCode, Calendar as CalendarIcon } from "lucide-react";
+import { Sparkles, FileText, Loader2, Hash, FolderOpen, Server, Search, Archive as ArchiveIcon, FileCode, Calendar as CalendarIcon, ExternalLink } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { StoredSummariesTab } from "@/components/summaries/StoredSummariesTab";
-import { JobsTab } from "@/components/summaries/JobsTab";
 import type { SummaryOptions, GenerateRequest } from "@/types";
 
 export function Summaries() {
@@ -556,7 +555,7 @@ export function Summaries() {
         </Dialog>
       </motion.div>
 
-      {/* Generation Progress - ADR-035: Show parameters */}
+      {/* Generation Progress - ADR-035: Show parameters, ADR-040: Link to Jobs */}
       {activeTaskId && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <Card className="border-primary/50 bg-primary/5">
@@ -578,21 +577,23 @@ export function Summaries() {
                   <p className="text-sm text-muted-foreground">This may take a moment</p>
                 )}
               </div>
+              <Button variant="ghost" size="sm" asChild>
+                <a href={`/guilds/${id}/jobs`} className="flex items-center gap-1.5">
+                  View in Jobs
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </Button>
             </CardContent>
           </Card>
         </motion.div>
       )}
 
-      {/* ADR-012, ADR-013: Consolidated Tabs - All Summaries + Jobs + Retrospective */}
+      {/* ADR-012, ADR-040: Consolidated Tabs - All Summaries + Retrospective (Jobs moved to sidebar) */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="all" className="gap-2">
             <FileText className="h-4 w-4" />
             All Summaries
-          </TabsTrigger>
-          <TabsTrigger value="jobs" className="gap-2">
-            <Briefcase className="h-4 w-4" />
-            Jobs
           </TabsTrigger>
           <TabsTrigger value="retrospective" className="gap-2">
             <ArchiveIcon className="h-4 w-4" />
@@ -603,11 +604,6 @@ export function Summaries() {
         {/* All Summaries Tab - Unified view (ADR-012) */}
         <TabsContent value="all">
           <StoredSummariesTab guildId={id || ""} initialSource={sourceParam as "archive" | "scheduled" | "manual" | undefined} />
-        </TabsContent>
-
-        {/* Jobs Tab - Unified job tracking (ADR-013) */}
-        <TabsContent value="jobs">
-          <JobsTab guildId={id || ""} />
         </TabsContent>
 
         {/* Retrospective Jobs Tab - Archive job management */}

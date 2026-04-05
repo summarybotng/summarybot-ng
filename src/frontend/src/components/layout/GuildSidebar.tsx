@@ -2,6 +2,7 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useGuild } from "@/hooks/useGuilds";
 import { useUnresolvedErrorCount } from "@/hooks/useErrors";
+import { useActiveJobCount } from "@/hooks/useJobs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -20,6 +21,7 @@ import {
   LayoutDashboard,
   Hash,
   FileText,
+  Briefcase,
   Calendar,
   Webhook,
   Rss,
@@ -30,10 +32,12 @@ import {
   FileCode,
 } from "lucide-react";
 
+// ADR-040: Jobs promoted to top-level navigation
 const navItems = [
   { icon: LayoutDashboard, label: "Overview", path: "" },
   { icon: Hash, label: "Channels", path: "/channels" },
   { icon: FileText, label: "Summaries", path: "/summaries" },
+  { icon: Briefcase, label: "Jobs", path: "/jobs", showJobsBadge: true },
   { icon: Calendar, label: "Schedules", path: "/schedules" },
   { icon: FileCode, label: "Prompts", path: "/prompt-templates" },
   { icon: Webhook, label: "Webhooks", path: "/webhooks" },
@@ -48,6 +52,7 @@ export function GuildSidebar() {
   const location = useLocation();
   const { data: guild } = useGuild(id || "");
   const { data: unresolvedErrorCount } = useUnresolvedErrorCount(id || "");
+  const { data: activeJobCount } = useActiveJobCount(id || "");
   const { setOpenMobile } = useSidebar();
 
   const basePath = `/guilds/${id}`;
@@ -101,7 +106,7 @@ export function GuildSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map(({ icon: Icon, label, path, showBadge }) => (
+              {navItems.map(({ icon: Icon, label, path, showBadge, showJobsBadge }) => (
                 <SidebarMenuItem key={path}>
                   <SidebarMenuButton
                     asChild
@@ -117,6 +122,15 @@ export function GuildSidebar() {
                     >
                       <Icon className="h-4 w-4" />
                       <span className="flex-1">{label}</span>
+                      {/* ADR-040: Jobs badge showing active/failed count */}
+                      {showJobsBadge && activeJobCount && activeJobCount.total > 0 && (
+                        <Badge
+                          variant={activeJobCount.hasFailedJobs ? "destructive" : "secondary"}
+                          className="h-5 min-w-5 px-1.5 text-xs"
+                        >
+                          {activeJobCount.total > 99 ? "99+" : activeJobCount.total}
+                        </Badge>
+                      )}
                       {showBadge && unresolvedErrorCount && unresolvedErrorCount > 0 && (
                         <Badge variant="destructive" className="h-5 min-w-5 px-1.5 text-xs">
                           {unresolvedErrorCount > 99 ? "99+" : unresolvedErrorCount}

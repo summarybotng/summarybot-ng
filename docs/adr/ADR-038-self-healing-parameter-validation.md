@@ -129,14 +129,67 @@ Store validation results in summary metadata:
 
 ```json
 {
-  "perspective": "security",
-  "perspective_validated": false,
-  "perspective_fallback": "general",
+  "perspective": "general",
+  "requested_perspective": "security",
+  "had_fallback": true,
+  "fallback_type": "perspective",
   "prompt_path": "defaults/discussion.md",
   "validation_warnings": [
     "Requested perspective 'security' not found, used fallback"
   ]
 }
+```
+
+### 6. Fallback Filtering
+
+Users must be able to filter summaries by fallback status:
+
+```typescript
+interface FallbackFilter {
+  hadFallback?: boolean;           // true = only fallbacks, false = only exact matches
+  fallbackType?: string[];         // "perspective", "model", "prompt_template"
+  requestedPerspective?: string;   // Filter by what was originally requested
+}
+```
+
+#### API Support
+
+```python
+# New filter parameters for summary list/feed endpoints
+@router.get("/guilds/{guild_id}/summaries")
+async def list_summaries(
+    # ... existing params ...
+    had_fallback: Optional[bool] = Query(None, description="Filter by fallback status"),
+    fallback_type: Optional[str] = Query(None, description="Filter by fallback type"),
+):
+    pass
+```
+
+#### Database Query
+
+```sql
+-- Find summaries with perspective fallback
+SELECT * FROM stored_summaries
+WHERE json_extract(summary_json, '$.metadata.requested_perspective') IS NOT NULL
+  AND json_extract(summary_json, '$.metadata.perspective') !=
+      json_extract(summary_json, '$.metadata.requested_perspective');
+
+-- Find summaries without any fallback
+SELECT * FROM stored_summaries
+WHERE json_extract(summary_json, '$.metadata.requested_perspective') IS NULL
+   OR json_extract(summary_json, '$.metadata.perspective') =
+      json_extract(summary_json, '$.metadata.requested_perspective');
+```
+
+#### UI Filter Component
+
+```tsx
+<FilterGroup label="Generation Status">
+  <FilterOption value="exact">Exact match (no fallback)</FilterOption>
+  <FilterOption value="fallback">Had fallback</FilterOption>
+  <FilterOption value="perspective_fallback">Perspective fallback</FilterOption>
+  <FilterOption value="model_fallback">Model fallback</FilterOption>
+</FilterGroup>
 ```
 
 ### 6. Real-time Notifications

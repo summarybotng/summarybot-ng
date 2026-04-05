@@ -14,6 +14,7 @@ import { Guilds } from "@/pages/Guilds";
 import { GuildDashboard } from "@/pages/GuildDashboard";
 import { Channels } from "@/pages/Channels";
 import { Summaries } from "@/pages/Summaries";
+import { Jobs } from "@/pages/Jobs";
 import { Schedules } from "@/pages/Schedules";
 import { Webhooks } from "@/pages/Webhooks";
 import { Feeds } from "@/pages/Feeds";
@@ -69,6 +70,7 @@ const App = () => (
               <Route index element={<GuildDashboard />} />
               <Route path="channels" element={<Channels />} />
               <Route path="summaries" element={<Summaries />} />
+              <Route path="jobs" element={<Jobs />} />
               <Route path="schedules" element={<Schedules />} />
               <Route path="webhooks" element={<Webhooks />} />
               <Route path="feeds" element={<Feeds />} />

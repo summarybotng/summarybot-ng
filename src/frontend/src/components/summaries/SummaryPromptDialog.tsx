@@ -6,6 +6,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { FileText, Bot, MessageSquare, Copy, Check, ExternalLink, ChevronDown, AlertTriangle } from "lucide-react";
+import { FileText, Bot, MessageSquare, Copy, Check, ExternalLink, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PromptSource } from "@/types";
 
@@ -36,6 +37,8 @@ export function SummaryPromptDialog({
   const { data: promptData, isLoading: promptLoading } = useSummaryPrompt(guildId, summaryId, open);
   const { data: summaryDetail, isLoading: summaryLoading } = useSummary(guildId, summaryId);
   const [copiedTab, setCopiedTab] = useState<string | null>(null);
+  // ADR-038: Generation details collapsed by default
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const isLoading = promptLoading || summaryLoading;
   const promptSource = summaryDetail?.metadata?.prompt_source;
@@ -61,63 +64,80 @@ export function SummaryPromptDialog({
           </DialogTitle>
         </DialogHeader>
 
-        {isLoading ? (
-          <div className="space-y-4 py-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-48 w-full" />
-          </div>
-        ) : (
-          <Tabs defaultValue="source" className="mt-2">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="source" className="text-xs sm:text-sm">
-                <FileText className="mr-1.5 h-3.5 w-3.5 hidden sm:inline" />
-                Source
-              </TabsTrigger>
-              <TabsTrigger value="system" className="text-xs sm:text-sm">
-                <Bot className="mr-1.5 h-3.5 w-3.5 hidden sm:inline" />
-                System
-              </TabsTrigger>
-              <TabsTrigger value="user" className="text-xs sm:text-sm">
-                <MessageSquare className="mr-1.5 h-3.5 w-3.5 hidden sm:inline" />
-                User
-              </TabsTrigger>
-            </TabsList>
+        {/* ADR-038: Collapsed by default - click to expand details */}
+        <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen}>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" className="w-full justify-between p-3 h-auto">
+              <span className="text-sm font-medium">
+                {detailsOpen ? "Hide Details" : "Show Details"}
+              </span>
+              {detailsOpen ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            {isLoading ? (
+              <div className="space-y-4 py-4">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-48 w-full" />
+              </div>
+            ) : (
+              <Tabs defaultValue="source" className="mt-2">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="source" className="text-xs sm:text-sm">
+                    <FileText className="mr-1.5 h-3.5 w-3.5 hidden sm:inline" />
+                    Source
+                  </TabsTrigger>
+                  <TabsTrigger value="system" className="text-xs sm:text-sm">
+                    <Bot className="mr-1.5 h-3.5 w-3.5 hidden sm:inline" />
+                    System
+                  </TabsTrigger>
+                  <TabsTrigger value="user" className="text-xs sm:text-sm">
+                    <MessageSquare className="mr-1.5 h-3.5 w-3.5 hidden sm:inline" />
+                    User
+                  </TabsTrigger>
+                </TabsList>
 
-            <TabsContent value="source" className="mt-4">
-              <PromptTabContent
-                title="Original Messages"
-                description="The raw messages that were summarized"
-                content={promptData?.source_content}
-                isCode={false}
-                onCopy={() => handleCopy(promptData?.source_content ?? null, "source")}
-                copied={copiedTab === "source"}
-              />
-            </TabsContent>
+                <TabsContent value="source" className="mt-4">
+                  <PromptTabContent
+                    title="Original Messages"
+                    description="The raw messages that were summarized"
+                    content={promptData?.source_content}
+                    isCode={false}
+                    onCopy={() => handleCopy(promptData?.source_content ?? null, "source")}
+                    copied={copiedTab === "source"}
+                  />
+                </TabsContent>
 
-            <TabsContent value="system" className="mt-4 space-y-4">
-              {promptSource && <PromptSourceSection promptSource={promptSource} />}
-              <PromptTabContent
-                title="System Prompt"
-                description="Instructions that define how the AI should summarize"
-                content={promptData?.prompt_system}
-                isCode={true}
-                onCopy={() => handleCopy(promptData?.prompt_system ?? null, "system")}
-                copied={copiedTab === "system"}
-              />
-            </TabsContent>
+                <TabsContent value="system" className="mt-4 space-y-4">
+                  {promptSource && <PromptSourceSection promptSource={promptSource} />}
+                  <PromptTabContent
+                    title="System Prompt"
+                    description="Instructions that define how the AI should summarize"
+                    content={promptData?.prompt_system}
+                    isCode={true}
+                    onCopy={() => handleCopy(promptData?.prompt_system ?? null, "system")}
+                    copied={copiedTab === "system"}
+                  />
+                </TabsContent>
 
-            <TabsContent value="user" className="mt-4">
-              <PromptTabContent
-                title="User Prompt"
-                description="The formatted messages sent to the AI"
-                content={promptData?.prompt_user}
-                isCode={true}
-                onCopy={() => handleCopy(promptData?.prompt_user ?? null, "user")}
-                copied={copiedTab === "user"}
-              />
-            </TabsContent>
-          </Tabs>
-        )}
+                <TabsContent value="user" className="mt-4">
+                  <PromptTabContent
+                    title="User Prompt"
+                    description="The formatted messages sent to the AI"
+                    content={promptData?.prompt_user}
+                    isCode={true}
+                    onCopy={() => handleCopy(promptData?.prompt_user ?? null, "user")}
+                    copied={copiedTab === "user"}
+                  />
+                </TabsContent>
+              </Tabs>
+            )}
+          </CollapsibleContent>
+        </Collapsible>
       </DialogContent>
     </Dialog>
   );

@@ -209,7 +209,7 @@ class SQLiteAuditRepository:
         end_date: Optional[datetime] = None,
     ) -> int:
         """Count audit logs matching criteria."""
-        query = "SELECT COUNT(*) FROM audit_logs WHERE 1=1"
+        query = "SELECT COUNT(*) as cnt FROM audit_logs WHERE 1=1"
         params: List[Any] = []
 
         if user_id:
@@ -249,7 +249,7 @@ class SQLiteAuditRepository:
             params.append(end_date.isoformat())
 
         result = await self.connection.fetch_one(query, tuple(params))
-        return result[0] if result else 0
+        return result["cnt"] if result else 0
 
     async def get_summary(
         self,
@@ -276,9 +276,9 @@ class SQLiteAuditRepository:
 
         # Total count
         total_result = await self.connection.fetch_one(
-            f"SELECT COUNT(*) {base_query}", tuple(params)
+            f"SELECT COUNT(*) as cnt {base_query}", tuple(params)
         )
-        total_count = total_result[0] if total_result else 0
+        total_count = total_result["cnt"] if total_result else 0
 
         # By category
         cat_query = f"SELECT category, COUNT(*) as cnt {base_query} GROUP BY category"
@@ -309,15 +309,15 @@ class SQLiteAuditRepository:
 
         # Failed count
         failed_result = await self.connection.fetch_one(
-            f"SELECT COUNT(*) {base_query} AND success = 0", tuple(params)
+            f"SELECT COUNT(*) as cnt {base_query} AND success = 0", tuple(params)
         )
-        failed_count = failed_result[0] if failed_result else 0
+        failed_count = failed_result["cnt"] if failed_result else 0
 
         # Alert count
         alert_result = await self.connection.fetch_one(
-            f"SELECT COUNT(*) {base_query} AND severity IN ('warning', 'alert')", tuple(params)
+            f"SELECT COUNT(*) as cnt {base_query} AND severity IN ('warning', 'alert')", tuple(params)
         )
-        alert_count = alert_result[0] if alert_result else 0
+        alert_count = alert_result["cnt"] if alert_result else 0
 
         return AuditSummary(
             total_count=total_count,

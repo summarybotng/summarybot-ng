@@ -39,7 +39,7 @@ This ADR serves as a central tracker for all deferred technical issues across th
 | P2-001 | Source ownership/hijacking risk | ADR-026:#2 | Open | - |
 | P2-002 | Silent parameter fallbacks | ADR-038 | Proposed | - |
 | P2-003 | All-or-nothing guild access | ADR-026:#6 | Deferred to Phase 3 | - |
-| P2-004 | No audit trail for actions | ADR-026:#9 | Open | - |
+| P2-004 | No audit trail for actions | ADR-026:#9 | **Proposed** | ADR-045 |
 | P2-005 | WhatsApp edited messages not tracked | ADR-026:#3 | Open | - |
 | P2-006 | No unified cross-guild view | ADR-026:#13 | Deferred to Phase 4+ | - |
 | P2-007 | Email delivery not implemented | ADR-030 | Proposed | - |
@@ -149,7 +149,7 @@ P2-002: Silent parameter fallbacks
 - [x] P1-001: Fix retry_job execution ✓ (2026-04-12)
 - [ ] P1-003: Implement failure classification (ADR-042)
 - [ ] P1-004: Implement auto-retry worker (ADR-042)
-- [ ] P2-004: Add basic audit logging
+- [ ] P2-004: Implement audit logging system (ADR-045) ← Proposed 2026-04-12
 
 ### Phase 2: Self-Healing & Observability (Target: 3-4 weeks)
 - [ ] P2-002: Parameter validation (ADR-038)
@@ -234,3 +234,4 @@ When discovering issue interactions:
 - [ADR-039: User Problem Reporting](./ADR-039-user-problem-reporting.md)
 - [ADR-042: Intelligent Job Retry Strategy](./ADR-042-intelligent-job-retry.md)
 - [ADR-043: Slack Workspace Integration](./ADR-043-slack-workspace-integration-feasibility.md)
+- [ADR-045: Audit Logging System](./ADR-045-audit-logging-system.md)

@@ -279,13 +279,14 @@ POST /guilds/{guild_id}/jobs/{job_id}/retry     # Retry failed job
 - [x] "View Summary" link in Jobs UI - Added 2026-04-05
 
 ### Known Issues (See ADR-042)
-The current retry mechanism has significant limitations:
-1. **Retry doesn't execute**: `retry_job` creates a job record but doesn't trigger execution
+The current retry mechanism has some limitations:
+1. ~~**Retry doesn't execute**: `retry_job` creates a job record but doesn't trigger execution~~ **FIXED** (2026-04-12, see ADR-044)
 2. **No failure classification**: All failures treated identically
 3. **No auto-retry**: Users must manually click "Retry" for every failure
 4. **No backoff strategy**: No exponential backoff for rate limits
 
 See **ADR-042: Intelligent Job Retry Strategy** for the proposed improvements.
+See **ADR-044: Deferred Technical Debt Tracker** for the full list of pending issues.
 
 ### Proposed Enhancements (Not Yet Implemented)
 The following features are documented in this ADR but not yet built:

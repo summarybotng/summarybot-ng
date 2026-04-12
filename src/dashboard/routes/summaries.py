@@ -2844,12 +2844,22 @@ async def retry_job(
 
     logger.info(f"Created retry job {new_job_id} from failed job {job_id}")
 
-    # TODO: Actually trigger the job execution based on job_type
-    # For now, just create the record - the user can check the Jobs tab
+    # ADR-042: Actually execute the job (fixes the TODO)
+    from ..services.job_executor import execute_job
+
+    execution_started = await execute_job(new_job)
+    if not execution_started:
+        logger.warning(f"Failed to start execution for retry job {new_job_id}")
+        return JobRetryResponse(
+            success=True,
+            job_id=job_id,
+            new_job_id=new_job_id,
+            message="Retry job created but execution could not start. Check job status.",
+        )
 
     return JobRetryResponse(
         success=True,
         job_id=job_id,
         new_job_id=new_job_id,
-        message="Retry job created. It will be processed shortly.",
+        message="Retry job created and execution started.",
     )

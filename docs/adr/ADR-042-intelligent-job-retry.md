@@ -405,10 +405,12 @@ WHERE status = 'failed' AND next_retry_at IS NOT NULL;
 3. Update `job.fail()` to classify and set guidance
 4. Add new fields to job schema
 
-### Phase 2: Fix Manual Retry
-1. Update `retry_job` endpoint to actually execute the job
-2. Track retry chain (parent → child relationships)
-3. Prevent retry of PERSISTENT/CODE_ERROR without force flag
+### Phase 2: Fix Manual Retry ✓ COMPLETED (2026-04-12)
+1. ~~Update `retry_job` endpoint to actually execute the job~~ **DONE** - Created `job_executor.py` service
+2. Track retry chain (parent → child relationships) - Basic tracking via `metadata.retry_of`
+3. Prevent retry of PERSISTENT/CODE_ERROR without force flag - Pending failure classification
+
+See **ADR-044: Deferred Technical Debt Tracker** for implementation details.
 
 ### Phase 3: Auto-Retry Worker
 1. Create `RetryWorker` class

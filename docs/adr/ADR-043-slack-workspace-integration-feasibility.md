@@ -2,7 +2,7 @@
 
 **Status:** Proposed (Deep Dive Analysis)
 **Date:** 2026-04-11
-**Depends on:** ADR-002 (WhatsApp Data Source Integration)
+**Depends on:** ADR-002 (WhatsApp Data Source Integration), ADR-026 (Multi-Platform Source Architecture)
 **Context Domain:** Data Source Integration / Multi-Platform Support
 
 ---
@@ -865,7 +865,295 @@ CREATE INDEX idx_slack_users_workspace ON slack_users(workspace_id);
 
 ---
 
-## 16. References
+## 16. User Interface Paradigm Differences
+
+### 16.1 Discord-Centric Current UI
+
+The current SummaryBot-NG UI is heavily Discord-oriented:
+
+```typescript
+// Current type assumptions (src/frontend/src/types/index.ts)
+export interface Guild {
+  id: string;
+  name: string;
+  icon: string | null;
+  channels: Channel[];
+  categories: Category[];  // ← Discord-only concept
+}
+```
+
+**Current UI Flow:**
+1. User logs in via Discord OAuth
+2. Dashboard shows "Your Servers" (Discord guilds)
+3. User selects a server → sees channels grouped by categories
+4. Summaries are scoped to guild → channel hierarchy
+
+### 16.2 Slack-Specific UI Requirements
+
+Slack users expect different interaction patterns:
+
+| Pattern | Discord UI | Slack UI Expectation |
+|---------|------------|---------------------|
+| **Navigation** | Server list → Channels | Workspace → Channels (flat) |
+| **Categories** | Visual groupings | ❌ Not applicable |
+| **Threads** | Separate tab/view | Inline with messages |
+| **DMs** | Separate DM section | Integrated in channel list |
+| **Search** | Per-channel | Workspace-wide prominent |
+| **Reactions** | Emoji picker | Similar but fewer custom emoji |
+| **Mentions** | @user or @role | @user, @channel, @here |
+| **Workspace branding** | Server icon | Workspace icon + name |
+
+### 16.3 Proposed Unified Navigation
+
+To support multiple platforms, the UI needs platform-agnostic terminology:
+
+```
+Current (Discord-only):
+├── Your Servers ← Discord terminology
+│   ├── Gaming Server
+│   └── Work Server
+
+Proposed (Multi-platform):
+├── Your Sources ← Platform-agnostic
+│   ├── 🎮 Gaming Server (Discord)
+│   ├── 💼 Acme Corp (Slack)
+│   └── 📱 Team Chat (WhatsApp)
+```
+
+**Implementation:**
+```typescript
+// Proposed unified type (aligns with ADR-026)
+export interface Source {
+  id: string;
+  name: string;
+  icon: string | null;
+  type: SourceType;  // 'discord' | 'slack' | 'whatsapp'
+  channels: UnifiedChannel[];
+  // categories only for Discord
+  categories?: Category[];
+}
+
+export interface UnifiedChannel {
+  id: string;
+  name: string;
+  type: ChannelType;
+  source_type: SourceType;
+  // Thread count for Slack channels
+  active_threads?: number;
+}
+```
+
+### 16.4 Platform-Specific UI Adaptations
+
+#### Slack-Specific UI Elements
+
+1. **Thread Indicators**: Show inline thread reply counts
+   ```
+   ├── #engineering
+   │   ├── "Deploy v2.0 to prod" [15 replies] ← Slack thread indicator
+   │   └── "Outage post-mortem"  [42 replies]
+   ```
+
+2. **Workspace Selector**: Slack users may have multiple workspaces
+   ```
+   Acme Corp (Slack) ▼
+   ├── #general
+   ├── #engineering
+   └── #random
+   ```
+
+3. **Channel Privacy Icons**: Slack distinguishes public/private more prominently
+   ```
+   # public-channel     ← Hash = public
+   🔒 private-channel   ← Lock = private
+   ```
+
+4. **Slack Connect Badge**: Mark external channels
+   ```
+   #shared-with-partner 🔗  ← External collaboration
+   ```
+
+#### Discord-Specific UI Elements (Retain)
+
+1. **Categories**: Continue showing category groupings
+2. **Roles**: Show role-based permissions
+3. **Forum Channels**: Dedicated forum post views
+
+---
+
+## 17. Multi-Organization Model
+
+### 17.1 Reference: ADR-026 Linked Sources Architecture
+
+ADR-026 establishes the definitive architecture for organizations with multiple communication platforms. Key concepts:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ORGANIZATION: Acme Inc                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   ┌──────────────┐     ┌──────────────┐     ┌──────────────┐   │
+│   │   Discord    │     │    Slack     │     │   WhatsApp   │   │
+│   │  Server A    │     │  Workspace   │     │   Group      │   │
+│   └──────┬───────┘     └──────┬───────┘     └──────┬───────┘   │
+│          │                    │                    │            │
+│          └────────────────────┼────────────────────┘            │
+│                               │                                  │
+│                    ┌──────────▼──────────┐                       │
+│                    │  Primary Guild ID   │                       │
+│                    │  (Unified Identity) │                       │
+│                    └─────────────────────┘                       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 17.2 Linked Sources Pattern
+
+From ADR-026, non-Discord sources link to a Discord guild for:
+
+1. **Permission inheritance**: Discord guild membership controls access
+2. **Unified billing**: One subscription per organization
+3. **Cross-platform summaries**: Combine Discord + Slack + WhatsApp in single digest
+
+```sql
+-- ADR-026 schema (existing)
+CREATE TABLE guild_linked_sources (
+    id TEXT PRIMARY KEY,
+    guild_id TEXT NOT NULL REFERENCES guilds(id),
+    source_type TEXT NOT NULL,          -- 'slack' | 'whatsapp'
+    source_id TEXT NOT NULL,            -- Slack workspace_id or WhatsApp group_id
+    source_name TEXT,
+    linked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    linked_by TEXT,                      -- User who connected
+    permissions TEXT,                    -- JSON: what this link allows
+    UNIQUE(guild_id, source_type, source_id)
+);
+```
+
+### 17.3 Multi-Guild Organizations
+
+For organizations with **multiple Discord servers** (e.g., separate servers per team/region):
+
+```
+Acme Inc Organization
+├── Discord: Acme Engineering (Guild A)
+│   ├── Linked: Slack Engineering Workspace
+│   └── Linked: WhatsApp Eng On-Call
+├── Discord: Acme Sales (Guild B)
+│   ├── Linked: Slack Sales Workspace
+│   └── Linked: WhatsApp Sales Team
+└── Discord: Acme Global (Guild C) ← Company-wide
+    └── Linked: (none, Discord-only)
+```
+
+**Summaries can span:**
+- Single source: Just #engineering channel in Discord
+- Cross-platform: Discord #eng + Slack #incidents + WhatsApp alerts
+- Organization-wide: All sources across all guilds (requires org-level access)
+
+### 17.4 Slack Integration Points
+
+For Slack specifically, the linked sources model means:
+
+```python
+# When installing Slack app
+async def link_slack_workspace(guild_id: str, workspace_id: str, installer: str):
+    """Link a Slack workspace to a Discord guild."""
+
+    # Verify installer has permission on Discord guild
+    if not await has_guild_permission(installer, guild_id, "manage_integrations"):
+        raise PermissionError("Must have Manage Integrations on Discord server")
+
+    # Create link
+    await db.execute("""
+        INSERT INTO guild_linked_sources
+        (id, guild_id, source_type, source_id, source_name, linked_by)
+        VALUES (?, ?, 'slack', ?, ?, ?)
+    """, [generate_id(), guild_id, workspace_id, workspace_name, installer])
+
+    # Store Slack tokens
+    await slack_token_store.save(workspace_id, tokens)
+```
+
+### 17.5 Dashboard Access Control
+
+Access follows Discord guild membership (ADR-026):
+
+```
+User has access to Discord Guild A
+  ↓
+Can view all sources linked to Guild A
+  ↓
+Including Slack Workspace X (linked to Guild A)
+  ↓
+Even if user is NOT in Slack Workspace X directly
+```
+
+This simplifies access control:
+- No need for separate Slack user management
+- Discord roles control dashboard access
+- Slack bot token handles API access
+
+### 17.6 UI Implementation for Multi-Source
+
+```typescript
+// Dashboard navigation with linked sources
+function SourceNavigation({ guild }: { guild: Guild }) {
+  const linkedSources = useLinkedSources(guild.id);
+
+  return (
+    <nav>
+      {/* Primary Discord Guild */}
+      <SourceItem
+        type="discord"
+        name={guild.name}
+        icon={guild.icon}
+        channels={guild.channels}
+      />
+
+      {/* Linked Sources */}
+      {linkedSources.map(source => (
+        <SourceItem
+          key={source.id}
+          type={source.source_type}
+          name={source.source_name}
+          icon={source.icon}
+          channels={source.channels}
+        />
+      ))}
+    </nav>
+  );
+}
+```
+
+### 17.7 Summary Scope Options
+
+With multi-source support, summaries can target:
+
+| Scope | Description | Use Case |
+|-------|-------------|----------|
+| `single_channel` | One channel from one source | Daily #general summary |
+| `cross_channel` | Multiple channels, one source | Weekly engineering digest |
+| `cross_source` | Channels from multiple sources | Incident retrospective |
+| `organization` | All sources in org | Executive monthly summary |
+
+```python
+# Example: Cross-source summary request
+{
+    "scope": "cross_source",
+    "sources": [
+        {"type": "discord", "id": "guild_123", "channels": ["ch_1", "ch_2"]},
+        {"type": "slack", "id": "T0ABC", "channels": ["C0DEF"]},
+        {"type": "whatsapp", "id": "grp_456", "channels": ["all"]}
+    ],
+    "time_range": {"start": "2026-04-01", "end": "2026-04-07"},
+    "summary_type": "comprehensive"
+}
+```
+
+---
+
+## 18. References
 
 - [Slack API Documentation](https://api.slack.com/)
 - [Slack Web API Methods](https://api.slack.com/methods)
@@ -874,4 +1162,5 @@ CREATE INDEX idx_slack_users_workspace ON slack_users(workspace_id);
 - [Slack Rate Limits](https://api.slack.com/docs/rate-limits)
 - [Slack Enterprise Grid](https://api.slack.com/enterprise/grid)
 - [ADR-002: WhatsApp Data Source Integration](./002-whatsapp-datasource-integration-summarybotng.md)
+- [ADR-026: Multi-Platform Source Architecture](./026-multi-platform-source-architecture.md)
 - [Slack mrkdwn Format](https://api.slack.com/reference/surfaces/formatting)

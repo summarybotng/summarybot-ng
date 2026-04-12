@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useGuilds } from "@/hooks/useGuilds";
+import { useGuilds, useRefreshGuilds } from "@/hooks/useGuilds";
 import { useDefaultPrompts, type DefaultPrompt, type PerspectiveLength } from "@/hooks/usePrompts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +22,8 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Users, FileText, AlertCircle, CheckCircle2, Settings, GitBranch, Eye, MessageSquare, Gavel, MessagesSquare, Code, TrendingUp, Briefcase, HeadphonesIcon } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { Users, FileText, AlertCircle, CheckCircle2, Settings, GitBranch, Eye, MessageSquare, Gavel, MessagesSquare, Code, TrendingUp, Briefcase, HeadphonesIcon, RefreshCw } from "lucide-react";
 import type { Guild } from "@/types";
 
 function GuildCard({ guild, index }: { guild: Guild; index: number }) {
@@ -284,6 +285,26 @@ function DefaultPromptsCard() {
 
 export function Guilds() {
   const { data: guilds, isLoading, error } = useGuilds();
+  const refreshGuilds = useRefreshGuilds();
+  const { toast } = useToast();
+
+  const handleRefresh = () => {
+    refreshGuilds.mutate(undefined, {
+      onSuccess: () => {
+        toast({
+          title: "Servers refreshed",
+          description: "Your server list has been updated from Discord.",
+        });
+      },
+      onError: () => {
+        toast({
+          title: "Refresh failed",
+          description: "Could not refresh servers. Try logging out and back in.",
+          variant: "destructive",
+        });
+      },
+    });
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -291,12 +312,23 @@ export function Guilds() {
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="mb-8 flex items-start justify-between"
         >
-          <h1 className="mb-2 text-3xl font-bold">Your Servers</h1>
-          <p className="text-muted-foreground">
-            Select a server to configure SummaryBot
-          </p>
+          <div>
+            <h1 className="mb-2 text-3xl font-bold">Your Servers</h1>
+            <p className="text-muted-foreground">
+              Select a server to configure SummaryBot
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshGuilds.isPending}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${refreshGuilds.isPending ? "animate-spin" : ""}`} />
+            {refreshGuilds.isPending ? "Refreshing..." : "Refresh Servers"}
+          </Button>
         </motion.div>
 
         {/* Default Prompts Section */}

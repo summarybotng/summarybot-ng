@@ -18,7 +18,7 @@ import {
   AlertCircle,
   Clock,
   PauseCircle,
-  Sparkles,
+  Plus,
 } from "lucide-react";
 
 interface JobStats {
@@ -119,9 +119,9 @@ export function Jobs() {
           </p>
         </div>
         <Button asChild>
-          <Link to={`/guilds/${id}/summaries`}>
-            <Sparkles className="mr-2 h-4 w-4" />
-            Generate Summary
+          <Link to={`/guilds/${id}/schedules`}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Schedule
           </Link>
         </Button>
       </motion.div>

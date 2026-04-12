@@ -7,6 +7,7 @@ interface AuthStore {
   user: User | null;
   guilds: Guild[];
   setAuth: (token: string, user: User, guilds: Guild[]) => void;
+  updateToken: (token: string) => void;
   logout: () => void;
   isAuthenticated: () => boolean;
 }
@@ -18,6 +19,7 @@ export const useAuthStore = create<AuthStore>()(
       user: null,
       guilds: [],
       setAuth: (token, user, guilds) => set({ token, user, guilds }),
+      updateToken: (token) => set({ token }),
       logout: () => set({ token: null, user: null, guilds: [] }),
       isAuthenticated: () => !!get().token,
     }),

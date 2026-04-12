@@ -376,10 +376,16 @@ class DashboardAuth:
         # Try to get the session so we can call Discord for fresh guilds
         session = await self.get_session(token)
         if session is None:
-            # No session -- fall back to old behaviour (reuse JWT guild list)
-            logger.warning("No session found for token refresh, reusing existing guild list")
-            new_token = self.create_jwt(user, payload["guilds"], payload.get("guild_roles", {}))
-            return new_token, payload["guilds"]
+            # No session -- cannot fetch fresh guilds without Discord token
+            # Raise error so frontend can tell user to re-login
+            logger.warning("No session found for token refresh, user must re-login")
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "code": "SESSION_EXPIRED",
+                    "message": "Session expired. Please log out and log back in to refresh your server list.",
+                },
+            )
 
         # Get a valid Discord access token (auto-refreshes if expired)
         discord_token = await self.get_discord_token(session)

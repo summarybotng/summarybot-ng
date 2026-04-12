@@ -296,10 +296,13 @@ export function Guilds() {
           description: "Your server list has been updated from Discord.",
         });
       },
-      onError: () => {
+      onError: (error: Error & { response?: { data?: { code?: string } } }) => {
+        const isSessionExpired = error.response?.data?.code === "SESSION_EXPIRED";
         toast({
-          title: "Refresh failed",
-          description: "Could not refresh servers. Try logging out and back in.",
+          title: isSessionExpired ? "Session expired" : "Refresh failed",
+          description: isSessionExpired
+            ? "Your session has expired. Please log out and log back in to refresh your server list."
+            : "Could not refresh servers. Try logging out and back in.",
           variant: "destructive",
         });
       },

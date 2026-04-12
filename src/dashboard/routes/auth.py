@@ -1,5 +1,7 @@
 """
 Authentication routes for dashboard API.
+
+ADR-045: Integrated with audit logging for security monitoring.
 """
 
 import os
@@ -28,6 +30,38 @@ from ..models import (
 from . import get_discord_bot
 
 logger = logging.getLogger(__name__)
+
+
+async def _audit_auth_event(
+    event_type: str,
+    request: Request,
+    user_id: Optional[str] = None,
+    user_name: Optional[str] = None,
+    success: bool = True,
+    error_message: Optional[str] = None,
+    details: Optional[dict] = None,
+):
+    """Log an authentication event to the audit log."""
+    try:
+        from ...logging import get_audit_service
+        service = await get_audit_service()
+
+        ip_address = request.client.host if request.client else None
+        user_agent = request.headers.get("user-agent", "")[:500]
+
+        await service.log(
+            event_type,
+            user_id=user_id,
+            user_name=user_name,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=success,
+            error_message=error_message,
+            details=details or {},
+        )
+    except Exception as e:
+        # Don't let audit logging failures break authentication
+        logger.warning(f"Failed to log audit event: {e}")
 
 router = APIRouter()
 
@@ -62,6 +96,13 @@ async def callback(request: Request, body: AuthCallbackRequest):
 
     # Validate CSRF state
     if not auth.validate_oauth_state(body.state):
+        # Log failed auth attempt (ADR-045)
+        await _audit_auth_event(
+            "auth.login.failed",
+            request,
+            success=False,
+            error_message="Invalid or expired OAuth state parameter",
+        )
         raise HTTPException(
             status_code=400,
             detail={"code": "INVALID_STATE", "message": "Invalid or expired OAuth state parameter"},
@@ -114,6 +155,19 @@ async def callback(request: Request, body: AuthCallbackRequest):
             )
         )
 
+    # Log successful login (ADR-045)
+    await _audit_auth_event(
+        "auth.login.success",
+        request,
+        user_id=user.id,
+        user_name=user.username,
+        success=True,
+        details={
+            "guilds_count": len(accessible_guilds),
+            "guild_ids": [g.id for g in accessible_guilds[:10]],  # First 10 for privacy
+        },
+    )
+
     return AuthCallbackResponse(
         token=jwt_token,
         user=UserResponse(
@@ -164,14 +218,35 @@ async def refresh(
     description="Invalidate the current session.",
 )
 async def logout(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
     """Logout and invalidate session."""
-    if credentials is None:
-        return {"success": True}
+    user_id = None
+    user_name = None
 
-    auth = get_auth()
-    await auth.invalidate_session(credentials.credentials)
+    if credentials is not None:
+        auth = get_auth()
+
+        # Try to decode token to get user info for audit log
+        try:
+            payload = auth.decode_jwt(credentials.credentials)
+            user_id = payload.get("sub")
+            user_name = payload.get("username")
+        except Exception:
+            pass
+
+        await auth.invalidate_session(credentials.credentials)
+
+    # Log logout (ADR-045)
+    await _audit_auth_event(
+        "auth.logout",
+        request,
+        user_id=user_id,
+        user_name=user_name,
+        success=True,
+    )
+
     return {"success": True}
 
 

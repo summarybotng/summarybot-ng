@@ -32,6 +32,12 @@ from .error_tracker import (
     initialize_error_tracker,
     track_errors,
 )
+from .audit_service import (
+    AuditService,
+    get_audit_service,
+    audit_log,
+    audit_action,
+)
 
 __all__ = [
     # Models
@@ -53,6 +59,11 @@ __all__ = [
     "get_error_tracker",
     "initialize_error_tracker",
     "track_errors",
+    # Audit logging (ADR-045)
+    "AuditService",
+    "get_audit_service",
+    "audit_log",
+    "audit_action",
 ]
 
 __version__ = "1.0.0"

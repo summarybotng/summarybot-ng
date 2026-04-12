@@ -55,7 +55,8 @@ from .sqlite import (
     SQLiteStoredSummaryRepository,
     SQLiteIngestRepository,
     SQLitePromptTemplateRepository,
-    SQLiteTransaction
+    SQLiteTransaction,
+    SQLiteAuditRepository,
 )
 
 # Repository factory
@@ -71,7 +72,8 @@ from .repositories import (
     get_error_repository,
     get_stored_summary_repository,
     get_ingest_repository,
-    get_prompt_template_repository
+    get_prompt_template_repository,
+    get_audit_repository,
 )
 
 # Migration utilities
@@ -108,6 +110,7 @@ __all__ = [
     "SQLiteIngestRepository",
     "SQLitePromptTemplateRepository",
     "SQLiteTransaction",
+    "SQLiteAuditRepository",
 
     # Repository factory
     "RepositoryFactory",
@@ -122,6 +125,7 @@ __all__ = [
     "get_stored_summary_repository",
     "get_ingest_repository",
     "get_prompt_template_repository",
+    "get_audit_repository",
 
     # Migrations
     "MigrationRunner",

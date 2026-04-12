@@ -18,7 +18,8 @@ from ..sqlite import (
     SQLiteStoredSummaryRepository,
     SQLiteSummaryJobRepository,
     SQLiteIngestRepository,
-    SQLitePromptTemplateRepository
+    SQLitePromptTemplateRepository,
+    SQLiteAuditRepository,
 )
 
 
@@ -164,6 +165,17 @@ class RepositoryFactory:
         else:
             raise ValueError(f"Unsupported backend: {self.backend}")
 
+    async def get_audit_repository(self) -> SQLiteAuditRepository:
+        """Create and return an audit log repository instance (ADR-045)."""
+        connection = await self.get_connection()
+
+        if self.backend == "sqlite":
+            return SQLiteAuditRepository(connection)
+        elif self.backend == "postgresql":
+            raise NotImplementedError("PostgreSQL support is not yet implemented")
+        else:
+            raise ValueError(f"Unsupported backend: {self.backend}")
+
     async def close(self) -> None:
         """Close database connections."""
         if self._connection:
@@ -266,3 +278,9 @@ async def get_prompt_template_repository() -> PromptTemplateRepository:
     """Get the default prompt template repository instance (ADR-034)."""
     factory = get_repository_factory()
     return await factory.get_prompt_template_repository()
+
+
+async def get_audit_repository() -> SQLiteAuditRepository:
+    """Get the default audit log repository instance (ADR-045)."""
+    factory = get_repository_factory()
+    return await factory.get_audit_repository()

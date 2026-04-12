@@ -9,7 +9,7 @@ from fastapi import APIRouter, FastAPI
 from cryptography.fernet import Fernet
 
 from .auth import DashboardAuth, set_auth_instance
-from .routes import auth_router, guilds_router, summaries_router, schedules_router, webhooks_router, events_router, feeds_router, errors_router, archive_router, prompts_router, push_templates_router, health_router, prompt_templates_router
+from .routes import auth_router, guilds_router, summaries_router, schedules_router, webhooks_router, events_router, feeds_router, errors_router, archive_router, prompts_router, push_templates_router, health_router, prompt_templates_router, audit_router
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +116,7 @@ def create_dashboard_router(
     router.include_router(prompts_router, tags=["Prompts"])
     router.include_router(push_templates_router, tags=["Push Templates"])
     router.include_router(prompt_templates_router, tags=["Prompt Templates"])  # ADR-034
+    router.include_router(audit_router, tags=["Audit"])  # ADR-045
 
     return router
 
@@ -161,3 +162,24 @@ def setup_dashboard_api(
             logger.info("Error tracker initialized for dashboard")
         except Exception as e:
             logger.warning(f"Failed to initialize error tracker: {e}")
+
+    # Initialize audit service on startup (ADR-045)
+    @app.on_event("startup")
+    async def init_audit_service():
+        try:
+            from ..logging.audit_service import get_audit_service
+            await get_audit_service()
+            logger.info("Audit service initialized for dashboard")
+        except Exception as e:
+            logger.warning(f"Failed to initialize audit service: {e}")
+
+    # Stop audit service on shutdown (ADR-045)
+    @app.on_event("shutdown")
+    async def stop_audit_service():
+        try:
+            from ..logging.audit_service import _audit_service
+            if _audit_service:
+                await _audit_service.stop()
+                logger.info("Audit service stopped")
+        except Exception as e:
+            logger.warning(f"Failed to stop audit service: {e}")

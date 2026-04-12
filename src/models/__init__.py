@@ -34,6 +34,7 @@ from .push_template import (
     SectionType, ReferenceStyle,
 )
 from .prompt_template import GuildPromptTemplate
+from .audit_log import AuditLog, AuditEventCategory, AuditSeverity, AuditSummary
 
 __all__ = [
     # Base models
@@ -117,4 +118,10 @@ __all__ = [
 
     # Prompt template models (ADR-034)
     'GuildPromptTemplate',
+
+    # Audit log models (ADR-045)
+    'AuditLog',
+    'AuditEventCategory',
+    'AuditSeverity',
+    'AuditSummary',
 ]

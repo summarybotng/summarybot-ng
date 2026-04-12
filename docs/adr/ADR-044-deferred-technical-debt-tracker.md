@@ -39,7 +39,7 @@ This ADR serves as a central tracker for all deferred technical issues across th
 | P2-001 | Source ownership/hijacking risk | ADR-026:#2 | Open | - |
 | P2-002 | Silent parameter fallbacks | ADR-038 | Proposed | - |
 | P2-003 | All-or-nothing guild access | ADR-026:#6 | Deferred to Phase 3 | - |
-| P2-004 | No audit trail for actions | ADR-026:#9 | **Proposed** | ADR-045 |
+| P2-004 | ~~No audit trail for actions~~ | ADR-026:#9 | **RESOLVED** | ADR-045 |
 | P2-005 | WhatsApp edited messages not tracked | ADR-026:#3 | Open | - |
 | P2-006 | No unified cross-guild view | ADR-026:#13 | Deferred to Phase 4+ | - |
 | P2-007 | Email delivery not implemented | ADR-030 | Proposed | - |
@@ -120,14 +120,14 @@ P1-001: Retry doesn't execute ← RESOLVED
 ```
 P2-001: No source ownership verification
     │
-    └──▶ P2-004: No audit trail
+    └──▶ P2-004: No audit trail ← RESOLVED (ADR-045)
             │
             └──▶ P3-003: No source deletion
                     │
                     └──▶ GDPR "right to be forgotten" requires manual intervention
 ```
 
-**Resolution:** Need unified audit log before enterprise deployment.
+**Current Status:** P2-004 resolved with ADR-045 implementation. Audit trail now exists for compliance.
 
 ### 4.4 Silent Fallbacks → Problem Reporting → Quality Chain
 
@@ -149,7 +149,7 @@ P2-002: Silent parameter fallbacks
 - [x] P1-001: Fix retry_job execution ✓ (2026-04-12)
 - [ ] P1-003: Implement failure classification (ADR-042)
 - [ ] P1-004: Implement auto-retry worker (ADR-042)
-- [ ] P2-004: Implement audit logging system (ADR-045) ← Proposed 2026-04-12
+- [x] P2-004: Implement audit logging system (ADR-045) ✓ (2026-04-12)
 
 ### Phase 2: Self-Healing & Observability (Target: 3-4 weeks)
 - [ ] P2-002: Parameter validation (ADR-038)
@@ -174,6 +174,42 @@ P2-002: Silent parameter fallbacks
 ---
 
 ## 6. Resolution Log
+
+### 2026-04-12: P2-004 Resolved
+
+**Issue:** No audit trail for user actions in the system.
+
+**Root Cause:** No audit logging infrastructure existed for tracking user logins, actions, and security events.
+
+**Solution:**
+1. Created ADR-045 documenting the audit logging system design
+2. Implemented core components:
+   - `src/models/audit_log.py` - AuditLog model with categories and severities
+   - `src/data/migrations/045_audit_logs.sql` - Database schema with indexes
+   - `src/data/sqlite/audit_repository.py` - SQLite repository with batch save
+   - `src/logging/audit_service.py` - Async queue-based service with decorator
+   - `src/dashboard/routes/audit.py` - API endpoints for viewing audit logs
+
+3. Integrated audit logging into auth module for login/logout tracking
+
+**Files Changed:**
+- `src/models/audit_log.py` (new)
+- `src/data/migrations/045_audit_logs.sql` (new)
+- `src/data/sqlite/audit_repository.py` (new)
+- `src/logging/audit_service.py` (new)
+- `src/dashboard/routes/audit.py` (new)
+- `src/dashboard/routes/auth.py` (modified - added audit logging)
+- Various `__init__.py` files updated for exports
+
+**Features:**
+- Non-blocking async queue for logging
+- Batch flushing to database
+- Retention policies by category
+- IP address anonymization after 30 days
+- `@audit_action` decorator for endpoint logging
+- API endpoints for viewing audit logs
+
+---
 
 ### 2026-04-12: P1-001 Resolved
 

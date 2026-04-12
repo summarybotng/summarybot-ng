@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useGuilds } from "@/hooks/useGuilds";
 import { useDefaultPrompts, type DefaultPrompt, type PerspectiveLength } from "@/hooks/usePrompts";
-import { Header } from "@/components/layout/Header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -288,8 +287,6 @@ export function Guilds() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
-
       <main className="container py-8">
         <motion.div
           initial={{ opacity: 0, y: -10 }}

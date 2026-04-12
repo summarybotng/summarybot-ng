@@ -64,7 +64,9 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
             )
 
             # Create stored summary with SCHEDULED source
+            # Use the SummaryResult's ID to ensure job.summary_id matches stored summary
             stored_summary = StoredSummary(
+                id=summary.id,  # Use SummaryResult ID for consistency with job tracking
                 guild_id=context.guild_id,
                 source_channel_ids=scope_channel_ids,  # Store full scope for reference
                 schedule_id=context.scheduled_task.id if context.scheduled_task else None,

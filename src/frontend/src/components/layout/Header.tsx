@@ -16,7 +16,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { LogOut, User } from "lucide-react";
+import { LogOut, User, Shield } from "lucide-react";
 
 // Build info injected at build time
 const buildCommit = __BUILD_COMMIT__;
@@ -87,7 +87,12 @@ export function Header() {
                   My Servers
                 </Link>
               </DropdownMenuItem>
-              {/* Settings is available per-guild, removed global settings link */}
+              <DropdownMenuItem asChild>
+                <Link to="/admin/audit" className="cursor-pointer">
+                  <Shield className="mr-2 h-4 w-4" />
+                  System Audit Log
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-destructive">
                 <LogOut className="mr-2 h-4 w-4" />

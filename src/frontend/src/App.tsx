@@ -22,6 +22,7 @@ import { Errors } from "@/pages/Errors";
 import { Settings } from "@/pages/Settings";
 import { PromptTemplates } from "@/pages/PromptTemplates";
 import { AuditLog } from "@/pages/AuditLog";
+import { AdminAudit } from "@/pages/AdminAudit";
 import NotFound from "./pages/NotFound";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -59,6 +60,7 @@ const App = () => (
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/guilds" element={<><Header /><Guilds /></>} />
+            <Route path="/admin/audit" element={<><Header /><AdminAudit /></>} />
             <Route
               path="/guilds/:id"
               element={

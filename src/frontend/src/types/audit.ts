@@ -43,6 +43,7 @@ export interface AuditSummaryResponse {
 }
 
 export interface AuditFilters {
+  guild_id?: string;  // For system-wide admin view
   user_id?: string;
   event_type?: string;
   category?: AuditCategory;

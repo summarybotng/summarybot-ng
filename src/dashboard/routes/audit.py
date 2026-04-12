@@ -2,8 +2,13 @@
 Audit log API routes.
 
 ADR-045: Audit Logging System
+
+Provides both guild-scoped and system-wide audit log access:
+- /guilds/{guild_id}/audit - Guild-scoped logs (requires guild access)
+- /admin/audit - System-wide logs (requires system owner)
 """
 
+import os
 import logging
 from typing import Optional, List
 from datetime import datetime
@@ -15,6 +20,39 @@ from ...models.audit_log import AuditEventCategory, AuditSeverity
 from ...logging import get_audit_service
 
 logger = logging.getLogger(__name__)
+
+
+def _is_system_owner(user: dict) -> bool:
+    """Check if user is a system owner.
+
+    System owners are identified by:
+    1. SYSTEM_OWNER_IDS env var (comma-separated Discord user IDs)
+    2. TEST_AUTH_ADMIN_SECRET users (for development)
+    """
+    user_id = user.get("sub", "")
+
+    # Check system owner IDs from environment
+    owner_ids = os.getenv("SYSTEM_OWNER_IDS", "")
+    if owner_ids:
+        allowed_ids = [id.strip() for id in owner_ids.split(",")]
+        if user_id in allowed_ids:
+            return True
+
+    # Check if test admin user (development only)
+    if user_id.startswith("test_admin_"):
+        return True
+
+    return False
+
+
+async def require_system_owner(user: dict = Depends(get_current_user)) -> dict:
+    """Dependency to require system owner access."""
+    if not _is_system_owner(user):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "FORBIDDEN", "message": "System owner access required"},
+        )
+    return user
 
 router = APIRouter()
 
@@ -288,4 +326,180 @@ async def get_audit_entry(
         error_message=entry.error_message,
         timestamp=entry.timestamp.isoformat() if entry.timestamp else "",
         duration_ms=entry.duration_ms,
+    )
+
+
+# =============================================================================
+# System-Wide Admin Audit Routes
+# =============================================================================
+
+@router.get(
+    "/admin/audit",
+    response_model=AuditListResponse,
+    summary="List all audit logs (system-wide)",
+    description="Get paginated audit logs across all guilds. Requires system owner access.",
+    tags=["Admin"],
+)
+async def list_system_audit_logs(
+    guild_id: Optional[str] = Query(None, description="Filter by guild ID"),
+    user_id: Optional[str] = Query(None, description="Filter by user ID"),
+    event_type: Optional[str] = Query(None, description="Filter by event type (supports wildcards like 'auth.*')"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    severity: Optional[str] = Query(None, description="Filter by severity"),
+    success: Optional[bool] = Query(None, description="Filter by success status"),
+    start_date: Optional[str] = Query(None, description="Start date (ISO format)"),
+    end_date: Optional[str] = Query(None, description="End date (ISO format)"),
+    resource_type: Optional[str] = Query(None, description="Filter by resource type"),
+    limit: int = Query(50, ge=1, le=500, description="Number of items to return"),
+    offset: int = Query(0, ge=0, description="Number of items to skip"),
+    user: dict = Depends(require_system_owner),
+):
+    """List all audit logs system-wide. Only accessible by system owners."""
+    try:
+        from ...data import get_audit_repository
+        repo = await get_audit_repository()
+    except RuntimeError:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "SERVICE_UNAVAILABLE", "message": "Audit repository not available"},
+        )
+
+    # Parse dates
+    parsed_start = None
+    parsed_end = None
+    if start_date:
+        try:
+            parsed_start = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid start_date format")
+    if end_date:
+        try:
+            parsed_end = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid end_date format")
+
+    # Parse enums
+    parsed_category = None
+    parsed_severity = None
+    if category:
+        try:
+            parsed_category = AuditEventCategory(category)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid category: {category}")
+    if severity:
+        try:
+            parsed_severity = AuditSeverity(severity)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid severity: {severity}")
+
+    # Query logs - guild_id is optional for system-wide view
+    logs = await repo.find(
+        guild_id=guild_id,  # None = all guilds
+        user_id=user_id,
+        event_type=event_type,
+        category=parsed_category,
+        severity=parsed_severity,
+        success=success,
+        start_date=parsed_start,
+        end_date=parsed_end,
+        resource_type=resource_type,
+        limit=limit,
+        offset=offset,
+    )
+
+    # Get total count
+    total = await repo.count(
+        guild_id=guild_id,
+        user_id=user_id,
+        event_type=event_type,
+        category=parsed_category,
+        severity=parsed_severity,
+        success=success,
+        start_date=parsed_start,
+        end_date=parsed_end,
+    )
+
+    # Convert to response
+    items = [
+        AuditLogResponse(
+            id=log.id,
+            event_type=log.event_type,
+            category=log.category.value if hasattr(log.category, 'value') else log.category,
+            severity=log.severity.value if hasattr(log.severity, 'value') else log.severity,
+            user_id=log.user_id,
+            user_name=log.user_name,
+            guild_id=log.guild_id,
+            guild_name=log.guild_name,
+            resource_type=log.resource_type,
+            resource_id=log.resource_id,
+            resource_name=log.resource_name,
+            action=log.action,
+            details=log.details,
+            success=log.success,
+            error_message=log.error_message,
+            timestamp=log.timestamp.isoformat() if log.timestamp else "",
+            duration_ms=log.duration_ms,
+        )
+        for log in logs
+    ]
+
+    return AuditListResponse(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/admin/audit/summary",
+    response_model=AuditSummaryResponse,
+    summary="Get system-wide audit summary",
+    description="Get aggregated audit statistics across all guilds. Requires system owner access.",
+    tags=["Admin"],
+)
+async def get_system_audit_summary(
+    start_date: Optional[str] = Query(None, description="Start date (ISO format)"),
+    end_date: Optional[str] = Query(None, description="End date (ISO format)"),
+    user: dict = Depends(require_system_owner),
+):
+    """Get system-wide audit log summary statistics."""
+    try:
+        from ...data import get_audit_repository
+        repo = await get_audit_repository()
+    except RuntimeError:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "SERVICE_UNAVAILABLE", "message": "Audit repository not available"},
+        )
+
+    # Parse dates
+    parsed_start = None
+    parsed_end = None
+    if start_date:
+        try:
+            parsed_start = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid start_date format")
+    if end_date:
+        try:
+            parsed_end = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid end_date format")
+
+    # Get system-wide summary (no guild filter)
+    summary = await repo.get_summary(
+        guild_id=None,
+        start_date=parsed_start,
+        end_date=parsed_end,
+    )
+
+    return AuditSummaryResponse(
+        total_count=summary.total_count,
+        by_category=summary.by_category,
+        by_severity=summary.by_severity,
+        by_event_type=summary.by_event_type,
+        by_user=summary.by_user,
+        failed_count=summary.failed_count,
+        alert_count=summary.alert_count,
     )

@@ -21,6 +21,7 @@ import { Feeds } from "@/pages/Feeds";
 import { Errors } from "@/pages/Errors";
 import { Settings } from "@/pages/Settings";
 import { PromptTemplates } from "@/pages/PromptTemplates";
+import { AuditLog } from "@/pages/AuditLog";
 import NotFound from "./pages/NotFound";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -77,6 +78,7 @@ const App = () => (
               <Route path="errors" element={<Errors />} />
               <Route path="settings" element={<Settings />} />
               <Route path="prompt-templates" element={<PromptTemplates />} />
+              <Route path="audit" element={<AuditLog />} />
               <Route path="archive" element={<Suspense fallback={<PageLoader />}><Archive /></Suspense>} />
             </Route>
           </Route>

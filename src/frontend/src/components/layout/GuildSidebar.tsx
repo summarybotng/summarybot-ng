@@ -30,6 +30,7 @@ import {
   ChevronLeft,
   Archive,
   FileCode,
+  Shield,
 } from "lucide-react";
 
 // ADR-040: Jobs promoted to top-level navigation
@@ -43,6 +44,7 @@ const navItems = [
   { icon: Webhook, label: "Webhooks", path: "/webhooks" },
   { icon: Rss, label: "Feeds", path: "/feeds" },
   { icon: AlertTriangle, label: "Errors", path: "/errors", showBadge: true },
+  { icon: Shield, label: "Audit Log", path: "/audit" },
   { icon: Archive, label: "Retrospective", path: "/archive" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];

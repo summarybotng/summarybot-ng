@@ -1,9 +1,9 @@
 # ADR-043: Slack Workspace Integration — Feasibility Study
 
 **Status:** Proposed (Deep Dive Analysis)
-**Date:** 2026-04-11
-**Depends on:** ADR-002 (WhatsApp Data Source Integration), ADR-026 (Multi-Platform Source Architecture)
-**Context Domain:** Data Source Integration / Multi-Platform Support
+**Date:** 2026-04-11 (Security revision: 2026-04-12)
+**Depends on:** ADR-002 (WhatsApp Data Source Integration), ADR-026 (Multi-Platform Source Architecture), **ADR-046 (Channel Permission-Aware Summaries)**
+**Context Domain:** Data Source Integration / Multi-Platform Support / Security
 
 ---
 
@@ -189,31 +189,76 @@ Unlike Discord (add bot via URL), Slack requires a full OAuth 2.0 flow:
 
 ### 3.2 Required OAuth Scopes
 
-| Scope | Purpose | Risk Level |
-|-------|---------|------------|
-| `channels:history` | Read public channel messages | Medium |
-| `channels:read` | List public channels | Low |
-| `groups:history` | Read private channel messages | High |
-| `groups:read` | List private channels (user is member of) | Medium |
-| `im:history` | Read DMs | High |
-| `im:read` | List DMs | Medium |
-| `mpim:history` | Read group DMs | High |
-| `mpim:read` | List group DMs | Medium |
-| `users:read` | Get user info (names, avatars) | Low |
-| `team:read` | Get workspace info | Low |
-| `files:read` | Access file content | Medium |
-| `reactions:read` | Read reactions on messages | Low |
+> **⚠️ SECURITY NOTE (ADR-046 Alignment)**
+> Private channel scopes (`groups:*`, `im:*`, `mpim:*`) enable access to sensitive content.
+> Summaries of private channels MUST be protected by access controls. Consider offering
+> two installation modes: "Public channels only" vs "Full access".
 
-**Minimum viable scope set**:
-```
-channels:history channels:read users:read team:read reactions:read
+| Scope | Purpose | Risk Level | Security Implication |
+|-------|---------|------------|---------------------|
+| `channels:history` | Read public channel messages | Low | Public data - minimal risk |
+| `channels:read` | List public channels | Low | Metadata only |
+| `groups:history` | Read private channel messages | **HIGH** | ⚠️ Private discussions exposed |
+| `groups:read` | List private channels | Medium | Reveals private channel names |
+| `im:history` | Read DMs | **CRITICAL** | ⚠️ Personal conversations |
+| `im:read` | List DMs | High | Reveals DM relationships |
+| `mpim:history` | Read group DMs | **CRITICAL** | ⚠️ Personal conversations |
+| `mpim:read` | List group DMs | High | Reveals group relationships |
+| `users:read` | Get user info (names, avatars) | Low | PII consideration |
+| `team:read` | Get workspace info | Low | Org metadata |
+| `files:read` | Access file content | Medium | Could include sensitive docs |
+| `reactions:read` | Read reactions on messages | Low | Sentiment data |
+
+**Recommended: Two-tier scope model**
+
+```python
+# Tier 1: Public channels only (DEFAULT - recommended for most users)
+SLACK_SCOPES_PUBLIC_ONLY = [
+    "channels:history",
+    "channels:read",
+    "users:read",
+    "team:read",
+    "reactions:read",
+]
+
+# Tier 2: Full access (requires security acknowledgment)
+SLACK_SCOPES_FULL_ACCESS = SLACK_SCOPES_PUBLIC_ONLY + [
+    "groups:history",   # ⚠️ Private channels
+    "groups:read",
+    "im:history",       # ⚠️ DMs
+    "im:read",
+    "mpim:history",     # ⚠️ Group DMs
+    "mpim:read",
+    "files:read",       # ⚠️ File content
+]
 ```
 
-**Full access scope set** (needed for comprehensive summaries):
+**Installation flow with security acknowledgment:**
+
 ```
-channels:history channels:read groups:history groups:read
-im:history im:read mpim:history mpim:read
-users:read team:read files:read reactions:read
+1. User clicks "Add to Slack"
+2. Show scope selection:
+   ○ Public channels only (recommended)
+   ● Full access (private channels, DMs)
+
+3. If "Full access" selected, show warning:
+   ┌─────────────────────────────────────────────┐
+   │ ⚠️ Security Notice                          │
+   │                                             │
+   │ Full access mode allows SummaryBot to read: │
+   │ • Private channels                          │
+   │ • Direct messages                           │
+   │ • Group DMs                                 │
+   │                                             │
+   │ Summaries of private content will be:      │
+   │ • Marked as sensitive in the dashboard     │
+   │ • Only visible to workspace admins         │
+   │ • Logged in the audit trail                │
+   │                                             │
+   │ [Cancel]  [I understand, continue]          │
+   └─────────────────────────────────────────────┘
+
+4. Proceed to Slack OAuth with selected scopes
 ```
 
 ### 3.3 Token Management
@@ -606,9 +651,265 @@ Slack Enterprise Grid is a multi-workspace deployment for large organizations:
 
 ---
 
-## 8. Privacy & Compliance
+## 8. Security Architecture
 
-### 8.1 Data Handling Requirements
+### 8.1 Critical Security Considerations
+
+**Reference: ADR-046 (Channel Permission-Aware Summaries)**
+
+The same privacy concerns from Discord apply to Slack, but with additional complexity:
+
+| Risk | Description | Severity |
+|------|-------------|----------|
+| **Private channel leakage** | Summary of `#staff-only` visible to non-staff via dashboard | HIGH |
+| **Slack Connect data exposure** | External org messages summarized to internal users | HIGH |
+| **Token compromise** | Bot token allows reading ALL authorized channels | CRITICAL |
+| **Webhook spoofing** | Attacker sends fake events to `/slack/events` endpoint | HIGH |
+| **DLP bypass** | Summaries may circumvent Slack's DLP rules | MEDIUM |
+| **Stale permission grants** | User removed from channel but can still see old summaries | MEDIUM |
+
+### 8.2 Slack Permission Model vs Discord
+
+```
+Discord:                           Slack:
+├── Roles                          ├── Workspace membership
+│   └── Channel overrides          │   ├── Public channels (all members)
+│                                  │   ├── Private channels (invited only)
+│                                  │   └── Slack Connect (cross-org)
+```
+
+**Key difference**: Slack private channels are truly invisible to non-members. There's no equivalent of Discord's "role can see channel" model. A user either:
+1. Is a member of the private channel (can see it)
+2. Is NOT a member (channel doesn't exist to them)
+
+### 8.3 Channel Sensitivity Detection
+
+For Slack, we CAN definitively detect channel privacy:
+
+```python
+async def detect_slack_channel_sensitivity(channel_id: str, client: SlackClient) -> ChannelSecurity:
+    """Detect security classification of a Slack channel."""
+    info = await client.conversations_info(channel=channel_id)
+    channel = info["channel"]
+
+    security = ChannelSecurity(
+        channel_id=channel_id,
+        channel_name=channel.get("name", "unknown"),
+    )
+
+    # Private channel (groups.* API)
+    if channel.get("is_private", False):
+        security.classification = "private"
+        security.requires_membership = True
+
+    # Shared channel (Slack Connect)
+    if channel.get("is_shared", False) or channel.get("is_ext_shared", False):
+        security.classification = "external"
+        security.external_orgs = channel.get("connected_team_ids", [])
+        security.requires_admin_review = True  # Cross-org data!
+
+    # Org-wide channel (Enterprise Grid)
+    if channel.get("is_org_shared", False):
+        security.classification = "org_wide"
+
+    # Public channel
+    if not security.classification:
+        security.classification = "public"
+
+    return security
+```
+
+### 8.4 Summary Visibility Rules for Slack
+
+Aligned with ADR-046, implement these rules:
+
+| Channel Type | Summary Visibility | Rationale |
+|--------------|-------------------|-----------|
+| **Public** | All dashboard users | Matches Slack behavior |
+| **Private** | Admin-only OR channel members | Protect private discussions |
+| **Slack Connect** | Admin-only + explicit approval | Cross-org data requires review |
+| **DM/MPIM** | Participants only | Personal conversations |
+
+```python
+async def check_summary_access(
+    user: DashboardUser,
+    summary: StoredSummary,
+    slack_client: SlackClient,
+) -> bool:
+    """Check if user can view a Slack-sourced summary."""
+
+    # Admin always has access
+    if user.is_admin:
+        return True
+
+    source_channels = summary.metadata.get("source_channels", [])
+
+    for channel_id in source_channels:
+        channel_security = await detect_slack_channel_sensitivity(channel_id, slack_client)
+
+        # Private channel: check if user is a member
+        if channel_security.classification == "private":
+            if not await is_channel_member(user.slack_id, channel_id, slack_client):
+                return False
+
+        # Slack Connect: require explicit admin approval
+        if channel_security.classification == "external":
+            if not summary.metadata.get("external_sharing_approved", False):
+                return False
+
+        # DM/MPIM: must be participant
+        if channel_security.classification in ("im", "mpim"):
+            if user.slack_id not in summary.metadata.get("participants", []):
+                return False
+
+    return True
+```
+
+### 8.5 Token Security
+
+**Encryption requirements**:
+
+```python
+# src/slack/token_store.py
+
+class SecureSlackTokenStore:
+    """Encrypted storage for Slack OAuth tokens."""
+
+    def __init__(self, encryption_key: bytes):
+        self._cipher = Fernet(encryption_key)
+
+    async def store_token(self, workspace_id: str, token: SlackToken):
+        """Store encrypted token."""
+        encrypted = self._cipher.encrypt(token.bot_token.encode())
+        await self._db.execute(
+            "INSERT INTO slack_tokens (workspace_id, encrypted_token, scopes, installed_at) "
+            "VALUES (?, ?, ?, ?)",
+            [workspace_id, encrypted, json.dumps(token.scopes), token.installed_at]
+        )
+
+    async def get_token(self, workspace_id: str) -> Optional[str]:
+        """Retrieve and decrypt token."""
+        row = await self._db.fetch_one(
+            "SELECT encrypted_token FROM slack_tokens WHERE workspace_id = ?",
+            [workspace_id]
+        )
+        if not row:
+            return None
+        return self._cipher.decrypt(row["encrypted_token"]).decode()
+```
+
+**Token scope minimization**:
+
+```python
+# Minimum viable scopes (public channels only)
+SLACK_SCOPES_MINIMAL = [
+    "channels:history",    # Read public channel messages
+    "channels:read",       # List public channels
+    "users:read",          # Get user display names
+    "team:read",           # Get workspace info
+]
+
+# Full scopes (includes private - requires security warning)
+SLACK_SCOPES_FULL = SLACK_SCOPES_MINIMAL + [
+    "groups:history",      # ⚠️ Private channel access
+    "groups:read",         # ⚠️ List private channels
+    "im:history",          # ⚠️ DM access
+    "im:read",             # ⚠️ List DMs
+    "mpim:history",        # ⚠️ Group DM access
+    "mpim:read",           # ⚠️ List group DMs
+]
+```
+
+### 8.6 Webhook Security
+
+**Verify Slack request signatures**:
+
+```python
+import hmac
+import hashlib
+
+async def verify_slack_signature(request: Request) -> bool:
+    """Verify request actually came from Slack."""
+
+    timestamp = request.headers.get("X-Slack-Request-Timestamp")
+    signature = request.headers.get("X-Slack-Signature")
+
+    if not timestamp or not signature:
+        return False
+
+    # Reject old timestamps (replay attack prevention)
+    if abs(time.time() - int(timestamp)) > 60 * 5:  # 5 min tolerance
+        return False
+
+    # Compute expected signature
+    body = await request.body()
+    sig_basestring = f"v0:{timestamp}:{body.decode()}"
+
+    expected = "v0=" + hmac.new(
+        SLACK_SIGNING_SECRET.encode(),
+        sig_basestring.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(expected, signature)
+
+
+@router.post("/slack/events")
+async def slack_events_webhook(request: Request):
+    """Events API webhook with signature verification."""
+
+    if not await verify_slack_signature(request):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    body = await request.json()
+    # ... handle event
+```
+
+### 8.7 Slack Connect Security Policy
+
+**Default policy: DENY cross-org summarization**
+
+```python
+class SlackConnectPolicy:
+    """Policy for handling Slack Connect (shared) channels."""
+
+    # Default: don't summarize external messages
+    include_external_messages: bool = False
+
+    # Require explicit admin approval per channel
+    require_channel_approval: bool = True
+
+    # Log all cross-org data access
+    audit_all_access: bool = True
+
+    # Which external orgs are approved (empty = none)
+    approved_external_orgs: list[str] = []
+
+
+async def filter_slack_connect_messages(
+    messages: list[SlackMessage],
+    policy: SlackConnectPolicy,
+    channel_info: ChannelInfo,
+) -> list[SlackMessage]:
+    """Filter out external org messages based on policy."""
+
+    if not channel_info.is_shared:
+        return messages  # Not a Slack Connect channel
+
+    if not policy.include_external_messages:
+        # Only include messages from home workspace
+        home_team = channel_info.home_team_id
+        return [m for m in messages if m.team == home_team]
+
+    if policy.approved_external_orgs:
+        # Only include messages from approved orgs
+        allowed = {home_team} | set(policy.approved_external_orgs)
+        return [m for m in messages if m.team in allowed]
+
+    return messages
+```
+
+### 8.8 Privacy & Compliance
 
 | Concern | Slack Specifics | Mitigation |
 |---------|-----------------|------------|
@@ -616,20 +917,63 @@ Slack Enterprise Grid is a multi-workspace deployment for large organizations:
 | **DLP (Data Loss Prevention)** | Enterprise Grid has DLP rules | Filter messages flagged by DLP before summarizing |
 | **eDiscovery hold** | Legal holds freeze message deletion | Do not delete messages under legal hold |
 | **GDPR/Right to be forgotten** | User deletion requests | Support `user_data_deleted` event, purge user data |
-| **External sharing** | Slack Connect channels | Configurable: skip or include external messages |
+| **External sharing** | Slack Connect channels | **Default DENY** - require explicit approval |
 | **PII in summaries** | Emails, phone numbers in messages | Anonymization option before sending to Claude |
+| **Private channel access** | Bot can read private channels | Track and audit all private channel summarization |
 
-### 8.2 Required Event Subscriptions for Compliance
+### 8.9 Required Event Subscriptions for Security
 
 ```python
-COMPLIANCE_EVENTS = [
+SECURITY_EVENTS = [
+    # Compliance
     "user_change",           # User profile updates (for name changes)
     "team_domain_change",    # Workspace URL changes
     "app_uninstalled",       # Our app was removed - delete tokens
-    "tokens_revoked",        # Token invalidated
+    "tokens_revoked",        # Token invalidated - stop all access
     "message_deleted",       # Remove from our storage
     "file_deleted",          # Remove file references
+
+    # Security monitoring
+    "member_joined_channel", # Track channel membership changes
+    "member_left_channel",   # User lost access - audit old summaries
+    "channel_archive",       # Channel decommissioned
+    "channel_unarchive",     # Channel restored
+    "group_archive",         # Private channel archived
+    "group_unarchive",       # Private channel restored
 ]
+```
+
+### 8.10 Audit Logging for Slack (ADR-045 Integration)
+
+```python
+# Slack-specific audit events
+SLACK_AUDIT_EVENTS = {
+    "slack.workspace.connected": {
+        "category": "configuration",
+        "severity": "info",
+        "fields": ["workspace_id", "workspace_name", "scopes", "connected_by"],
+    },
+    "slack.workspace.disconnected": {
+        "category": "configuration",
+        "severity": "warning",
+        "fields": ["workspace_id", "disconnected_by", "reason"],
+    },
+    "slack.private_channel.summarized": {
+        "category": "access",
+        "severity": "info",
+        "fields": ["channel_id", "channel_name", "summary_id", "requested_by"],
+    },
+    "slack.connect_channel.summarized": {
+        "category": "access",
+        "severity": "warning",  # Cross-org = elevated concern
+        "fields": ["channel_id", "external_orgs", "summary_id", "approved_by"],
+    },
+    "slack.summary.accessed": {
+        "category": "access",
+        "severity": "info",
+        "fields": ["summary_id", "accessed_by", "source_channels", "contains_private"],
+    },
+}
 ```
 
 ---
@@ -766,7 +1110,19 @@ CREATE INDEX idx_slack_users_workspace ON slack_users(workspace_id);
 
 ## 12. Risk Assessment
 
-### 12.1 Technical Risks
+### 12.1 Security Risks (Priority)
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|------------|
+| **Private channel data leak** | High | **Critical** | ADR-046 access controls, admin-only visibility |
+| **Token compromise** | Medium | **Critical** | Encryption at rest, audit logging, scope minimization |
+| **Webhook spoofing** | Medium | High | Signature verification (Section 8.6) |
+| **Slack Connect cross-org leak** | Medium | High | Default DENY policy, explicit approval |
+| **Stale permission access** | High | Medium | Re-check membership on summary view |
+| **DLP bypass** | Low | High | Integrate with Slack DLP events |
+| **PII exposure in summaries** | High | Medium | Anonymization options, PII detection |
+
+### 12.2 Technical Risks
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
@@ -776,7 +1132,7 @@ CREATE INDEX idx_slack_users_workspace ON slack_users(workspace_id);
 | File URL expiration | High | Medium | Immediate download or permalink-only |
 | Event deduplication failure | Medium | Low | Idempotent processing, dedup table |
 
-### 12.2 Business Risks
+### 12.3 Business Risks
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
@@ -784,6 +1140,30 @@ CREATE INDEX idx_slack_users_workspace ON slack_users(workspace_id);
 | Enterprise compliance concerns | Medium | High | Clear data handling documentation |
 | Free tier limitations | High | High | Document, recommend paid plans |
 | Slack pricing changes | Low | Medium | Abstract away Slack-specific logic |
+
+### 12.4 Security Risk Matrix
+
+```
+                    IMPACT
+                    Low      Medium    High      Critical
+              ┌─────────┬─────────┬─────────┬─────────┐
+    High      │         │ Stale   │         │ Private │
+              │         │ perms   │         │ channel │
+              │         │         │         │ leak    │
+              ├─────────┼─────────┼─────────┼─────────┤
+L   Medium    │         │         │ Webhook │ Token   │
+I             │         │         │ spoof   │ compro- │
+K             │         │         │ Connect │ mise    │
+E             │         │         │ leak    │         │
+L   ├─────────┼─────────┼─────────┼─────────┤
+I   Low       │         │         │ DLP     │         │
+H             │         │         │ bypass  │         │
+O             │         │         │         │         │
+O   └─────────┴─────────┴─────────┴─────────┘
+D
+
+Legend: Must address before launch: Critical+High likelihood
+```
 
 ---
 
@@ -835,7 +1215,7 @@ CREATE INDEX idx_slack_users_workspace ON slack_users(workspace_id);
 
 ### 15.1 Feasibility Assessment
 
-**Overall: FEASIBLE with caveats**
+**Overall: FEASIBLE with security-first approach**
 
 | Dimension | Assessment |
 |-----------|------------|
@@ -844,24 +1224,40 @@ CREATE INDEX idx_slack_users_workspace ON slack_users(workspace_id);
 | **Rate Limits** | ⚠️ Challenging but manageable |
 | **Threading** | ⚠️ Requires careful design |
 | **Compliance** | ⚠️ Enterprise Grid adds complexity |
+| **Security** | ⚠️ **Private channel access requires ADR-046 controls** |
 | **Effort** | ⚠️ 16-23 weeks significant investment |
 
-### 15.2 Recommended Approach
+### 15.2 Recommended Approach (Security-First)
 
-1. **Start with private/internal deployment** (no Marketplace)
-2. **Target paid Slack workspaces** (free tier too limited)
-3. **Use Events API + polling hybrid**
-4. **Implement thread metadata first**, expand later
-5. **Skip Slack Connect initially**
-6. **Build on ADR-002 Ingest Adapter pattern**
+1. **Default to public-channels-only scope** - Request private access only when explicitly needed
+2. **Implement ADR-046 visibility controls BEFORE private channel support** - No private channel summaries without access control
+3. **Start with private/internal deployment** (no Marketplace)
+4. **Target paid Slack workspaces** (free tier too limited)
+5. **Use Events API + polling hybrid**
+6. **DENY Slack Connect summarization by default** - Require explicit admin approval for cross-org data
+7. **Implement comprehensive audit logging from day one**
 
-### 15.3 Next Steps
+### 15.3 Security Prerequisites (Must Complete Before Launch)
+
+| Requirement | Section | Priority |
+|-------------|---------|----------|
+| Token encryption at rest | 8.5 | **P0** |
+| Webhook signature verification | 8.6 | **P0** |
+| Private channel visibility controls | 8.4 | **P0** |
+| Slack Connect default DENY | 8.7 | **P0** |
+| Audit logging integration | 8.10 | **P1** |
+| Two-tier scope installation | 3.2 | **P1** |
+| DLP event handling | 8.8 | **P2** |
+
+### 15.4 Next Steps
 
 1. [ ] Get stakeholder approval for 20-week investment
-2. [ ] Set up Slack app in test workspace
-3. [ ] Implement OAuth flow (Phase 1)
-4. [ ] Validate rate limit assumptions with real data
-5. [ ] Finalize thread handling strategy based on testing
+2. [ ] **Complete ADR-046 Phase 2 (channel sensitivity config)** - Required before Slack private channels
+3. [ ] Set up Slack app in test workspace with **public-only scopes**
+4. [ ] Implement OAuth flow with scope selection (Phase 1)
+5. [ ] Implement webhook signature verification (security prerequisite)
+6. [ ] Validate rate limit assumptions with real data
+7. [ ] Add private channel support only after visibility controls are tested
 
 ---
 

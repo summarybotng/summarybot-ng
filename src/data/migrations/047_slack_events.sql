@@ -24,14 +24,8 @@ CREATE INDEX IF NOT EXISTS idx_slack_events_type ON slack_event_log(event_type, 
 CREATE INDEX IF NOT EXISTS idx_slack_events_channel ON slack_event_log(workspace_id, channel_id, received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_slack_events_processed ON slack_event_log(processed, received_at DESC);
 
--- Cleanup trigger: Remove events older than 7 days
--- SQLite doesn't support scheduled jobs, so cleanup happens on insert
-CREATE TRIGGER IF NOT EXISTS cleanup_old_slack_events
-AFTER INSERT ON slack_event_log
-BEGIN
-    DELETE FROM slack_event_log
-    WHERE received_at < datetime('now', '-7 days');
-END;
+-- Note: Cleanup is handled by application code, not a trigger
+-- SQLite triggers with semicolons inside break the migration runner's split logic
 
 -- App installation/uninstallation tracking for security (ADR-043 Section 8.3)
 CREATE TABLE IF NOT EXISTS slack_app_events (

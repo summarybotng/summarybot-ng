@@ -38,6 +38,23 @@
 - **HNSW**: Enabled
 - **Neural**: Enabled
 
+## Deployment
+
+- Use `flyctl` (not `fly`) for Fly.io deployments
+- Config file: `fly.toml`
+- App name: `summarybot-ng`
+
+```bash
+# Deploy
+flyctl deploy
+
+# Check logs
+flyctl logs --app summarybot-ng
+
+# SSH into instance
+flyctl ssh console --app summarybot-ng
+```
+
 ## Build & Test
 
 ```bash

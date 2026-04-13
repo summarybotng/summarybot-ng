@@ -11,6 +11,7 @@ import { TimezoneProvider } from "@/contexts/TimezoneContext";
 import { Landing } from "@/pages/Landing";
 import { Callback } from "@/pages/Callback";
 import { Guilds } from "@/pages/Guilds";
+import { SlackWorkspaces } from "@/pages/SlackWorkspaces";
 import { GuildDashboard } from "@/pages/GuildDashboard";
 import { Channels } from "@/pages/Channels";
 import { Summaries } from "@/pages/Summaries";
@@ -60,6 +61,7 @@ const App = () => (
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/guilds" element={<><Header /><Guilds /></>} />
+            <Route path="/slack" element={<><Header /><SlackWorkspaces /></>} />
             <Route path="/admin/audit" element={<><Header /><AdminAudit /></>} />
             <Route
               path="/guilds/:id"

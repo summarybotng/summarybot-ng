@@ -16,7 +16,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { LogOut, User, Shield } from "lucide-react";
+import { LogOut, User, Shield, Slack } from "lucide-react";
 
 // Build info injected at build time
 const buildCommit = __BUILD_COMMIT__;
@@ -85,6 +85,12 @@ export function Header() {
                 <Link to="/guilds" className="cursor-pointer">
                   <User className="mr-2 h-4 w-4" />
                   My Servers
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/slack" className="cursor-pointer">
+                  <Slack className="mr-2 h-4 w-4" />
+                  Slack Workspaces
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>

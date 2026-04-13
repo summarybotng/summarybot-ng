@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Header, Depends, Request
 
 from ..models.ingest import IngestDocument, IngestResponse, SourceType
 from ..message_processing.whatsapp_processor import WhatsAppMessageProcessor
+from ..slack.normalizer import SlackMessageProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,36 @@ async def ingest_messages(
     if payload.source_type == SourceType.WHATSAPP.value:
         processor = WhatsAppMessageProcessor()
         processed = processor.convert_batch(payload)
+    elif payload.source_type == SourceType.SLACK.value:
+        # Note: Slack messages typically come via Events API, not batch ingest
+        # This path is for bulk import scenarios
+        processor = SlackMessageProcessor()
+        # Slack requires channel context, create a minimal one from payload
+        from ..slack.models import SlackChannel, SlackChannelType
+        channel = SlackChannel(
+            channel_id=payload.channel_id,
+            workspace_id=payload.metadata.get("workspace_id", ""),
+            channel_name=payload.channel_name,
+            channel_type=SlackChannelType.PUBLIC,
+        )
+        # Convert IngestMessage list to SlackMessage format
+        from ..slack.models import SlackMessage
+        slack_messages = [
+            SlackMessage(
+                ts=msg.id,
+                channel_id=payload.channel_id,
+                workspace_id=payload.metadata.get("workspace_id", ""),
+                user_id=msg.sender.id,
+                text=msg.content,
+                thread_ts=msg.metadata.get("thread_ts"),
+                reactions=[],
+                attachments=[],
+                files=[],
+                subtype=msg.metadata.get("subtype"),
+            )
+            for msg in payload.messages
+        ]
+        processed = processor.convert_batch(slack_messages, channel)
     else:
         raise HTTPException(
             status_code=400,

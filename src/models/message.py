@@ -43,6 +43,13 @@ class MessageType(Enum):
     WHATSAPP_LOCATION = 104
     WHATSAPP_CONTACT = 105
     WHATSAPP_POLL = 106
+    # Slack types (ADR-043) - use 200+ range
+    SLACK_TEXT = 200
+    SLACK_MEDIA = 201
+    SLACK_VOICE = 202
+    SLACK_FILE = 203
+    SLACK_THREAD_REPLY = 204
+    SLACK_BOT = 205
 
 
 class AttachmentType(Enum):

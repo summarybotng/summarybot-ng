@@ -4,8 +4,8 @@ Schedule routes for dashboard API.
 
 import logging
 from datetime import datetime
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Path
+from typing import Optional, List
+from fastapi import APIRouter, Depends, HTTPException, Path, Body
 
 from ..auth import get_current_user, require_guild_admin
 from ..models import (
@@ -643,3 +643,85 @@ async def get_execution_history(
     ]
 
     return ExecutionHistoryResponse(executions=executions)
+
+
+# ADR-046: Channel privacy checking
+@router.post(
+    "/guilds/{guild_id}/check-channel-privacy",
+    summary="Check if channels are private",
+    description="Check if any channels are not visible to @everyone (private channels). ADR-046.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Guild not found"},
+    },
+)
+async def check_channel_privacy(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    channel_ids: List[str] = Body(..., description="List of channel IDs to check"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Check if any channels are not visible to @everyone (private channels).
+
+    This endpoint helps users understand when summaries might contain content
+    from channels that not all guild members can see. Returns warnings for
+    each channel that is private (not visible to @everyone role).
+
+    ADR-046: Channel Permission-Aware Summaries
+    """
+    _check_guild_access(guild_id, user)
+    guild = _get_guild_or_404(guild_id)
+
+    warnings = []
+    checked_channels = []
+
+    # Get the @everyone role (guild.default_role)
+    everyone_role = guild.default_role
+
+    for channel_id in channel_ids:
+        try:
+            channel = guild.get_channel(int(channel_id))
+            if not channel:
+                # Channel not found - might have been deleted
+                warnings.append({
+                    "channel_id": channel_id,
+                    "channel_name": None,
+                    "warning_type": "channel_not_found",
+                    "message": f"Channel {channel_id} not found in guild",
+                })
+                continue
+
+            # Check if @everyone can view this channel
+            permissions = channel.permissions_for(everyone_role)
+            can_view = permissions.view_channel
+
+            checked_channels.append({
+                "channel_id": channel_id,
+                "channel_name": channel.name,
+                "is_private": not can_view,
+            })
+
+            if not can_view:
+                warnings.append({
+                    "channel_id": channel_id,
+                    "channel_name": channel.name,
+                    "warning_type": "private_channel",
+                    "message": f"Channel #{channel.name} is not visible to @everyone. "
+                               f"Summaries may contain content that not all members can see.",
+                })
+
+        except Exception as e:
+            logger.warning(f"Error checking channel {channel_id}: {e}")
+            warnings.append({
+                "channel_id": channel_id,
+                "channel_name": None,
+                "warning_type": "check_error",
+                "message": f"Could not check channel permissions: {str(e)}",
+            })
+
+    return {
+        "guild_id": guild_id,
+        "checked_channels": checked_channels,
+        "warnings": warnings,
+        "has_private_channels": any(ch.get("is_private") for ch in checked_channels),
+    }

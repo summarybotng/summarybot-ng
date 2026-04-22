@@ -95,3 +95,169 @@ class SQLiteConfigRepository(ConfigRepository):
             webhook_enabled=bool(row['webhook_enabled']),
             webhook_secret=decrypt_value(row['webhook_secret'])
         )
+
+    # ADR-046: Channel sensitivity configuration (Phase 2)
+
+    async def get_sensitive_channels(self, guild_id: str) -> List[str]:
+        """Get list of sensitive channel IDs for a guild.
+
+        ADR-046: Returns channel IDs that are marked as sensitive.
+        These channels require admin access to view summaries.
+
+        Args:
+            guild_id: Discord guild ID
+
+        Returns:
+            List of sensitive channel IDs
+        """
+        query = "SELECT sensitive_channels FROM guild_configs WHERE guild_id = ?"
+        row = await self.connection.fetch_one(query, (guild_id,))
+
+        if not row or not row.get('sensitive_channels'):
+            return []
+
+        try:
+            return json.loads(row['sensitive_channels'])
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(f"Invalid sensitive_channels JSON for guild {guild_id}")
+            return []
+
+    async def set_sensitive_channels(self, guild_id: str, channel_ids: List[str]) -> None:
+        """Set sensitive channel IDs for a guild.
+
+        ADR-046: Mark channels as sensitive so their summaries require admin access.
+
+        Args:
+            guild_id: Discord guild ID
+            channel_ids: List of channel IDs to mark as sensitive
+        """
+        query = """
+        UPDATE guild_configs
+        SET sensitive_channels = ?
+        WHERE guild_id = ?
+        """
+        await self.connection.execute(query, (json.dumps(channel_ids), guild_id))
+        logger.info(f"Updated sensitive channels for guild {guild_id}: {len(channel_ids)} channels")
+
+    async def get_channel_sensitivity_config(self, guild_id: str) -> Dict[str, Any]:
+        """Get full sensitivity config including auto_mark setting.
+
+        ADR-046: Returns complete sensitivity configuration for a guild.
+
+        Args:
+            guild_id: Discord guild ID
+
+        Returns:
+            Dict with sensitive_channels, sensitive_categories, and auto_mark_private_sensitive
+        """
+        query = """
+        SELECT sensitive_channels, sensitive_categories, auto_mark_private_sensitive
+        FROM guild_configs
+        WHERE guild_id = ?
+        """
+        row = await self.connection.fetch_one(query, (guild_id,))
+
+        if not row:
+            return {
+                "sensitive_channels": [],
+                "sensitive_categories": [],
+                "auto_mark_private_sensitive": True,
+            }
+
+        def safe_json_load(value: Any, default: List) -> List:
+            """Safely parse JSON, returning default on failure."""
+            if not value:
+                return default
+            try:
+                return json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                return default
+
+        return {
+            "sensitive_channels": safe_json_load(row.get('sensitive_channels'), []),
+            "sensitive_categories": safe_json_load(row.get('sensitive_categories'), []),
+            "auto_mark_private_sensitive": bool(row.get('auto_mark_private_sensitive', True)),
+        }
+
+    async def set_channel_sensitivity_config(
+        self,
+        guild_id: str,
+        sensitive_channels: Optional[List[str]] = None,
+        sensitive_categories: Optional[List[str]] = None,
+        auto_mark_private_sensitive: Optional[bool] = None,
+    ) -> None:
+        """Set full sensitivity config for a guild.
+
+        ADR-046: Update sensitivity configuration. Only updates provided fields.
+
+        Args:
+            guild_id: Discord guild ID
+            sensitive_channels: List of sensitive channel IDs (optional)
+            sensitive_categories: List of sensitive category IDs (optional)
+            auto_mark_private_sensitive: Whether to auto-mark private channels (optional)
+        """
+        updates = []
+        params: List[Any] = []
+
+        if sensitive_channels is not None:
+            updates.append("sensitive_channels = ?")
+            params.append(json.dumps(sensitive_channels))
+
+        if sensitive_categories is not None:
+            updates.append("sensitive_categories = ?")
+            params.append(json.dumps(sensitive_categories))
+
+        if auto_mark_private_sensitive is not None:
+            updates.append("auto_mark_private_sensitive = ?")
+            params.append(auto_mark_private_sensitive)
+
+        if not updates:
+            return
+
+        params.append(guild_id)
+        query = f"UPDATE guild_configs SET {', '.join(updates)} WHERE guild_id = ?"
+        await self.connection.execute(query, tuple(params))
+        logger.info(f"Updated sensitivity config for guild {guild_id}")
+
+    async def is_channel_sensitive(self, guild_id: str, channel_id: str) -> bool:
+        """Check if a specific channel is marked as sensitive.
+
+        ADR-046: Quick check for channel sensitivity.
+
+        Args:
+            guild_id: Discord guild ID
+            channel_id: Channel ID to check
+
+        Returns:
+            True if channel is in the sensitive list
+        """
+        sensitive_channels = await self.get_sensitive_channels(guild_id)
+        return channel_id in sensitive_channels
+
+    async def add_sensitive_channel(self, guild_id: str, channel_id: str) -> None:
+        """Add a channel to the sensitive list.
+
+        ADR-046: Mark a single channel as sensitive.
+
+        Args:
+            guild_id: Discord guild ID
+            channel_id: Channel ID to add
+        """
+        current = await self.get_sensitive_channels(guild_id)
+        if channel_id not in current:
+            current.append(channel_id)
+            await self.set_sensitive_channels(guild_id, current)
+
+    async def remove_sensitive_channel(self, guild_id: str, channel_id: str) -> None:
+        """Remove a channel from the sensitive list.
+
+        ADR-046: Unmark a channel as sensitive.
+
+        Args:
+            guild_id: Discord guild ID
+            channel_id: Channel ID to remove
+        """
+        current = await self.get_sensitive_channels(guild_id)
+        if channel_id in current:
+            current.remove(channel_id)
+            await self.set_sensitive_channels(guild_id, current)

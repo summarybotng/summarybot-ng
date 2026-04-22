@@ -20,6 +20,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Save, Loader2, Server, Globe, GitBranch, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { ChannelSensitivitySettings } from "@/components/settings/ChannelSensitivitySettings";
 import type { SummaryOptions } from "@/types";
 
 export function Settings() {
@@ -238,11 +239,21 @@ export function Settings() {
         </Card>
       </motion.div>
 
+      {/* ADR-046: Channel Sensitivity Settings */}
+      {guild && (
+        <ChannelSensitivitySettings
+          guildId={guild.id}
+          channels={guild.channels}
+          categories={guild.categories}
+          animationDelay={0.2}
+        />
+      )}
+
       {/* ADR-010: Prompt Configuration Card */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
+        transition={{ delay: 0.25 }}
       >
         <Card className="border-border/50">
           <CardHeader>
@@ -301,7 +312,7 @@ export function Settings() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.25 }}
+        transition={{ delay: 0.3 }}
       >
         <Card className="border-border/50">
           <CardHeader>
@@ -334,7 +345,7 @@ export function Settings() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.35 }}
+        transition={{ delay: 0.4 }}
       >
         <Card className="border-border/50">
           <CardHeader>

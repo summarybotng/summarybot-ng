@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -8,9 +9,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Archive, Hash, Globe, Mail, FileCode } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Archive, Hash, Globe, Mail, FileCode, AlertTriangle } from "lucide-react";
 import type { Schedule, SummaryOptions, Destination, Channel, Category, PromptTemplate } from "@/types";
 import { ScopeSelector, type ScopeSelectorValue, type ScopeType } from "@/components/ScopeSelector";
+import { useCheckChannelPrivacy, type PrivacyWarning } from "@/hooks/useChannelPrivacy";
 
 const TIMEZONES = [
   "America/Toronto",
@@ -79,10 +82,15 @@ interface ScheduleFormProps {
   channels?: Channel[];
   categories?: Category[];
   promptTemplates?: PromptTemplate[];  // ADR-034
+  guildId?: string;  // ADR-046: For privacy check
 }
 
-export function ScheduleForm({ formData, onChange, channels = [], categories = [], promptTemplates = [] }: ScheduleFormProps) {
+export function ScheduleForm({ formData, onChange, channels = [], categories = [], promptTemplates = [], guildId = "" }: ScheduleFormProps) {
   const textChannels = channels.filter((c) => c.type === "text");
+
+  // ADR-046: Privacy warnings for private channels
+  const [privacyWarnings, setPrivacyWarnings] = useState<PrivacyWarning[]>([]);
+  const checkPrivacy = useCheckChannelPrivacy(guildId);
 
   // Convert form data to ScopeSelector value
   const scopeValue: ScopeSelectorValue = {
@@ -99,6 +107,26 @@ export function ScheduleForm({ formData, onChange, channels = [], categories = [
       category_id: value.categoryId,
     });
   };
+
+  // ADR-046: Check privacy when channels are selected
+  useEffect(() => {
+    if (!guildId || formData.scope !== "channel" || formData.channel_ids.length === 0) {
+      setPrivacyWarnings([]);
+      return;
+    }
+
+    // Debounce the check to avoid too many API calls
+    const timeoutId = setTimeout(() => {
+      checkPrivacy.mutateAsync(formData.channel_ids).then((result) => {
+        setPrivacyWarnings(result.warnings);
+      }).catch(() => {
+        // Silently fail - privacy check is informational only
+        setPrivacyWarnings([]);
+      });
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [guildId, formData.scope, formData.channel_ids.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-4 py-4">
@@ -119,6 +147,23 @@ export function ScheduleForm({ formData, onChange, channels = [], categories = [
         categories={categories}
         compact
       />
+
+      {/* ADR-046: Privacy Warning for Private Channels */}
+      {privacyWarnings.length > 0 && (
+        <Alert variant="warning">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Privacy Notice</AlertTitle>
+          <AlertDescription>
+            This schedule includes {privacyWarnings.length} private channel{privacyWarnings.length > 1 ? "s" : ""}.
+            Summaries will be visible to all guild members in the dashboard.
+            <ul className="mt-2 list-disc list-inside text-sm">
+              {privacyWarnings.map((w) => (
+                <li key={w.channel_id}>#{w.channel_name}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="space-y-2">
         <label className="text-sm font-medium">Schedule Type</label>

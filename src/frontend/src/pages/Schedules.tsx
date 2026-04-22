@@ -245,6 +245,7 @@ export function Schedules() {
               channels={guild?.channels || []}
               categories={guild?.categories || []}
               promptTemplates={promptTemplates || []}
+              guildId={id || ""}
             />
             <DialogFooter>
               <Button variant="outline" onClick={() => setCreateOpen(false)}>
@@ -289,6 +290,7 @@ export function Schedules() {
             channels={guild?.channels || []}
             categories={guild?.categories || []}
             promptTemplates={promptTemplates || []}
+            guildId={id || ""}
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingSchedule(null)}>

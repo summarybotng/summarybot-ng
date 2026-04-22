@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
-from ..auth import get_current_user, require_guild_admin
+from ..auth import get_current_user, require_guild_admin, is_guild_admin
 from src.utils.time import utc_now_naive
 from ..models import (
     SummariesResponse,
@@ -44,7 +44,7 @@ from ..models import (
     SendToEmailResponse,
     EmailDeliveryResult,
 )
-from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_stored_summary_repository, get_config_manager, get_task_scheduler, get_summary_job_repository
+from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_stored_summary_repository, get_config_manager, get_task_scheduler, get_summary_job_repository, get_config_repository
 from ...data.base import SearchCriteria
 from ...models.stored_summary import StoredSummary, SummarySource
 from ...models.summary_job import SummaryJob, JobType, JobStatus
@@ -843,6 +843,31 @@ async def _get_stored_summary_repository():
     return await get_stored_summary_repository()
 
 
+def _summary_contains_sensitive_channels(
+    summary: StoredSummary,
+    sensitive_channels: set,
+) -> bool:
+    """Check if a summary contains any sensitive channel content.
+
+    ADR-046: Used to filter summaries for non-admin users.
+    A summary is considered sensitive if ANY of its source channels
+    are in the sensitive channels list.
+
+    Args:
+        summary: The StoredSummary to check
+        sensitive_channels: Set of sensitive channel IDs
+
+    Returns:
+        True if the summary contains content from sensitive channels
+    """
+    if not sensitive_channels:
+        return False
+
+    # Check source_channel_ids from the stored summary
+    source_channels = set(summary.source_channel_ids or [])
+    return not source_channels.isdisjoint(sensitive_channels)
+
+
 @router.get(
     "/guilds/{guild_id}/stored-summaries",
     response_model=StoredSummaryListResponse,
@@ -997,6 +1022,30 @@ async def list_stored_summaries(
         has_access_issues=has_access_issues,
     )
 
+    # ADR-046: Filter sensitive summaries for non-admin users
+    user_is_admin = is_guild_admin(user, guild_id)
+    if not user_is_admin:
+        config_repo = await get_config_repository()
+        if config_repo:
+            sensitivity_config = await config_repo.get_channel_sensitivity_config(guild_id)
+            sensitive_channels = set(sensitivity_config.get("sensitive_channels", []))
+            sensitive_categories = set(sensitivity_config.get("sensitive_categories", []))
+
+            if sensitive_channels or sensitive_categories:
+                # Filter out summaries containing sensitive channels
+                original_count = len(summaries)
+                summaries = [
+                    s for s in summaries
+                    if not _summary_contains_sensitive_channels(s, sensitive_channels)
+                ]
+                filtered_count = original_count - len(summaries)
+                if filtered_count > 0:
+                    logger.debug(
+                        f"ADR-046: Filtered {filtered_count} sensitive summaries for non-admin user in guild {guild_id}"
+                    )
+                    # Adjust total count for filtered summaries
+                    total = max(0, total - filtered_count)
+
     # ADR-009: Build schedule name lookup for summaries with schedule_ids
     schedule_names: dict[str, str] = {}
     scheduler = get_task_scheduler()
@@ -1051,10 +1100,50 @@ async def get_stored_summary(
             detail={"code": "NOT_FOUND", "message": "Stored summary not found"},
         )
 
+    # ADR-046: Check if summary contains sensitive channels for non-admin users
+    user_is_admin = is_guild_admin(user, guild_id)
+    if not user_is_admin:
+        config_repo = await get_config_repository()
+        if config_repo:
+            sensitivity_config = await config_repo.get_channel_sensitivity_config(guild_id)
+            sensitive_channels = set(sensitivity_config.get("sensitive_channels", []))
+
+            if _summary_contains_sensitive_channels(stored, sensitive_channels):
+                logger.warning(
+                    f"ADR-046: Non-admin user attempted to access sensitive summary {summary_id} in guild {guild_id}"
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": "SENSITIVE_CONTENT",
+                        "message": "This summary contains content from sensitive channels. Admin access required.",
+                    },
+                )
+
     # Mark as viewed
     if not stored.viewed_at:
         stored.mark_viewed()
         await stored_repo.update(stored)
+
+    # ADR-046: Audit logging for summary views
+    try:
+        from ...logging import get_audit_service
+        audit_service = await get_audit_service()
+        await audit_service.log(
+            event_type="summary.viewed",
+            user_id=user.get("sub"),
+            guild_id=guild_id,
+            resource_type="summary",
+            resource_id=summary_id,
+            details={
+                "source_channels": stored.source_channel_ids if stored.source_channel_ids else [],
+                "source": stored.source.value if stored.source else None,
+                "title": stored.title,
+            },
+        )
+    except Exception as e:
+        # Don't let audit logging failures break summary viewing
+        logger.warning(f"Failed to log audit event for summary view: {e}")
 
     # Build response
     summary_result = stored.summary_result

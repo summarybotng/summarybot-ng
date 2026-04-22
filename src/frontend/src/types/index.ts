@@ -464,3 +464,10 @@ export interface ExecutionHistoryResponse {
 
 // ADR-037: Re-export filter types for convenience
 export * from "./filters";
+
+// ADR-046: Channel Sensitivity Configuration
+export interface ChannelSensitivityConfig {
+  sensitive_channels: string[];
+  sensitive_categories: string[];
+  auto_mark_private_sensitive: boolean;
+}

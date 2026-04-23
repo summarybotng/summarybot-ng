@@ -7,10 +7,15 @@ import { Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { User, Guild } from "@/types";
 
-interface CallbackResponse {
+interface DiscordCallbackResponse {
   token: string;
   user: User;
   guilds: Guild[];
+}
+
+interface GoogleCallbackResponse {
+  token: string;
+  user: User & { guilds?: string[] };
 }
 
 export function Callback() {
@@ -23,21 +28,41 @@ export function Callback() {
     const code = searchParams.get("code");
 
     if (!code) {
-      setError("No authorization code received from Discord.");
+      setError("No authorization code received.");
       return;
     }
 
     const handleCallback = async () => {
       try {
-        // Retrieve OAuth state for CSRF validation
+        // Retrieve OAuth state and provider for CSRF validation
         const state = sessionStorage.getItem("oauth_state");
+        const provider = sessionStorage.getItem("oauth_provider") || "discord";
         sessionStorage.removeItem("oauth_state");
+        sessionStorage.removeItem("oauth_provider");
+
         if (!state) {
           setError("Missing OAuth state. Please try logging in again.");
           return;
         }
-        const response = await api.post<CallbackResponse>("/auth/callback", { code, state });
-        setAuth(response.token, response.user, response.guilds);
+
+        if (provider === "google") {
+          // Handle Google OAuth callback
+          const response = await api.post<GoogleCallbackResponse>("/auth/google/callback", { code, state });
+          // Google users get guilds from domain mapping (embedded in user)
+          const guilds: Guild[] = (response.user.guilds || []).map((guildId: string) => ({
+            id: guildId,
+            name: `Guild ${guildId}`,
+            icon: null,
+            owner: false,
+            permissions: "0",
+          }));
+          setAuth(response.token, response.user, guilds);
+        } else {
+          // Handle Discord OAuth callback
+          const response = await api.post<DiscordCallbackResponse>("/auth/callback", { code, state });
+          setAuth(response.token, response.user, response.guilds);
+        }
+
         navigate("/guilds");
       } catch (err) {
         console.error("Auth callback error:", err);

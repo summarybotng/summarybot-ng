@@ -463,9 +463,10 @@ def get_google_auth() -> Optional[GoogleAuth]:
         return None
 
     if _google_auth is None:
-        jwt_secret = os.getenv("JWT_SECRET", "")
+        # Check DASHBOARD_JWT_SECRET first (same as dashboard auth), then JWT_SECRET
+        jwt_secret = os.getenv("DASHBOARD_JWT_SECRET", os.getenv("JWT_SECRET", ""))
         if not jwt_secret:
-            logger.warning("JWT_SECRET not set, Google SSO disabled")
+            logger.warning("DASHBOARD_JWT_SECRET/JWT_SECRET not set, Google SSO disabled")
             return None
 
         _google_auth = GoogleAuth(config, jwt_secret)

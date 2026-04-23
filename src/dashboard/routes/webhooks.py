@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 import httpx
 
 from ..auth import get_current_user
+from ...logging import get_audit_service
 from src.utils.time import utc_now_naive
 from ..models import (
     WebhooksResponse,
@@ -165,6 +166,23 @@ async def create_webhook(
         f"name={body.name}, type={body.type}, created_by={user['sub']}"
     )
 
+    # Audit log: webhook created
+    try:
+        audit_service = await get_audit_service()
+        await audit_service.log(
+            "webhook.created",
+            user_id=user.get("sub"),
+            user_name=user.get("username"),
+            guild_id=guild_id,
+            resource_type="webhook",
+            resource_id=webhook_id,
+            resource_name=body.name,
+            action="create",
+            details={"webhook_type": body.type},
+        )
+    except Exception as e:
+        logger.warning(f"Failed to audit webhook creation: {e}")
+
     return _webhook_to_response(webhook)
 
 
@@ -261,6 +279,23 @@ async def update_webhook(
 
     await webhook_repo.save_webhook(webhook)
 
+    # Audit log: webhook updated
+    try:
+        audit_service = await get_audit_service()
+        await audit_service.log(
+            "webhook.updated",
+            user_id=user.get("sub"),
+            user_name=user.get("username"),
+            guild_id=guild_id,
+            resource_type="webhook",
+            resource_id=webhook_id,
+            resource_name=webhook.get("name"),
+            action="update",
+            details={"enabled": webhook.get("enabled")},
+        )
+    except Exception as e:
+        logger.warning(f"Failed to audit webhook update: {e}")
+
     return _webhook_to_response(webhook)
 
 
@@ -295,13 +330,32 @@ async def delete_webhook(
             detail={"code": "NOT_FOUND", "message": "Webhook not found"},
         )
 
+    # Capture webhook name before deletion for audit
+    webhook_name = webhook.get("name", "unknown")
+
     await webhook_repo.delete_webhook(webhook_id)
 
     # ADR-031: Log webhook deletion
     logger.info(
         f"Webhook deleted: webhook_id={webhook_id}, guild_id={guild_id}, "
-        f"name={webhook.get('name', 'unknown')}, deleted_by={user['sub']}"
+        f"name={webhook_name}, deleted_by={user['sub']}"
     )
+
+    # Audit log: webhook deleted
+    try:
+        audit_service = await get_audit_service()
+        await audit_service.log(
+            "webhook.deleted",
+            user_id=user.get("sub"),
+            user_name=user.get("username"),
+            guild_id=guild_id,
+            resource_type="webhook",
+            resource_id=webhook_id,
+            resource_name=webhook_name,
+            action="delete",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to audit webhook deletion: {e}")
 
     return {"success": True}
 

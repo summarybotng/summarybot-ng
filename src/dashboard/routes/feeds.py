@@ -9,6 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 
 from ..auth import get_current_user
+from ...logging import get_audit_service
 from ..models import (
     FeedsResponse,
     FeedListItem,
@@ -263,6 +264,27 @@ async def create_feed(
     await feed_repo.save_feed(feed)
     logger.info(f"Created feed {feed.id} for guild {guild_id}")
 
+    # Audit log: feed created
+    try:
+        audit_service = await get_audit_service()
+        await audit_service.log(
+            "feed.created",
+            user_id=user.get("sub"),
+            user_name=user.get("username"),
+            guild_id=guild_id,
+            resource_type="feed",
+            resource_id=feed.id,
+            resource_name=feed.title,
+            action="create",
+            details={
+                "feed_type": feed_type.value,
+                "is_public": body.is_public,
+                "channel_id": body.channel_id,
+            },
+        )
+    except Exception as e:
+        logger.warning(f"Failed to audit feed creation: {e}")
+
     return _feed_to_detail(feed, guild.name, channel_name)
 
 
@@ -386,6 +408,23 @@ async def update_feed(
     # Save updates to database
     await feed_repo.save_feed(feed)
 
+    # Audit log: feed updated
+    try:
+        audit_service = await get_audit_service()
+        await audit_service.log(
+            "feed.updated",
+            user_id=user.get("sub"),
+            user_name=user.get("username"),
+            guild_id=guild_id,
+            resource_type="feed",
+            resource_id=feed_id,
+            resource_name=feed.title,
+            action="update",
+            details={"is_public": feed.is_public},
+        )
+    except Exception as e:
+        logger.warning(f"Failed to audit feed update: {e}")
+
     channel_name = _get_channel_name(guild, feed.channel_id)
     return _feed_to_detail(feed, guild.name, channel_name)
 
@@ -421,8 +460,27 @@ async def delete_feed(
             detail={"code": "NOT_FOUND", "message": "Feed not found"},
         )
 
+    # Capture feed title before deletion for audit
+    feed_title = feed.title
+
     await feed_repo.delete_feed(feed_id)
     logger.info(f"Deleted feed {feed_id}")
+
+    # Audit log: feed deleted
+    try:
+        audit_service = await get_audit_service()
+        await audit_service.log(
+            "feed.deleted",
+            user_id=user.get("sub"),
+            user_name=user.get("username"),
+            guild_id=guild_id,
+            resource_type="feed",
+            resource_id=feed_id,
+            resource_name=feed_title,
+            action="delete",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to audit feed deletion: {e}")
 
     return {"success": True}
 

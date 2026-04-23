@@ -142,6 +142,7 @@ from .health import router as health_router  # ADR-024
 from .prompt_templates import router as prompt_templates_router  # ADR-034
 from .audit import router as audit_router  # ADR-045
 from .slack import router as slack_router  # ADR-043
+from .google_auth import router as google_auth_router  # ADR-049
 
 __all__ = [
     "auth_router",
@@ -159,6 +160,7 @@ __all__ = [
     "prompt_templates_router",
     "audit_router",
     "slack_router",
+    "google_auth_router",
     "set_services",
     "get_discord_bot",
     "get_summarization_engine",

@@ -8,6 +8,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Path, Body
 
 from ..auth import get_current_user, require_guild_admin
+from ...logging import get_audit_service
 from ..models import (
     SchedulesResponse,
     ScheduleListItem,
@@ -279,6 +280,28 @@ async def create_schedule(
     # Add to scheduler
     await scheduler.schedule_task(task)
 
+    # Audit log: schedule created
+    try:
+        audit_service = await get_audit_service()
+        await audit_service.log(
+            "schedule.created",
+            user_id=user.get("sub"),
+            user_name=user.get("username"),
+            guild_id=guild_id,
+            resource_type="schedule",
+            resource_id=task.id,
+            resource_name=task.name,
+            action="create",
+            details={
+                "scope": task_scope.value,
+                "schedule_type": schedule_type.value,
+                "channel_count": len(channel_ids),
+                "destination_count": len(destinations),
+            },
+        )
+    except Exception as e:
+        logger.warning(f"Failed to audit schedule creation: {e}")
+
     # ADR-034: Resolve template name for response
     template_name = None
     if body.prompt_template_id:
@@ -488,6 +511,26 @@ async def update_schedule(
     # Update in scheduler
     await scheduler.update_task(task)
 
+    # Audit log: schedule updated
+    try:
+        audit_service = await get_audit_service()
+        await audit_service.log(
+            "schedule.updated",
+            user_id=user.get("sub"),
+            user_name=user.get("username"),
+            guild_id=guild_id,
+            resource_type="schedule",
+            resource_id=schedule_id,
+            resource_name=task.name,
+            action="update",
+            details={
+                "is_active": task.is_active,
+                "schedule_type": task.schedule_type.value,
+            },
+        )
+    except Exception as e:
+        logger.warning(f"Failed to audit schedule update: {e}")
+
     # ADR-034: Resolve template name for response
     template_name = None
     template_id = getattr(task, 'prompt_template_id', None)
@@ -536,10 +579,29 @@ async def delete_schedule(
             detail={"code": "NOT_FOUND", "message": "Schedule not found"},
         )
 
+    # Capture task name before deletion for audit
+    task_name = task.name
+
     # Use delete_task to permanently remove (not just cancel/deactivate)
     deleted = await scheduler.delete_task(schedule_id)
     if not deleted:
         logger.warning(f"Task {schedule_id} was not found in storage during deletion")
+
+    # Audit log: schedule deleted
+    try:
+        audit_service = await get_audit_service()
+        await audit_service.log(
+            "schedule.deleted",
+            user_id=user.get("sub"),
+            user_name=user.get("username"),
+            guild_id=guild_id,
+            resource_type="schedule",
+            resource_id=schedule_id,
+            resource_name=task_name,
+            action="delete",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to audit schedule deletion: {e}")
 
     return {"success": True}
 
@@ -584,6 +646,23 @@ async def run_schedule(
     # Run in background
     import asyncio
     asyncio.create_task(scheduler.execute_task(task))
+
+    # Audit log: manual schedule execution
+    try:
+        audit_service = await get_audit_service()
+        await audit_service.log(
+            "schedule.manual_run",
+            user_id=user.get("sub"),
+            user_name=user.get("username"),
+            guild_id=guild_id,
+            resource_type="schedule",
+            resource_id=schedule_id,
+            resource_name=task.name,
+            action="execute",
+            details={"execution_id": execution_id},
+        )
+    except Exception as e:
+        logger.warning(f"Failed to audit manual schedule run: {e}")
 
     return ScheduleRunResponse(
         execution_id=execution_id,

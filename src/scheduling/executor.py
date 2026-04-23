@@ -18,6 +18,7 @@ from .delivery import (
     DeliveryStrategy,
     DeliveryResult,
     DiscordDeliveryStrategy,
+    DiscordDMDeliveryStrategy,
     WebhookDeliveryStrategy,
     EmailDeliveryStrategy,
     DashboardDeliveryStrategy,
@@ -110,6 +111,7 @@ class TaskExecutor:
         # CS-008: Initialize delivery strategy registry
         self._delivery_strategies: Dict[DestinationType, DeliveryStrategy] = {
             DestinationType.DISCORD_CHANNEL: DiscordDeliveryStrategy(),
+            DestinationType.DISCORD_DM: DiscordDMDeliveryStrategy(),
             DestinationType.WEBHOOK: WebhookDeliveryStrategy(),
             DestinationType.EMAIL: EmailDeliveryStrategy(),
             DestinationType.DASHBOARD: DashboardDeliveryStrategy(),
@@ -550,24 +552,18 @@ class TaskExecutor:
             )
 
         except InsufficientContentError as e:
-            logger.warning(f"Insufficient content for task {task.scheduled_task.id}: {e}")
-            task.mark_failed(f"Not enough messages to summarize: {e.message}")
-
-            # Track error in error log
-            await self._track_schedule_error(
-                task=task.scheduled_task,
-                error=e,
-                error_type=ErrorType.SCHEDULE_ERROR,
-                error_message=e.user_message,
-            )
+            # Not enough messages is NOT a failure - it's a skip
+            # This should NOT increment failure_count or disable the task
+            logger.info(f"Skipping task {task.scheduled_task.id}: insufficient content ({e.message_count} messages)")
+            task.mark_skipped()
 
             execution_time = (utc_now_naive() - start_time).total_seconds()
 
             return TaskExecutionResult(
                 task_id=task.scheduled_task.id,
-                success=False,
-                error_message=e.user_message,
-                error_details=e.to_dict(),
+                success=True,  # Not a failure - just nothing to summarize
+                error_message=f"Skipped: {e.user_message}",
+                error_details={"skipped": True, "reason": "insufficient_content", **e.to_dict()},
                 execution_time_seconds=execution_time
             )
 

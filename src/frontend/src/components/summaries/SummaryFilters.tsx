@@ -181,6 +181,7 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
             <SelectContent>
               <SelectItem value="all">All Platforms</SelectItem>
               <SelectItem value="discord">Discord</SelectItem>
+              <SelectItem value="slack">Slack</SelectItem>
               <SelectItem value="whatsapp">WhatsApp</SelectItem>
             </SelectContent>
           </Select>

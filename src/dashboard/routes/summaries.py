@@ -507,6 +507,28 @@ async def generate_summary(
         except Exception as e:
             logger.warning(f"[{job_id}] Failed to persist job: {e}")
 
+    # Audit log: manual summary generation started
+    try:
+        from ...logging import get_audit_service
+        audit_service = await get_audit_service()
+        await audit_service.log(
+            "summary.generate_started",
+            user_id=user.get("sub"),
+            user_name=user.get("username"),
+            guild_id=guild_id,
+            resource_type="summary_job",
+            resource_id=job_id,
+            action="generate",
+            details={
+                "scope": body.scope.value,
+                "channel_count": len(channel_ids),
+                "period_start": start_time.isoformat() if start_time else None,
+                "period_end": end_time.isoformat() if end_time else None,
+            },
+        )
+    except Exception as e:
+        logger.warning(f"Failed to audit summary generation: {e}")
+
     # Also store in-memory for backwards compatibility with task status endpoint
     task_id = job_id  # Use same ID for compatibility
     _generation_tasks[task_id] = {

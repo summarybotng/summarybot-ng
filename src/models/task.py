@@ -78,6 +78,7 @@ class ScheduleType(Enum):
 class DestinationType(Enum):
     """Types of delivery destinations."""
     DISCORD_CHANNEL = "discord_channel"
+    DISCORD_DM = "discord_dm"  # ADR-047: Direct message to a specific Discord user
     WEBHOOK = "webhook"
     EMAIL = "email"
     FILE = "file"
@@ -112,6 +113,7 @@ class Destination(BaseModel):
         """Get human-readable destination string."""
         type_names = {
             DestinationType.DISCORD_CHANNEL: "Discord Channel",
+            DestinationType.DISCORD_DM: "Discord DM",
             DestinationType.WEBHOOK: "Webhook",
             DestinationType.EMAIL: "Email",
             DestinationType.FILE: "File",
@@ -315,6 +317,15 @@ class ScheduledTask(BaseModel):
             # Schedule retry
             retry_time = utc_now_naive() + timedelta(minutes=self.retry_delay_minutes)
             self.next_run = retry_time
+
+    def mark_run_skipped(self) -> None:
+        """Mark that a run was skipped (e.g., insufficient content).
+
+        Unlike mark_run_failed(), this does NOT increment failure_count
+        and does NOT disable the task. The task simply schedules its next run.
+        """
+        # Schedule next run as normal - this is not a failure
+        self.next_run = self.calculate_next_run()
 
     def get_all_channel_ids(self) -> List[str]:
         """Get all channels for this task (supports both single and multi-channel)."""

@@ -9,7 +9,7 @@ from fastapi import APIRouter, FastAPI
 from cryptography.fernet import Fernet
 
 from .auth import DashboardAuth, set_auth_instance
-from .routes import auth_router, guilds_router, summaries_router, schedules_router, webhooks_router, events_router, feeds_router, errors_router, archive_router, prompts_router, push_templates_router, health_router, prompt_templates_router, audit_router
+from .routes import auth_router, guilds_router, summaries_router, schedules_router, webhooks_router, events_router, feeds_router, errors_router, archive_router, prompts_router, push_templates_router, health_router, prompt_templates_router, audit_router, google_auth_router
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +103,7 @@ def create_dashboard_router(
 
     # Include sub-routers
     router.include_router(auth_router, prefix="/auth", tags=["Authentication"])
+    router.include_router(google_auth_router, prefix="/auth", tags=["Google Authentication"])  # ADR-049
     # Register errors_router before guilds_router to avoid route conflicts
     # (guilds_router's /{guild_id} pattern would otherwise match /guilds/{id}/errors/...)
     router.include_router(errors_router, tags=["Errors"])
@@ -172,6 +173,17 @@ def setup_dashboard_api(
             logger.info("Audit service initialized for dashboard")
         except Exception as e:
             logger.warning(f"Failed to initialize audit service: {e}")
+
+    # Initialize Google SSO on startup (ADR-049)
+    @app.on_event("startup")
+    async def init_google_auth():
+        try:
+            from .google_auth import initialize_google_auth
+            initialize_google_auth()
+        except ValueError as e:
+            logger.error(f"Google SSO configuration error: {e}")
+        except Exception as e:
+            logger.warning(f"Google SSO initialization failed: {e}")
 
     # Stop audit service on shutdown (ADR-045)
     @app.on_event("shutdown")

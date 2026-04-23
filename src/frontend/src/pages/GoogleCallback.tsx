@@ -36,22 +36,35 @@ export function GoogleCallback() {
 
     try {
       // Parse user data from URL
-      const user: User = JSON.parse(decodeURIComponent(userParam));
+      const userData = JSON.parse(decodeURIComponent(userParam));
+
+      // Normalize user data to match User type
+      const user: User = {
+        id: userData.id,
+        username: userData.username,
+        avatar_url: userData.avatar || null,
+      };
 
       // Create guild objects from guild IDs
-      const guilds: Guild[] = (user.guilds || []).map((guildId: string) => ({
+      // Use minimal Guild structure that works with the app
+      const guildIds: string[] = userData.guilds || [];
+      const guilds: Guild[] = guildIds.map((guildId: string) => ({
         id: guildId,
-        name: `Guild`,
-        icon: null,
-        owner: false,
-        permissions: "0",
+        name: `Workspace`,
+        icon_url: null,
+        member_count: 0,
+        summary_count: 0,
+        last_summary_at: null,
+        config_status: "configured" as const,
       }));
 
-      // Store auth state
+      // Store auth state - this persists to localStorage via zustand
       setAuth(token, user, guilds);
 
-      // Redirect to guilds page
-      navigate("/guilds");
+      // Small delay to ensure localStorage write completes before navigation
+      setTimeout(() => {
+        navigate("/guilds", { replace: true });
+      }, 100);
     } catch (err) {
       console.error("Failed to parse Google auth response:", err);
       setError("Failed to process authentication response.");

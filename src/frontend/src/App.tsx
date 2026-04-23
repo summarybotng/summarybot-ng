@@ -10,6 +10,7 @@ import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { TimezoneProvider } from "@/contexts/TimezoneContext";
 import { Landing } from "@/pages/Landing";
 import { Callback } from "@/pages/Callback";
+import { GoogleCallback } from "@/pages/GoogleCallback";
 import { Guilds } from "@/pages/Guilds";
 import { SlackWorkspaces } from "@/pages/SlackWorkspaces";
 import { GuildDashboard } from "@/pages/GuildDashboard";
@@ -57,6 +58,7 @@ const App = () => (
           {/* Public routes */}
           <Route path="/" element={<Landing />} />
           <Route path="/callback" element={<Callback />} />
+          <Route path="/google-callback" element={<GoogleCallback />} />
 
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>

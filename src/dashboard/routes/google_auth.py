@@ -274,6 +274,135 @@ async def google_callback(
 
 
 @router.get(
+    "/callback",
+    summary="Handle Google OAuth callback (GET)",
+    description="Server-side callback handler - redirects to frontend with token.",
+    include_in_schema=False,  # Hide from API docs (internal redirect)
+)
+async def google_callback_get(
+    request: Request,
+    code: str,
+    state: str,
+    auth: GoogleAuth = Depends(_require_google_auth),
+):
+    """Handle Google OAuth callback via GET redirect.
+
+    This is called directly by Google's redirect. Processes the OAuth exchange
+    and redirects to the frontend with the JWT token.
+    """
+    import urllib.parse
+
+    # SECURITY: Validate and consume state atomically
+    state_data = auth.validate_state_atomic(state)
+    if state_data is None:
+        await _audit_google_auth_event(
+            "auth.google.invalid_state",
+            request,
+            success=False,
+            error_message="Invalid or expired state",
+        )
+        return RedirectResponse(url="/?error=invalid_state")
+
+    nonce, code_verifier = state_data
+
+    # Exchange code for tokens (with PKCE)
+    try:
+        token_response = await auth.exchange_code(code, code_verifier)
+    except HTTPException:
+        await _audit_google_auth_event(
+            "auth.google.token_exchange_failed",
+            request,
+            success=False,
+            error_message="Token exchange failed",
+        )
+        return RedirectResponse(url="/?error=token_exchange_failed")
+
+    id_token = token_response.get("id_token")
+    if not id_token:
+        await _audit_google_auth_event(
+            "auth.google.no_id_token",
+            request,
+            success=False,
+            error_message="No ID token in response",
+        )
+        return RedirectResponse(url="/?error=no_id_token")
+
+    # SECURITY: Verify ID token (signature, issuer, audience, nonce)
+    try:
+        claims = await auth.verify_id_token(id_token, nonce)
+    except HTTPException:
+        await _audit_google_auth_event(
+            "auth.google.id_token_invalid",
+            request,
+            success=False,
+            error_message="ID token verification failed",
+        )
+        return RedirectResponse(url="/?error=id_token_invalid")
+
+    # SECURITY: Verify domain using hd claim
+    is_valid, error_msg, domain = auth.verify_domain(claims)
+    if not is_valid:
+        await _audit_google_auth_event(
+            "auth.google.domain_rejected",
+            request,
+            success=False,
+            error_message=error_msg,
+            domain=domain,
+        )
+        return RedirectResponse(url="/?error=domain_not_authorized")
+
+    # Get user info from claims
+    google_user_id = claims.get("sub")
+    email = claims.get("email", "")
+    name = claims.get("name", email.split("@")[0])
+    picture = claims.get("picture")
+
+    # Get guilds for this domain
+    guild_ids = auth.get_guilds_for_domain(domain)
+
+    # Create JWT
+    jwt_token = auth.create_jwt(
+        user_id=google_user_id,
+        email=email,
+        name=name,
+        picture=picture,
+        domain=domain,
+        guild_ids=guild_ids,
+    )
+
+    # Audit success
+    await _audit_google_auth_event(
+        "auth.google.login_success",
+        request,
+        success=True,
+        user_id=f"google_{google_user_id}",
+        domain=domain,
+        details={
+            "email_domain": email.split("@")[1] if "@" in email else None,
+            "guild_count": len(guild_ids),
+        },
+    )
+
+    # Redirect to frontend callback with token
+    # The frontend will parse this and store the auth state
+    import json
+    user_data = {
+        "id": f"google_{google_user_id}",
+        "username": name,
+        "email": email,
+        "avatar": picture,
+        "auth_provider": "google",
+        "domain": domain,
+        "guilds": guild_ids,
+    }
+    user_json = urllib.parse.quote(json.dumps(user_data))
+
+    return RedirectResponse(
+        url=f"/google-callback?token={jwt_token}&user={user_json}"
+    )
+
+
+@router.get(
     "/redirect",
     summary="Redirect to Google OAuth",
     description="Redirects browser directly to Google OAuth consent screen.",

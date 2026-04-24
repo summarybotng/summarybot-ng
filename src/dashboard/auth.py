@@ -315,9 +315,19 @@ class DashboardAuth:
             HTTPException: If token is invalid or expired
         """
         try:
-            return jwt.decode(token, self.jwt_secret, algorithms=["HS256"])
+            payload = jwt.decode(token, self.jwt_secret, algorithms=["HS256"])
+            logger.debug(f"JWT verified successfully for user: {payload.get('sub', 'unknown')}, secret prefix: {self.jwt_secret[:8]}...")
+            return payload
         except JWTError as e:
             error_str = str(e).lower()
+            # Log details for debugging
+            logger.warning(f"JWT verification failed: {e}, secret prefix: {self.jwt_secret[:8]}...")
+            try:
+                # Decode without verification to see what's in the token
+                unverified = jwt.decode(token, options={"verify_signature": False})
+                logger.warning(f"Unverified token payload: sub={unverified.get('sub')}, auth_provider={unverified.get('auth_provider')}")
+            except Exception:
+                logger.warning("Could not decode token even without verification")
             if "expired" in error_str:
                 raise HTTPException(
                     status_code=401,

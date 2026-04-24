@@ -9,7 +9,7 @@ from fastapi import APIRouter, FastAPI
 from cryptography.fernet import Fernet
 
 from .auth import DashboardAuth, set_auth_instance
-from .routes import auth_router, guilds_router, summaries_router, schedules_router, webhooks_router, events_router, feeds_router, errors_router, archive_router, prompts_router, push_templates_router, health_router, prompt_templates_router, audit_router, google_auth_router
+from .routes import auth_router, guilds_router, summaries_router, schedules_router, webhooks_router, events_router, feeds_router, errors_router, archive_router, prompts_router, push_templates_router, health_router, prompt_templates_router, audit_router, google_auth_router, slack_router
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +88,7 @@ def create_dashboard_router(
         encryption_key=encryption_key,
     )
     set_auth_instance(auth)
+    logger.info(f"DashboardAuth initialized with JWT secret prefix: {jwt_secret[:8]}...")
 
     # Store service references for routes
     from . import routes
@@ -118,6 +119,7 @@ def create_dashboard_router(
     router.include_router(push_templates_router, tags=["Push Templates"])
     router.include_router(prompt_templates_router, tags=["Prompt Templates"])  # ADR-034
     router.include_router(audit_router, tags=["Audit"])  # ADR-045
+    router.include_router(slack_router, tags=["Slack"])  # ADR-043
 
     return router
 
@@ -184,6 +186,19 @@ def setup_dashboard_api(
             logger.error(f"Google SSO configuration error: {e}")
         except Exception as e:
             logger.warning(f"Google SSO initialization failed: {e}")
+
+    # Initialize Slack OAuth on startup (ADR-043)
+    @app.on_event("startup")
+    async def init_slack_auth():
+        try:
+            from ..slack.auth import initialize_slack_auth
+            slack_auth = initialize_slack_auth()
+            if slack_auth:
+                logger.info("Slack OAuth initialized successfully")
+            else:
+                logger.info("Slack OAuth not configured (missing SLACK_CLIENT_ID/SECRET/REDIRECT_URI)")
+        except Exception as e:
+            logger.warning(f"Slack OAuth initialization failed: {e}")
 
     # Stop audit service on shutdown (ADR-045)
     @app.on_event("shutdown")

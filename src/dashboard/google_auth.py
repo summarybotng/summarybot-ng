@@ -434,11 +434,14 @@ class GoogleAuth:
             "guild_roles": {gid: "member" for gid in guild_ids},  # Default role
             "iat": now,
             "exp": now + timedelta(hours=4),  # SECURITY: Short expiration
-            "iss": "summarybot-ng",
-            "aud": "summarybot-dashboard",
+            # NOTE: Don't include iss/aud claims - jose library requires explicit
+            # audience verification if aud claim is present, and we share the
+            # verify_jwt method with Discord auth which doesn't expect these.
         }
 
-        return jwt.encode(payload, self.jwt_secret, algorithm="HS256")
+        token = jwt.encode(payload, self.jwt_secret, algorithm="HS256")
+        logger.info(f"Created Google JWT for user {user_id}, secret prefix: {self.jwt_secret[:8]}...")
+        return token
 
 
 # Global instance
@@ -470,6 +473,7 @@ def get_google_auth() -> Optional[GoogleAuth]:
             return None
 
         _google_auth = GoogleAuth(config, jwt_secret)
+        logger.info(f"GoogleAuth initialized with JWT secret prefix: {jwt_secret[:8]}...")
 
     return _google_auth
 

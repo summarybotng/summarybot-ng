@@ -999,6 +999,33 @@ class PushToChannelResponse(BaseModel):
 
 
 # ============================================================================
+# ADR-047: Discord DM Delivery Models
+# ============================================================================
+
+class PushToDMRequest(BaseModel):
+    """Request to push a stored summary to a Discord user via DM (ADR-047)."""
+    user_id: str = Field(..., description="Discord user ID to send DM to")
+    format: str = Field(
+        "embed",
+        description="Format: embed (recommended), markdown, or plain"
+    )
+    include_references: bool = Field(True, description="Include ADR-004 source references")
+    custom_message: Optional[str] = Field(None, description="Optional intro message")
+    include_key_points: bool = Field(True, description="Include key points section")
+    include_action_items: bool = Field(True, description="Include action items section")
+    include_participants: bool = Field(True, description="Include participants section")
+    include_technical_terms: bool = Field(True, description="Include technical terms section")
+
+
+class PushToDMResponse(BaseModel):
+    """Response for push to DM operation (ADR-047)."""
+    success: bool
+    user_id: str
+    message_id: Optional[str] = None
+    error: Optional[str] = None
+
+
+# ============================================================================
 # ADR-030: Email Delivery Models
 # ============================================================================
 

@@ -349,6 +349,9 @@ async def google_callback_get(
             error_message=error_msg,
             domain=domain,
         )
+        # Provide specific error for personal Gmail vs unauthorized domain
+        if error_msg == "Workspace account required" or error_msg == "Google Workspace account required":
+            return RedirectResponse(url="/?error=gmail_not_supported")
         return RedirectResponse(url="/?error=domain_not_authorized")
 
     # Get user info from claims

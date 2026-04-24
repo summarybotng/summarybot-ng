@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Send,
+  MessageCircle,
   Mail,
   RefreshCw,
   Pin,
@@ -29,6 +30,7 @@ import {
 export interface SummaryActionHandlers {
   onView?: () => void;
   onPush: () => void;
+  onPushDM: () => void;  // ADR-047: Push to Discord DM
   onEmail: () => void;
   onRegenerate?: () => void;
   onPin: () => void;
@@ -83,6 +85,10 @@ export function SummaryActions({
             <Send className="mr-2 h-4 w-4" />
             Push to Channel
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleClick(handlers.onPushDM)}>
+            <MessageCircle className="mr-2 h-4 w-4" />
+            Push to DM
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={handleClick(handlers.onEmail)}>
             <Mail className="mr-2 h-4 w-4" />
             Send to Email
@@ -121,6 +127,10 @@ export function SummaryActions({
       <Button onClick={handleClick(handlers.onPush)} className="w-full sm:w-auto">
         <Send className="mr-2 h-4 w-4" />
         Push to Channel
+      </Button>
+      <Button variant="outline" onClick={handleClick(handlers.onPushDM)} className="w-full sm:w-auto">
+        <MessageCircle className="mr-2 h-4 w-4" />
+        Push to DM
       </Button>
       <Button variant="outline" onClick={handleClick(handlers.onEmail)} className="w-full sm:w-auto">
         <Mail className="mr-2 h-4 w-4" />

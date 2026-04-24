@@ -24,6 +24,7 @@ export function GoogleCallback() {
         no_id_token: "No identity token received from Google.",
         id_token_invalid: "Identity token verification failed.",
         domain_not_authorized: "Your domain is not authorized for this application.",
+        gmail_not_supported: "Google Workspace account required. Personal Gmail accounts (@gmail.com) are not supported. Please use your organization's Google Workspace account.",
       };
       setError(errorMessages[errorParam] || "Authentication failed.");
       return;

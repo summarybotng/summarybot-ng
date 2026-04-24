@@ -441,6 +441,25 @@ export interface SendToEmailResponse {
   }[];
 }
 
+// ADR-047: Discord DM delivery types
+export interface PushToDMRequest {
+  user_id: string;
+  format: "embed" | "markdown" | "plain";
+  include_references?: boolean;
+  custom_message?: string;
+  include_key_points?: boolean;
+  include_action_items?: boolean;
+  include_participants?: boolean;
+  include_technical_terms?: boolean;
+}
+
+export interface PushToDMResponse {
+  success: boolean;
+  user_id: string;
+  message_id?: string;
+  error?: string;
+}
+
 export interface StoredSummaryUpdateRequest {
   title?: string;
   is_pinned?: boolean;

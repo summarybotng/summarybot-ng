@@ -94,6 +94,16 @@ class SummaryTask:
         self.retry_count += 1
         self.scheduled_task.mark_run_failed()
 
+    def mark_skipped(self) -> None:
+        """Mark task as skipped (e.g., insufficient content).
+
+        Unlike mark_failed(), this does NOT increment failure_count.
+        The task simply schedules its next run.
+        """
+        self.status = TaskStatus.COMPLETED  # Treat as completed, not failed
+        self.completed_at = utc_now_naive()
+        self.scheduled_task.mark_run_skipped()
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for persistence."""
         return {

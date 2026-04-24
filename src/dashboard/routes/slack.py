@@ -95,7 +95,12 @@ async def get_install_url(
 
     Requires admin permissions on the target Discord guild.
     """
+    # Lazy initialization if not already done
     slack_auth = get_slack_auth()
+    if not slack_auth:
+        from ...slack.auth import initialize_slack_auth
+        slack_auth = initialize_slack_auth()
+
     if not slack_auth:
         raise HTTPException(
             status_code=503,
@@ -148,7 +153,12 @@ async def oauth_callback(
     This endpoint is called by Slack after the user authorizes the app.
     It exchanges the code for tokens and stores the workspace.
     """
+    # Lazy initialization if not already done
     slack_auth = get_slack_auth()
+    if not slack_auth:
+        from ...slack.auth import initialize_slack_auth
+        slack_auth = initialize_slack_auth()
+
     if not slack_auth:
         raise HTTPException(
             status_code=503,
@@ -498,7 +508,11 @@ async def update_channel(
 )
 async def get_status():
     """Get Slack integration configuration status."""
+    # Lazy initialization if not already done (startup event may not have fired)
     slack_auth = get_slack_auth()
+    if not slack_auth:
+        from ...slack.auth import initialize_slack_auth
+        slack_auth = initialize_slack_auth()
 
     return {
         "configured": slack_auth is not None,

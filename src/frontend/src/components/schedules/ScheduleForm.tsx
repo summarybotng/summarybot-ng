@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Archive, Hash, Globe, Mail, FileCode, AlertTriangle } from "lucide-react";
+import { Archive, Hash, Globe, Mail, FileCode, AlertTriangle, MessageCircle } from "lucide-react";
 import type { Schedule, SummaryOptions, Destination, Channel, Category, PromptTemplate } from "@/types";
 import { ScopeSelector, type ScopeSelectorValue, type ScopeType } from "@/components/ScopeSelector";
 import { useCheckChannelPrivacy, type PrivacyWarning } from "@/hooks/useChannelPrivacy";
@@ -69,6 +69,8 @@ export interface ScheduleFormData {
     dashboard: boolean;
     discord_channel: boolean;
     discord_channel_id: string;
+    discord_dm: boolean;        // ADR-047: Discord DM delivery
+    discord_dm_user_id: string; // ADR-047: Discord user ID for DM
     webhook: boolean;
     webhook_url: string;
     email: boolean;           // ADR-030: Email delivery
@@ -409,6 +411,44 @@ export function ScheduleForm({ formData, onChange, channels = [], categories = [
           )}
         </div>
 
+        {/* ADR-047: Discord DM Option */}
+        <div className="space-y-2 rounded-md border p-3">
+          <div className="flex items-start space-x-3">
+            <Checkbox
+              id="dest-discord-dm"
+              checked={formData.destinations.discord_dm}
+              onCheckedChange={(checked) =>
+                onChange({
+                  ...formData,
+                  destinations: { ...formData.destinations, discord_dm: checked as boolean },
+                })
+              }
+            />
+            <div className="space-y-1 flex-1">
+              <label htmlFor="dest-discord-dm" className="text-sm font-medium cursor-pointer flex items-center gap-2">
+                <MessageCircle className="h-4 w-4" />
+                Discord DM
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Send directly to a user via DM
+              </p>
+            </div>
+          </div>
+          {formData.destinations.discord_dm && (
+            <Input
+              className="mt-2"
+              placeholder="Discord User ID (e.g., 123456789012345678)"
+              value={formData.destinations.discord_dm_user_id}
+              onChange={(e) =>
+                onChange({
+                  ...formData,
+                  destinations: { ...formData.destinations, discord_dm_user_id: e.target.value },
+                })
+              }
+            />
+          )}
+        </div>
+
         {/* Webhook Option */}
         <div className="space-y-2 rounded-md border p-3">
           <div className="flex items-start space-x-3">
@@ -507,6 +547,8 @@ export const getInitialFormData = (): ScheduleFormData => ({
     dashboard: true, // Default to dashboard
     discord_channel: false,
     discord_channel_id: "",
+    discord_dm: false,        // ADR-047
+    discord_dm_user_id: "",   // ADR-047
     webhook: false,
     webhook_url: "",
     email: false,           // ADR-030
@@ -521,6 +563,7 @@ export function scheduleToFormData(schedule: Schedule): ScheduleFormData {
   // Extract destinations from schedule
   const dashboardDest = schedule.destinations.find((d) => d.type === "dashboard");
   const discordDest = schedule.destinations.find((d) => d.type === "discord_channel");
+  const discordDmDest = schedule.destinations.find((d) => d.type === "discord_dm");  // ADR-047
   const webhookDest = schedule.destinations.find((d) => d.type === "webhook");
   const emailDest = schedule.destinations.find((d) => d.type === "email");  // ADR-030
 
@@ -544,6 +587,8 @@ export function scheduleToFormData(schedule: Schedule): ScheduleFormData {
       dashboard: !!dashboardDest,
       discord_channel: !!discordDest,
       discord_channel_id: discordDest?.target || "",
+      discord_dm: !!discordDmDest,           // ADR-047
+      discord_dm_user_id: discordDmDest?.target || "",  // ADR-047
       webhook: !!webhookDest,
       webhook_url: webhookDest?.target || "",
       email: !!emailDest,                    // ADR-030
@@ -568,6 +613,15 @@ export function formDataToDestinations(formData: ScheduleFormData): Destination[
     destinations.push({
       type: "discord_channel",
       target: formData.destinations.discord_channel_id,
+      format: "embed",
+    });
+  }
+
+  // ADR-047: Discord DM destination
+  if (formData.destinations.discord_dm && formData.destinations.discord_dm_user_id) {
+    destinations.push({
+      type: "discord_dm",
+      target: formData.destinations.discord_dm_user_id,
       format: "embed",
     });
   }

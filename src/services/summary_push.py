@@ -63,6 +63,24 @@ class PushToChannelsResult:
         }
 
 
+@dataclass
+class DMPushResult:
+    """Result of a DM push (ADR-047)."""
+    user_id: str
+    success: bool
+    message_id: Optional[str] = None
+    error: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "user_id": self.user_id,
+            "success": self.success,
+            "message_id": self.message_id,
+            "error": self.error
+        }
+
+
 class SummaryPushService:
     """Service for pushing stored summaries to Discord channels.
 
@@ -903,3 +921,168 @@ class SummaryPushService:
             successful_channels=successful_count,
             deliveries=deliveries,
         )
+
+    async def push_to_dm(
+        self,
+        summary_id: str,
+        user_id: str,
+        format: str = "embed",
+        include_references: bool = True,
+        custom_message: Optional[str] = None,
+        sender_id: Optional[str] = None,
+        include_key_points: bool = True,
+        include_action_items: bool = True,
+        include_participants: bool = True,
+        include_technical_terms: bool = True,
+    ) -> DMPushResult:
+        """Push a stored summary to a Discord user via DM.
+
+        ADR-047: Discord DM Delivery Support.
+
+        Args:
+            summary_id: ID of the stored summary to push
+            user_id: Discord user ID to send DM to
+            format: Message format (embed, markdown, plain)
+            include_references: Include source references
+            custom_message: Optional custom message prefix
+            sender_id: ID of user performing the push (for audit)
+            include_key_points: Include key points section
+            include_action_items: Include action items section
+            include_participants: Include participants section
+            include_technical_terms: Include technical terms section
+
+        Returns:
+            Result of the DM push operation
+        """
+        if not self.discord_client:
+            return DMPushResult(
+                user_id=user_id,
+                success=False,
+                error="Discord client not available",
+            )
+
+        # Get stored summary
+        repo = await get_stored_summary_repository()
+        stored_summary = await repo.get_by_id(summary_id)
+
+        if not stored_summary:
+            raise ValueError(f"Summary {summary_id} not found")
+
+        try:
+            # Fetch the user
+            discord_user = self.discord_client.get_user(int(user_id))
+            if not discord_user:
+                discord_user = await self.discord_client.fetch_user(int(user_id))
+
+            if not discord_user:
+                return DMPushResult(
+                    user_id=user_id,
+                    success=False,
+                    error=f"User {user_id} not found",
+                )
+
+            # Create DM channel
+            dm_channel = discord_user.dm_channel
+            if not dm_channel:
+                dm_channel = await discord_user.create_dm()
+
+            # Build message based on format
+            if format == "embed":
+                embed = self._build_embed(
+                    stored_summary,
+                    custom_message=custom_message,
+                    include_references=include_references,
+                    include_key_points=include_key_points,
+                    include_action_items=include_action_items,
+                    include_participants=include_participants,
+                    include_technical_terms=include_technical_terms,
+                )
+                message = await dm_channel.send(embed=embed)
+            else:
+                # Markdown or plain text
+                text = self._build_text_message(
+                    stored_summary,
+                    format=format,
+                    custom_message=custom_message,
+                    include_references=include_references,
+                    include_key_points=include_key_points,
+                    include_action_items=include_action_items,
+                    include_participants=include_participants,
+                    include_technical_terms=include_technical_terms,
+                )
+                # Split if too long
+                if len(text) > 2000:
+                    chunks = [text[i:i+2000] for i in range(0, len(text), 2000)]
+                    for chunk in chunks:
+                        message = await dm_channel.send(chunk)
+                else:
+                    message = await dm_channel.send(text)
+
+            logger.info(f"Pushed summary {summary_id} via DM to user {user_id}")
+
+            # Track the push in stored summary metadata
+            await self._track_dm_push(
+                summary_id=summary_id,
+                user_id=user_id,
+                message_id=str(message.id),
+                sender_id=sender_id,
+            )
+
+            return DMPushResult(
+                user_id=user_id,
+                success=True,
+                message_id=str(message.id),
+            )
+
+        except discord.Forbidden:
+            logger.warning(f"Cannot send DM to user {user_id}: DMs disabled or bot blocked")
+            return DMPushResult(
+                user_id=user_id,
+                success=False,
+                error="User has DMs disabled or has blocked the bot",
+            )
+
+        except discord.NotFound:
+            logger.warning(f"User {user_id} not found")
+            return DMPushResult(
+                user_id=user_id,
+                success=False,
+                error=f"User {user_id} not found",
+            )
+
+        except Exception as e:
+            logger.exception(f"Failed to push DM to user {user_id}: {e}")
+            return DMPushResult(
+                user_id=user_id,
+                success=False,
+                error=str(e),
+            )
+
+    async def _track_dm_push(
+        self,
+        summary_id: str,
+        user_id: str,
+        message_id: str,
+        sender_id: Optional[str] = None,
+    ) -> None:
+        """Track a DM push in the stored summary metadata."""
+        try:
+            repo = await get_stored_summary_repository()
+            stored_summary = await repo.get_by_id(summary_id)
+
+            if stored_summary:
+                # Add to pushed metadata
+                metadata = stored_summary.metadata or {}
+                dm_pushes = metadata.get("dm_pushes", [])
+                dm_pushes.append({
+                    "user_id": user_id,
+                    "message_id": message_id,
+                    "pushed_at": datetime.utcnow().isoformat(),
+                    "pushed_by": sender_id,
+                })
+                metadata["dm_pushes"] = dm_pushes
+
+                await repo.update(summary_id, metadata=metadata)
+                logger.debug(f"Tracked DM push for summary {summary_id}")
+        except Exception as e:
+            logger.warning(f"Failed to track DM push: {e}")

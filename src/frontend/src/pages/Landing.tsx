@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuthStore } from "@/stores/authStore";
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageSquare, Calendar, Zap, Shield } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { MessageSquare, Calendar, Zap, Shield, AlertCircle, X } from "lucide-react";
 
 interface AuthProviders {
   discord: boolean;
@@ -35,16 +36,61 @@ const features = [
   },
 ];
 
+// Error messages for OAuth failures
+const errorMessages: Record<string, { title: string; message: string }> = {
+  invalid_state: {
+    title: "Authentication Error",
+    message: "Invalid OAuth state. Please try logging in again.",
+  },
+  token_exchange_failed: {
+    title: "Authentication Error",
+    message: "Failed to exchange authorization code. Please try again.",
+  },
+  no_id_token: {
+    title: "Authentication Error",
+    message: "No identity token received from Google.",
+  },
+  id_token_invalid: {
+    title: "Authentication Error",
+    message: "Identity token verification failed. Please try again.",
+  },
+  domain_not_authorized: {
+    title: "Domain Not Authorized",
+    message: "Your organization's domain is not authorized for this application. Please contact your administrator.",
+  },
+  gmail_not_supported: {
+    title: "Workspace Account Required",
+    message: "Personal Gmail accounts (@gmail.com) are not supported. Please sign in with your organization's Google Workspace account.",
+  },
+};
+
 export function Landing() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated } = useAuthStore();
   const [providers, setProviders] = useState<AuthProviders>({ discord: true, google: false });
+  const [error, setError] = useState<{ title: string; message: string } | null>(null);
 
   useEffect(() => {
     if (isAuthenticated()) {
       navigate("/guilds");
     }
   }, [isAuthenticated, navigate]);
+
+  useEffect(() => {
+    // Check for error in URL params
+    const errorParam = searchParams.get("error");
+    if (errorParam) {
+      const errorInfo = errorMessages[errorParam] || {
+        title: "Authentication Failed",
+        message: "An error occurred during authentication. Please try again.",
+      };
+      setError(errorInfo);
+      // Clear the error from URL without triggering a re-render loop
+      searchParams.delete("error");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     // Fetch available auth providers
@@ -82,11 +128,29 @@ export function Landing() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Error Alert */}
+      {error && (
+        <div className="container pt-4">
+          <Alert variant="destructive" className="relative">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>{error.title}</AlertTitle>
+            <AlertDescription>{error.message}</AlertDescription>
+            <button
+              onClick={() => setError(null)}
+              className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100"
+            >
+              <X className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </button>
+          </Alert>
+        </div>
+      )}
+
       {/* Hero Section */}
       <section className="relative overflow-hidden">
         {/* Gradient Background */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/20 via-background to-background" />
-        
+
         <div className="container relative py-24 sm:py-32">
           <motion.div
             initial={{ opacity: 0, y: 20 }}

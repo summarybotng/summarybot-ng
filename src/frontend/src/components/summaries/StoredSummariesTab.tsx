@@ -9,7 +9,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
-import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, useSendToEmail, useRegenerateSummary, type SummarySourceType, type RegenerateOptions } from "@/hooks/useStoredSummaries";
+import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, usePushToDM, useSendToEmail, useRegenerateSummary, type SummarySourceType, type RegenerateOptions } from "@/hooks/useStoredSummaries";
 import { useGuild } from "@/hooks/useGuilds";
 import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -79,7 +79,9 @@ import { Label } from "@/components/ui/label";
 import { StoredSummaryCard } from "./StoredSummaryCard";
 import { SummaryActions } from "./SummaryActions";
 import { PushToChannelModal } from "./PushToChannelModal";
+import { PushToDMModal } from "./PushToDMModal";
 import { SendToEmailModal, type SendToEmailRequest } from "./SendToEmailModal";
+import type { PushToDMRequest } from "@/types";
 import { SummaryFilters, type FilterState } from "./SummaryFilters";
 import { SummaryCalendar } from "./SummaryCalendar";
 import { BulkActionBar } from "./BulkActionBar";
@@ -131,6 +133,8 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
   const [viewMode, setViewMode] = useState<"list" | "calendar">("list");  // ADR-017
   const [selectedSummary, setSelectedSummary] = useState<string | null>(null);
   const [pushModalSummary, setPushModalSummary] = useState<StoredSummary | null>(null);
+  const [dmModalSummary, setDmModalSummary] = useState<StoredSummary | null>(null);  // ADR-047
+  const [dmError, setDmError] = useState<string | null>(null);  // ADR-047
   const [emailModalSummary, setEmailModalSummary] = useState<StoredSummary | null>(null);  // ADR-030
   const [emailError, setEmailError] = useState<string | null>(null);  // ADR-030
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -192,6 +196,7 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
   const updateMutation = useUpdateStoredSummary(guildId);
   const deleteMutation = useDeleteStoredSummary(guildId);
   const pushMutation = usePushToChannel(guildId);
+  const dmMutation = usePushToDM(guildId);  // ADR-047
   const emailMutation = useSendToEmail(guildId);  // ADR-030
   const regenerateMutation = useRegenerateSummary(guildId);
 
@@ -332,6 +337,30 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
         description: "Failed to push summary",
         variant: "destructive",
       });
+    }
+  };
+
+  // ADR-047: DM handling
+  const handleDM = async (request: PushToDMRequest) => {
+    if (!dmModalSummary) return;
+    setDmError(null);
+    try {
+      const result = await dmMutation.mutateAsync({
+        summaryId: dmModalSummary.id,
+        request,
+      });
+      if (result.success) {
+        setDmModalSummary(null);
+        toast({
+          title: "DM sent",
+          description: "Summary sent successfully via DM",
+        });
+      } else {
+        setDmError(result.error || "Failed to send DM");
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to send DM";
+      setDmError(errorMessage);
     }
   };
 
@@ -581,6 +610,7 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
                         index={startIndex + idx}
                         onView={() => setSelectedSummary(summary.id)}
                         onPush={() => setPushModalSummary(summary)}
+                        onPushDM={() => setDmModalSummary(summary)}
                         onEmail={() => setEmailModalSummary(summary)}
                         onPin={() => handlePin(summary)}
                         onArchive={() => handleArchive(summary)}
@@ -643,6 +673,12 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
             setPushModalSummary(summary);
           }
         }}
+        onPushDM={(summaryId) => {
+          const summary = summaries.find((s) => s.id === summaryId);
+          if (summary) {
+            setDmModalSummary(summary);
+          }
+        }}
         onEmail={(summaryId) => {
           const summary = summaries.find((s) => s.id === summaryId);
           if (summary) {
@@ -667,6 +703,24 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
           isPending={pushMutation.isPending}
           onSubmit={handlePush}
           guildId={guildId}
+        />
+      )}
+
+      {/* ADR-047: DM Modal */}
+      {dmModalSummary && (
+        <PushToDMModal
+          open={!!dmModalSummary}
+          onOpenChange={(open) => {
+            if (!open) {
+              setDmModalSummary(null);
+              setDmError(null);
+            }
+          }}
+          summaryTitle={dmModalSummary.title}
+          isPending={dmMutation.isPending}
+          onSubmit={handleDM}
+          guildId={guildId}
+          error={dmError}
         />
       )}
 
@@ -768,6 +822,7 @@ function StoredSummaryDetailSheet({
   open,
   onOpenChange,
   onPush,
+  onPushDM,
   onEmail,
   onPin,
   onArchive,
@@ -781,6 +836,7 @@ function StoredSummaryDetailSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPush: (summaryId: string) => void;
+  onPushDM: (summaryId: string) => void;
   onEmail: (summaryId: string) => void;
   onPin: (summary: StoredSummaryDetail) => void;
   onArchive: (summary: StoredSummaryDetail) => void;
@@ -863,6 +919,7 @@ function StoredSummaryDetailSheet({
                 variant="buttons"
                 handlers={{
                   onPush: () => onPush(summary.id),
+                  onPushDM: () => onPushDM(summary.id),
                   onEmail: () => onEmail(summary.id),
                   onRegenerate: () => setRegenerateDialogOpen(true),
                   onPin: () => onPin(summary),

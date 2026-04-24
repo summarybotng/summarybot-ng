@@ -33,6 +33,9 @@ from ..models import (
     PushToChannelResponse,
     PushDeliveryResult,
     PromptSourceResponse,
+    # ADR-047: Discord DM delivery
+    PushToDMRequest,
+    PushToDMResponse,
     # ADR-018: Bulk operations
     BulkDeleteRequest,
     BulkDeleteResponse,
@@ -2351,6 +2354,80 @@ async def push_to_channel(
                 )
                 for d in result.deliveries
             ],
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": str(e)},
+        )
+
+
+@router.post(
+    "/guilds/{guild_id}/stored-summaries/{summary_id}/push-dm",
+    response_model=PushToDMResponse,
+    summary="Push to DM",
+    description="Push a stored summary to a Discord user via DM (ADR-047).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Summary not found"},
+    },
+)
+async def push_to_dm(
+    body: PushToDMRequest,
+    guild_id: str = Path(..., description="Discord guild ID"),
+    summary_id: str = Path(..., description="Stored summary ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Push a stored summary to a Discord user via DM.
+
+    ADR-047: Discord DM delivery support.
+    """
+    _check_guild_access(guild_id, user)
+    require_guild_admin(guild_id, user)  # Admin only - sends to Discord
+    bot = get_discord_bot()
+
+    if not bot or not bot.client:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "BOT_UNAVAILABLE", "message": "Discord bot not available"},
+        )
+
+    # Validate user ID format (Discord snowflake: 17-19 digits)
+    import re
+    if not re.match(r'^\d{17,19}$', body.user_id):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_USER_ID",
+                "message": "Invalid Discord user ID format. Must be 17-19 digits.",
+            },
+        )
+
+    # Use push service
+    from ...services.summary_push import SummaryPushService
+
+    push_service = SummaryPushService(discord_client=bot.client)
+
+    try:
+        result = await push_service.push_to_dm(
+            summary_id=summary_id,
+            user_id=body.user_id,
+            format=body.format,
+            include_references=body.include_references,
+            custom_message=body.custom_message,
+            sender_id=user.get("id"),
+            include_key_points=body.include_key_points,
+            include_action_items=body.include_action_items,
+            include_participants=body.include_participants,
+            include_technical_terms=body.include_technical_terms,
+        )
+
+        return PushToDMResponse(
+            success=result.success,
+            user_id=body.user_id,
+            message_id=result.message_id,
+            error=result.error,
         )
 
     except ValueError as e:

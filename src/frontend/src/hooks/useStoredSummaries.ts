@@ -13,6 +13,8 @@ import type {
   StoredSummaryUpdateRequest,
   PushToChannelRequest,
   PushToChannelResponse,
+  PushToDMRequest,
+  PushToDMResponse,
   SendToEmailRequest,
   SendToEmailResponse,
 } from "@/types";
@@ -208,6 +210,31 @@ export function usePushToChannel(guildId: string) {
     }) =>
       api.post<PushToChannelResponse>(
         `/guilds/${guildId}/stored-summaries/${summaryId}/push`,
+        request
+      ),
+    onSuccess: (_, { summaryId }) => {
+      queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] });
+      queryClient.invalidateQueries({
+        queryKey: ["stored-summary", guildId, summaryId],
+      });
+    },
+  });
+}
+
+// ADR-047: Push to Discord DM
+export function usePushToDM(guildId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      summaryId,
+      request,
+    }: {
+      summaryId: string;
+      request: PushToDMRequest;
+    }) =>
+      api.post<PushToDMResponse>(
+        `/guilds/${guildId}/stored-summaries/${summaryId}/push-dm`,
         request
       ),
     onSuccess: (_, { summaryId }) => {

@@ -34,6 +34,11 @@ import {
   Sparkles,
   History,
   Filter,
+  CalendarRange,
+  Layers,
+  Server,
+  Hash,
+  DollarSign,
 } from "lucide-react";
 
 interface JobProgress {
@@ -41,6 +46,18 @@ interface JobProgress {
   total: number;
   percent: number;
   message: string | null;
+  current_period?: string | null;
+}
+
+interface JobDateRange {
+  start: string | null;
+  end: string | null;
+}
+
+interface JobCost {
+  cost_usd: number;
+  tokens_input: number;
+  tokens_output: number;
 }
 
 interface Job {
@@ -52,11 +69,22 @@ interface Job {
   schedule_id: string | null;
   progress: JobProgress;
   summary_id: string | null;
+  summary_ids?: string[] | null;
   error: string | null;
   pause_reason: string | null;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
+  // Job parameters (ADR-013)
+  date_range?: JobDateRange | null;
+  granularity?: string | null;
+  summary_type?: string;
+  perspective?: string;
+  channel_ids?: string[];
+  category_id?: string | null;
+  source_key?: string | null;
+  server_name?: string | null;
+  cost?: JobCost | null;
 }
 
 interface JobsResponse {
@@ -154,8 +182,15 @@ function JobCard({ job, onCancel, onRetry, isCancelling, isRetrying }: JobCardPr
           {(job.status === "running" || job.status === "pending") && (
             <div className="mb-3 space-y-1">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">{job.progress.message || "Processing..."}</span>
-                <span className="font-medium">{Math.round(job.progress.percent)}%</span>
+                <span className="text-muted-foreground">
+                  {job.progress.message || "Processing..."}
+                  {job.progress.current_period && (
+                    <span className="ml-1 text-xs opacity-75">({job.progress.current_period})</span>
+                  )}
+                </span>
+                <span className="font-medium">
+                  {job.progress.current}/{job.progress.total} ({Math.round(job.progress.percent)}%)
+                </span>
               </div>
               <Progress value={job.progress.percent} className="h-2" />
             </div>
@@ -174,6 +209,46 @@ function JobCard({ job, onCancel, onRetry, isCancelling, isRetrying }: JobCardPr
               <p className="text-sm text-amber-600">
                 Paused: {job.pause_reason === "server_restart" ? "Server restarted while job was running" : job.pause_reason}
               </p>
+            </div>
+          )}
+
+          {/* Parameters row - ADR-013 */}
+          {(job.date_range?.start || job.granularity || job.server_name || job.channel_ids?.length) && (
+            <div className="mb-3 rounded-md bg-muted/50 border border-border/50 p-2">
+              <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                {job.date_range?.start && job.date_range?.end && (
+                  <div className="flex items-center gap-1" title="Date Range">
+                    <CalendarRange className="h-3 w-3" />
+                    <span>
+                      {new Date(job.date_range.start).toLocaleDateString()} - {new Date(job.date_range.end).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+                {job.granularity && (
+                  <div className="flex items-center gap-1" title="Granularity">
+                    <Layers className="h-3 w-3" />
+                    <span className="capitalize">{job.granularity}</span>
+                  </div>
+                )}
+                {job.server_name && (
+                  <div className="flex items-center gap-1" title="Server">
+                    <Server className="h-3 w-3" />
+                    <span>{job.server_name}</span>
+                  </div>
+                )}
+                {job.channel_ids && job.channel_ids.length > 0 && (
+                  <div className="flex items-center gap-1" title="Channels">
+                    <Hash className="h-3 w-3" />
+                    <span>{job.channel_ids.length} channel{job.channel_ids.length !== 1 ? "s" : ""}</span>
+                  </div>
+                )}
+                {job.cost && job.cost.cost_usd > 0 && (
+                  <div className="flex items-center gap-1" title={`Tokens: ${job.cost.tokens_input.toLocaleString()} in / ${job.cost.tokens_output.toLocaleString()} out`}>
+                    <DollarSign className="h-3 w-3" />
+                    <span>${job.cost.cost_usd.toFixed(4)}</span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -199,6 +274,11 @@ function JobCard({ job, onCancel, onRetry, isCancelling, isRetrying }: JobCardPr
                 <CheckCircle2 className="h-3 w-3" />
                 <span>View Summary</span>
               </a>
+            )}
+            {job.summary_ids && job.summary_ids.length > 1 && (
+              <span className="text-green-600">
+                {job.summary_ids.length} summaries generated
+              </span>
             )}
           </div>
 

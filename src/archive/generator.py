@@ -657,11 +657,13 @@ class RetrospectiveGenerator:
 
         try:
             # ADR-026: Determine guild_id for storage
-            # Non-Discord sources use PRIMARY_GUILD_ID to appear in main guild view
-            if job.source.source_type != SourceType.DISCORD:
-                storage_guild_id = os.environ.get("PRIMARY_GUILD_ID", job.source.server_id or "")
-            else:
+            # - Discord: use server_id directly (it's the guild_id)
+            # - Slack: use server_id (which is the linked Discord guild_id from workspace)
+            # - WhatsApp/other: use PRIMARY_GUILD_ID to appear in main guild view
+            if job.source.source_type in (SourceType.DISCORD, SourceType.SLACK):
                 storage_guild_id = job.source.server_id or ""
+            else:
+                storage_guild_id = os.environ.get("PRIMARY_GUILD_ID", job.source.server_id or "")
             # Build a SummaryResult object if we have raw content
             if hasattr(summary_result, 'to_summary_result'):
                 db_summary_result = summary_result.to_summary_result()

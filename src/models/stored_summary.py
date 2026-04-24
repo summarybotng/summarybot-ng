@@ -310,6 +310,7 @@ class StoredSummary(BaseModel):
             "source": self.source.value,
             "archive_period": self.archive_period,
             "archive_granularity": self.archive_granularity,
+            "archive_source_key": self.archive_source_key,  # For platform identification
             # Generation details
             "summary_length": summary_length,
             "perspective": perspective,

@@ -44,6 +44,22 @@ function getSourceBadge(source: SummarySourceType) {
   }
 }
 
+// Helper to get platform from archive_source_key (e.g., "slack:123" -> "Slack")
+function getPlatformBadge(archiveSourceKey?: string) {
+  if (!archiveSourceKey) return null;
+  const platform = archiveSourceKey.split(":")[0];
+  switch (platform) {
+    case "slack":
+      return { label: "Slack", className: "bg-purple-500/10 text-purple-600 border-purple-500/30" };
+    case "discord":
+      return { label: "Discord", className: "bg-indigo-500/10 text-indigo-600 border-indigo-500/30" };
+    case "whatsapp":
+      return { label: "WhatsApp", className: "bg-green-500/10 text-green-600 border-green-500/30" };
+    default:
+      return null;
+  }
+}
+
 interface StoredSummaryCardProps {
   summary: StoredSummary;
   index: number;
@@ -162,6 +178,18 @@ export function StoredSummaryCard({
                   <Badge variant="outline" className={sourceBadge.className}>
                     {Icon && <Icon className="mr-1 h-3 w-3" />}
                     {sourceBadge.label}
+                  </Badge>
+                );
+              }
+              return null;
+            })()}
+            {/* Platform badge (Discord/Slack/WhatsApp) */}
+            {(() => {
+              const platformBadge = getPlatformBadge(summary.archive_source_key);
+              if (platformBadge) {
+                return (
+                  <Badge variant="outline" className={platformBadge.className}>
+                    {platformBadge.label}
                   </Badge>
                 );
               }

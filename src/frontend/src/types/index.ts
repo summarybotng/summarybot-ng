@@ -351,6 +351,7 @@ export interface StoredSummary {
   source: SummarySourceType;
   archive_period?: string;
   archive_granularity?: string;
+  archive_source_key?: string;  // e.g., "discord:123" or "slack:456" - indicates platform
   // Summary generation details
   summary_length?: string;  // brief, detailed, comprehensive
   perspective?: string;  // general, developer, marketing, etc.

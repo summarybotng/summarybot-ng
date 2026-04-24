@@ -288,7 +288,15 @@ async def get_generator():
     """Get retrospective generator instance (singleton to preserve job state)."""
     global _generator_instance
 
+    # Check if existing instance needs its repository reinitialized
     if _generator_instance is not None:
+        if _generator_instance.stored_summary_repository is None:
+            # Repository wasn't available when generator was created, try again
+            from . import get_stored_summary_repository
+            stored_summary_repo = await get_stored_summary_repository()
+            if stored_summary_repo:
+                _generator_instance.stored_summary_repository = stored_summary_repo
+                logger.info("Archive generator: reattached database storage")
         return _generator_instance
 
     from src.archive.generator import RetrospectiveGenerator

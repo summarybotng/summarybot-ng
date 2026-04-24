@@ -236,8 +236,8 @@ async def google_callback(
     # Get guilds for this domain
     guild_ids = auth.get_guilds_for_domain(domain)
 
-    # Create JWT
-    jwt_token = auth.create_jwt(
+    # Create JWT (ADR-050: async for group membership check)
+    jwt_token = await auth.create_jwt(
         user_id=google_user_id,
         email=email,
         name=name,
@@ -363,8 +363,8 @@ async def google_callback_get(
     # Get guilds for this domain
     guild_ids = auth.get_guilds_for_domain(domain)
 
-    # Create JWT
-    jwt_token = auth.create_jwt(
+    # Create JWT (ADR-050: async for group membership check)
+    jwt_token = await auth.create_jwt(
         user_id=google_user_id,
         email=email,
         name=name,

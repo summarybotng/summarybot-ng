@@ -143,6 +143,7 @@ from .prompt_templates import router as prompt_templates_router  # ADR-034
 from .audit import router as audit_router  # ADR-045
 from .slack import router as slack_router  # ADR-043
 from .google_auth import router as google_auth_router  # ADR-049
+from .google_admin_groups import router as google_admin_groups_router  # ADR-050
 
 __all__ = [
     "auth_router",
@@ -161,6 +162,7 @@ __all__ = [
     "audit_router",
     "slack_router",
     "google_auth_router",
+    "google_admin_groups_router",
     "set_services",
     "get_discord_bot",
     "get_summarization_engine",

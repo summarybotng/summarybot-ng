@@ -490,3 +490,12 @@ export interface ChannelSensitivityConfig {
   sensitive_categories: string[];
   auto_mark_private_sensitive: boolean;
 }
+
+// ADR-050: Google Admin Groups for guild access control
+export interface GoogleAdminGroup {
+  id: string;
+  guild_id: string;
+  google_group_email: string;
+  created_at: string;
+  created_by?: string;
+}

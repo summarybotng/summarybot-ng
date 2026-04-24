@@ -405,10 +405,67 @@ class GoogleAuth:
         return self.config.domain_guilds.get(normalized_domain, [])
 
     # =========================================================================
+    # Group-based Role Assignment (ADR-050)
+    # =========================================================================
+
+    async def _get_user_role_for_guild(
+        self,
+        user_email: str,
+        domain: str,
+        guild_id: str,
+    ) -> str:
+        """Determine if user should have admin role for a guild based on group membership.
+
+        ADR-050: Check Google Workspace group membership against configured admin groups.
+
+        Args:
+            user_email: User's email address
+            domain: User's Google Workspace domain
+            guild_id: Discord guild ID to check
+
+        Returns:
+            "admin" if user is in an admin group for the guild, "member" otherwise
+        """
+        try:
+            from ..data.repositories import get_repository_factory
+            from ..data.repositories.google_admin_groups import GoogleAdminGroupsRepository
+            from .google_directory import get_google_directory_client
+
+            # Get configured admin groups for this guild
+            try:
+                factory = get_repository_factory()
+                connection = await factory.get_connection()
+                repo = GoogleAdminGroupsRepository(connection)
+                admin_groups = await repo.get_admin_groups(guild_id)
+            except RuntimeError:
+                # Repository not initialized - default to fallback
+                admin_groups = []
+
+            # If no groups configured, default to admins@domain
+            if not admin_groups:
+                admin_groups = [f"admins@{domain}"]
+
+            # Get directory client and check membership
+            directory = get_google_directory_client()
+            if directory and directory.is_configured:
+                # get_user_groups is synchronous
+                user_groups = directory.get_user_groups(user_email)
+                # Case-insensitive comparison
+                user_groups_lower = [g.lower() for g in user_groups]
+                if any(ag.lower() in user_groups_lower for ag in admin_groups):
+                    logger.info(f"User {user_email} granted admin for guild {guild_id} via group membership")
+                    return "admin"
+
+            return "member"
+        except Exception as e:
+            logger.warning(f"Failed to check group membership for {user_email}: {e}")
+            return "member"
+
+    # =========================================================================
     # JWT Creation
     # =========================================================================
 
-    def create_jwt(
+    async def create_jwt(
         self,
         user_id: str,
         email: str,
@@ -421,7 +478,14 @@ class GoogleAuth:
 
         SECURITY: Includes auth_provider claim for provider distinction.
         SECURITY: 4-hour expiration (not 24).
+        ADR-050: Checks group membership for admin role assignment.
         """
+        # Determine role for each guild based on group membership (ADR-050)
+        guild_roles = {}
+        for guild_id in guild_ids:
+            role = await self._get_user_role_for_guild(email, domain, guild_id)
+            guild_roles[guild_id] = role
+
         now = utc_now_naive()
         payload = {
             "sub": f"google_{user_id}",  # Prefix to prevent collision
@@ -431,7 +495,7 @@ class GoogleAuth:
             "auth_provider": "google",
             "domain": domain,
             "guilds": guild_ids,
-            "guild_roles": {gid: "member" for gid in guild_ids},  # Default role
+            "guild_roles": guild_roles,
             "iat": now,
             "exp": now + timedelta(hours=4),  # SECURITY: Short expiration
             # NOTE: Don't include iss/aud claims - jose library requires explicit

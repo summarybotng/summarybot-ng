@@ -479,6 +479,137 @@ def create_message_fetcher(channel_ids: Optional[List[str]] = None):
     return fetch_messages
 
 
+def create_slack_message_fetcher(workspace_id: str, channel_ids: Optional[List[str]] = None):
+    """
+    Create a message fetcher callback for Slack workspaces.
+
+    This fetches messages from Slack using the Slack API and converts
+    them to the dictionary format expected by the archive generator.
+    """
+    from src.slack.client import SlackClient
+    from src.data.repositories import get_slack_repository
+
+    async def fetch_messages(source, start_time, end_time):
+        """Fetch messages for a period from Slack."""
+        # Get the Slack workspace from database
+        slack_repo = await get_slack_repository()
+        workspace = await slack_repo.get_workspace(workspace_id)
+
+        if not workspace:
+            logger.error(f"Slack workspace not found: {workspace_id}")
+            return []
+
+        if not workspace.enabled:
+            logger.warning(f"Slack workspace is disabled: {workspace_id}")
+            return []
+
+        client = SlackClient(workspace)
+        all_messages = []
+
+        logger.info(
+            f"Fetching Slack messages for {source.source_key} from "
+            f"{start_time.isoformat()} to {end_time.isoformat()}"
+        )
+
+        try:
+            # Determine which channels to fetch from
+            if channel_ids:
+                # Specific channels requested
+                target_channels = channel_ids
+            else:
+                # Get all public channels
+                channels = await client.get_all_channels(include_private=False)
+                target_channels = [ch.channel_id for ch in channels if not ch.is_archived]
+
+            # Convert datetime to Slack timestamp format (Unix seconds)
+            oldest = str(start_time.timestamp())
+            latest = str(end_time.timestamp())
+
+            # Build a user cache for name resolution
+            users = await client.get_all_users()
+            users_by_id = {u.user_id: u for u in users}
+
+            for channel_id in target_channels:
+                try:
+                    # Fetch all messages with pagination
+                    cursor = None
+                    channel_name = channel_id  # Default to ID
+
+                    while True:
+                        data = await client.get_channel_history(
+                            channel_id=channel_id,
+                            oldest=oldest,
+                            latest=latest,
+                            limit=200,
+                            cursor=cursor,
+                        )
+
+                        for msg in data.get("messages", []):
+                            # Skip system messages
+                            subtype = msg.get("subtype")
+                            if subtype in ("channel_join", "channel_leave", "channel_topic",
+                                           "channel_purpose", "channel_name", "channel_archive"):
+                                continue
+
+                            # Get user info
+                            user_id = msg.get("user", msg.get("bot_id", ""))
+                            user = users_by_id.get(user_id)
+                            author_name = user.display_name if user else user_id
+
+                            # Convert Slack timestamp to ISO format
+                            ts = float(msg["ts"])
+                            timestamp = datetime.fromtimestamp(ts).isoformat()
+
+                            all_messages.append({
+                                "id": msg["ts"],
+                                "author_id": user_id,
+                                "author_name": author_name,
+                                "content": msg.get("text", ""),
+                                "timestamp": timestamp,
+                                "channel_id": channel_id,
+                                "channel_name": channel_name,
+                                "attachments": [
+                                    {"filename": f.get("name", ""), "url": f.get("url_private", "")}
+                                    for f in msg.get("files", [])
+                                ],
+                                "embeds": len(msg.get("attachments", [])),
+                                "is_bot": user.is_bot if user else msg.get("bot_id") is not None,
+                                "thread_ts": msg.get("thread_ts"),
+                                "reactions": msg.get("reactions", []),
+                            })
+
+                        # Handle pagination
+                        cursor = data.get("response_metadata", {}).get("next_cursor")
+                        if not cursor:
+                            break
+
+                except Exception as e:
+                    logger.warning(f"Failed to fetch from Slack channel {channel_id}: {e}")
+                    continue
+
+            # Sort by timestamp
+            all_messages.sort(key=lambda m: m["timestamp"])
+
+            if not all_messages:
+                logger.warning(
+                    f"No Slack messages found for {source.source_key} in period "
+                    f"{start_time.isoformat()} to {end_time.isoformat()}. "
+                    f"Checked {len(target_channels)} channel(s)."
+                )
+            else:
+                logger.info(
+                    f"Found {len(all_messages)} Slack messages for {source.source_key} "
+                    f"from {len(target_channels)} channel(s)"
+                )
+
+        finally:
+            await client.close()
+
+        return all_messages
+
+    return fetch_messages
+
+
 # Routes
 
 @router.get("/sources", response_model=List[SourceResponse])
@@ -611,11 +742,14 @@ async def generate_retrospective(request: GenerateRequest):
         f"scope={request.scope}"
     )
 
-    # Check if Discord bot is available for Discord sources (not needed for WhatsApp)
+    # Check source types
     bot = get_discord_bot()
     is_whatsapp = request.source_type == "whatsapp"
+    is_slack = request.source_type == "slack"
+    is_discord = request.source_type == "discord"
 
-    if not request.dry_run and not is_whatsapp:
+    # Check if Discord bot is available for Discord sources
+    if not request.dry_run and is_discord:
         if not bot:
             raise HTTPException(
                 503,
@@ -624,6 +758,8 @@ async def generate_retrospective(request: GenerateRequest):
 
     # ADR-011: Resolve channels based on scope
     resolved_channel_ids = request.channel_ids or []
+    slack_channel_ids = []  # Slack-specific channel IDs
+    slack_workspace_id = None  # For Slack message fetcher
     category_id = request.category_id
     category_name = None
     server_name = request.server_id
@@ -636,7 +772,48 @@ async def generate_retrospective(request: GenerateRequest):
         existing_source = registry.get_source(source_key)
         if existing_source:
             server_name = existing_source.server_name
-    elif bot and bot.client:
+
+    elif is_slack:
+        # For Slack, get workspace info from database
+        from src.data.repositories import get_slack_repository
+
+        slack_repo = await get_slack_repository()
+
+        # server_id for Slack is the linked_guild_id (Discord guild ID)
+        workspace = await slack_repo.get_workspace_by_guild(request.server_id)
+        if not workspace:
+            raise HTTPException(404, f"No Slack workspace linked to guild {request.server_id}")
+
+        if not workspace.enabled:
+            raise HTTPException(400, f"Slack workspace {workspace.workspace_name} is disabled")
+
+        slack_workspace_id = workspace.workspace_id
+        server_name = workspace.workspace_name
+
+        # Get Slack channels from database or API
+        slack_channels = await slack_repo.list_channels(
+            workspace_id=workspace.workspace_id,
+            include_archived=False,
+            limit=1000,
+        )
+        if slack_channels:
+            # Use channels from database
+            slack_channel_ids = [ch.channel_id for ch in slack_channels]
+        else:
+            # Fall back to fetching from API
+            from src.slack.client import SlackClient
+            client = SlackClient(workspace)
+            try:
+                channels = await client.get_all_channels(include_private=False)
+                slack_channel_ids = [ch.channel_id for ch in channels if not ch.is_archived]
+                # Save channels to database for future use
+                await slack_repo.save_channels_batch(channels)
+            finally:
+                await client.close()
+
+        logger.info(f"Slack archive job: workspace={workspace.workspace_name}, channels={len(slack_channel_ids)}")
+
+    elif is_discord and bot and bot.client:
         guild = bot.client.get_guild(int(request.server_id))
         if guild:
             server_name = guild.name
@@ -698,6 +875,11 @@ async def generate_retrospective(request: GenerateRequest):
             message_fetcher = create_whatsapp_message_fetcher(
                 archive_root=get_archive_root(),
                 group_id=request.server_id,
+            )
+        elif is_slack:
+            message_fetcher = create_slack_message_fetcher(
+                workspace_id=slack_workspace_id,
+                channel_ids=slack_channel_ids if slack_channel_ids else None,
             )
         else:
             message_fetcher = create_message_fetcher(resolved_channel_ids)

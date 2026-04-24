@@ -9,6 +9,7 @@ from typing import Optional, List
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from ..auth import get_current_user, is_guild_admin, require_guild_admin
@@ -122,10 +123,11 @@ async def get_install_url(
     # Get Discord user ID from JWT
     discord_user_id = user.get("sub")
 
-    # Generate install URL
+    # Generate install URL with guild_id for linking
     install_url = slack_auth.get_install_url(
         discord_user_id=discord_user_id,
         scope_tier=scope_tier,
+        guild_id=request.guild_id,
     )
 
     scopes = slack_auth.get_scopes_for_tier(scope_tier)
@@ -176,29 +178,38 @@ async def oauth_callback(
             },
         )
 
+    # Get frontend URL for redirects
+    import os
+    frontend_url = os.getenv("FRONTEND_URL", "https://summarybot-ng.fly.dev")
+
     try:
         # Exchange code for token
-        workspace, discord_user_id = await slack_auth.exchange_code(code, state)
+        workspace, discord_user_id, guild_id = await slack_auth.exchange_code(code, state)
+
+        # Link workspace to guild
+        if guild_id:
+            workspace.linked_guild_id = guild_id
+            workspace.linked_at = datetime.utcnow()
 
         # Store workspace
         from . import get_slack_repository
         repo = await get_slack_repository()
         if repo:
             await repo.save_workspace(workspace)
-            logger.info(f"Slack workspace saved: {workspace.workspace_name} ({workspace.workspace_id})")
+            logger.info(f"Slack workspace saved: {workspace.workspace_name} ({workspace.workspace_id}) linked to guild {guild_id}")
 
-        return {
-            "status": "success",
-            "workspace_id": workspace.workspace_id,
-            "workspace_name": workspace.workspace_name,
-            "message": f"Successfully installed to {workspace.workspace_name}",
-        }
+        # Redirect to frontend Slack page with success message
+        return RedirectResponse(
+            url=f"{frontend_url}/slack?success=true&workspace={workspace.workspace_name}",
+            status_code=302,
+        )
 
     except SlackOAuthError as e:
         logger.error(f"Slack OAuth exchange failed: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail={"code": e.code, "message": e.description},
+        # Redirect to frontend with error
+        return RedirectResponse(
+            url=f"{frontend_url}/slack?error={e.code}&message={e.description}",
+            status_code=302,
         )
 
 

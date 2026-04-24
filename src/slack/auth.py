@@ -61,8 +61,8 @@ class SlackAuth:
         self.redirect_uri = redirect_uri
         self.signing_secret = signing_secret
 
-        # Pending OAuth states for CSRF protection (state -> (created_at, discord_user_id, scope_tier))
-        self._pending_states: Dict[str, Tuple[datetime, str, SlackScopeTier]] = {}
+        # Pending OAuth states for CSRF protection (state -> (created_at, discord_user_id, scope_tier, guild_id))
+        self._pending_states: Dict[str, Tuple[datetime, str, SlackScopeTier, Optional[str]]] = {}
 
         # HTTP client
         self._http_client: Optional[httpx.AsyncClient] = None
@@ -96,18 +96,20 @@ class SlackAuth:
         self,
         discord_user_id: str,
         scope_tier: SlackScopeTier = SlackScopeTier.PUBLIC,
+        guild_id: Optional[str] = None,
     ) -> str:
         """Generate and store OAuth state token.
 
         Args:
             discord_user_id: Discord user ID initiating the install
             scope_tier: Requested scope tier
+            guild_id: Discord guild ID to link workspace to
 
         Returns:
             State token for CSRF protection
         """
         state = secrets.token_urlsafe(32)
-        self._pending_states[state] = (utc_now_naive(), discord_user_id, scope_tier)
+        self._pending_states[state] = (utc_now_naive(), discord_user_id, scope_tier, guild_id)
 
         # Cleanup expired states (>10 min)
         cutoff = utc_now_naive() - timedelta(minutes=10)
@@ -118,30 +120,31 @@ class SlackAuth:
 
         return state
 
-    def validate_oauth_state(self, state: str) -> Optional[Tuple[str, SlackScopeTier]]:
+    def validate_oauth_state(self, state: str) -> Optional[Tuple[str, SlackScopeTier, Optional[str]]]:
         """Validate and consume OAuth state token.
 
         Args:
             state: State token from callback
 
         Returns:
-            Tuple of (discord_user_id, scope_tier) if valid, None otherwise
+            Tuple of (discord_user_id, scope_tier, guild_id) if valid, None otherwise
         """
         state_data = self._pending_states.pop(state, None)
         if state_data is None:
             return None
 
-        created_at, discord_user_id, scope_tier = state_data
+        created_at, discord_user_id, scope_tier, guild_id = state_data
         if utc_now_naive() - created_at > timedelta(minutes=10):
             return None
 
-        return discord_user_id, scope_tier
+        return discord_user_id, scope_tier, guild_id
 
     def get_install_url(
         self,
         discord_user_id: str,
         scope_tier: SlackScopeTier = SlackScopeTier.PUBLIC,
         team_id: Optional[str] = None,
+        guild_id: Optional[str] = None,
     ) -> str:
         """Generate Slack app installation URL.
 
@@ -149,11 +152,12 @@ class SlackAuth:
             discord_user_id: Discord user ID to associate with install
             scope_tier: Requested scope tier
             team_id: Optional workspace ID to pre-select
+            guild_id: Discord guild ID to link workspace to
 
         Returns:
             OAuth authorization URL
         """
-        state = self.create_oauth_state(discord_user_id, scope_tier)
+        state = self.create_oauth_state(discord_user_id, scope_tier, guild_id)
         scopes = self.get_scopes_for_tier(scope_tier)
 
         params = {
@@ -172,7 +176,7 @@ class SlackAuth:
         self,
         code: str,
         state: str,
-    ) -> Tuple[SlackWorkspace, str]:
+    ) -> Tuple[SlackWorkspace, str, Optional[str]]:
         """Exchange OAuth code for access token.
 
         Args:
@@ -180,7 +184,7 @@ class SlackAuth:
             state: State parameter for validation
 
         Returns:
-            Tuple of (SlackWorkspace, discord_user_id)
+            Tuple of (SlackWorkspace, discord_user_id, guild_id)
 
         Raises:
             SlackOAuthError: If exchange fails or state invalid
@@ -190,7 +194,7 @@ class SlackAuth:
         if state_data is None:
             raise SlackOAuthError("invalid_state", "OAuth state invalid or expired")
 
-        discord_user_id, scope_tier = state_data
+        discord_user_id, scope_tier, guild_id = state_data
 
         client = await self._get_http_client()
 
@@ -245,9 +249,10 @@ class SlackAuth:
             logger.info(
                 f"Slack workspace installed: {workspace.workspace_name} "
                 f"({workspace.workspace_id}) by Discord user {discord_user_id}"
+                f" for guild {guild_id}"
             )
 
-            return workspace, discord_user_id
+            return workspace, discord_user_id, guild_id
 
         except httpx.RequestError as e:
             logger.error(f"Slack OAuth request failed: {e}")

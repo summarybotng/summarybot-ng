@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS slack_workspaces (
     metadata TEXT DEFAULT '{}',
     linked_guild_id TEXT,
     linked_at TEXT,
-    FOREIGN KEY (linked_guild_id) REFERENCES guilds(id),
+    -- Note: No FK to guilds table as it doesn't exist; guild_id is just a reference string
     CONSTRAINT slack_workspaces_scope_tier_check CHECK (
         scope_tier IN ('public', 'full')
     )

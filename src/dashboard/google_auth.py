@@ -455,8 +455,11 @@ class GoogleAuth:
                 if any(ag.lower() in user_groups_lower for ag in admin_groups):
                     logger.info(f"User {user_email} granted admin for guild {guild_id} via group membership")
                     return "admin"
-
-            return "member"
+                return "member"
+            else:
+                # ADR-050 Phase 1: Grant admin to all Google SSO users until Directory API is configured
+                logger.info(f"Directory API not configured - granting admin to {user_email} for guild {guild_id}")
+                return "admin"
         except Exception as e:
             logger.warning(f"Failed to check group membership for {user_email}: {e}")
             return "member"

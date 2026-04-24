@@ -811,6 +811,7 @@ class StoredSummaryListItem(BaseModel):
     source: str = "realtime"  # realtime, archive, scheduled, manual, imported
     archive_period: Optional[str] = None
     archive_granularity: Optional[str] = None
+    archive_source_key: Optional[str] = None  # e.g., "discord:123" or "slack:456"
     # Summary generation details
     summary_length: Optional[str] = None  # brief, detailed, comprehensive
     perspective: Optional[str] = None  # general, developer, marketing, etc.

@@ -77,6 +77,7 @@ const App = () => (
               <Route index element={<GuildDashboard />} />
               <Route path="channels" element={<Channels />} />
               <Route path="summaries" element={<Summaries />} />
+              <Route path="stored-summaries/:summaryId" element={<Summaries />} />
               <Route path="jobs" element={<Jobs />} />
               <Route path="schedules" element={<Schedules />} />
               <Route path="webhooks" element={<Webhooks />} />

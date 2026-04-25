@@ -180,8 +180,8 @@ class FeedGenerator:
         item_title = self._format_item_title(summary, channel_name)
         SubElement(item, 'title').text = item_title
 
-        # Link to dashboard
-        link = f"{self.dashboard_url}/guilds/{summary.guild_id}/summaries/{summary.id}"
+        # Link to dashboard (stored summaries endpoint)
+        link = f"{self.dashboard_url}/guilds/{summary.guild_id}/stored-summaries/{summary.id}"
         SubElement(item, 'link').text = link
 
         # GUID (permanent identifier)
@@ -221,8 +221,8 @@ class FeedGenerator:
         item_title = self._format_item_title(summary, channel_name)
         SubElement(entry, 'title').text = item_title
 
-        # Link
-        link = f"{self.dashboard_url}/guilds/{summary.guild_id}/summaries/{summary.id}"
+        # Link (stored summaries endpoint)
+        link = f"{self.dashboard_url}/guilds/{summary.guild_id}/stored-summaries/{summary.id}"
         SubElement(entry, 'link', {'href': link, 'rel': 'alternate', 'type': 'text/html'})
 
         # Timestamps

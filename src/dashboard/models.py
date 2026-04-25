@@ -389,6 +389,7 @@ class GenerateSummaryRequest(BaseModel):
     time_range: TimeRangeRequest
     options: Optional[SummaryOptionsResponse] = None
     prompt_template_id: Optional[str] = None  # ADR-034: Custom template ID
+    platform: str = "discord"  # "discord" or "slack" - which platform to fetch messages from
 
 
 class GenerateSummaryResponse(BaseModel):

@@ -11,6 +11,7 @@ import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, usePushToDM, useSendToEmail, useRegenerateSummary, type SummarySourceType, type RegenerateOptions } from "@/hooks/useStoredSummaries";
 import { useGuild } from "@/hooks/useGuilds";
+import { useAuthStore } from "@/stores/authStore";
 import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -721,6 +722,7 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
           onSubmit={handleDM}
           guildId={guildId}
           error={dmError}
+          currentUserId={useAuthStore.getState().user?.id}
         />
       )}
 

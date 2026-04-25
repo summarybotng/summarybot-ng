@@ -963,7 +963,7 @@ class SummaryPushService:
 
         # Get stored summary
         repo = await get_stored_summary_repository()
-        stored_summary = await repo.get_by_id(summary_id)
+        stored_summary = await repo.get(summary_id)
 
         if not stored_summary:
             raise ValueError(f"Summary {summary_id} not found")
@@ -1057,6 +1057,140 @@ class SummaryPushService:
                 success=False,
                 error=str(e),
             )
+
+    def _build_embed(
+        self,
+        stored_summary,
+        custom_message: Optional[str] = None,
+        include_references: bool = True,
+        include_key_points: bool = True,
+        include_action_items: bool = True,
+        include_participants: bool = True,
+        include_technical_terms: bool = True,
+    ) -> discord.Embed:
+        """Build a Discord embed for a stored summary.
+
+        Args:
+            stored_summary: StoredSummary object
+            custom_message: Optional prefix message
+            include_*: Section toggles
+
+        Returns:
+            Discord Embed object
+        """
+        # Get the SummaryResult and its embed dict
+        if stored_summary.summary_result:
+            embed_dict = stored_summary.summary_result.to_embed_dict()
+        else:
+            # Fallback for summaries without full result
+            embed_dict = {
+                "title": stored_summary.title or "Summary",
+                "description": "*No summary content available*",
+                "color": 0x5865F2,
+            }
+
+        # Add custom message to description
+        if custom_message:
+            current_desc = embed_dict.get("description", "")
+            embed_dict["description"] = f"**{custom_message}**\n\n{current_desc}"
+
+        # Filter fields based on section options
+        filtered_fields = []
+        for field in embed_dict.get("fields", []):
+            name = field.get("name", "").lower()
+            # Map field names to section options
+            if "key point" in name and not include_key_points:
+                continue
+            if "action" in name and not include_action_items:
+                continue
+            if "participant" in name and not include_participants:
+                continue
+            if "technical" in name and not include_technical_terms:
+                continue
+            if "reference" in name and not include_references:
+                continue
+            filtered_fields.append(field)
+        embed_dict["fields"] = filtered_fields
+
+        # Validate embed dict
+        embed_dict = self._validate_embed_dict(embed_dict)
+
+        return discord.Embed.from_dict(embed_dict)
+
+    def _build_text_message(
+        self,
+        stored_summary,
+        format: str = "markdown",
+        custom_message: Optional[str] = None,
+        include_references: bool = True,
+        include_key_points: bool = True,
+        include_action_items: bool = True,
+        include_participants: bool = True,
+        include_technical_terms: bool = True,
+    ) -> str:
+        """Build a text message for a stored summary.
+
+        Args:
+            stored_summary: StoredSummary object
+            format: "markdown" or "plain"
+            custom_message: Optional prefix message
+            include_*: Section toggles
+
+        Returns:
+            Formatted text message
+        """
+        parts = []
+
+        # Add custom message
+        if custom_message:
+            parts.append(f"**{custom_message}**\n" if format == "markdown" else f"{custom_message}\n")
+
+        # Add title
+        title = stored_summary.title or "Summary"
+        if format == "markdown":
+            parts.append(f"# {title}\n")
+        else:
+            parts.append(f"{title}\n{'=' * len(title)}\n")
+
+        # Add summary text
+        if stored_summary.summary_result:
+            sr = stored_summary.summary_result
+            parts.append(sr.summary_text or "*No summary content*")
+            parts.append("")
+
+            # Key points
+            if include_key_points and sr.key_points:
+                if format == "markdown":
+                    parts.append("## Key Points")
+                else:
+                    parts.append("\nKey Points:")
+                for point in sr.key_points:
+                    parts.append(f"• {point}")
+                parts.append("")
+
+            # Action items
+            if include_action_items and sr.action_items:
+                if format == "markdown":
+                    parts.append("## Action Items")
+                else:
+                    parts.append("\nAction Items:")
+                for item in sr.action_items:
+                    text = item.description if hasattr(item, 'description') else str(item)
+                    parts.append(f"• {text}")
+                parts.append("")
+
+            # Participants
+            if include_participants and sr.participants:
+                if format == "markdown":
+                    parts.append("## Participants")
+                else:
+                    parts.append("\nParticipants:")
+                for p in sr.participants[:10]:  # Limit to 10
+                    name = p.display_name if hasattr(p, 'display_name') else str(p)
+                    parts.append(f"• {name}")
+                parts.append("")
+
+        return "\n".join(parts)
 
     async def _track_dm_push(
         self,

@@ -94,8 +94,13 @@ def _get_channel_name(guild_id: str, channel_id: Optional[str]) -> Optional[str]
     guild = bot.client.get_guild(int(guild_id))
     if not guild:
         return None
-    channel = guild.get_channel(int(channel_id))
-    return channel.name if channel else None
+    # Handle Slack channel IDs (non-numeric, e.g., "C09F2NNJRB7")
+    try:
+        channel = guild.get_channel(int(channel_id))
+        return channel.name if channel else None
+    except ValueError:
+        # Non-numeric channel ID (likely Slack) - return ID as name
+        return channel_id
 
 
 def _error_to_list_item(error, guild_id: Optional[str] = None) -> ErrorLogItem:

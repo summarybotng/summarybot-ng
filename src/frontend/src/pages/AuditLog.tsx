@@ -337,10 +337,17 @@ export function AuditLog() {
                           )}
                         </TableCell>
                         <TableCell>
-                          {entry.user_name ? (
+                          {entry.user_name || entry.user_id ? (
                             <div className="flex items-center gap-2">
                               <User className="h-4 w-4 text-muted-foreground" />
-                              <span>{entry.user_name}</span>
+                              <div className="flex flex-col">
+                                <span>{entry.user_name || "Unknown User"}</span>
+                                {entry.user_id && (
+                                  <span className="text-xs text-muted-foreground font-mono">
+                                    {entry.user_id}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           ) : (
                             <span className="text-muted-foreground">System</span>
@@ -416,11 +423,11 @@ export function AuditLog() {
                 </div>
                 <div>
                   <div className="text-sm text-muted-foreground">User</div>
-                  <div className="font-medium">
-                    {selectedEntry.user_name || "System"}
+                  <div className="font-medium flex flex-col">
+                    <span>{selectedEntry.user_name || (selectedEntry.user_id ? "Unknown User" : "System")}</span>
                     {selectedEntry.user_id && (
-                      <span className="text-xs text-muted-foreground ml-2">
-                        ({selectedEntry.user_id})
+                      <span className="text-xs text-muted-foreground font-mono">
+                        ID: {selectedEntry.user_id}
                       </span>
                     )}
                   </div>

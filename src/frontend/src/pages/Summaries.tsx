@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, FileText, Loader2, Hash, FolderOpen, Server, Search, Archive as ArchiveIcon, FileCode, Calendar as CalendarIcon, ExternalLink, HelpCircle } from "lucide-react";
+import { Sparkles, FileText, Loader2, Hash, FolderOpen, Server, Search, Archive as ArchiveIcon, FileCode, Calendar as CalendarIcon, ExternalLink, HelpCircle, MessageSquare } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -41,7 +41,7 @@ import { StoredSummariesTab } from "@/components/summaries/StoredSummariesTab";
 import type { SummaryOptions, GenerateRequest } from "@/types";
 
 export function Summaries() {
-  const { id } = useParams<{ id: string }>();
+  const { id, summaryId: deepLinkSummaryId } = useParams<{ id: string; summaryId?: string }>();
   const [searchParams] = useSearchParams();
   const { data: guild } = useGuild(id || "");
   const { data: promptTemplates = [] } = usePromptTemplates(id || "");
@@ -52,13 +52,14 @@ export function Summaries() {
   // ADR-009, ADR-012: Read source and highlight from URL params
   const sourceParam = searchParams.get("source");
   const highlightParam = searchParams.get("highlight");
-  // Deep link: open specific summary from Jobs page
-  const viewSummaryId = searchParams.get("view");
+  // Deep link: open specific summary from Jobs page or RSS feed
+  const viewSummaryId = searchParams.get("view") || deepLinkSummaryId;
 
   // ADR-012: Default to "all" (All Summaries) tab - unified view
   const [activeTab, setActiveTab] = useState("all");
 
   const [generateOpen, setGenerateOpen] = useState(false);
+  const [platform, setPlatform] = useState<"discord" | "slack">("discord");
   const [scope, setScope] = useState<"channel" | "category" | "guild">("channel");
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("");
@@ -94,6 +95,13 @@ export function Summaries() {
       setGenerationParams(null);
     }
   }, [activeTaskId, taskStartTime]);
+
+  // ADR-043: Reset scope when switching to Slack if category was selected
+  useEffect(() => {
+    if (platform === "slack" && scope === "category") {
+      setScope("channel");
+    }
+  }, [platform, scope]);
 
   // Handle task completion
   useEffect(() => {
@@ -183,6 +191,8 @@ export function Summaries() {
         },
         // ADR-034: Include custom template if selected
         ...(promptTemplateId && { prompt_template_id: promptTemplateId }),
+        // ADR-043: Include platform for Slack support
+        platform,
       };
 
       // Add scope-specific fields
@@ -260,6 +270,33 @@ export function Summaries() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
+              {/* Platform Selector - ADR-043 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Platform</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant={platform === "discord" ? "default" : "outline"}
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setPlatform("discord")}
+                  >
+                    <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+                    Discord
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={platform === "slack" ? "default" : "outline"}
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setPlatform("slack")}
+                  >
+                    <Hash className="mr-1.5 h-3.5 w-3.5" />
+                    Slack
+                  </Button>
+                </div>
+              </div>
+
               {/* Scope Selector */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">Scope</label>
@@ -280,6 +317,8 @@ export function Summaries() {
                     size="sm"
                     className="w-full"
                     onClick={() => setScope("category")}
+                    disabled={platform === "slack"}
+                    title={platform === "slack" ? "Slack doesn't have categories" : undefined}
                   >
                     <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
                     Category
@@ -297,8 +336,16 @@ export function Summaries() {
                 </div>
               </div>
 
-              {/* Channel Selection - only shown when scope is "channel" */}
-              {scope === "channel" && guild?.channels && (
+              {/* Channel Selection - only shown when scope is "channel" for Discord */}
+              {scope === "channel" && platform === "slack" && (
+                <div className="rounded-md border border-purple-500/20 bg-purple-500/5 p-3">
+                  <p className="text-sm text-muted-foreground">
+                    All public Slack channels will be summarized.
+                    Channel selection for Slack coming soon.
+                  </p>
+                </div>
+              )}
+              {scope === "channel" && platform === "discord" && guild?.channels && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Channels</label>
                   <div className="relative">
@@ -368,11 +415,16 @@ export function Summaries() {
                 </div>
               )}
 
-              {/* Guild scope info */}
+              {/* Guild/Workspace scope info */}
               {scope === "guild" && (
-                <div className="rounded-md border border-primary/20 bg-primary/5 p-3">
+                <div className={cn(
+                  "rounded-md border p-3",
+                  platform === "slack" ? "border-purple-500/20 bg-purple-500/5" : "border-primary/20 bg-primary/5"
+                )}>
                   <p className="text-sm text-muted-foreground">
-                    All enabled channels across the server will be summarized.
+                    {platform === "slack"
+                      ? "All public Slack channels in the connected workspace will be summarized."
+                      : "All enabled channels across the server will be summarized."}
                   </p>
                 </div>
               )}

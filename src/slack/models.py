@@ -180,6 +180,7 @@ class SlackMessage:
 SLACK_SCOPES_PUBLIC = [
     "channels:history",
     "channels:read",
+    "channels:join",  # Required for auto-joining public channels
     "users:read",
     "team:read",
     "reactions:read",

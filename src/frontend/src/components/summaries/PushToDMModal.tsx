@@ -54,6 +54,8 @@ interface PushToDMModalProps {
   onSubmit: (request: PushToDMRequest) => void;
   guildId: string;
   error?: string | null;
+  /** Current user's Discord ID - used as default when no previous ID stored */
+  currentUserId?: string;
 }
 
 export function PushToDMModal({
@@ -64,8 +66,10 @@ export function PushToDMModal({
   onSubmit,
   guildId,
   error,
+  currentUserId,
 }: PushToDMModalProps) {
-  const [userId, setUserId] = useState(() => getLastDMUserId(guildId) || "");
+  // Default to: 1) last used ID, 2) current user's ID, 3) empty
+  const [userId, setUserId] = useState(() => getLastDMUserId(guildId) || currentUserId || "");
   const [format, setFormat] = useState<"embed" | "markdown" | "plain">("embed");
   const [includeReferences, setIncludeReferences] = useState(true);
   const [customMessage, setCustomMessage] = useState("");

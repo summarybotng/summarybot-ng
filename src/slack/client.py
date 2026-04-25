@@ -322,6 +322,26 @@ class SlackClient:
             member_count=ch.get("num_members", 0),
         )
 
+    async def join_channel(self, channel_id: str) -> bool:
+        """Join a public channel.
+
+        Args:
+            channel_id: Channel ID to join
+
+        Returns:
+            True if joined successfully, False otherwise
+        """
+        try:
+            await self._request("conversations.join", json_body={"channel": channel_id})
+            logger.info(f"Bot joined channel {channel_id}")
+            return True
+        except SlackAPIError as e:
+            if e.error in ("already_in_channel", "method_not_supported_for_channel_type"):
+                # Already in channel or can't join (e.g., private channel)
+                return e.error == "already_in_channel"
+            logger.warning(f"Failed to join channel {channel_id}: {e.error}")
+            return False
+
     # =========================================================================
     # Users Methods
     # =========================================================================

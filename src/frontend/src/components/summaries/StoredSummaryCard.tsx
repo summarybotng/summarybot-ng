@@ -45,19 +45,24 @@ function getSourceBadge(source: SummarySourceType) {
 }
 
 // Helper to get platform from archive_source_key (e.g., "slack:123" -> "Slack")
-function getPlatformBadge(archiveSourceKey?: string) {
-  if (!archiveSourceKey) return null;
-  const platform = archiveSourceKey.split(":")[0];
-  switch (platform) {
-    case "slack":
-      return { label: "Slack", className: "bg-purple-500/10 text-purple-600 border-purple-500/30" };
-    case "discord":
-      return { label: "Discord", className: "bg-indigo-500/10 text-indigo-600 border-indigo-500/30" };
-    case "whatsapp":
-      return { label: "WhatsApp", className: "bg-green-500/10 text-green-600 border-green-500/30" };
-    default:
-      return null;
+// If no archive_source_key, default to Discord for standard summaries
+function getPlatformBadge(archiveSourceKey?: string, source?: SummarySourceType) {
+  if (archiveSourceKey) {
+    const platform = archiveSourceKey.split(":")[0];
+    switch (platform) {
+      case "slack":
+        return { label: "Slack", className: "bg-purple-500/10 text-purple-600 border-purple-500/30", icon: "💬" };
+      case "discord":
+        return { label: "Discord", className: "bg-indigo-500/10 text-indigo-600 border-indigo-500/30", icon: "🎮" };
+      case "whatsapp":
+        return { label: "WhatsApp", className: "bg-green-500/10 text-green-600 border-green-500/30", icon: "📱" };
+    }
   }
+  // Default to Discord for non-archive or realtime/scheduled/manual sources
+  if (source !== "archive") {
+    return { label: "Discord", className: "bg-indigo-500/10 text-indigo-600 border-indigo-500/30", icon: "🎮" };
+  }
+  return null;
 }
 
 interface StoredSummaryCardProps {
@@ -185,10 +190,11 @@ export function StoredSummaryCard({
             })()}
             {/* Platform badge (Discord/Slack/WhatsApp) */}
             {(() => {
-              const platformBadge = getPlatformBadge(summary.archive_source_key);
+              const platformBadge = getPlatformBadge(summary.archive_source_key, summary.source);
               if (platformBadge) {
                 return (
                   <Badge variant="outline" className={platformBadge.className}>
+                    <span className="mr-1">{platformBadge.icon}</span>
                     {platformBadge.label}
                   </Badge>
                 );

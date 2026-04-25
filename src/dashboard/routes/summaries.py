@@ -396,8 +396,17 @@ async def generate_summary(
 ):
     """Generate a new summary."""
     _check_guild_access(guild_id, user)
-    guild = _get_guild_or_404(guild_id)
-    bot = get_discord_bot()
+
+    # Check platform
+    is_slack = body.platform == "slack"
+
+    # For Discord, validate guild exists
+    guild = None
+    bot = None
+    if not is_slack:
+        guild = _get_guild_or_404(guild_id)
+        bot = get_discord_bot()
+
     engine = get_summarization_engine()
 
     if not engine:
@@ -406,65 +415,105 @@ async def generate_summary(
             detail={"code": "ENGINE_UNAVAILABLE", "message": "Summarization engine not available"},
         )
 
+    # For Slack, get workspace info
+    slack_workspace = None
+    slack_client = None
+    if is_slack:
+        from ...data.repositories import get_slack_repository
+        from ...slack.client import SlackClient
+
+        slack_repo = await get_slack_repository()
+        slack_workspace = await slack_repo.get_workspace_by_guild(guild_id)
+
+        if not slack_workspace:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "SLACK_NOT_CONNECTED", "message": "No Slack workspace connected to this guild"},
+            )
+
+        if not slack_workspace.enabled:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "SLACK_DISABLED", "message": "Slack workspace is disabled"},
+            )
+
     # Resolve channel_ids based on scope
     from ..models import SummaryScope
     channel_ids = []
 
-    if body.scope == SummaryScope.CHANNEL:
-        # Use provided channel IDs
-        if not body.channel_ids:
-            raise HTTPException(
-                status_code=400,
-                detail={"code": "MISSING_CHANNELS", "message": "channel_ids required for channel scope"},
-            )
-        channel_ids = body.channel_ids
+    if is_slack:
+        # Slack channel resolution
+        if body.scope == SummaryScope.CHANNEL and body.channel_ids:
+            # Use provided Slack channel IDs
+            channel_ids = body.channel_ids
+        else:
+            # Get all Slack channels for guild scope
+            from ...slack.client import SlackClient
+            slack_client = SlackClient(slack_workspace)
+            try:
+                slack_channels = await slack_client.get_all_channels(include_private=False)
+                channel_ids = [ch.channel_id for ch in slack_channels if not ch.is_archived]
+            finally:
+                await slack_client.close()
+                slack_client = None
+    else:
+        # Discord channel resolution
+        if body.scope == SummaryScope.CHANNEL:
+            # Use provided channel IDs
+            if not body.channel_ids:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"code": "MISSING_CHANNELS", "message": "channel_ids required for channel scope"},
+                )
+            channel_ids = body.channel_ids
 
-    elif body.scope == SummaryScope.CATEGORY:
-        # Get all text channels in the specified category
-        if not body.category_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"code": "MISSING_CATEGORY", "message": "category_id required for category scope"},
-            )
-        category = guild.get_channel(int(body.category_id))
-        if not category:
-            raise HTTPException(
-                status_code=404,
-                detail={"code": "CATEGORY_NOT_FOUND", "message": "Category not found"},
-            )
-        # Get text channels in this category
-        channel_ids = [str(c.id) for c in guild.text_channels if c.category_id == category.id]
-        if not channel_ids:
-            raise HTTPException(
-                status_code=400,
-                detail={"code": "NO_CHANNELS", "message": "No text channels found in category"},
-            )
+        elif body.scope == SummaryScope.CATEGORY:
+            # Get all text channels in the specified category
+            if not body.category_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"code": "MISSING_CATEGORY", "message": "category_id required for category scope"},
+                )
+            category = guild.get_channel(int(body.category_id))
+            if not category:
+                raise HTTPException(
+                    status_code=404,
+                    detail={"code": "CATEGORY_NOT_FOUND", "message": "Category not found"},
+                )
+            # Get text channels in this category
+            channel_ids = [str(c.id) for c in guild.text_channels if c.category_id == category.id]
+            if not channel_ids:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"code": "NO_CHANNELS", "message": "No text channels found in category"},
+                )
 
-    elif body.scope == SummaryScope.GUILD:
-        # Get all enabled channels from guild config
-        config_manager = get_config_manager()
-        if config_manager:
-            config = config_manager.get_current_config()
-            guild_config = config.guild_configs.get(guild_id) if config else None
-            if guild_config and guild_config.enabled_channels:
-                channel_ids = guild_config.enabled_channels
-            else:
-                # Fall back to all text channels
-                channel_ids = [str(c.id) for c in guild.text_channels]
+        elif body.scope == SummaryScope.GUILD:
+            # Get all enabled channels from guild config
+            config_manager = get_config_manager()
+            if config_manager:
+                config = config_manager.get_current_config()
+                guild_config = config.guild_configs.get(guild_id) if config else None
+                if guild_config and guild_config.enabled_channels:
+                    channel_ids = guild_config.enabled_channels
+                else:
+                    # Fall back to all text channels
+                    channel_ids = [str(c.id) for c in guild.text_channels]
         else:
             channel_ids = [str(c.id) for c in guild.text_channels]
 
-    # Validate channels exist in guild
-    guild_channels = {str(c.id) for c in guild.text_channels}
-    invalid_channels = set(channel_ids) - guild_channels
-    if invalid_channels:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "INVALID_CHANNELS",
-                "message": f"Invalid channel IDs: {', '.join(invalid_channels)}",
-            },
-        )
+    # Validate channels exist in guild (Discord only - Slack channels validated via API)
+    if not is_slack:
+        guild_channels = {str(c.id) for c in guild.text_channels}
+        invalid_channels = set(channel_ids) - guild_channels
+        if invalid_channels:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "INVALID_CHANNELS",
+                    "message": f"Invalid channel IDs: {', '.join(invalid_channels)}",
+                },
+            )
 
     # Create job ID (ADR-013: use job_ prefix for unified job tracking)
     import secrets
@@ -564,31 +613,160 @@ async def generate_summary(
             # Collect messages from all channels
             all_messages = []
             channel_errors = []
-            for idx, channel_id in enumerate(channel_ids):
-                channel = guild.get_channel(int(channel_id))
-                logger.info(f"[{job_id}] Fetching from channel {channel_id}: {channel.name if channel else 'NOT FOUND'}")
-                if channel:
-                    try:
-                        msg_count = 0
-                        async for message in channel.history(
-                            after=start_time,
-                            before=end_time,
-                            limit=1000,
-                        ):
-                            all_messages.append(message)
-                            msg_count += 1
-                        logger.info(f"[{job_id}] Fetched {msg_count} messages from {channel.name}")
 
-                        # ADR-013: Update job progress
-                        job.update_progress(idx + 1, None, f"Fetched {channel.name}")
-                        if job_repo:
+            if is_slack:
+                # Slack message fetching
+                from ...slack.client import SlackClient
+                from ...models.message import ProcessedMessage, MessageType, SourceType
+
+                slack_client = SlackClient(slack_workspace)
+                try:
+                    # Convert start/end to Slack timestamps (Unix epoch as string)
+                    oldest_ts = str(start_time.timestamp()) if start_time else None
+                    latest_ts = str(end_time.timestamp()) if end_time else None
+
+                    # Map channel IDs to names
+                    channel_name_map = {}
+
+                    for idx, channel_id in enumerate(channel_ids):
+                        try:
+                            # Get channel name
                             try:
-                                await job_repo.update(job)
+                                channel_info = await slack_client.get_channel_info(channel_id)
+                                channel_name_map[channel_id] = channel_info.channel_name
                             except Exception:
-                                pass
-                    except Exception as channel_error:
-                        logger.error(f"[{job_id}] Error fetching from {channel.name}: {channel_error}")
-                        channel_errors.append((channel_id, channel.name, channel_error))
+                                channel_name_map[channel_id] = channel_id
+
+                            logger.info(f"[{job_id}] Fetching Slack messages from channel #{channel_name_map[channel_id]}")
+                            msg_count = 0
+                            cursor = None
+                            joined_channel = False
+
+                            while True:
+                                try:
+                                    data = await slack_client.get_channel_history(
+                                        channel_id=channel_id,
+                                        oldest=oldest_ts,
+                                        latest=latest_ts,
+                                        limit=200,
+                                        cursor=cursor,
+                                    )
+                                except Exception as hist_error:
+                                    # Check if it's a not_in_channel error - try to auto-join
+                                    error_str = str(hist_error)
+                                    if "not_in_channel" in error_str and not joined_channel:
+                                        logger.info(f"[{job_id}] Bot not in channel {channel_id}, attempting to join...")
+                                        if await slack_client.join_channel(channel_id):
+                                            joined_channel = True
+                                            logger.info(f"[{job_id}] Successfully joined channel {channel_id}, retrying fetch")
+                                            # Retry the history fetch
+                                            data = await slack_client.get_channel_history(
+                                                channel_id=channel_id,
+                                                oldest=oldest_ts,
+                                                latest=latest_ts,
+                                                limit=200,
+                                                cursor=cursor,
+                                            )
+                                        else:
+                                            raise hist_error
+                                    else:
+                                        raise hist_error
+
+                                for msg in data.get("messages", []):
+                                    # Skip bot messages and system messages
+                                    if msg.get("subtype") in ("bot_message", "channel_join", "channel_leave"):
+                                        continue
+
+                                    # Get message timestamp as unique ID
+                                    msg_ts = msg.get("ts", "0")
+
+                                    # Convert to ProcessedMessage format for summarization
+                                    slack_msg = ProcessedMessage(
+                                        id=f"slack_{channel_id}_{msg_ts}",
+                                        content=msg.get("text", ""),
+                                        author_id=msg.get("user", "unknown"),
+                                        author_name=msg.get("user", "Unknown User"),
+                                        timestamp=datetime.fromtimestamp(float(msg_ts)),
+                                        channel_id=channel_id,
+                                        channel_name=channel_name_map.get(channel_id, channel_id),
+                                        message_type=MessageType.SLACK_TEXT,
+                                        source_type=SourceType.SLACK,
+                                        reactions_count=len(msg.get("reactions", [])),
+                                    )
+                                    all_messages.append(slack_msg)
+                                    msg_count += 1
+
+                                # Handle pagination
+                                cursor = data.get("response_metadata", {}).get("next_cursor")
+                                if not cursor:
+                                    break
+
+                            channel_name = channel_name_map.get(channel_id, channel_id)
+                            logger.info(f"[{job_id}] Fetched {msg_count} Slack messages from #{channel_name}")
+
+                            # ADR-013: Update job progress
+                            job.update_progress(idx + 1, None, f"Fetched #{channel_name}")
+                            if job_repo:
+                                try:
+                                    await job_repo.update(job)
+                                except Exception:
+                                    pass
+
+                        except Exception as channel_error:
+                            logger.error(f"[{job_id}] Error fetching Slack channel {channel_id}: {channel_error}")
+                            channel_errors.append((channel_id, channel_id, channel_error))
+
+                    # Resolve Slack user IDs to display names
+                    if all_messages:
+                        logger.info(f"[{job_id}] Resolving Slack user names...")
+                        unique_user_ids = set(m.author_id for m in all_messages if m.author_id != "unknown")
+                        user_name_map = {}
+
+                        for user_id in unique_user_ids:
+                            try:
+                                user_info = await slack_client.get_user_info(user_id)
+                                user_name_map[user_id] = user_info.display_name or user_info.real_name or user_id
+                            except Exception as e:
+                                logger.warning(f"[{job_id}] Failed to resolve user {user_id}: {e}")
+                                user_name_map[user_id] = user_id
+
+                        # Update author_name on all messages
+                        for msg in all_messages:
+                            if msg.author_id in user_name_map:
+                                msg.author_name = user_name_map[msg.author_id]
+
+                        logger.info(f"[{job_id}] Resolved {len(user_name_map)} Slack user names")
+
+                finally:
+                    await slack_client.close()
+
+            else:
+                # Discord message fetching
+                for idx, channel_id in enumerate(channel_ids):
+                    channel = guild.get_channel(int(channel_id))
+                    logger.info(f"[{job_id}] Fetching from channel {channel_id}: {channel.name if channel else 'NOT FOUND'}")
+                    if channel:
+                        try:
+                            msg_count = 0
+                            async for message in channel.history(
+                                after=start_time,
+                                before=end_time,
+                                limit=1000,
+                            ):
+                                all_messages.append(message)
+                                msg_count += 1
+                            logger.info(f"[{job_id}] Fetched {msg_count} messages from {channel.name}")
+
+                            # ADR-013: Update job progress
+                            job.update_progress(idx + 1, None, f"Fetched {channel.name}")
+                            if job_repo:
+                                try:
+                                    await job_repo.update(job)
+                                except Exception:
+                                    pass
+                        except Exception as channel_error:
+                            logger.error(f"[{job_id}] Error fetching from {channel.name}: {channel_error}")
+                            channel_errors.append((channel_id, channel.name, channel_error))
 
             # Track any channel-level errors
             if channel_errors:
@@ -651,14 +829,25 @@ async def generate_summary(
 
             logger.info(f"[{job_id}] SummaryOptions created: summary_length={options.summary_length.value}, max_tokens={options.get_max_tokens_for_length()}")
 
-            logger.info(f"[{job_id}] Processing {len(all_messages)} messages...")
-            processor = MessageProcessor(bot.client)
-            processed = await processor.process_messages(all_messages, options)
-            logger.info(f"[{job_id}] Processed {len(processed)} messages")
+            if is_slack:
+                # Slack messages are already ProcessedMessage objects
+                logger.info(f"[{job_id}] Using {len(all_messages)} Slack messages directly")
+                processed = all_messages
 
-            # Get channel and guild info for context
-            primary_channel = guild.get_channel(int(channel_ids[0]))
-            channel_name = primary_channel.name if primary_channel else "multiple channels"
+                # Get channel/workspace names for context
+                channel_name = f"{len(channel_ids)} Slack channels" if len(channel_ids) > 1 else channel_ids[0]
+                guild_name = slack_workspace.workspace_name
+            else:
+                # Discord messages need processing
+                logger.info(f"[{job_id}] Processing {len(all_messages)} Discord messages...")
+                processor = MessageProcessor(bot.client)
+                processed = await processor.process_messages(all_messages, options)
+                logger.info(f"[{job_id}] Processed {len(processed)} messages")
+
+                # Get channel and guild info for context
+                primary_channel = guild.get_channel(int(channel_ids[0]))
+                channel_name = primary_channel.name if primary_channel else "multiple channels"
+                guild_name = guild.name
 
             # Calculate time span and participant count
             time_span_hours = (end_time - start_time).total_seconds() / 3600
@@ -668,7 +857,7 @@ async def generate_summary(
             from ...models.summary import SummarizationContext
             context = SummarizationContext(
                 channel_name=channel_name if len(channel_ids) == 1 else f"{len(channel_ids)} channels",
-                guild_name=guild.name,
+                guild_name=guild_name,
                 total_participants=len(unique_authors),
                 time_span_hours=time_span_hours,
             )
@@ -724,13 +913,21 @@ async def generate_summary(
             if stored_repo:
                 # Generate descriptive title
                 channel_names = []
-                for cid in channel_ids[:3]:  # Limit to 3 channels in title
-                    ch = guild.get_channel(int(cid))
-                    if ch:
-                        channel_names.append(f"#{ch.name}")
-                if len(channel_ids) > 3:
-                    channel_names.append(f"+{len(channel_ids) - 3} more")
-                title = f"{', '.join(channel_names) or 'Summary'} — {utc_now_naive().strftime('%b %d, %H:%M')}"
+                if is_slack:
+                    # For Slack, use channel IDs (we could fetch names but keep it simple)
+                    for cid in channel_ids[:3]:
+                        channel_names.append(f"#{cid[:8]}")  # Truncate long Slack channel IDs
+                    if len(channel_ids) > 3:
+                        channel_names.append(f"+{len(channel_ids) - 3} more")
+                    title = f"Slack: {', '.join(channel_names) or 'Summary'} — {utc_now_naive().strftime('%b %d, %H:%M')}"
+                else:
+                    for cid in channel_ids[:3]:  # Limit to 3 channels in title
+                        ch = guild.get_channel(int(cid))
+                        if ch:
+                            channel_names.append(f"#{ch.name}")
+                    if len(channel_ids) > 3:
+                        channel_names.append(f"+{len(channel_ids) - 3} more")
+                    title = f"{', '.join(channel_names) or 'Summary'} — {utc_now_naive().strftime('%b %d, %H:%M')}"
 
                 # Create StoredSummary with source=MANUAL for generate button
                 stored_summary = StoredSummary(
@@ -741,6 +938,7 @@ async def generate_summary(
                     title=title,
                     source=SummarySource.MANUAL,  # From Generate button
                     created_at=utc_now_naive(),
+                    archive_source_key=f"slack:{guild_id}" if is_slack else f"discord:{guild_id}",
                 )
 
                 logger.info(f"[{job_id}] Saving to stored_summaries...")
@@ -1633,9 +1831,28 @@ async def regenerate_stored_summary(
 
     # Check if we can use source_content as fallback
     has_source_content = summary_result and summary_result.source_content
-    can_use_discord = bool(start_time and end_time and channel_ids)
 
-    if not can_use_discord and not has_source_content:
+    # Check if this is a Slack summary
+    is_slack_summary = stored.archive_source_key and stored.archive_source_key.startswith("slack:")
+
+    # Discord is only available for non-Slack summaries
+    can_use_discord = bool(start_time and end_time and channel_ids and not is_slack_summary)
+    can_use_slack = False
+    slack_workspace = None
+
+    if is_slack_summary and start_time and end_time and channel_ids:
+        try:
+            from ...data.repositories import get_slack_repository
+            slack_repo = await get_slack_repository()
+            slack_workspace = await slack_repo.get_workspace_by_guild(guild_id)
+            if slack_workspace and slack_workspace.enabled:
+                can_use_slack = True
+            else:
+                logger.warning(f"Slack workspace not found or disabled for guild {guild_id}")
+        except Exception as e:
+            logger.warning(f"Failed to get Slack workspace for regeneration: {e}")
+
+    if not can_use_discord and not can_use_slack and not has_source_content:
         issues = []
         if not start_time or not end_time:
             issues.append("no time range")
@@ -1682,7 +1899,12 @@ async def regenerate_stored_summary(
     job_id = f"regen_{secrets.token_urlsafe(16)}"
 
     # Determine regeneration method
-    regen_method = "discord" if can_use_discord else "source_content"
+    if can_use_slack:
+        regen_method = "slack"
+    elif can_use_discord:
+        regen_method = "discord"
+    else:
+        regen_method = "source_content"
 
     # ADR-013: Create persistent job record for regeneration
     job = SummaryJob(
@@ -1772,7 +1994,102 @@ async def regenerate_stored_summary(
                     processor = MessageProcessor(bot.client)
                     processed = await processor.process_messages(all_messages, SummaryOptions(min_messages=1))
 
-            # Fallback to source_content if Discord fetch failed or returned no messages
+            elif regen_method == "slack" and can_use_slack:
+                # Slack message fetching for regeneration
+                from ...slack.client import SlackClient
+                from ...models.message import SourceType
+
+                logger.info(f"[{job_id}] Fetching from Slack: {start_time} to {end_time}")
+                logger.info(f"[{job_id}] Channels: {channel_ids}")
+
+                slack_client = SlackClient(slack_workspace)
+                try:
+                    oldest_ts = str(start_time.timestamp()) if start_time else None
+                    latest_ts = str(end_time.timestamp()) if end_time else None
+
+                    all_slack_messages = []
+                    channel_name_map = {}
+
+                    for channel_id in channel_ids:
+                        try:
+                            # Get channel name
+                            try:
+                                channel_info = await slack_client.get_channel_info(channel_id)
+                                channel_name_map[channel_id] = channel_info.channel_name
+                            except Exception:
+                                channel_name_map[channel_id] = channel_id
+
+                            cursor = None
+                            while True:
+                                try:
+                                    data = await slack_client.get_channel_history(
+                                        channel_id=channel_id,
+                                        oldest=oldest_ts,
+                                        latest=latest_ts,
+                                        limit=200,
+                                        cursor=cursor,
+                                    )
+                                except Exception as hist_error:
+                                    if "not_in_channel" in str(hist_error):
+                                        if await slack_client.join_channel(channel_id):
+                                            data = await slack_client.get_channel_history(
+                                                channel_id=channel_id,
+                                                oldest=oldest_ts,
+                                                latest=latest_ts,
+                                                limit=200,
+                                                cursor=cursor,
+                                            )
+                                        else:
+                                            raise hist_error
+                                    else:
+                                        raise hist_error
+
+                                for msg in data.get("messages", []):
+                                    if msg.get("subtype") in ("bot_message", "channel_join", "channel_leave"):
+                                        continue
+
+                                    msg_ts = msg.get("ts", "0")
+                                    slack_msg = ProcessedMessage(
+                                        id=f"slack_{channel_id}_{msg_ts}",
+                                        content=msg.get("text", ""),
+                                        author_id=msg.get("user", "unknown"),
+                                        author_name=msg.get("user", "Unknown User"),
+                                        timestamp=datetime.fromtimestamp(float(msg_ts)),
+                                        channel_id=channel_id,
+                                        channel_name=channel_name_map.get(channel_id, channel_id),
+                                        message_type=MessageType.SLACK_TEXT,
+                                        source_type=SourceType.SLACK,
+                                        reactions_count=len(msg.get("reactions", [])),
+                                    )
+                                    all_slack_messages.append(slack_msg)
+
+                                cursor = data.get("response_metadata", {}).get("next_cursor")
+                                if not cursor:
+                                    break
+                        except Exception as e:
+                            logger.warning(f"[{job_id}] Error fetching Slack channel {channel_id}: {e}")
+
+                    # Resolve user names
+                    if all_slack_messages:
+                        unique_user_ids = set(m.author_id for m in all_slack_messages if m.author_id != "unknown")
+                        user_name_map = {}
+                        for user_id in unique_user_ids:
+                            try:
+                                user_info = await slack_client.get_user_info(user_id)
+                                user_name_map[user_id] = user_info.display_name or user_info.real_name or user_id
+                            except Exception:
+                                user_name_map[user_id] = user_id
+
+                        for msg in all_slack_messages:
+                            if msg.author_id in user_name_map:
+                                msg.author_name = user_name_map[msg.author_id]
+
+                    logger.info(f"[{job_id}] Fetched {len(all_slack_messages)} messages from Slack")
+                    processed = all_slack_messages
+                finally:
+                    await slack_client.close()
+
+            # Fallback to source_content if fetch failed or returned no messages
             if not processed and has_source_content:
                 logger.info(f"[{job_id}] Using source_content fallback")
                 # Parse source_content back to messages
@@ -2434,6 +2751,12 @@ async def push_to_dm(
         raise HTTPException(
             status_code=404,
             detail={"code": "NOT_FOUND", "message": str(e)},
+        )
+    except Exception as e:
+        logger.exception(f"Failed to push DM to user {body.user_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "DM_PUSH_FAILED", "message": str(e)},
         )
 
 

@@ -126,6 +126,15 @@ async def get_slack_repository():
         return None
 
 
+async def get_wiki_repository():
+    """Get wiki repository instance (ADR-056)."""
+    try:
+        from ...data.repositories import get_wiki_repository as _get_repo
+        return await _get_repo()
+    except RuntimeError:
+        return None
+
+
 # Import routers
 from .auth import router as auth_router
 from .guilds import router as guilds_router
@@ -144,6 +153,7 @@ from .audit import router as audit_router  # ADR-045
 from .slack import router as slack_router  # ADR-043
 from .google_auth import router as google_auth_router  # ADR-049
 from .google_admin_groups import router as google_admin_groups_router  # ADR-050
+from .wiki import router as wiki_router  # ADR-056
 
 __all__ = [
     "auth_router",
@@ -163,6 +173,7 @@ __all__ = [
     "slack_router",
     "google_auth_router",
     "google_admin_groups_router",
+    "wiki_router",
     "set_services",
     "get_discord_bot",
     "get_summarization_engine",

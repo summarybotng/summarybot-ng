@@ -9,7 +9,7 @@ from fastapi import APIRouter, FastAPI
 from cryptography.fernet import Fernet
 
 from .auth import DashboardAuth, set_auth_instance
-from .routes import auth_router, guilds_router, summaries_router, schedules_router, webhooks_router, events_router, feeds_router, errors_router, archive_router, prompts_router, push_templates_router, health_router, prompt_templates_router, audit_router, google_auth_router, google_admin_groups_router, slack_router
+from .routes import auth_router, guilds_router, summaries_router, schedules_router, webhooks_router, events_router, feeds_router, errors_router, archive_router, prompts_router, push_templates_router, health_router, prompt_templates_router, audit_router, google_auth_router, google_admin_groups_router, slack_router, wiki_router
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +121,7 @@ def create_dashboard_router(
     router.include_router(audit_router, tags=["Audit"])  # ADR-045
     router.include_router(slack_router, tags=["Slack"])  # ADR-043
     router.include_router(google_admin_groups_router, tags=["Google Admin Groups"])  # ADR-050
+    router.include_router(wiki_router, tags=["Wiki"])  # ADR-056
 
     return router
 

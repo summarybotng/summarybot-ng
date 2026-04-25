@@ -30,6 +30,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 // Lazy-loaded pages for code splitting
 const Archive = lazy(() => import("@/pages/Archive").then(m => ({ default: m.Archive })));
+const Wiki = lazy(() => import("@/pages/Wiki").then(m => ({ default: m.Wiki })));
 
 // Loading fallback for lazy-loaded pages
 function PageLoader() {
@@ -87,6 +88,7 @@ const App = () => (
               <Route path="prompt-templates" element={<PromptTemplates />} />
               <Route path="audit" element={<AuditLog />} />
               <Route path="archive" element={<Suspense fallback={<PageLoader />}><Archive /></Suspense>} />
+              <Route path="wiki/*" element={<Suspense fallback={<PageLoader />}><Wiki /></Suspense>} />
             </Route>
           </Route>
 

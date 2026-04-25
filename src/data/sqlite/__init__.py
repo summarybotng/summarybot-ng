@@ -44,6 +44,7 @@ from .summary_job_repository import SQLiteSummaryJobRepository
 from .prompt_template_repository import SQLitePromptTemplateRepository
 from .audit_repository import SQLiteAuditRepository
 from .slack_repository import SQLiteSlackRepository
+from .wiki_repository import SQLiteWikiRepository
 
 __all__ = [
     # Connection
@@ -64,4 +65,5 @@ __all__ = [
     'SQLitePromptTemplateRepository',
     'SQLiteAuditRepository',
     'SQLiteSlackRepository',
+    'SQLiteWikiRepository',
 ]

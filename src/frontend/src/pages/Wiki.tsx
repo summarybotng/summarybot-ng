@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { api } from "@/lib/api";
+import { api } from "@/api/client";
 
 interface WikiPage {
   id: string;

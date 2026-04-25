@@ -521,7 +521,7 @@ async def populate_wiki(
     from ...data.base import SearchCriteria
     criteria = SearchCriteria(
         guild_id=guild_id,
-        start_date=cutoff,
+        start_time=cutoff,
         limit=500,  # Process up to 500 summaries
     )
 

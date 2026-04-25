@@ -544,7 +544,7 @@ async def populate_wiki(
                 summary_text=summary.summary_result.content if summary.summary_result else "",
                 key_points=summary.summary_result.key_points if summary.summary_result else [],
                 action_items=[a.description for a in (summary.summary_result.action_items if summary.summary_result else [])],
-                participants=[p.name for p in (summary.summary_result.participants if summary.summary_result else [])],
+                participants=[p.display_name for p in (summary.summary_result.participants if summary.summary_result else [])],
                 technical_terms=[t.term for t in (summary.summary_result.technical_terms if summary.summary_result else [])],
                 channel_name=summary.title or "Unknown",
                 timestamp=summary.created_at,

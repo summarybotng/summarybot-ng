@@ -72,7 +72,27 @@ class SQLiteWikiRepository:
         )
 
         await self.connection.execute(query, params)
+
+        # Sync FTS index (triggers can't be used due to migration runner limitations)
+        await self._sync_fts(page)
+
         return page.id
+
+    async def _sync_fts(self, page: WikiPage) -> None:
+        """Sync a page to the FTS index."""
+        # Delete existing entry
+        delete_query = "DELETE FROM wiki_fts WHERE path = ? AND guild_id = ?"
+        await self.connection.execute(delete_query, (page.path, page.guild_id))
+
+        # Insert new entry
+        insert_query = """
+        INSERT INTO wiki_fts(path, title, content, topics, guild_id)
+        VALUES (?, ?, ?, ?, ?)
+        """
+        await self.connection.execute(
+            insert_query,
+            (page.path, page.title, page.content, json.dumps(page.topics), page.guild_id)
+        )
 
     async def get_page(self, guild_id: str, path: str) -> Optional[WikiPage]:
         """Get a wiki page by path."""
@@ -126,6 +146,11 @@ class SQLiteWikiRepository:
 
     async def delete_page(self, guild_id: str, path: str) -> bool:
         """Delete a wiki page."""
+        # Delete from FTS first
+        fts_query = "DELETE FROM wiki_fts WHERE path = ? AND guild_id = ?"
+        await self.connection.execute(fts_query, (path, guild_id))
+
+        # Delete from main table
         query = "DELETE FROM wiki_pages WHERE guild_id = ? AND path = ?"
         cursor = await self.connection.execute(query, (guild_id, path))
         return cursor.rowcount > 0

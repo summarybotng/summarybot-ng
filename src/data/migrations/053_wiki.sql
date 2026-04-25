@@ -88,18 +88,5 @@ CREATE INDEX IF NOT EXISTS idx_wiki_sources_guild ON wiki_sources(guild_id);
 CREATE INDEX IF NOT EXISTS idx_wiki_contradictions_guild ON wiki_contradictions(guild_id);
 CREATE INDEX IF NOT EXISTS idx_wiki_contradictions_unresolved ON wiki_contradictions(guild_id, resolved_at) WHERE resolved_at IS NULL;
 
--- Triggers to keep FTS in sync
-CREATE TRIGGER IF NOT EXISTS wiki_fts_insert AFTER INSERT ON wiki_pages BEGIN
-    INSERT INTO wiki_fts(path, title, content, topics, guild_id)
-    VALUES (NEW.path, NEW.title, NEW.content, NEW.topics, NEW.guild_id);
-END;
-
-CREATE TRIGGER IF NOT EXISTS wiki_fts_update AFTER UPDATE ON wiki_pages BEGIN
-    DELETE FROM wiki_fts WHERE path = OLD.path AND guild_id = OLD.guild_id;
-    INSERT INTO wiki_fts(path, title, content, topics, guild_id)
-    VALUES (NEW.path, NEW.title, NEW.content, NEW.topics, NEW.guild_id);
-END;
-
-CREATE TRIGGER IF NOT EXISTS wiki_fts_delete AFTER DELETE ON wiki_pages BEGIN
-    DELETE FROM wiki_fts WHERE path = OLD.path AND guild_id = OLD.guild_id;
-END;
+-- Note: FTS sync is handled in WikiRepository.save_page() and delete_page()
+-- Triggers cannot be used here because the migration runner splits on semicolons

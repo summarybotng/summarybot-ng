@@ -538,7 +538,7 @@ async def populate_wiki(
             result = await ingest_agent.ingest_summary(
                 guild_id=guild_id,
                 summary_id=summary.id,
-                summary_text=summary.summary_result.content if summary.summary_result else "",
+                summary_text=summary.summary_result.summary_text if summary.summary_result else "",
                 key_points=summary.summary_result.key_points if summary.summary_result else [],
                 action_items=[a.description for a in (summary.summary_result.action_items if summary.summary_result else [])],
                 participants=[p.display_name for p in (summary.summary_result.participants if summary.summary_result else [])],

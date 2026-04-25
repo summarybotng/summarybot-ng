@@ -24,6 +24,8 @@ from .delivery import (
     DashboardDeliveryStrategy,
 )
 from ..models.task import TaskResult, DestinationType, ScheduledTask, Destination, SummaryScope
+# ADR-051: Platform fetcher abstraction for multi-platform support
+from ..dashboard.platforms import get_platform_fetcher
 from ..models.summary import SummaryResult, SummarizationContext
 from ..models.stored_summary import StoredSummary
 from ..models.error_log import ErrorType, ErrorSeverity
@@ -262,6 +264,9 @@ class TaskExecutor:
         # ADR-035: Returns tuple (content, name, id)
         template_content, template_name, template_id = await self._get_template_content(task)
 
+        # ADR-051: Get platform from scheduled task (default to discord)
+        platform = getattr(task.scheduled_task, 'platform', 'discord') or 'discord'
+
         results = []
         summaries_created = []
 
@@ -275,29 +280,54 @@ class TaskExecutor:
                 # Get time range for messages
                 start_msg_time, end_msg_time = task.get_time_range()
 
-                # Fetch and process messages
-                channel_messages = await self.message_processor.process_channel_messages(
-                    channel_id=channel_id,
-                    start_time=start_msg_time,
-                    end_time=end_msg_time,
-                    options=task.summary_options
-                )
+                # ADR-051: Fetch messages using platform-appropriate method
+                channel_messages = []
+                channel_name = f"Channel {channel_id}"
+
+                if platform != 'discord':
+                    # Use platform fetcher for non-Discord platforms
+                    try:
+                        fetcher = await get_platform_fetcher(platform, task.guild_id)
+                        if fetcher:
+                            result = await fetcher.fetch_messages(
+                                channel_ids=[channel_id],
+                                start_time=start_msg_time,
+                                end_time=end_msg_time,
+                            )
+                            await fetcher.close()
+                            channel_messages = result.messages
+                            if channel_id in result.channel_names:
+                                channel_name = f"#{result.channel_names[channel_id]}"
+                        else:
+                            logger.error(f"Platform '{platform}' not available for guild {task.guild_id}")
+                            results.append({"channel_id": channel_id, "success": False, "error": f"Platform {platform} not available"})
+                            continue
+                    except Exception as e:
+                        logger.error(f"ADR-051: Platform fetcher failed for channel {channel_id}: {e}")
+                        results.append({"channel_id": channel_id, "success": False, "error": str(e)})
+                        continue
+                else:
+                    # Discord: Use existing message processor
+                    channel_messages = await self.message_processor.process_channel_messages(
+                        channel_id=channel_id,
+                        start_time=start_msg_time,
+                        end_time=end_msg_time,
+                        options=task.summary_options
+                    )
+                    # Get channel name from Discord client
+                    if self.discord_client:
+                        try:
+                            channel = self.discord_client.get_channel(int(channel_id))
+                            if channel:
+                                channel_name = f"#{channel.name}"
+                        except (ValueError, AttributeError) as e:
+                            # SEC-005: Log channel resolution errors at debug level
+                            logger.debug(f"Could not resolve channel {channel_id}: {e}")
 
                 if len(channel_messages) < task.summary_options.min_messages:
                     logger.warning(f"Channel {channel_id}: insufficient messages ({len(channel_messages)} < {task.summary_options.min_messages})")
                     results.append({"channel_id": channel_id, "success": False, "error": "Insufficient messages"})
                     continue
-
-                # Get channel name
-                channel_name = f"Channel {channel_id}"
-                if self.discord_client:
-                    try:
-                        channel = self.discord_client.get_channel(int(channel_id))
-                        if channel:
-                            channel_name = f"#{channel.name}"
-                    except (ValueError, AttributeError) as e:
-                        # SEC-005: Log channel resolution errors at debug level
-                        logger.debug(f"Could not resolve channel {channel_id}: {e}")
 
                 # Create summarization context
                 context = SummarizationContext(
@@ -392,47 +422,89 @@ class TaskExecutor:
             # Get time range for messages
             start_msg_time, end_msg_time = task.get_time_range()
 
+            # ADR-051: Get platform from scheduled task (default to discord)
+            platform = getattr(task.scheduled_task, 'platform', 'discord') or 'discord'
+
             # Fetch and process messages from all channels
             # For multi-channel, skip per-channel min check and do aggregate check later
             # ADR-041: Track skipped channels for soft-fail handling
             all_messages = []
             channels_with_content = []  # Track channels that actually had messages
             channels_skipped = []  # ADR-041: Track channels skipped due to access issues
+            channel_names_map = {}  # ADR-051: Map of channel_id -> channel_name
 
-            for channel_id in channel_ids:
+            # ADR-051: Use platform fetcher for non-Discord platforms
+            if platform != 'discord':
                 try:
-                    channel_messages = await self.message_processor.process_channel_messages(
-                        channel_id=channel_id,
+                    fetcher = await get_platform_fetcher(platform, task.guild_id)
+                    if not fetcher:
+                        raise MessageFetchError(f"Platform '{platform}' not available for guild {task.guild_id}")
+
+                    result = await fetcher.fetch_messages(
+                        channel_ids=channel_ids,
                         start_time=start_msg_time,
                         end_time=end_msg_time,
-                        options=task.summary_options,
-                        skip_min_check=is_multi_channel  # Skip per-channel check for multi-channel
                     )
-                    if channel_messages:
-                        all_messages.extend(channel_messages)
-                        channels_with_content.append(channel_id)
-                except ChannelAccessError as e:
-                    # ADR-041: Soft-fail - skip this channel but continue with others
-                    channel_name = await self._get_channel_name(channel_id)
-                    channels_skipped.append({
-                        "channel_id": channel_id,
-                        "channel_name": channel_name,
-                        "reason": "missing_access",
-                        "error_code": getattr(e, 'error_code', 'CHANNEL_ACCESS_DENIED'),
-                        "message": str(e)[:100]
-                    })
-                    logger.warning(f"ADR-041: Skipping channel {channel_id} ({channel_name}) due to access error: {e}")
-                except InsufficientContentError:
-                    # For single channel, re-raise; for multi-channel, continue to next channel
-                    if not is_multi_channel:
-                        raise
-                    # Multi-channel: this channel had no messages, continue to others
-                    logger.debug(f"Channel {channel_id} had no messages, continuing to next channel")
+                    await fetcher.close()
+
+                    all_messages = result.messages
+                    channel_names_map = result.channel_names
+                    channels_with_content = list(result.channel_names.keys())
+
+                    # Convert errors to skipped channels format
+                    for channel_id, error_msg in result.errors:
+                        channels_skipped.append({
+                            "channel_id": channel_id,
+                            "channel_name": result.channel_names.get(channel_id, f"Channel {channel_id}"),
+                            "reason": "fetch_error",
+                            "error_code": "PLATFORM_FETCH_ERROR",
+                            "message": str(error_msg)[:100]
+                        })
+
+                    logger.info(f"ADR-051: Fetched {len(all_messages)} messages from {platform} platform")
+
+                except Exception as e:
+                    logger.error(f"ADR-051: Platform fetcher failed for {platform}: {e}")
+                    raise MessageFetchError(f"Failed to fetch messages from {platform}: {e}")
+            else:
+                # Discord: Use existing message processor
+                for channel_id in channel_ids:
+                    try:
+                        channel_messages = await self.message_processor.process_channel_messages(
+                            channel_id=channel_id,
+                            start_time=start_msg_time,
+                            end_time=end_msg_time,
+                            options=task.summary_options,
+                            skip_min_check=is_multi_channel  # Skip per-channel check for multi-channel
+                        )
+                        if channel_messages:
+                            all_messages.extend(channel_messages)
+                            channels_with_content.append(channel_id)
+                    except ChannelAccessError as e:
+                        # ADR-041: Soft-fail - skip this channel but continue with others
+                        channel_name = await self._get_channel_name(channel_id)
+                        channels_skipped.append({
+                            "channel_id": channel_id,
+                            "channel_name": channel_name,
+                            "reason": "missing_access",
+                            "error_code": getattr(e, 'error_code', 'CHANNEL_ACCESS_DENIED'),
+                            "message": str(e)[:100]
+                        })
+                        logger.warning(f"ADR-041: Skipping channel {channel_id} ({channel_name}) due to access error: {e}")
+                    except InsufficientContentError:
+                        # For single channel, re-raise; for multi-channel, continue to next channel
+                        if not is_multi_channel:
+                            raise
+                        # Multi-channel: this channel had no messages, continue to others
+                        logger.debug(f"Channel {channel_id} had no messages, continuing to next channel")
 
             # Build channel names list from channels WITH CONTENT (for title)
             channel_names = []
             for channel_id in channels_with_content:
-                if self.discord_client:
+                # ADR-051: Use channel_names_map if available (from platform fetcher)
+                if channel_id in channel_names_map:
+                    channel_names.append(f"#{channel_names_map[channel_id]}")
+                elif self.discord_client:
                     try:
                         channel = self.discord_client.get_channel(int(channel_id))
                         if channel:

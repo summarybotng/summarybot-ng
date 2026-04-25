@@ -51,6 +51,8 @@ from . import get_discord_bot, get_summarization_engine, get_summary_repository,
 from ...data.base import SearchCriteria
 from ...models.stored_summary import StoredSummary, SummarySource
 from ...models.summary_job import SummaryJob, JobType, JobStatus
+# ADR-051: Platform abstraction
+from ..platforms import get_platform_fetcher, detect_platform, PlatformFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -614,159 +616,43 @@ async def generate_summary(
             all_messages = []
             channel_errors = []
 
-            if is_slack:
-                # Slack message fetching
-                from ...slack.client import SlackClient
-                from ...models.message import ProcessedMessage, MessageType, SourceType
+            # ADR-051: Use platform-agnostic message fetcher
+            platform = body.platform if body else "discord"
+            fetcher = await get_platform_fetcher(platform, guild_id)
 
-                slack_client = SlackClient(slack_workspace)
-                try:
-                    # Convert start/end to Slack timestamps (Unix epoch as string)
-                    oldest_ts = str(start_time.timestamp()) if start_time else None
-                    latest_ts = str(end_time.timestamp()) if end_time else None
+            if not fetcher:
+                raise ValueError(f"Platform '{platform}' not available for guild {guild_id}")
 
-                    # Map channel IDs to names
-                    channel_name_map = {}
-
-                    for idx, channel_id in enumerate(channel_ids):
+            try:
+                # Create progress callback
+                async def progress_cb(current: int, total: int, message: str):
+                    job.update_progress(current, total, message)
+                    if job_repo:
                         try:
-                            # Get channel name
-                            try:
-                                channel_info = await slack_client.get_channel_info(channel_id)
-                                channel_name_map[channel_id] = channel_info.channel_name
-                            except Exception:
-                                channel_name_map[channel_id] = channel_id
+                            await job_repo.update(job)
+                        except Exception:
+                            pass
 
-                            logger.info(f"[{job_id}] Fetching Slack messages from channel #{channel_name_map[channel_id]}")
-                            msg_count = 0
-                            cursor = None
-                            joined_channel = False
+                # Fetch messages using platform fetcher
+                logger.info(f"[{job_id}] Fetching messages via {fetcher.platform_display_name} fetcher")
+                fetch_result = await fetcher.fetch_messages(
+                    channel_ids=channel_ids,
+                    start_time=start_time,
+                    end_time=end_time,
+                    job_id=job_id,
+                    progress_callback=progress_cb,
+                )
 
-                            while True:
-                                try:
-                                    data = await slack_client.get_channel_history(
-                                        channel_id=channel_id,
-                                        oldest=oldest_ts,
-                                        latest=latest_ts,
-                                        limit=200,
-                                        cursor=cursor,
-                                    )
-                                except Exception as hist_error:
-                                    # Check if it's a not_in_channel error - try to auto-join
-                                    error_str = str(hist_error)
-                                    if "not_in_channel" in error_str and not joined_channel:
-                                        logger.info(f"[{job_id}] Bot not in channel {channel_id}, attempting to join...")
-                                        if await slack_client.join_channel(channel_id):
-                                            joined_channel = True
-                                            logger.info(f"[{job_id}] Successfully joined channel {channel_id}, retrying fetch")
-                                            # Retry the history fetch
-                                            data = await slack_client.get_channel_history(
-                                                channel_id=channel_id,
-                                                oldest=oldest_ts,
-                                                latest=latest_ts,
-                                                limit=200,
-                                                cursor=cursor,
-                                            )
-                                        else:
-                                            raise hist_error
-                                    else:
-                                        raise hist_error
+                all_messages = fetch_result.messages
+                channel_name_map = fetch_result.channel_names
+                channel_errors = [(ch_id, ch_id, Exception(err)) for ch_id, err in fetch_result.errors]
 
-                                for msg in data.get("messages", []):
-                                    # Skip bot messages and system messages
-                                    if msg.get("subtype") in ("bot_message", "channel_join", "channel_leave"):
-                                        continue
+                logger.info(f"[{job_id}] Fetched {len(all_messages)} messages from {len(channel_name_map)} channels")
+                if fetch_result.errors:
+                    logger.warning(f"[{job_id}] Errors in {len(fetch_result.errors)} channels: {fetch_result.errors}")
 
-                                    # Get message timestamp as unique ID
-                                    msg_ts = msg.get("ts", "0")
-
-                                    # Convert to ProcessedMessage format for summarization
-                                    slack_msg = ProcessedMessage(
-                                        id=f"slack_{channel_id}_{msg_ts}",
-                                        content=msg.get("text", ""),
-                                        author_id=msg.get("user", "unknown"),
-                                        author_name=msg.get("user", "Unknown User"),
-                                        timestamp=datetime.fromtimestamp(float(msg_ts)),
-                                        channel_id=channel_id,
-                                        channel_name=channel_name_map.get(channel_id, channel_id),
-                                        message_type=MessageType.SLACK_TEXT,
-                                        source_type=SourceType.SLACK,
-                                        reactions_count=len(msg.get("reactions", [])),
-                                    )
-                                    all_messages.append(slack_msg)
-                                    msg_count += 1
-
-                                # Handle pagination
-                                cursor = data.get("response_metadata", {}).get("next_cursor")
-                                if not cursor:
-                                    break
-
-                            channel_name = channel_name_map.get(channel_id, channel_id)
-                            logger.info(f"[{job_id}] Fetched {msg_count} Slack messages from #{channel_name}")
-
-                            # ADR-013: Update job progress
-                            job.update_progress(idx + 1, None, f"Fetched #{channel_name}")
-                            if job_repo:
-                                try:
-                                    await job_repo.update(job)
-                                except Exception:
-                                    pass
-
-                        except Exception as channel_error:
-                            logger.error(f"[{job_id}] Error fetching Slack channel {channel_id}: {channel_error}")
-                            channel_errors.append((channel_id, channel_id, channel_error))
-
-                    # Resolve Slack user IDs to display names
-                    if all_messages:
-                        logger.info(f"[{job_id}] Resolving Slack user names...")
-                        unique_user_ids = set(m.author_id for m in all_messages if m.author_id != "unknown")
-                        user_name_map = {}
-
-                        for user_id in unique_user_ids:
-                            try:
-                                user_info = await slack_client.get_user_info(user_id)
-                                user_name_map[user_id] = user_info.display_name or user_info.real_name or user_id
-                            except Exception as e:
-                                logger.warning(f"[{job_id}] Failed to resolve user {user_id}: {e}")
-                                user_name_map[user_id] = user_id
-
-                        # Update author_name on all messages
-                        for msg in all_messages:
-                            if msg.author_id in user_name_map:
-                                msg.author_name = user_name_map[msg.author_id]
-
-                        logger.info(f"[{job_id}] Resolved {len(user_name_map)} Slack user names")
-
-                finally:
-                    await slack_client.close()
-
-            else:
-                # Discord message fetching
-                for idx, channel_id in enumerate(channel_ids):
-                    channel = guild.get_channel(int(channel_id))
-                    logger.info(f"[{job_id}] Fetching from channel {channel_id}: {channel.name if channel else 'NOT FOUND'}")
-                    if channel:
-                        try:
-                            msg_count = 0
-                            async for message in channel.history(
-                                after=start_time,
-                                before=end_time,
-                                limit=1000,
-                            ):
-                                all_messages.append(message)
-                                msg_count += 1
-                            logger.info(f"[{job_id}] Fetched {msg_count} messages from {channel.name}")
-
-                            # ADR-013: Update job progress
-                            job.update_progress(idx + 1, None, f"Fetched {channel.name}")
-                            if job_repo:
-                                try:
-                                    await job_repo.update(job)
-                                except Exception:
-                                    pass
-                        except Exception as channel_error:
-                            logger.error(f"[{job_id}] Error fetching from {channel.name}: {channel_error}")
-                            channel_errors.append((channel_id, channel.name, channel_error))
+            finally:
+                await fetcher.close()
 
             # Track any channel-level errors
             if channel_errors:
@@ -829,25 +715,23 @@ async def generate_summary(
 
             logger.info(f"[{job_id}] SummaryOptions created: summary_length={options.summary_length.value}, max_tokens={options.get_max_tokens_for_length()}")
 
-            if is_slack:
-                # Slack messages are already ProcessedMessage objects
-                logger.info(f"[{job_id}] Using {len(all_messages)} Slack messages directly")
-                processed = all_messages
+            # ADR-051: Messages are already ProcessedMessage from platform fetcher
+            processed = all_messages
+            logger.info(f"[{job_id}] Using {len(processed)} messages from {platform} fetcher")
 
-                # Get channel/workspace names for context
-                channel_name = f"{len(channel_ids)} Slack channels" if len(channel_ids) > 1 else channel_ids[0]
-                guild_name = slack_workspace.workspace_name
+            # Get channel and guild names from fetch result
+            if len(channel_ids) == 1 and channel_ids[0] in channel_name_map:
+                channel_name = channel_name_map[channel_ids[0]]
             else:
-                # Discord messages need processing
-                logger.info(f"[{job_id}] Processing {len(all_messages)} Discord messages...")
-                processor = MessageProcessor(bot.client)
-                processed = await processor.process_messages(all_messages, options)
-                logger.info(f"[{job_id}] Processed {len(processed)} messages")
+                channel_name = f"{len(channel_ids)} channels"
 
-                # Get channel and guild info for context
-                primary_channel = guild.get_channel(int(channel_ids[0]))
-                channel_name = primary_channel.name if primary_channel else "multiple channels"
+            # Get server name based on platform
+            if platform == "slack" and slack_workspace:
+                guild_name = slack_workspace.workspace_name
+            elif guild:
                 guild_name = guild.name
+            else:
+                guild_name = "Unknown"
 
             # Calculate time span and participant count
             time_span_hours = (end_time - start_time).total_seconds() / 3600
@@ -938,7 +822,7 @@ async def generate_summary(
                     title=title,
                     source=SummarySource.MANUAL,  # From Generate button
                     created_at=utc_now_naive(),
-                    archive_source_key=f"slack:{guild_id}" if is_slack else f"discord:{guild_id}",
+                    archive_source_key=f"{platform}:{guild_id}",
                 )
 
                 logger.info(f"[{job_id}] Saving to stored_summaries...")
@@ -1969,125 +1853,27 @@ async def regenerate_stored_summary(
 
             processed = []
 
-            if regen_method == "discord" and can_use_discord:
-                logger.info(f"[{job_id}] Fetching from Discord: {start_time} to {end_time}")
+            # ADR-051: Use platform fetcher for message retrieval
+            if regen_method in ("discord", "slack"):
+                platform = regen_method
+                logger.info(f"[{job_id}] Fetching from {platform}: {start_time} to {end_time}")
                 logger.info(f"[{job_id}] Channels: {channel_ids}")
 
-                # Collect messages from all channels
-                all_messages = []
-                for channel_id in channel_ids:
-                    channel = guild.get_channel(int(channel_id))
-                    if channel:
-                        try:
-                            async for message in channel.history(
-                                after=start_time,
-                                before=end_time,
-                                limit=1000,
-                            ):
-                                all_messages.append(message)
-                        except Exception as e:
-                            logger.warning(f"[{job_id}] Error fetching from channel {channel_id}: {e}")
-
-                logger.info(f"[{job_id}] Fetched {len(all_messages)} messages from Discord")
-
-                if all_messages:
-                    processor = MessageProcessor(bot.client)
-                    processed = await processor.process_messages(all_messages, SummaryOptions(min_messages=1))
-
-            elif regen_method == "slack" and can_use_slack:
-                # Slack message fetching for regeneration
-                from ...slack.client import SlackClient
-                from ...models.message import SourceType
-
-                logger.info(f"[{job_id}] Fetching from Slack: {start_time} to {end_time}")
-                logger.info(f"[{job_id}] Channels: {channel_ids}")
-
-                slack_client = SlackClient(slack_workspace)
-                try:
-                    oldest_ts = str(start_time.timestamp()) if start_time else None
-                    latest_ts = str(end_time.timestamp()) if end_time else None
-
-                    all_slack_messages = []
-                    channel_name_map = {}
-
-                    for channel_id in channel_ids:
-                        try:
-                            # Get channel name
-                            try:
-                                channel_info = await slack_client.get_channel_info(channel_id)
-                                channel_name_map[channel_id] = channel_info.channel_name
-                            except Exception:
-                                channel_name_map[channel_id] = channel_id
-
-                            cursor = None
-                            while True:
-                                try:
-                                    data = await slack_client.get_channel_history(
-                                        channel_id=channel_id,
-                                        oldest=oldest_ts,
-                                        latest=latest_ts,
-                                        limit=200,
-                                        cursor=cursor,
-                                    )
-                                except Exception as hist_error:
-                                    if "not_in_channel" in str(hist_error):
-                                        if await slack_client.join_channel(channel_id):
-                                            data = await slack_client.get_channel_history(
-                                                channel_id=channel_id,
-                                                oldest=oldest_ts,
-                                                latest=latest_ts,
-                                                limit=200,
-                                                cursor=cursor,
-                                            )
-                                        else:
-                                            raise hist_error
-                                    else:
-                                        raise hist_error
-
-                                for msg in data.get("messages", []):
-                                    if msg.get("subtype") in ("bot_message", "channel_join", "channel_leave"):
-                                        continue
-
-                                    msg_ts = msg.get("ts", "0")
-                                    slack_msg = ProcessedMessage(
-                                        id=f"slack_{channel_id}_{msg_ts}",
-                                        content=msg.get("text", ""),
-                                        author_id=msg.get("user", "unknown"),
-                                        author_name=msg.get("user", "Unknown User"),
-                                        timestamp=datetime.fromtimestamp(float(msg_ts)),
-                                        channel_id=channel_id,
-                                        channel_name=channel_name_map.get(channel_id, channel_id),
-                                        message_type=MessageType.SLACK_TEXT,
-                                        source_type=SourceType.SLACK,
-                                        reactions_count=len(msg.get("reactions", [])),
-                                    )
-                                    all_slack_messages.append(slack_msg)
-
-                                cursor = data.get("response_metadata", {}).get("next_cursor")
-                                if not cursor:
-                                    break
-                        except Exception as e:
-                            logger.warning(f"[{job_id}] Error fetching Slack channel {channel_id}: {e}")
-
-                    # Resolve user names
-                    if all_slack_messages:
-                        unique_user_ids = set(m.author_id for m in all_slack_messages if m.author_id != "unknown")
-                        user_name_map = {}
-                        for user_id in unique_user_ids:
-                            try:
-                                user_info = await slack_client.get_user_info(user_id)
-                                user_name_map[user_id] = user_info.display_name or user_info.real_name or user_id
-                            except Exception:
-                                user_name_map[user_id] = user_id
-
-                        for msg in all_slack_messages:
-                            if msg.author_id in user_name_map:
-                                msg.author_name = user_name_map[msg.author_id]
-
-                    logger.info(f"[{job_id}] Fetched {len(all_slack_messages)} messages from Slack")
-                    processed = all_slack_messages
-                finally:
-                    await slack_client.close()
+                fetcher = await get_platform_fetcher(platform, guild_id)
+                if fetcher:
+                    try:
+                        fetch_result = await fetcher.fetch_messages(
+                            channel_ids=channel_ids,
+                            start_time=start_time,
+                            end_time=end_time,
+                            job_id=job_id,
+                        )
+                        processed = fetch_result.messages
+                        logger.info(f"[{job_id}] Fetched {len(processed)} messages from {platform}")
+                    finally:
+                        await fetcher.close()
+                else:
+                    logger.warning(f"[{job_id}] Platform fetcher not available for {platform}")
 
             # Fallback to source_content if fetch failed or returned no messages
             if not processed and has_source_content:

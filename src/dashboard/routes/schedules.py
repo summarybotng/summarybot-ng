@@ -112,6 +112,8 @@ def _task_to_response(task, category_name: str = None, template_name: str = None
         # ADR-034: Guild prompt templates
         prompt_template_id=getattr(task, 'prompt_template_id', None),
         prompt_template_name=template_name,
+        # ADR-051: Platform support
+        platform=getattr(task, 'platform', 'discord'),
     )
 
 
@@ -272,6 +274,7 @@ async def create_schedule(
         created_by=user["sub"],
         resolve_category_at_runtime=(task_scope in (TaskScope.CATEGORY, TaskScope.GUILD)),
         prompt_template_id=body.prompt_template_id,  # ADR-034
+        platform=body.platform or "discord",  # ADR-051
     )
 
     # Calculate next run
@@ -504,6 +507,10 @@ async def update_schedule(
     # ADR-034: Update prompt template
     if body.prompt_template_id is not None:
         task.prompt_template_id = body.prompt_template_id if body.prompt_template_id else None
+
+    # ADR-051: Update platform
+    if body.platform is not None:
+        task.platform = body.platform
 
     # Recalculate next run
     task.next_run = task.calculate_next_run()

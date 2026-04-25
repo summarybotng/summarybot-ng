@@ -188,6 +188,8 @@ export interface Schedule {
   // ADR-034: Guild prompt templates
   prompt_template_id?: string;
   prompt_template_name?: string;
+  // ADR-051: Platform support
+  platform?: "discord" | "slack";
 }
 
 // ADR-034: Guild Prompt Template types
@@ -227,9 +229,9 @@ export interface PromptTemplateUsage {
 }
 
 export interface Destination {
-  type: "discord_channel" | "webhook" | "dashboard";
+  type: "discord_channel" | "discord_dm" | "webhook" | "dashboard" | "email";
   target: string;
-  format: "embed" | "markdown" | "json";
+  format: "embed" | "markdown" | "json" | "html";
   // ADR-005: Dashboard-specific options
   auto_archive_days?: number;
   notify_on_delivery?: boolean;

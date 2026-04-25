@@ -155,6 +155,9 @@ class ScheduledTask(BaseModel):
     # Timezone support
     timezone: str = "UTC"  # Timezone for schedule times (e.g., "America/New_York")
 
+    # ADR-051: Platform support (discord or slack)
+    platform: str = "discord"
+
     # ADR-011: Unified scope selection
     scope: SummaryScope = SummaryScope.CHANNEL
 

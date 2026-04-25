@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Archive, Hash, Globe, Mail, FileCode, AlertTriangle, MessageCircle } from "lucide-react";
+import { Archive, Hash, Globe, Mail, FileCode, AlertTriangle, MessageCircle, MessageSquare } from "lucide-react";
 import type { Schedule, SummaryOptions, Destination, Channel, Category, PromptTemplate } from "@/types";
 import { ScopeSelector, type ScopeSelectorValue, type ScopeType } from "@/components/ScopeSelector";
 import { useCheckChannelPrivacy, type PrivacyWarning } from "@/hooks/useChannelPrivacy";
@@ -64,6 +64,8 @@ export interface ScheduleFormData {
   min_messages: number;  // Minimum messages required (default 5, set to 1 for low-activity)
   // ADR-034: Guild prompt templates
   prompt_template_id: string | null;
+  // ADR-051: Platform selection
+  platform: "discord" | "slack";
   // ADR-005: Delivery destinations
   destinations: {
     dashboard: boolean;
@@ -139,6 +141,38 @@ export function ScheduleForm({ formData, onChange, channels = [], categories = [
           value={formData.name}
           onChange={(e) => onChange({ ...formData, name: e.target.value })}
         />
+      </div>
+
+      {/* ADR-051: Platform Selection */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Platform</label>
+        <Select
+          value={formData.platform}
+          onValueChange={(v) => onChange({ ...formData, platform: v as "discord" | "slack" })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="discord">
+              <span className="flex items-center gap-2">
+                <span className="text-base">🎮</span>
+                Discord
+              </span>
+            </SelectItem>
+            <SelectItem value="slack">
+              <span className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4" />
+                Slack
+              </span>
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {formData.platform === "slack"
+            ? "Fetch messages from connected Slack workspace"
+            : "Fetch messages from Discord server channels"}
+        </p>
       </div>
 
       {/* ADR-011: Scope Selection */}
@@ -543,6 +577,7 @@ export const getInitialFormData = (): ScheduleFormData => ({
   perspective: "general",
   min_messages: 5,  // Default: require 5 messages
   prompt_template_id: null,  // ADR-034: Use default prompt
+  platform: "discord",  // ADR-051: Default to Discord
   destinations: {
     dashboard: true, // Default to dashboard
     discord_channel: false,
@@ -583,6 +618,7 @@ export function scheduleToFormData(schedule: Schedule): ScheduleFormData {
     perspective: schedule.summary_options.perspective,
     min_messages: schedule.summary_options.min_messages ?? 5,
     prompt_template_id: schedule.prompt_template_id || null,  // ADR-034
+    platform: schedule.platform || "discord",  // ADR-051
     destinations: {
       dashboard: !!dashboardDest,
       discord_channel: !!discordDest,

@@ -15,10 +15,27 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Play, Trash2, Calendar, Clock, Pencil, History } from "lucide-react";
+import { Play, Trash2, Calendar, Clock, Pencil, History, MessageSquare } from "lucide-react";
 import type { Schedule } from "@/types";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// ADR-051: Platform badge helper
+function getPlatformBadge(platform?: string) {
+  const p = platform || "discord";
+  if (p === "slack") {
+    return {
+      label: "Slack",
+      icon: <MessageSquare className="h-3 w-3 mr-1" />,
+      className: "bg-[#4A154B] text-white hover:bg-[#4A154B]/90",
+    };
+  }
+  return {
+    label: "Discord",
+    icon: <span className="mr-1">🎮</span>,
+    className: "bg-[#5865F2] text-white hover:bg-[#5865F2]/90",
+  };
+}
 
 interface ScheduleCardProps {
   schedule: Schedule;
@@ -57,6 +74,11 @@ export function ScheduleCard({
                 <h3 className="font-semibold">{schedule.name}</h3>
                 <Badge variant={schedule.is_active ? "default" : "secondary"}>
                   {schedule.is_active ? "Active" : "Inactive"}
+                </Badge>
+                {/* ADR-051: Platform badge */}
+                <Badge className={getPlatformBadge(schedule.platform).className}>
+                  {getPlatformBadge(schedule.platform).icon}
+                  {getPlatformBadge(schedule.platform).label}
                 </Badge>
               </div>
 

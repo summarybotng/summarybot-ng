@@ -54,8 +54,8 @@ class SQLiteTaskRepository(TaskRepository):
             created_at, created_by, last_run, next_run,
             run_count, failure_count, max_failures, retry_delay_minutes,
             scope, channel_ids, category_id, excluded_channel_ids,
-            resolve_category_at_runtime, timezone, prompt_template_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            resolve_category_at_runtime, timezone, prompt_template_id, platform
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -84,7 +84,8 @@ class SQLiteTaskRepository(TaskRepository):
             json.dumps(getattr(task, 'excluded_channel_ids', [])),
             1 if getattr(task, 'resolve_category_at_runtime', False) else 0,
             getattr(task, 'timezone', 'UTC'),
-            getattr(task, 'prompt_template_id', None)
+            getattr(task, 'prompt_template_id', None),
+            getattr(task, 'platform', 'discord')  # ADR-051
         )
 
         await self.connection.execute(query, params)
@@ -215,7 +216,8 @@ class SQLiteTaskRepository(TaskRepository):
             failure_count=row['failure_count'],
             max_failures=row['max_failures'],
             retry_delay_minutes=row['retry_delay_minutes'],
-            prompt_template_id=row.get('prompt_template_id')
+            prompt_template_id=row.get('prompt_template_id'),
+            platform=row.get('platform', 'discord')  # ADR-051
         )
 
     def _row_to_task_result(self, row: Dict[str, Any]) -> TaskResult:

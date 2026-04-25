@@ -438,6 +438,8 @@ class ScheduleListItem(BaseModel):
     # ADR-034: Guild prompt templates
     prompt_template_id: Optional[str] = None
     prompt_template_name: Optional[str] = None  # Resolved for display
+    # ADR-051: Platform support
+    platform: str = "discord"  # discord, slack
 
 
 class SchedulesResponse(BaseModel):
@@ -461,6 +463,8 @@ class ScheduleCreateRequest(BaseModel):
     summary_options: Optional[SummaryOptionsResponse] = None
     # ADR-034: Guild prompt templates
     prompt_template_id: Optional[str] = None
+    # ADR-051: Platform support
+    platform: str = "discord"  # discord, slack
 
 
 class ScheduleUpdateRequest(BaseModel):
@@ -479,6 +483,8 @@ class ScheduleUpdateRequest(BaseModel):
     summary_options: Optional[SummaryOptionsResponse] = None
     # ADR-034: Guild prompt templates
     prompt_template_id: Optional[str] = None
+    # ADR-051: Platform support
+    platform: Optional[str] = None  # discord, slack
 
 
 class ScheduleRunResponse(BaseModel):

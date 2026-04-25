@@ -438,7 +438,7 @@ class SQLiteWikiRepository:
             ORDER BY title
             """
             pages = await self.connection.fetch_all(
-                query, (guild_id, f"{category}/%")
+                pages_query, (guild_id, f"{category}/%")
             )
             for page in pages:
                 node.children.append(

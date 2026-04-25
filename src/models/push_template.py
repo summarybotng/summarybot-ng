@@ -272,7 +272,7 @@ def format_scope(
     def format_name(name: str) -> str:
         """Format a single channel/source name with appropriate prefix."""
         # ADR-026: Don't add # prefix for platform-prefixed names (WhatsApp:, Slack:, etc.)
-        if ":" in name and name.split(":")[0].lower() in ("whatsapp", "slack", "discord", "telegram"):
+        if ":" in name and name.split(":")[0].lower() in ("whatsapp", "slack", "discord"):
             return name
         return f"#{name}"
 

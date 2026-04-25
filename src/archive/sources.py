@@ -2,7 +2,7 @@
 Platform-agnostic source registry and management.
 
 Provides a unified interface for managing sources across Discord, WhatsApp,
-Slack, and Telegram platforms.
+and Slack platforms.
 """
 
 import logging
@@ -202,29 +202,6 @@ class SourceRegistry:
             server_name=workspace_name,
             channel_id=channel_id,
             channel_name=channel_name,
-        )
-        self.register_source(source)
-        return source
-
-    def create_source_from_telegram(
-        self,
-        chat_id: str,
-        chat_name: str
-    ) -> ArchiveSource:
-        """
-        Create and register a Telegram source.
-
-        Args:
-            chat_id: Telegram chat ID
-            chat_name: Chat name
-
-        Returns:
-            Created source
-        """
-        source = ArchiveSource(
-            source_type=SourceType.TELEGRAM,
-            server_id=chat_id,
-            server_name=chat_name,
         )
         self.register_source(source)
         return source

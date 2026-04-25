@@ -17,8 +17,7 @@ class SourceType(str, Enum):
     """Data source types for messages (ADR-002)."""
     DISCORD = "discord"
     WHATSAPP = "whatsapp"
-    SLACK = "slack"  # Future
-    TELEGRAM = "telegram"  # Future
+    SLACK = "slack"
 
 
 class MessageType(Enum):

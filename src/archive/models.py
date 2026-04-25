@@ -20,7 +20,6 @@ class SourceType(Enum):
     DISCORD = "discord"
     WHATSAPP = "whatsapp"
     SLACK = "slack"
-    TELEGRAM = "telegram"
 
 
 class SummaryStatus(Enum):

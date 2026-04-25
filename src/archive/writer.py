@@ -237,9 +237,6 @@ class SummaryWriter:
             platform_info = f"**Workspace:** {source.server_name}"
             if source.channel_name:
                 platform_info += f"\n**Channel:** #{source.channel_name}"
-        elif source.source_type == SourceType.TELEGRAM:
-            title = f"Daily Summary: {source.server_name}"
-            platform_info = f"**Chat:** {source.server_name}"
         else:
             title = f"Daily Summary: {source.server_name}"
             platform_info = f"**Source:** {source.server_name}"

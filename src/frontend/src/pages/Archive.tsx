@@ -377,7 +377,6 @@ function SourceCard({
     discord: "Discord",
     whatsapp: "WhatsApp",
     slack: "Slack",
-    telegram: "Telegram",
   };
 
   return (
@@ -641,7 +640,6 @@ function GenerateDialog({
               <SelectItem value="discord">Discord</SelectItem>
               <SelectItem value="whatsapp">WhatsApp</SelectItem>
               <SelectItem value="slack">Slack</SelectItem>
-              <SelectItem value="telegram">Telegram</SelectItem>
             </SelectContent>
           </Select>
         </div>

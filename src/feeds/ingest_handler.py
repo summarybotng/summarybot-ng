@@ -87,7 +87,7 @@ async def ingest_messages(
 
     This endpoint accepts messages pushed from:
     - WhatsApp Push Agent (ADR-002)
-    - Future: Slack, Telegram, Email adapters
+    - Slack (ADR-043)
 
     The messages are converted to ProcessedMessage format and stored for
     later summarization.

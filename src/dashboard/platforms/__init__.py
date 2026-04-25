@@ -15,13 +15,17 @@ from .slack_fetcher import SlackFetcher
 
 class Platform(str, Enum):
     """
-    Supported messaging platforms (P1: Type-safe platform enum).
+    Known messaging platforms (P1: Type-safe platform enum).
 
     Using str, Enum for backward compatibility with string comparisons.
+
+    Note: Only DISCORD and SLACK have fetchers for scheduled summaries.
+    WHATSAPP is used for archive display (detect_platform) only - it returns
+    None from get_platform_fetcher since no WhatsAppFetcher exists.
     """
     DISCORD = "discord"
     SLACK = "slack"
-    WHATSAPP = "whatsapp"
+    WHATSAPP = "whatsapp"  # Archive display only - no fetcher for schedules
 
     @classmethod
     def from_string(cls, value: str) -> "Platform":

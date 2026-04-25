@@ -2,7 +2,7 @@
 Retrospective Summary Archive module.
 
 Provides historical backfill, cost tracking, and portable Markdown archives
-for Discord, WhatsApp, Slack, and Telegram summaries.
+for Discord, WhatsApp, and Slack summaries.
 
 Implements ADR-006: Retrospective Summary Archive.
 """

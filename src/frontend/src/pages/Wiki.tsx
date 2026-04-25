@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   BookOpen,
   Search,
@@ -81,28 +83,23 @@ interface WikiSearchResult {
 
 // Fetch wiki tree
 async function fetchWikiTree(guildId: string): Promise<WikiTree> {
-  const response = await api.get(`/guilds/${guildId}/wiki/tree`);
-  return response.data;
+  return api.get<WikiTree>(`/guilds/${guildId}/wiki/tree`);
 }
 
 // Fetch wiki page
 async function fetchWikiPage(guildId: string, path: string): Promise<WikiPage> {
-  const response = await api.get(`/guilds/${guildId}/wiki/pages/${path}`);
-  return response.data;
+  return api.get<WikiPage>(`/guilds/${guildId}/wiki/pages/${path}`);
 }
 
 // Search wiki
 async function searchWiki(guildId: string, query: string): Promise<WikiSearchResult> {
-  const response = await api.get(`/guilds/${guildId}/wiki/search`, {
-    params: { q: query, synthesize: true },
-  });
-  return response.data;
+  return api.get<WikiSearchResult>(`/guilds/${guildId}/wiki/search?q=${encodeURIComponent(query)}&synthesize=true`);
 }
 
 // Fetch recent changes
 async function fetchRecentChanges(guildId: string): Promise<WikiPageSummary[]> {
-  const response = await api.get(`/guilds/${guildId}/wiki/recent`);
-  return response.data;
+  const result = await api.get<{ changes: WikiPageSummary[] }>(`/guilds/${guildId}/wiki/recent`);
+  return result.changes;
 }
 
 // Fetch wiki stats
@@ -113,8 +110,7 @@ interface WikiStats {
 }
 
 async function fetchWikiStats(guildId: string): Promise<WikiStats> {
-  const response = await api.get(`/guilds/${guildId}/wiki/stats`);
-  return response.data;
+  return api.get<WikiStats>(`/guilds/${guildId}/wiki/stats`);
 }
 
 // Populate wiki from summaries
@@ -126,8 +122,7 @@ interface PopulateResult {
 }
 
 async function populateWiki(guildId: string, days: number = 30): Promise<PopulateResult> {
-  const response = await api.post(`/guilds/${guildId}/wiki/populate`, { days });
-  return response.data;
+  return api.post<PopulateResult>(`/guilds/${guildId}/wiki/populate`, { days });
 }
 
 function WikiNavTree({ tree, currentPath }: { tree: WikiTree; currentPath?: string }) {
@@ -216,9 +211,10 @@ function WikiPageView({ page }: { page: WikiPage }) {
       {/* Content */}
       <Card>
         <CardContent className="pt-6">
-          <article className="prose dark:prose-invert max-w-none">
-            {/* Simple markdown rendering - in production use react-markdown */}
-            <div className="whitespace-pre-wrap">{page.content}</div>
+          <article className="prose dark:prose-invert max-w-none prose-headings:font-semibold prose-a:text-primary prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {page.content}
+            </ReactMarkdown>
           </article>
         </CardContent>
       </Card>

@@ -378,6 +378,12 @@ class SQLiteWikiRepository:
 
         return [self._row_to_source(row) for row in rows]
 
+    async def count_sources(self, guild_id: str) -> int:
+        """Count source documents for a guild."""
+        query = "SELECT COUNT(*) as count FROM wiki_sources WHERE guild_id = ?"
+        row = await self.connection.fetch_one(query, (guild_id,))
+        return row["count"] if row else 0
+
     # -------------------------------------------------------------------------
     # Navigation Tree
     # -------------------------------------------------------------------------

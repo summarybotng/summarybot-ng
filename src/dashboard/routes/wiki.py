@@ -458,3 +458,143 @@ async def get_orphan_pages(
         total=len(pages),
         pages=[_page_to_summary_response(p) for p in pages],
     )
+
+
+# -------------------------------------------------------------------------
+# Population Endpoints (ADR-061)
+# -------------------------------------------------------------------------
+
+class PopulateRequest(BaseModel):
+    """Request to populate wiki from historical summaries."""
+    days: int = Field(30, ge=1, le=365, description="Number of days to look back")
+
+
+class PopulateResponse(BaseModel):
+    """Response from populate operation."""
+    summaries_processed: int
+    pages_created: int
+    pages_updated: int
+    errors: List[str] = []
+
+
+class WikiStatsResponse(BaseModel):
+    """Wiki statistics."""
+    total_pages: int
+    total_sources: int
+    categories: dict
+
+
+@router.post(
+    "/guilds/{guild_id}/wiki/populate",
+    response_model=PopulateResponse,
+    summary="Populate wiki",
+    description="Populate wiki from historical summaries (ADR-061).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def populate_wiki(
+    guild_id: str = Path(..., description="Guild ID"),
+    request: PopulateRequest = PopulateRequest(),
+    user: dict = Depends(get_current_user),
+):
+    """Populate wiki from last N days of summaries."""
+    _check_guild_access(guild_id, user)
+
+    from datetime import timedelta
+    from ...data.repositories import get_stored_summary_repository, get_wiki_repository
+    from ...wiki.agents import WikiIngestAgent
+    from ...utils.time import utc_now_naive
+
+    wiki_repo = await get_wiki_repository()
+    if not wiki_repo:
+        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": "Wiki service unavailable"})
+
+    stored_repo = await get_stored_summary_repository()
+    if not stored_repo:
+        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": "Summary repository unavailable"})
+
+    # Get summaries from last N days
+    cutoff = utc_now_naive() - timedelta(days=request.days)
+
+    # Fetch summaries - use search with date filter
+    from ...data.base import SearchCriteria
+    criteria = SearchCriteria(
+        guild_id=guild_id,
+        start_date=cutoff,
+        limit=500,  # Process up to 500 summaries
+    )
+
+    summaries = await stored_repo.search(criteria)
+    logger.info(f"Found {len(summaries)} summaries to process for wiki population")
+
+    # Create ingest agent
+    ingest_agent = WikiIngestAgent(wiki_repo)
+
+    # Process each summary
+    pages_created = 0
+    pages_updated = 0
+    errors = []
+
+    for summary in summaries:
+        try:
+            result = await ingest_agent.ingest_summary(
+                guild_id=guild_id,
+                summary_id=summary.id,
+                summary_text=summary.summary_result.content if summary.summary_result else "",
+                key_points=summary.summary_result.key_points if summary.summary_result else [],
+                action_items=[a.description for a in (summary.summary_result.action_items if summary.summary_result else [])],
+                participants=[p.name for p in (summary.summary_result.participants if summary.summary_result else [])],
+                technical_terms=[t.term for t in (summary.summary_result.technical_terms if summary.summary_result else [])],
+                channel_name=summary.title or "Unknown",
+                timestamp=summary.created_at,
+            )
+            pages_created += len(result.pages_created)
+            pages_updated += len(result.pages_updated)
+        except Exception as e:
+            logger.warning(f"Failed to ingest summary {summary.id}: {e}")
+            errors.append(f"Summary {summary.id}: {str(e)}")
+
+    logger.info(f"Wiki population complete: {pages_created} created, {pages_updated} updated, {len(errors)} errors")
+
+    return PopulateResponse(
+        summaries_processed=len(summaries),
+        pages_created=pages_created,
+        pages_updated=pages_updated,
+        errors=errors[:10],  # Limit error list
+    )
+
+
+@router.get(
+    "/guilds/{guild_id}/wiki/stats",
+    response_model=WikiStatsResponse,
+    summary="Get wiki stats",
+    description="Get wiki statistics.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def get_wiki_stats(
+    guild_id: str = Path(..., description="Guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Get wiki statistics."""
+    _check_guild_access(guild_id, user)
+
+    repo = await get_wiki_repository()
+    if not repo:
+        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": "Wiki service unavailable"})
+
+    # Count pages by category
+    categories = {}
+    for cat in ["topics", "decisions", "processes", "experts", "questions"]:
+        categories[cat] = await repo.count_pages(guild_id, category=cat)
+
+    total_pages = await repo.count_pages(guild_id)
+    total_sources = await repo.count_sources(guild_id)
+
+    return WikiStatsResponse(
+        total_pages=total_pages,
+        total_sources=total_sources,
+        categories=categories,
+    )

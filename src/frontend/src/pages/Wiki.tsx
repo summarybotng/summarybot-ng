@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   BookOpen,
@@ -13,6 +13,9 @@ import {
   AlertTriangle,
   ChevronRight,
   ExternalLink,
+  RefreshCw,
+  Loader2,
+  Sparkles,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -99,6 +102,31 @@ async function searchWiki(guildId: string, query: string): Promise<WikiSearchRes
 // Fetch recent changes
 async function fetchRecentChanges(guildId: string): Promise<WikiPageSummary[]> {
   const response = await api.get(`/guilds/${guildId}/wiki/recent`);
+  return response.data;
+}
+
+// Fetch wiki stats
+interface WikiStats {
+  total_pages: number;
+  total_sources: number;
+  categories: Record<string, number>;
+}
+
+async function fetchWikiStats(guildId: string): Promise<WikiStats> {
+  const response = await api.get(`/guilds/${guildId}/wiki/stats`);
+  return response.data;
+}
+
+// Populate wiki from summaries
+interface PopulateResult {
+  summaries_processed: number;
+  pages_created: number;
+  pages_updated: number;
+  errors: string[];
+}
+
+async function populateWiki(guildId: string, days: number = 30): Promise<PopulateResult> {
+  const response = await api.post(`/guilds/${guildId}/wiki/populate`, { days });
   return response.data;
 }
 
@@ -400,6 +428,136 @@ function RecentChanges({ guildId }: { guildId: string }) {
   );
 }
 
+function PopulateWiki({ guildId }: { guildId: string }) {
+  const queryClient = useQueryClient();
+
+  // Fetch stats
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ["wiki-stats", guildId],
+    queryFn: () => fetchWikiStats(guildId),
+  });
+
+  // Populate mutation
+  const populateMutation = useMutation({
+    mutationFn: (days: number) => populateWiki(guildId, days),
+    onSuccess: () => {
+      // Invalidate all wiki queries to refresh
+      queryClient.invalidateQueries({ queryKey: ["wiki-tree", guildId] });
+      queryClient.invalidateQueries({ queryKey: ["wiki-stats", guildId] });
+      queryClient.invalidateQueries({ queryKey: ["wiki-recent", guildId] });
+    },
+  });
+
+  return (
+    <div className="space-y-6">
+      {/* Stats Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5" />
+            Wiki Statistics
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {statsLoading ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Skeleton className="h-16" />
+              <Skeleton className="h-16" />
+              <Skeleton className="h-16" />
+              <Skeleton className="h-16" />
+            </div>
+          ) : stats ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center p-4 bg-muted rounded-lg">
+                <div className="text-2xl font-bold">{stats.total_pages}</div>
+                <div className="text-sm text-muted-foreground">Total Pages</div>
+              </div>
+              <div className="text-center p-4 bg-muted rounded-lg">
+                <div className="text-2xl font-bold">{stats.total_sources}</div>
+                <div className="text-sm text-muted-foreground">Sources</div>
+              </div>
+              <div className="text-center p-4 bg-muted rounded-lg">
+                <div className="text-2xl font-bold">{stats.categories?.topics || 0}</div>
+                <div className="text-sm text-muted-foreground">Topics</div>
+              </div>
+              <div className="text-center p-4 bg-muted rounded-lg">
+                <div className="text-2xl font-bold">{stats.categories?.decisions || 0}</div>
+                <div className="text-sm text-muted-foreground">Decisions</div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">No wiki data yet</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Populate Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <RefreshCw className="h-5 w-5" />
+            Populate Wiki
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Populate the wiki from your existing summaries. This will analyze your
+            summaries and create wiki pages for topics, decisions, and expertise.
+          </p>
+
+          {populateMutation.isSuccess && (
+            <Alert>
+              <Sparkles className="h-4 w-4" />
+              <AlertTitle>Population Complete</AlertTitle>
+              <AlertDescription>
+                Processed {populateMutation.data?.summaries_processed} summaries.
+                Created {populateMutation.data?.pages_created} pages,
+                updated {populateMutation.data?.pages_updated} pages.
+                {populateMutation.data?.errors?.length > 0 && (
+                  <span className="text-yellow-600">
+                    {" "}({populateMutation.data.errors.length} errors)
+                  </span>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {populateMutation.isError && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Population Failed</AlertTitle>
+              <AlertDescription>
+                {(populateMutation.error as Error)?.message || "Unknown error"}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex gap-2">
+            <Button
+              onClick={() => populateMutation.mutate(30)}
+              disabled={populateMutation.isPending}
+            >
+              {populateMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Populate from Last 30 Days
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => populateMutation.mutate(90)}
+              disabled={populateMutation.isPending}
+            >
+              Last 90 Days
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export function Wiki() {
   const { id: guildId, "*": pagePath } = useParams<{ id: string; "*": string }>();
   const [searchParams] = useSearchParams();
@@ -487,6 +645,7 @@ export function Wiki() {
               <TabsList>
                 <TabsTrigger value="recent">Recent Changes</TabsTrigger>
                 <TabsTrigger value="browse">Browse</TabsTrigger>
+                <TabsTrigger value="populate">Populate</TabsTrigger>
               </TabsList>
               <TabsContent value="recent" className="mt-4">
                 <RecentChanges guildId={guildId!} />
@@ -504,6 +663,9 @@ export function Wiki() {
                     </p>
                   </CardContent>
                 </Card>
+              </TabsContent>
+              <TabsContent value="populate" className="mt-4">
+                <PopulateWiki guildId={guildId!} />
               </TabsContent>
             </Tabs>
           )}

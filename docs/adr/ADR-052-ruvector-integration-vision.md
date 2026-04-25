@@ -53,30 +53,7 @@ User Query: "discussions about authentication"
 - Query API: `GET /guilds/{id}/summaries/search?q=semantic+query`
 - Self-learning improves relevance over time
 
-### Phase 2: Agent Memory System
-**Goal**: Persistent memory for QE agents across sessions
-
-```
-QE Agent Session
-    ↓
-Learn Pattern (e.g., "coverage gaps in auth module")
-    ↓
-Store in RuVector: {
-  pattern: "coverage-gap",
-  context: embedded_vector,
-  confidence: 0.95,
-  learned_at: timestamp
-}
-    ↓
-Future Sessions Query Similar Patterns
-```
-
-**Benefits**:
-- Cross-session learning for QE fleet
-- Pattern deduplication via similarity
-- Automatic knowledge consolidation
-
-### Phase 3: Conversation Graph Analysis
+### Phase 2: Conversation Graph Analysis
 **Goal**: Model relationships between users, channels, and topics
 
 ```
@@ -96,7 +73,7 @@ Derived Insights:
 - Influence-weighted action item assignment
 - Topic drift detection in scheduled summaries
 
-### Phase 4: Edge Summarization
+### Phase 3: Edge Summarization
 **Goal**: Local summarization for privacy-sensitive deployments
 
 ```
@@ -127,7 +104,7 @@ Local Inference:
 └─────────────────────────────────────────┘
 ```
 
-### Phase 5: Self-Optimizing Pipeline
+### Phase 4: Self-Optimizing Pipeline
 **Goal**: System learns optimal summarization strategies
 
 ```
@@ -157,14 +134,16 @@ CREATE TABLE summary_vectors (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Agent memory patterns
-CREATE TABLE agent_patterns (
-    id TEXT PRIMARY KEY,
-    pattern_type TEXT NOT NULL,
-    embedding BLOB NOT NULL,
-    confidence REAL DEFAULT 0.5,
-    usage_count INTEGER DEFAULT 0,
-    last_accessed TIMESTAMP
+-- Conversation graph edges (for GNN analysis)
+CREATE TABLE conversation_edges (
+    id INTEGER PRIMARY KEY,
+    guild_id TEXT NOT NULL,
+    from_user_id TEXT NOT NULL,
+    to_user_id TEXT,
+    channel_id TEXT NOT NULL,
+    edge_type TEXT NOT NULL,  -- reply, mention, reaction
+    weight REAL DEFAULT 1.0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
@@ -213,10 +192,10 @@ const results = await ruvector.search({
 ## Migration Path
 
 1. **Current State**: SQLite FTS5 for keyword search
-2. **Phase 1**: Add RuVector alongside FTS5 (dual search)
-3. **Phase 2**: Migrate to RuVector primary, FTS5 fallback
-4. **Phase 3**: Full RuVector with GNN and self-learning
-5. **Phase 4**: Edge deployment options
+2. **Phase 1**: Add RuVector alongside FTS5 (semantic + keyword search)
+3. **Phase 2**: Add GNN conversation analysis
+4. **Phase 3**: Edge deployment option for enterprise
+5. **Phase 4**: Self-optimizing summarization pipeline
 
 ## Dependencies
 
@@ -238,8 +217,8 @@ const results = await ruvector.search({
 
 - Semantic search relevance: >80% user satisfaction
 - Query latency: <100ms p99
-- Agent memory recall: >90% pattern retrieval
 - Edge inference: <500ms summary generation
+- GNN insight accuracy: >75% for influencer detection
 
 ## Decision
 

@@ -517,15 +517,12 @@ async def populate_wiki(
     # Get summaries from last N days
     cutoff = utc_now_naive() - timedelta(days=request.days)
 
-    # Fetch summaries - use search with date filter
-    from ...data.base import SearchCriteria
-    criteria = SearchCriteria(
+    # Fetch summaries using find_by_guild with date filter
+    summaries = await stored_repo.find_by_guild(
         guild_id=guild_id,
-        start_time=cutoff,
+        created_after=cutoff,
         limit=500,  # Process up to 500 summaries
     )
-
-    summaries = await stored_repo.search(criteria)
     logger.info(f"Found {len(summaries)} summaries to process for wiki population")
 
     # Create ingest agent

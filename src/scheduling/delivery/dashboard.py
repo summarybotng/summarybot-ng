@@ -133,14 +133,26 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
         timestamp = utc_now_naive().strftime('%b %d, %H:%M')
         scope_type = summary.metadata.get("scope_type") if summary.metadata else None
 
+        # Get platform for title prefix (non-Discord platforms get a prefix)
+        platform = getattr(context.scheduled_task, 'platform', 'discord') if context.scheduled_task else 'discord'
+        platform_prefix = ""
+        if platform and platform.lower() != "discord":
+            # Capitalize platform name (e.g., "whatsapp" -> "WhatsApp", "slack" -> "Slack")
+            platform_display = {
+                "whatsapp": "WhatsApp",
+                "slack": "Slack",
+                "telegram": "Telegram",
+            }.get(platform.lower(), platform.title())
+            platform_prefix = f"{platform_display}: "
+
         if scope_type == "guild" or len(scope_channel_ids) > 10:
             # Server-wide summary - use count instead of listing all
             if len(channel_names) > 3:
-                title = f"Server Summary ({len(channel_names)} channels) — {timestamp}"
+                title = f"{platform_prefix}Server Summary ({len(channel_names)} channels) — {timestamp}"
             elif channel_names:
-                title = f"{', '.join(channel_names)} — {timestamp}"
+                title = f"{platform_prefix}{', '.join(channel_names)} — {timestamp}"
             else:
-                title = f"Server Summary — {timestamp}"
+                title = f"{platform_prefix}Server Summary — {timestamp}"
 
         elif scope_type == "category":
             # Category summary
@@ -149,19 +161,19 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
                 category_name = getattr(context.scheduled_task, 'category_name', None)
 
             if category_name:
-                title = f"📁 {category_name} ({len(channel_names)} channels) — {timestamp}"
+                title = f"{platform_prefix}📁 {category_name} ({len(channel_names)} channels) — {timestamp}"
             elif len(channel_names) > 3:
-                title = f"Category Summary ({len(channel_names)} channels) — {timestamp}"
+                title = f"{platform_prefix}Category Summary ({len(channel_names)} channels) — {timestamp}"
             else:
-                title = f"{', '.join(channel_names)} — {timestamp}"
+                title = f"{platform_prefix}{', '.join(channel_names)} — {timestamp}"
 
         else:
             # Channel-specific summary
             if len(channel_names) > 5:
-                title = f"{', '.join(channel_names[:3])} +{len(channel_names)-3} more — {timestamp}"
+                title = f"{platform_prefix}{', '.join(channel_names[:3])} +{len(channel_names)-3} more — {timestamp}"
             elif channel_names:
-                title = f"{', '.join(channel_names)} — {timestamp}"
+                title = f"{platform_prefix}{', '.join(channel_names)} — {timestamp}"
             else:
-                title = f"Summary — {timestamp}"
+                title = f"{platform_prefix}Summary — {timestamp}"
 
         return title

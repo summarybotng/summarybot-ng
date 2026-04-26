@@ -1,7 +1,7 @@
 # ADR-064: Wiki Navigation Filters
 
 ## Status
-Proposed
+Implemented
 
 ## Context
 
@@ -320,6 +320,27 @@ async def list_pages(
 - Index on rating, updated_at, created_at, synthesis_model
 - Lazy-load facet counts
 - Cache common filter combinations
+
+---
+
+## Implementation Notes (Added 2026-04-26)
+
+### Links Tooltip
+The "Links" stat card now shows a tooltip on hover displaying:
+- `{inbound_links} inbound · {outbound_links} outbound`
+
+This helps users understand the link breakdown without cluttering the UI.
+
+### Related Pages Section
+A new "Related Pages" section appears at the bottom of wiki pages showing:
+- **Links to:** Pages this page references (outbound links)
+- **Linked from:** Pages that reference this page (inbound links)
+
+All links are clickable for easy navigation between related wiki pages.
+
+### API Changes
+- Added `linked_pages_from` and `linked_pages_to` to `WikiPageDetailResponse`
+- Added `get_sources_by_ids()` method to wiki repository
 
 ---
 

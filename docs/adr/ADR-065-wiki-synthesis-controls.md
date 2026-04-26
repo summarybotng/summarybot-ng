@@ -1,7 +1,7 @@
 # ADR-065: Wiki Synthesis Rating & Regeneration Controls
 
 ## Status
-Proposed
+Implemented
 
 ## Context
 
@@ -408,6 +408,33 @@ def _select_model(preference: str, content_length: int) -> str:
 - Cache synthesis by options hash
 - Default to economical models unless specified
 - Aggregate ratings to reduce storage
+
+---
+
+## Implementation Notes (Added 2026-04-26)
+
+### Source Metadata for Readable Titles
+The API now returns `source_metadata` with each wiki page, containing:
+- `id`: Source ID (e.g., "summary-xxx")
+- `title`: Human-readable title from wiki_sources table
+- `source_type`: Type of source (usually "summary")
+- `ingested_at`: When the source was ingested
+
+### Update Header Formatting
+The "Update from summary-xxx" headers are now displayed as readable titles:
+- Before: `## Update from summary-4ab8dbca-d7ca-41d9-98de-07de0fc4df0e`
+- After: `## 📝 Server Summary (44 channels) — Apr 04, 11:12 [↗]`
+
+The formatting logic:
+1. Extracts channel count from titles like "Summary: #welcome, +41 more — Apr 04, 11:12"
+2. Displays as "Server Summary (N channels) — timestamp"
+3. Adds a clickable link icon to view the source
+
+### Platform Prefix in Summary Titles
+Summary titles now include platform prefix for non-Discord sources:
+- Discord: `Server Summary (6 channels) — Apr 03, 05:11`
+- WhatsApp: `WhatsApp: Server Summary (6 channels) — Apr 03, 05:11`
+- Slack: `Slack: Server Summary (6 channels) — Apr 03, 05:11`
 
 ---
 

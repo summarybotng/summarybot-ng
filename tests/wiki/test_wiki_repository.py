@@ -348,23 +348,20 @@ class TestWikiRecentChanges:
 
     @pytest.mark.asyncio
     async def test_get_recent_changes_returns_operations(self, wiki_repo, mock_connection):
-        """Test recent changes returns operation details."""
-        import json
+        """Test recent changes returns operation details from wiki_pages."""
         mock_connection.fetch_all.return_value = [
             {
-                "operation": "ingest",
-                "changed_at": "2024-01-15T10:00:00",
-                "details": json.dumps({
-                    "page_path": "topics/new.md",
-                    "page_title": "New Topic",
-                    "source_id": "summary-123",
-                }),
-                "agent_id": "ingest-agent",
+                "path": "topics/new.md",
+                "title": "New Topic",
+                "updated_at": "2024-01-15T10:00:00",
+                "source_refs": '["summary-123"]',
             }
         ]
 
         changes = await wiki_repo.get_recent_changes("guild-456")
 
         assert len(changes) == 1
-        assert changes[0].operation == "ingest"
+        assert changes[0].operation == "update"  # Implementation hardcodes this
         assert changes[0].page_path == "topics/new.md"
+        assert changes[0].page_title == "New Topic"
+        assert changes[0].source_id == "summary-123"

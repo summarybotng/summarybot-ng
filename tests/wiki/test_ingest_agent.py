@@ -301,21 +301,23 @@ class TestRelevanceFiltering:
         assert "Fixed database connection issue" in relevant
         assert "API endpoint added for users" not in relevant
 
-    def test_filter_relevant_points_related_keywords(self, ingest_agent):
-        """Test filtering with related keywords."""
+    def test_filter_relevant_points_multi_word_topic(self, ingest_agent):
+        """Test filtering with multi-word topic."""
         key_points = [
-            "Added SQL query optimization",
-            "Fixed UI button alignment",
-            "Postgres connection pooling enabled",
-            "Updated documentation",
+            "Machine learning model trained",
+            "Updated button styling",
+            "Learning rate adjusted",
+            "Fixed machine performance issue",
         ]
 
-        relevant = ingest_agent._filter_relevant_points("database", key_points)
+        relevant = ingest_agent._filter_relevant_points("machine-learning", key_points)
 
-        # Should match "sql" and "postgres" as related to "database"
-        assert len(relevant) == 2
-        assert "Added SQL query optimization" in relevant
-        assert "Postgres connection pooling enabled" in relevant
+        # Should match "machine" OR "learning"
+        assert len(relevant) == 3
+        assert "Machine learning model trained" in relevant
+        assert "Learning rate adjusted" in relevant
+        assert "Fixed machine performance issue" in relevant
+        assert "Updated button styling" not in relevant
 
     def test_filter_relevant_points_no_matches(self, ingest_agent):
         """Test filtering returns empty when no relevant points."""
@@ -325,36 +327,51 @@ class TestRelevanceFiltering:
             "Changed color scheme",
         ]
 
-        relevant = ingest_agent._filter_relevant_points("database", key_points)
+        relevant = ingest_agent._filter_relevant_points("quantum-computing", key_points)
 
         assert len(relevant) == 0
 
-    def test_filter_relevant_points_auth_keywords(self, ingest_agent):
-        """Test auth topic matches related authentication terms."""
+    def test_filter_relevant_points_user_driven_topic(self, ingest_agent):
+        """Test filtering works for arbitrary user-driven topics."""
         key_points = [
-            "JWT token validation added",
-            "OAuth2 flow implemented",
-            "Fixed login timeout issue",
-            "Updated color scheme",
-            "Session management improved",
+            "Kubernetes cluster scaled up",
+            "Fixed kubernetes networking issue",
+            "Updated documentation",
+            "Added k8s monitoring dashboard",
         ]
 
-        relevant = ingest_agent._filter_relevant_points("auth", key_points)
+        relevant = ingest_agent._filter_relevant_points("kubernetes", key_points)
 
-        assert len(relevant) == 4
-        assert "Updated color scheme" not in relevant
+        assert len(relevant) == 2
+        assert "Kubernetes cluster scaled up" in relevant
+        assert "Fixed kubernetes networking issue" in relevant
+        assert "Updated documentation" not in relevant
 
-    def test_get_related_keywords_returns_set(self, ingest_agent):
-        """Test related keywords returns proper set."""
-        related = ingest_agent._get_related_keywords("database")
+    def test_filter_relevant_points_case_insensitive(self, ingest_agent):
+        """Test filtering is case insensitive."""
+        key_points = [
+            "GRAPHQL endpoint added",
+            "GraphQL schema updated",
+            "Fixed unrelated bug",
+        ]
 
-        assert isinstance(related, set)
-        assert "sql" in related
-        assert "postgres" in related
-        assert "query" in related
+        relevant = ingest_agent._filter_relevant_points("graphql", key_points)
 
-    def test_get_related_keywords_unknown_topic(self, ingest_agent):
-        """Test unknown topic returns empty set."""
-        related = ingest_agent._get_related_keywords("unknown_topic_xyz")
+        assert len(relevant) == 2
 
-        assert related == set()
+    def test_filter_relevant_points_short_topic_words_ignored(self, ingest_agent):
+        """Test very short topic words (< 3 chars) are ignored."""
+        key_points = [
+            "Fixed API response format",
+            "UI styling updated",
+            "Added API documentation",
+        ]
+
+        # Topic "ui-api" has "ui" (2 chars, ignored) and "api" (3 chars, kept)
+        relevant = ingest_agent._filter_relevant_points("ui-api", key_points)
+
+        assert len(relevant) == 2
+        assert "Fixed API response format" in relevant
+        assert "Added API documentation" in relevant
+        # "UI styling updated" should NOT match since "ui" is too short
+        assert "UI styling updated" not in relevant

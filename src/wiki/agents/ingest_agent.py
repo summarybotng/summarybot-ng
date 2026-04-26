@@ -287,47 +287,28 @@ class WikiIngestAgent:
         return existing_content + new_section
 
     def _filter_relevant_points(self, topic: str, key_points: List[str]) -> List[str]:
-        """Filter key points to only include those relevant to the topic."""
-        topic_lower = topic.lower()
+        """Filter key points to only include those relevant to the topic.
 
-        # Build related keywords for common topics
-        related_keywords = self._get_related_keywords(topic_lower)
-        all_keywords = {topic_lower} | related_keywords
+        Uses the topic words themselves as the filter - no hardcoded mappings.
+        This works for any user-driven topic.
+        """
+        # Extract meaningful words from the topic (split on non-alphanumeric)
+        topic_words = set(re.split(r'[\s\-_/]+', topic.lower()))
+        # Remove very short words (likely not meaningful)
+        topic_words = {w for w in topic_words if len(w) >= 3}
+
+        if not topic_words:
+            # Fallback: use the whole topic as-is
+            topic_words = {topic.lower()}
 
         relevant = []
         for point in key_points:
             point_lower = point.lower()
-            # Check if any keyword appears in the point
-            if any(kw in point_lower for kw in all_keywords):
+            # Check if any topic word appears in the key point
+            if any(word in point_lower for word in topic_words):
                 relevant.append(point)
 
         return relevant
-
-    def _get_related_keywords(self, topic: str) -> set:
-        """Get related keywords for a topic to improve relevance matching."""
-        # Map topics to related terms
-        topic_relations = {
-            "database": {"db", "sql", "postgres", "sqlite", "mysql", "mongo", "redis", "query", "table", "schema", "migration"},
-            "api": {"endpoint", "rest", "graphql", "http", "request", "response", "route", "webhook"},
-            "authentication": {"auth", "login", "logout", "jwt", "token", "oauth", "session", "password", "credential"},
-            "auth": {"authentication", "login", "logout", "jwt", "token", "oauth", "session", "password", "credential"},
-            "deployment": {"deploy", "release", "ci", "cd", "pipeline", "docker", "kubernetes", "fly.io", "vercel"},
-            "deploy": {"deployment", "release", "ci", "cd", "pipeline", "docker", "kubernetes"},
-            "testing": {"test", "unit", "integration", "e2e", "coverage", "jest", "pytest", "vitest"},
-            "test": {"testing", "unit", "integration", "e2e", "coverage", "spec"},
-            "security": {"secure", "vulnerability", "encryption", "ssl", "tls", "https", "xss", "csrf"},
-            "performance": {"perf", "speed", "latency", "optimization", "cache", "fast", "slow"},
-            "caching": {"cache", "redis", "memcached", "ttl", "invalidate"},
-            "cache": {"caching", "redis", "memcached", "ttl", "invalidate"},
-            "error": {"bug", "issue", "fix", "crash", "exception", "failure"},
-            "bug": {"error", "issue", "fix", "crash", "exception", "failure"},
-            "feature": {"implement", "add", "new", "functionality", "capability"},
-            "infrastructure": {"infra", "server", "cloud", "aws", "gcp", "azure"},
-            "monitoring": {"monitor", "alert", "metrics", "logging", "observability", "dashboard"},
-            "logging": {"log", "logger", "trace", "debug", "audit"},
-        }
-
-        return topic_relations.get(topic, set())
 
     def _create_topic_content(
         self,

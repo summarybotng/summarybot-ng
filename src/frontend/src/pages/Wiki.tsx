@@ -91,6 +91,15 @@ interface WikiSearchResult {
   gaps: string[];
 }
 
+interface WikiChange {
+  page_path: string;
+  page_title: string;
+  operation: string;
+  changed_at: string;
+  source_id?: string;
+  agent_id?: string;
+}
+
 // Fetch wiki tree
 async function fetchWikiTree(guildId: string): Promise<WikiTree> {
   return api.get<WikiTree>(`/guilds/${guildId}/wiki/tree`);
@@ -107,8 +116,8 @@ async function searchWiki(guildId: string, query: string): Promise<WikiSearchRes
 }
 
 // Fetch recent changes
-async function fetchRecentChanges(guildId: string): Promise<WikiPageSummary[]> {
-  const result = await api.get<{ changes: WikiPageSummary[] }>(`/guilds/${guildId}/wiki/recent`);
+async function fetchRecentChanges(guildId: string): Promise<WikiChange[]> {
+  const result = await api.get<{ changes: WikiChange[] }>(`/guilds/${guildId}/wiki/recent`);
   return result.changes;
 }
 
@@ -725,20 +734,20 @@ function RecentChanges({ guildId }: { guildId: string }) {
 
   return (
     <div className="space-y-2">
-      {changes?.map((page) => (
+      {changes?.map((change, index) => (
         <Link
-          key={page.id}
-          to={`/guilds/${guildId}/wiki/${page.path}`}
+          key={`${change.page_path}-${index}`}
+          to={`/guilds/${guildId}/wiki/${change.page_path}`}
           className="block"
         >
           <Card className="hover:bg-accent/50 transition-colors">
             <CardContent className="py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="font-medium">{page.title}</span>
+                  <span className="font-medium">{change.page_title}</span>
                   <span className="text-sm text-muted-foreground ml-2">
-                    {page.updated_at
-                      ? new Date(page.updated_at).toLocaleDateString()
+                    {change.changed_at
+                      ? new Date(change.changed_at).toLocaleDateString()
                       : ""}
                   </span>
                 </div>

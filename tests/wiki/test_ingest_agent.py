@@ -280,3 +280,81 @@ class TestEdgeCases:
         oauth_pages = [p for p in page_paths if "oauth" in p.lower()]
         # Should have <= 2 OAuth-related pages (oauth and oauth2)
         assert len(oauth_pages) <= 3
+
+
+class TestRelevanceFiltering:
+    """Test key point relevance filtering."""
+
+    def test_filter_relevant_points_exact_match(self, ingest_agent):
+        """Test filtering with exact topic match."""
+        key_points = [
+            "Database migration completed",
+            "API endpoint added for users",
+            "Fixed database connection issue",
+            "Updated login page styling",
+        ]
+
+        relevant = ingest_agent._filter_relevant_points("database", key_points)
+
+        assert len(relevant) == 2
+        assert "Database migration completed" in relevant
+        assert "Fixed database connection issue" in relevant
+        assert "API endpoint added for users" not in relevant
+
+    def test_filter_relevant_points_related_keywords(self, ingest_agent):
+        """Test filtering with related keywords."""
+        key_points = [
+            "Added SQL query optimization",
+            "Fixed UI button alignment",
+            "Postgres connection pooling enabled",
+            "Updated documentation",
+        ]
+
+        relevant = ingest_agent._filter_relevant_points("database", key_points)
+
+        # Should match "sql" and "postgres" as related to "database"
+        assert len(relevant) == 2
+        assert "Added SQL query optimization" in relevant
+        assert "Postgres connection pooling enabled" in relevant
+
+    def test_filter_relevant_points_no_matches(self, ingest_agent):
+        """Test filtering returns empty when no relevant points."""
+        key_points = [
+            "Updated login page styling",
+            "Fixed button alignment",
+            "Changed color scheme",
+        ]
+
+        relevant = ingest_agent._filter_relevant_points("database", key_points)
+
+        assert len(relevant) == 0
+
+    def test_filter_relevant_points_auth_keywords(self, ingest_agent):
+        """Test auth topic matches related authentication terms."""
+        key_points = [
+            "JWT token validation added",
+            "OAuth2 flow implemented",
+            "Fixed login timeout issue",
+            "Updated color scheme",
+            "Session management improved",
+        ]
+
+        relevant = ingest_agent._filter_relevant_points("auth", key_points)
+
+        assert len(relevant) == 4
+        assert "Updated color scheme" not in relevant
+
+    def test_get_related_keywords_returns_set(self, ingest_agent):
+        """Test related keywords returns proper set."""
+        related = ingest_agent._get_related_keywords("database")
+
+        assert isinstance(related, set)
+        assert "sql" in related
+        assert "postgres" in related
+        assert "query" in related
+
+    def test_get_related_keywords_unknown_topic(self, ingest_agent):
+        """Test unknown topic returns empty set."""
+        related = ingest_agent._get_related_keywords("unknown_topic_xyz")
+
+        assert related == set()

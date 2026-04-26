@@ -121,9 +121,9 @@ class WikiIngestAgent:
                 existing = await self.repository.get_page(guild_id, path)
 
                 if existing:
-                    # Update existing page
+                    # Update existing page with topic-filtered content
                     updated_content = self._update_page_content(
-                        existing.content, summary_text, key_points, source.id
+                        existing.content, topic, key_points, source.id
                     )
                     existing.content = updated_content
                     existing.source_refs = list(set(existing.source_refs + [source.id]))
@@ -261,23 +261,73 @@ class WikiIngestAgent:
     def _update_page_content(
         self,
         existing_content: str,
-        summary_text: str,
+        topic: str,
         key_points: List[str],
         source_id: str,
     ) -> str:
-        """Update existing page content with new information."""
+        """Update existing page content with topic-relevant information only."""
         # Check if this source has already been added (deduplication)
         if source_id in existing_content:
             logger.debug(f"Source {source_id} already in page content, skipping")
             return existing_content
 
-        # Simple append strategy - in production use LLM for smart merging
+        # Filter key points to only include those relevant to this topic
+        relevant_points = self._filter_relevant_points(topic, key_points)
+
+        # Only add section if we have relevant content
+        if not relevant_points:
+            logger.debug(f"No relevant points for topic '{topic}' from {source_id}")
+            return existing_content
+
         new_section = f"\n\n## Update from {source_id}\n\n"
         new_section += "Key Points:\n"
-        for point in key_points[:5]:  # Limit to 5 points
+        for point in relevant_points[:5]:  # Limit to 5 points
             new_section += f"- {point} [source:{source_id}]\n"
 
         return existing_content + new_section
+
+    def _filter_relevant_points(self, topic: str, key_points: List[str]) -> List[str]:
+        """Filter key points to only include those relevant to the topic."""
+        topic_lower = topic.lower()
+
+        # Build related keywords for common topics
+        related_keywords = self._get_related_keywords(topic_lower)
+        all_keywords = {topic_lower} | related_keywords
+
+        relevant = []
+        for point in key_points:
+            point_lower = point.lower()
+            # Check if any keyword appears in the point
+            if any(kw in point_lower for kw in all_keywords):
+                relevant.append(point)
+
+        return relevant
+
+    def _get_related_keywords(self, topic: str) -> set:
+        """Get related keywords for a topic to improve relevance matching."""
+        # Map topics to related terms
+        topic_relations = {
+            "database": {"db", "sql", "postgres", "sqlite", "mysql", "mongo", "redis", "query", "table", "schema", "migration"},
+            "api": {"endpoint", "rest", "graphql", "http", "request", "response", "route", "webhook"},
+            "authentication": {"auth", "login", "logout", "jwt", "token", "oauth", "session", "password", "credential"},
+            "auth": {"authentication", "login", "logout", "jwt", "token", "oauth", "session", "password", "credential"},
+            "deployment": {"deploy", "release", "ci", "cd", "pipeline", "docker", "kubernetes", "fly.io", "vercel"},
+            "deploy": {"deployment", "release", "ci", "cd", "pipeline", "docker", "kubernetes"},
+            "testing": {"test", "unit", "integration", "e2e", "coverage", "jest", "pytest", "vitest"},
+            "test": {"testing", "unit", "integration", "e2e", "coverage", "spec"},
+            "security": {"secure", "vulnerability", "encryption", "ssl", "tls", "https", "xss", "csrf"},
+            "performance": {"perf", "speed", "latency", "optimization", "cache", "fast", "slow"},
+            "caching": {"cache", "redis", "memcached", "ttl", "invalidate"},
+            "cache": {"caching", "redis", "memcached", "ttl", "invalidate"},
+            "error": {"bug", "issue", "fix", "crash", "exception", "failure"},
+            "bug": {"error", "issue", "fix", "crash", "exception", "failure"},
+            "feature": {"implement", "add", "new", "functionality", "capability"},
+            "infrastructure": {"infra", "server", "cloud", "aws", "gcp", "azure"},
+            "monitoring": {"monitor", "alert", "metrics", "logging", "observability", "dashboard"},
+            "logging": {"log", "logger", "trace", "debug", "audit"},
+        }
+
+        return topic_relations.get(topic, set())
 
     def _create_topic_content(
         self,
@@ -292,11 +342,13 @@ class WikiIngestAgent:
         content += "## Overview\n\n"
         content += f"This topic was identified from recent discussions. [source:{source_id}]\n\n"
 
-        if key_points:
+        # Filter to only relevant key points
+        relevant_points = self._filter_relevant_points(topic, key_points)
+
+        if relevant_points:
             content += "## Key Points\n\n"
-            for point in key_points[:5]:
-                if topic.lower() in point.lower():
-                    content += f"- {point} [source:{source_id}]\n"
+            for point in relevant_points[:5]:
+                content += f"- {point} [source:{source_id}]\n"
 
         content += "\n## Related Topics\n\n"
         content += "*Links to related topics will be added as more content is ingested.*\n"

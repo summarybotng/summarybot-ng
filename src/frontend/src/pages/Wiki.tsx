@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useToast } from "@/hooks/use-toast";
 import {
   BookOpen,
   Search,
@@ -18,6 +19,11 @@ import {
   RefreshCw,
   Loader2,
   Sparkles,
+  Code,
+  Eye,
+  Copy,
+  Check,
+  Link2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -113,6 +119,16 @@ async function fetchWikiStats(guildId: string): Promise<WikiStats> {
   return api.get<WikiStats>(`/guilds/${guildId}/wiki/stats`);
 }
 
+// Fetch pages by source
+interface WikiSourceResult {
+  source_id: string;
+  pages: WikiPageSummary[];
+}
+
+async function fetchSourceReferences(guildId: string, sourceId: string): Promise<WikiSourceResult> {
+  return api.get<WikiSourceResult>(`/guilds/${guildId}/wiki/sources/${sourceId}`);
+}
+
 // Populate wiki from summaries
 interface PopulateResult {
   summaries_processed: number;
@@ -123,6 +139,16 @@ interface PopulateResult {
 
 async function populateWiki(guildId: string, days: number = 30): Promise<PopulateResult> {
   return api.post<PopulateResult>(`/guilds/${guildId}/wiki/populate`, { days });
+}
+
+// Clear wiki
+interface ClearWikiResult {
+  pages_deleted: number;
+  sources_deleted: number;
+}
+
+async function clearWiki(guildId: string): Promise<ClearWikiResult> {
+  return api.delete<ClearWikiResult>(`/guilds/${guildId}/wiki`);
 }
 
 function WikiNavTree({ tree, currentPath }: { tree: WikiTree; currentPath?: string }) {
@@ -168,10 +194,58 @@ function WikiNavTree({ tree, currentPath }: { tree: WikiTree; currentPath?: stri
 
 function WikiPageView({ page }: { page: WikiPage }) {
   const { id: guildId } = useParams<{ id: string }>();
+  const [showSource, setShowSource] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const { toast } = useToast();
 
   // Parse path for breadcrumb
   const pathParts = page.path.split("/");
   const category = pathParts[0];
+
+  // Pre-process content to convert [source:summary-xxx] to links
+  // Match UUID format (summary-uuid), legacy format (summary-sum_xxx), and any alphanumeric
+  const processedContent = page.content
+    .replace(/\[source:(summary-[\w-]+)\]/g, '[📄 source](?source=$1)')
+    .replace(/## Update from (summary-[\w-]+)/g, '## 📝 Update from [$1](?source=$1)');
+
+  // Copy page URL to clipboard
+  const handleShare = async () => {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      toast({
+        title: "Link copied!",
+        description: "Wiki page URL copied to clipboard",
+      });
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast({
+        title: "Copy failed",
+        description: "Please copy the URL manually",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle wiki internal links
+  const handleLink = (href: string) => {
+    // Source reference links
+    if (href.startsWith("?source=")) {
+      const sourceId = href.replace("?source=", "");
+      return `/guilds/${guildId}/wiki?source=${sourceId}`;
+    }
+    // Wiki page links
+    if (href.startsWith("topics/") || href.startsWith("decisions/") ||
+        href.startsWith("processes/") || href.startsWith("experts/") ||
+        href.startsWith("questions/")) {
+      return `/guilds/${guildId}/wiki/${href}`;
+    }
+    return href;
+  };
+
+  // Check if a link is a source reference
+  const isSourceLink = (href: string) => href.startsWith("?source=");
 
   return (
     <div className="space-y-6">
@@ -185,7 +259,9 @@ function WikiPageView({ page }: { page: WikiPage }) {
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbLink className="capitalize">{category}</BreadcrumbLink>
+            <BreadcrumbLink asChild>
+              <Link to={`/guilds/${guildId}/wiki`} className="capitalize">{category}</Link>
+            </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
@@ -194,16 +270,39 @@ function WikiPageView({ page }: { page: WikiPage }) {
         </BreadcrumbList>
       </Breadcrumb>
 
-      {/* Title */}
+      {/* Title and Actions */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{page.title}</h1>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm">
-            Suggest Edit
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSource(!showSource)}
+          >
+            {showSource ? (
+              <>
+                <Eye className="h-4 w-4 mr-1" />
+                Preview
+              </>
+            ) : (
+              <>
+                <Code className="h-4 w-4 mr-1" />
+                Source
+              </>
+            )}
           </Button>
-          <Button variant="outline" size="sm">
-            <ExternalLink className="h-4 w-4 mr-1" />
-            Share
+          <Button variant="outline" size="sm" onClick={handleShare}>
+            {copied ? (
+              <>
+                <Check className="h-4 w-4 mr-1" />
+                Copied!
+              </>
+            ) : (
+              <>
+                <Link2 className="h-4 w-4 mr-1" />
+                Share
+              </>
+            )}
           </Button>
         </div>
       </div>
@@ -211,11 +310,63 @@ function WikiPageView({ page }: { page: WikiPage }) {
       {/* Content */}
       <Card>
         <CardContent className="pt-6">
-          <article className="prose dark:prose-invert max-w-none prose-headings:font-semibold prose-a:text-primary prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {showSource ? (
+            <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-sm font-mono whitespace-pre-wrap">
               {page.content}
-            </ReactMarkdown>
-          </article>
+            </pre>
+          ) : (
+            <article className="prose prose-slate dark:prose-invert max-w-none
+              prose-headings:font-bold prose-headings:tracking-tight
+              prose-h1:text-2xl prose-h1:border-b prose-h1:pb-2 prose-h1:mb-4
+              prose-h2:text-xl prose-h2:mt-8 prose-h2:mb-4
+              prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-3
+              prose-p:leading-7 prose-p:mb-4
+              prose-ul:my-4 prose-ul:list-disc prose-ul:pl-6
+              prose-ol:my-4 prose-ol:list-decimal prose-ol:pl-6
+              prose-li:my-1
+              prose-a:text-primary prose-a:underline prose-a:underline-offset-2 hover:prose-a:text-primary/80
+              prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
+              prose-pre:bg-muted prose-pre:p-4 prose-pre:rounded-lg
+              prose-blockquote:border-l-4 prose-blockquote:border-primary prose-blockquote:pl-4 prose-blockquote:italic
+              prose-strong:font-bold
+              prose-table:border-collapse prose-th:border prose-th:p-2 prose-td:border prose-td:p-2
+            ">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  a: ({ href, children }) => {
+                    const isExternal = href?.startsWith('http');
+                    const isSource = href ? isSourceLink(href) : false;
+                    const finalHref = href ? handleLink(href) : '#';
+
+                    if (isExternal) {
+                      return (
+                        <a href={finalHref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1">
+                          {children}
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      );
+                    }
+
+                    if (isSource) {
+                      return (
+                        <Link
+                          to={finalHref}
+                          className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/80 no-underline font-mono"
+                        >
+                          {children}
+                        </Link>
+                      );
+                    }
+
+                    return <Link to={finalHref}>{children}</Link>;
+                  },
+                }}
+              >
+                {processedContent}
+              </ReactMarkdown>
+            </article>
+          )}
         </CardContent>
       </Card>
 
@@ -374,6 +525,99 @@ function WikiSearch({ guildId }: { guildId: string }) {
   );
 }
 
+function SourceReferences({ guildId, sourceId }: { guildId: string; sourceId: string }) {
+  const { data: result, isLoading, error } = useQuery({
+    queryKey: ["wiki-source", guildId, sourceId],
+    queryFn: () => fetchSourceReferences(guildId, sourceId),
+  });
+
+  // Extract summary ID from source ID (e.g., "summary-abc123" -> "abc123")
+  const summaryId = sourceId.startsWith("summary-") ? sourceId.slice(8) : null;
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-1/2" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <Alert variant="destructive">
+        <AlertTriangle className="h-4 w-4" />
+        <AlertTitle>Error loading source</AlertTitle>
+        <AlertDescription>
+          Could not load pages for this source.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Source info */}
+      <Card className="border-primary/50">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between text-base">
+            <span className="flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Source Reference
+            </span>
+            {summaryId && (
+              <Link to={`/guilds/${guildId}/summaries?view=${summaryId}`}>
+                <Button variant="outline" size="sm">
+                  <ExternalLink className="h-4 w-4 mr-1" />
+                  View Summary
+                </Button>
+              </Link>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <code className="text-sm bg-muted px-2 py-1 rounded">{sourceId}</code>
+          <p className="text-sm text-muted-foreground mt-2">
+            {result?.pages.length || 0} page{result?.pages.length !== 1 ? "s" : ""} reference this source
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Page results */}
+      <div className="space-y-2">
+        <h3 className="font-medium">Pages using this source</h3>
+        {result?.pages.map((page) => (
+          <Link
+            key={page.id}
+            to={`/guilds/${guildId}/wiki/${page.path}`}
+            className="block"
+          >
+            <Card className="hover:bg-accent/50 transition-colors">
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-medium">{page.title}</h4>
+                    <p className="text-sm text-muted-foreground">
+                      {page.path}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        ))}
+        {result?.pages.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            No pages reference this source
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RecentChanges({ guildId }: { guildId: string }) {
   const { data: changes, isLoading } = useQuery({
     queryKey: ["wiki-recent", guildId],
@@ -426,6 +670,8 @@ function RecentChanges({ guildId }: { guildId: string }) {
 
 function PopulateWiki({ guildId }: { guildId: string }) {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // Fetch stats
   const { data: stats, isLoading: statsLoading } = useQuery({
@@ -441,6 +687,28 @@ function PopulateWiki({ guildId }: { guildId: string }) {
       queryClient.invalidateQueries({ queryKey: ["wiki-tree", guildId] });
       queryClient.invalidateQueries({ queryKey: ["wiki-stats", guildId] });
       queryClient.invalidateQueries({ queryKey: ["wiki-recent", guildId] });
+    },
+  });
+
+  // Clear wiki mutation
+  const clearMutation = useMutation({
+    mutationFn: () => clearWiki(guildId),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["wiki-tree", guildId] });
+      queryClient.invalidateQueries({ queryKey: ["wiki-stats", guildId] });
+      queryClient.invalidateQueries({ queryKey: ["wiki-recent", guildId] });
+      setShowClearConfirm(false);
+      toast({
+        title: "Wiki cleared",
+        description: `Deleted ${data.pages_deleted} pages and ${data.sources_deleted} sources`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to clear wiki",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -550,6 +818,57 @@ function PopulateWiki({ guildId }: { guildId: string }) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Clear Wiki Card */}
+      <Card className="border-destructive/50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-destructive">
+            <AlertTriangle className="h-5 w-5" />
+            Clear Wiki
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Delete all wiki pages and sources. This action cannot be undone.
+            You can repopulate the wiki afterwards from your summaries.
+          </p>
+
+          {!showClearConfirm ? (
+            <Button
+              variant="destructive"
+              onClick={() => setShowClearConfirm(true)}
+              disabled={clearMutation.isPending || !stats?.total_pages}
+            >
+              Clear All Wiki Data
+            </Button>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-destructive">
+                Are you sure? This will delete {stats?.total_pages || 0} pages and {stats?.total_sources || 0} sources.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  onClick={() => clearMutation.mutate()}
+                  disabled={clearMutation.isPending}
+                >
+                  {clearMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : null}
+                  Yes, Clear Everything
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowClearConfirm(false)}
+                  disabled={clearMutation.isPending}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -558,6 +877,7 @@ export function Wiki() {
   const { id: guildId, "*": pagePath } = useParams<{ id: string; "*": string }>();
   const [searchParams] = useSearchParams();
   const searchQuery = searchParams.get("q");
+  const sourceId = searchParams.get("source");
 
   // Fetch tree
   const { data: tree, isLoading: treeLoading } = useQuery({
@@ -566,11 +886,12 @@ export function Wiki() {
     enabled: !!guildId,
   });
 
-  // Fetch page if path is provided
+  // Fetch page if path is provided (and not just viewing source/search)
+  const hasValidPath = !!pagePath && pagePath.length > 0 && pagePath !== "undefined";
   const { data: page, isLoading: pageLoading } = useQuery({
     queryKey: ["wiki-page", guildId, pagePath],
     queryFn: () => fetchWikiPage(guildId!, pagePath!),
-    enabled: !!guildId && !!pagePath,
+    enabled: !!guildId && hasValidPath && !sourceId && !searchQuery,
   });
 
   return (
@@ -619,7 +940,9 @@ export function Wiki() {
 
         {/* Content */}
         <div className="lg:col-span-3">
-          {searchQuery ? (
+          {sourceId ? (
+            <SourceReferences guildId={guildId!} sourceId={sourceId} />
+          ) : searchQuery ? (
             <WikiSearch guildId={guildId!} />
           ) : pagePath ? (
             pageLoading ? (

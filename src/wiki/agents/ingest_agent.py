@@ -266,6 +266,11 @@ class WikiIngestAgent:
         source_id: str,
     ) -> str:
         """Update existing page content with new information."""
+        # Check if this source has already been added (deduplication)
+        if source_id in existing_content:
+            logger.debug(f"Source {source_id} already in page content, skipping")
+            return existing_content
+
         # Simple append strategy - in production use LLM for smart merging
         new_section = f"\n\n## Update from {source_id}\n\n"
         new_section += "Key Points:\n"
@@ -331,6 +336,11 @@ class WikiIngestAgent:
         existing = await self.repository.get_page(guild_id, path)
 
         if existing:
+            # Check if this source has already been added (deduplication)
+            if source_id in existing.content:
+                logger.debug(f"Source {source_id} already in expertise map, skipping")
+                return
+
             # Append new expertise entries
             new_section = f"\n\n### From {source_id}\n\n"
             for participant in participants[:5]:

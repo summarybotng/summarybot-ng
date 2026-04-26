@@ -448,23 +448,42 @@ class SQLiteWikiRepository:
         return tree
 
     # -------------------------------------------------------------------------
+    # Source References
+    # -------------------------------------------------------------------------
+
+    async def find_pages_by_source(
+        self, guild_id: str, source_id: str
+    ) -> List[WikiPageSummary]:
+        """Find all pages that reference a specific source."""
+        # source_refs is stored as JSON array, use JSON functions to search
+        query = """
+        SELECT id, path, title, topics, updated_at, inbound_links, confidence
+        FROM wiki_pages
+        WHERE guild_id = ?
+        AND source_refs LIKE ?
+        ORDER BY updated_at DESC
+        """
+        # Use LIKE with the source_id wrapped to match JSON array elements
+        rows = await self.connection.fetch_all(
+            query, (guild_id, f'%"{source_id}"%')
+        )
+        return [self._row_to_page_summary(row) for row in rows]
+
+    # -------------------------------------------------------------------------
     # Recent Changes
     # -------------------------------------------------------------------------
 
     async def get_recent_changes(
         self, guild_id: str, days: int = 7, limit: int = 50
     ) -> List[WikiChange]:
-        """Get recent changes to the wiki."""
+        """Get recent changes to the wiki by querying recently updated pages."""
+        # Query recently updated pages directly instead of relying on log entries
         query = """
-        SELECT
-            wl.operation,
-            wl.details,
-            wl.timestamp as changed_at,
-            wl.agent_id
-        FROM wiki_log wl
-        WHERE wl.guild_id = ?
-        AND wl.timestamp >= datetime('now', ?)
-        ORDER BY wl.timestamp DESC
+        SELECT path, title, updated_at, source_refs
+        FROM wiki_pages
+        WHERE guild_id = ?
+        AND updated_at >= datetime('now', ?)
+        ORDER BY updated_at DESC
         LIMIT ?
         """
         rows = await self.connection.fetch_all(
@@ -473,18 +492,50 @@ class SQLiteWikiRepository:
 
         changes = []
         for row in rows:
-            details = json.loads(row["details"]) if row["details"] else {}
+            source_refs = json.loads(row["source_refs"]) if row["source_refs"] else []
             changes.append(
                 WikiChange(
-                    page_path=details.get("page_path", ""),
-                    page_title=details.get("page_title", ""),
-                    operation=row["operation"],
-                    changed_at=datetime.fromisoformat(row["changed_at"]),
-                    source_id=details.get("source_id"),
-                    agent_id=row["agent_id"],
+                    page_path=row["path"],
+                    page_title=row["title"],
+                    operation="update",
+                    changed_at=datetime.fromisoformat(row["updated_at"]) if row["updated_at"] else datetime.utcnow(),
+                    source_id=source_refs[-1] if source_refs else None,
+                    agent_id="wiki-ingest-agent",
                 )
             )
         return changes
+
+    # -------------------------------------------------------------------------
+    # Clear Wiki
+    # -------------------------------------------------------------------------
+
+    async def clear_wiki(self, guild_id: str) -> dict:
+        """Clear all wiki data for a guild. Returns counts of deleted items."""
+        # Count before deleting
+        pages_count = await self.count_pages(guild_id)
+        sources_count = await self.count_sources(guild_id)
+
+        # Delete in order to respect any implicit relationships
+        await self.connection.execute(
+            "DELETE FROM wiki_fts WHERE guild_id = ?", (guild_id,)
+        )
+        await self.connection.execute(
+            "DELETE FROM wiki_links WHERE guild_id = ?", (guild_id,)
+        )
+        await self.connection.execute(
+            "DELETE FROM wiki_contradictions WHERE guild_id = ?", (guild_id,)
+        )
+        await self.connection.execute(
+            "DELETE FROM wiki_log WHERE guild_id = ?", (guild_id,)
+        )
+        await self.connection.execute(
+            "DELETE FROM wiki_pages WHERE guild_id = ?", (guild_id,)
+        )
+        await self.connection.execute(
+            "DELETE FROM wiki_sources WHERE guild_id = ?", (guild_id,)
+        )
+
+        return {"pages_deleted": pages_count, "sources_deleted": sources_count}
 
     # -------------------------------------------------------------------------
     # Link Count Updates

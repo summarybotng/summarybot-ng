@@ -436,6 +436,39 @@ function SourceCitation({ sourceId, sources }: Props) {
 
 ---
 
+## Source Reference Link Formats
+
+Wiki pages contain source citations that link back to original summaries. These are rendered as clickable links in the UI.
+
+### Supported Formats
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| UUID | `[source:summary-a28017df-5b4d-44cf-838c-b8d5d7ef6706]` | Standard UUID format |
+| Legacy | `[source:summary-sum_bea2129d5a12]` | Legacy `sum_` prefix format |
+| Update Header | `## Update from summary-{id}` | Section headers from ingest |
+
+### Regex Pattern
+
+The frontend uses `[\w-]+` to match any alphanumeric source ID:
+
+```typescript
+// src/frontend/src/pages/Wiki.tsx
+const processedContent = page.content
+  .replace(/\[source:(summary-[\w-]+)\]/g, '[📄 source](?source=$1)')
+  .replace(/## Update from (summary-[\w-]+)/g, '## 📝 Update from [$1](?source=$1)');
+```
+
+### Link Resolution
+
+Source links navigate to `/guilds/{guild_id}/wiki?source={source_id}` which shows:
+1. All wiki pages referencing that source
+2. A "View Summary" button linking to `/guilds/{guild_id}/summaries?view={summary_uuid}`
+
+The summary UUID is extracted by removing the `summary-` prefix from the source ID.
+
+---
+
 ## API Endpoints
 
 ```python

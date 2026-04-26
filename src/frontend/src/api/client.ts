@@ -64,20 +64,12 @@ class ApiClient {
     return this.handleResponse<T>(response);
   }
 
-  async delete(path: string): Promise<void> {
+  async delete<T>(path: string): Promise<T> {
     const response = await fetch(`${BASE_URL}${path}`, {
       method: "DELETE",
       headers: this.getHeaders(),
     });
-    if (response.status === 401) {
-      useAuthStore.getState().logout();
-      window.location.href = "/";
-      throw new Error("Unauthorized");
-    }
-    if (!response.ok) {
-      const error = await response.json();
-      throw error;
-    }
+    return this.handleResponse<T>(response);
   }
 }
 

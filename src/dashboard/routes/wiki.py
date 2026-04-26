@@ -484,6 +484,12 @@ class WikiStatsResponse(BaseModel):
     categories: dict
 
 
+class ClearWikiResponse(BaseModel):
+    """Response from clear wiki operation."""
+    pages_deleted: int
+    sources_deleted: int
+
+
 @router.post(
     "/guilds/{guild_id}/wiki/populate",
     response_model=PopulateResponse,
@@ -560,6 +566,75 @@ async def populate_wiki(
         pages_updated=pages_updated,
         errors=errors[:10],  # Limit error list
     )
+
+
+class WikiSourceResponse(BaseModel):
+    """Source document with pages that reference it."""
+    source_id: str
+    pages: List[WikiPageSummaryResponse]
+
+
+@router.get(
+    "/guilds/{guild_id}/wiki/sources/{source_id}",
+    response_model=WikiSourceResponse,
+    summary="Get source references",
+    description="Get all wiki pages that reference a specific source.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def get_source_references(
+    guild_id: str = Path(..., description="Guild ID"),
+    source_id: str = Path(..., description="Source ID (e.g., summary-xxx)"),
+    user: dict = Depends(get_current_user),
+):
+    """Get pages that reference a specific source."""
+    _check_guild_access(guild_id, user)
+
+    repo = await get_wiki_repository()
+    if not repo:
+        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": "Wiki service unavailable"})
+
+    pages = await repo.find_pages_by_source(guild_id, source_id)
+
+    return WikiSourceResponse(
+        source_id=source_id,
+        pages=[_page_to_summary_response(p) for p in pages],
+    )
+
+
+@router.delete(
+    "/guilds/{guild_id}/wiki",
+    response_model=ClearWikiResponse,
+    summary="Clear wiki",
+    description="Delete all wiki pages and sources for a guild.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def clear_wiki(
+    guild_id: str = Path(..., description="Guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Clear all wiki data for a guild."""
+    _check_guild_access(guild_id, user)
+
+    # Check for admin role
+    guild_roles = user.get("guild_roles", {})
+    if guild_roles.get(guild_id) != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "FORBIDDEN", "message": "Admin access required to clear wiki"},
+        )
+
+    repo = await get_wiki_repository()
+    if not repo:
+        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": "Wiki service unavailable"})
+
+    result = await repo.clear_wiki(guild_id)
+    logger.info(f"Wiki cleared for guild {guild_id}: {result}")
+
+    return ClearWikiResponse(**result)
 
 
 @router.get(

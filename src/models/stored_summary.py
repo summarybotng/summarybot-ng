@@ -110,6 +110,10 @@ class StoredSummary(BaseModel):
     archive_granularity: Optional[str] = None   # "daily", "weekly", "monthly"
     archive_source_key: Optional[str] = None    # Archive source registry key
 
+    # ADR-067: Wiki ingestion tracking
+    wiki_ingested: bool = False
+    wiki_ingested_at: Optional[datetime] = None
+
     def get_pushed_channel_ids(self) -> List[str]:
         """Get list of channel IDs this summary was pushed to."""
         return [d.channel_id for d in self.push_deliveries if d.success]
@@ -321,6 +325,9 @@ class StoredSummary(BaseModel):
             "has_grounding": has_grounding,
             "has_time_range": has_time_range,
             "can_regenerate": can_regenerate,
+            # ADR-067: Wiki ingestion status
+            "wiki_ingested": self.wiki_ingested,
+            "wiki_ingested_at": self.wiki_ingested_at.isoformat() if self.wiki_ingested_at else None,
         }
 
     def to_dict(self) -> Dict[str, Any]:
@@ -344,6 +351,9 @@ class StoredSummary(BaseModel):
             "archive_period": self.archive_period,
             "archive_granularity": self.archive_granularity,
             "archive_source_key": self.archive_source_key,
+            # ADR-067: Wiki ingestion status
+            "wiki_ingested": self.wiki_ingested,
+            "wiki_ingested_at": self.wiki_ingested_at.isoformat() if self.wiki_ingested_at else None,
         }
 
     @classmethod
@@ -376,4 +386,7 @@ class StoredSummary(BaseModel):
             archive_period=data.get("archive_period"),
             archive_granularity=data.get("archive_granularity"),
             archive_source_key=data.get("archive_source_key"),
+            # ADR-067: Wiki ingestion status
+            wiki_ingested=data.get("wiki_ingested", False),
+            wiki_ingested_at=datetime.fromisoformat(data["wiki_ingested_at"]) if data.get("wiki_ingested_at") else None,
         )

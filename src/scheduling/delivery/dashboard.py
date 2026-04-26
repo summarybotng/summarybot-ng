@@ -1,10 +1,13 @@
 """
 Dashboard delivery strategy (CS-008, ADR-005).
+Extended by ADR-067: Automatic Wiki Ingestion.
 """
 
+import asyncio
 import logging
+import random
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .base import DeliveryStrategy, DeliveryResult, DeliveryContext
 from ...models.summary import SummaryResult
@@ -13,6 +16,12 @@ from ...models.task import Destination
 from src.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
+
+# ADR-067: Retry configuration for wiki ingestion
+WIKI_INGEST_MAX_RETRIES = 3
+WIKI_INGEST_BASE_DELAY = 1.0  # seconds
+WIKI_INGEST_MAX_DELAY = 30.0  # seconds
+WIKI_INGEST_JITTER = 0.5  # randomization factor
 
 
 class DashboardDeliveryStrategy(DeliveryStrategy):
@@ -81,6 +90,11 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
 
             logger.info(f"Stored summary {stored_summary.id} in dashboard for guild {context.guild_id}")
 
+            # ADR-067: Trigger wiki ingestion in background (non-blocking)
+            asyncio.create_task(
+                self._trigger_wiki_ingestion(stored_summary, stored_summary_repo, context)
+            )
+
             return DeliveryResult(
                 destination_type=self.destination_type,
                 target="dashboard",
@@ -121,6 +135,111 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
         else:
             channel_names = [f"Channel {cid}" for cid in channel_ids]
         return channel_names
+
+    async def _trigger_wiki_ingestion(
+        self,
+        summary: StoredSummary,
+        stored_summary_repo: Any,
+        context: DeliveryContext,
+    ) -> None:
+        """ADR-067: Trigger wiki ingestion for newly stored summary.
+
+        Runs in background to avoid blocking summary delivery.
+        Uses exponential backoff with jitter for retries.
+        """
+        try:
+            from ...data.repositories import get_wiki_repository, get_repository_factory
+
+            # Check if auto-ingest is enabled for this guild (default: enabled)
+            auto_ingest_enabled = True
+            try:
+                factory = get_repository_factory()
+                conn = await factory.get_connection()
+                row = await conn.fetch_one(
+                    "SELECT wiki_auto_ingest FROM guilds WHERE id = ?",
+                    (summary.guild_id,)
+                )
+                if row and row.get('wiki_auto_ingest') is not None:
+                    auto_ingest_enabled = bool(row['wiki_auto_ingest'])
+            except Exception as e:
+                # Column may not exist yet, default to enabled
+                logger.debug(f"Could not check wiki_auto_ingest setting: {e}")
+
+            if not auto_ingest_enabled:
+                logger.debug(f"Wiki auto-ingest disabled for guild {summary.guild_id}")
+                return
+
+            # Get wiki repository
+            wiki_repo = await get_wiki_repository()
+            if not wiki_repo:
+                logger.warning("Wiki repository not available, skipping ingestion")
+                return
+
+            # Get summary result
+            result = summary.summary_result
+            if not result:
+                logger.debug(f"No summary result for {summary.id}, skipping wiki ingestion")
+                return
+
+            # Import wiki ingest agent
+            from ...wiki.agents import WikiIngestAgent
+
+            agent = WikiIngestAgent(wiki_repo)
+
+            # Get platform from context
+            platform = 'discord'
+            if context.scheduled_task and hasattr(context.scheduled_task, 'platform'):
+                platform = context.scheduled_task.platform or 'discord'
+
+            # Run ingestion with retry logic
+            last_error = None
+            for attempt in range(WIKI_INGEST_MAX_RETRIES):
+                try:
+                    await agent.ingest_summary(
+                        guild_id=summary.guild_id,
+                        summary_id=summary.id,
+                        summary_text=result.summary_text or "",
+                        key_points=result.key_points or [],
+                        action_items=[a.description for a in (result.action_items or [])],
+                        participants=[p.display_name for p in (result.participants or [])],
+                        technical_terms=[t.term for t in (result.technical_terms or [])],
+                        channel_name=summary.title or "Unknown",
+                        timestamp=summary.created_at,
+                        platform=platform,
+                    )
+
+                    # Mark as ingested on success
+                    await stored_summary_repo.mark_wiki_ingested(summary.id)
+                    logger.info(f"Wiki ingested summary {summary.id} (attempt {attempt + 1})")
+                    return  # Success - exit retry loop
+
+                except Exception as e:
+                    last_error = e
+                    if attempt < WIKI_INGEST_MAX_RETRIES - 1:
+                        # Calculate delay with exponential backoff and jitter
+                        delay = min(
+                            WIKI_INGEST_BASE_DELAY * (2 ** attempt),
+                            WIKI_INGEST_MAX_DELAY
+                        )
+                        jitter = delay * WIKI_INGEST_JITTER * random.random()
+                        wait_time = delay + jitter
+
+                        logger.warning(
+                            f"Wiki ingestion attempt {attempt + 1} failed for {summary.id}: {e}. "
+                            f"Retrying in {wait_time:.1f}s"
+                        )
+                        await asyncio.sleep(wait_time)
+                    else:
+                        logger.error(
+                            f"Wiki ingestion failed for {summary.id} after {WIKI_INGEST_MAX_RETRIES} attempts: {e}"
+                        )
+
+        except ImportError as e:
+            # Wiki module not available - that's OK
+            logger.debug(f"Wiki module not available for auto-ingest: {e}")
+        except Exception as e:
+            # Don't fail summary delivery if wiki ingestion fails
+            logger.warning(f"Wiki ingestion setup failed for {summary.id}: {e}")
 
     def _generate_title(
         self,

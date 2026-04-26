@@ -1,7 +1,7 @@
 # ADR-067: Automatic Wiki Ingestion
 
 ## Status
-Proposed
+Implemented (2026-04-26)
 
 ## Context
 
@@ -101,7 +101,48 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
             logger.warning(f"Wiki ingestion failed for {summary.id}: {e}")
 ```
 
-### Background Processing Option
+### Architecture Decision: In-Process with Retry
+
+We evaluated three approaches for wiki ingestion:
+
+| Approach | Latency | Cost | Complexity | Use Case |
+|----------|---------|------|------------|----------|
+| **In-Process (chosen)** | ~100ms | $0 | Low | Current scale |
+| Task Queue | ~1-5s | $0 | Medium | High volume |
+| Swarm Agent | ~5-15s | $0.001+/call | High | Semantic reasoning |
+
+**Why In-Process?**
+
+1. **Wiki ingestion is deterministic** - topic extraction, page updates, and link management don't require LLM reasoning. The `WikiIngestAgent` class performs rule-based operations.
+
+2. **Volume is manageable** - summaries are generated at most every few minutes per guild, not per-second. No need for distributed workers.
+
+3. **Background task prevents blocking** - `asyncio.create_task()` ensures delivery completes immediately while ingestion runs in parallel.
+
+4. **Retry handles transient failures** - exponential backoff with jitter (3 retries, 1-30s delays) handles temporary database locks or connection issues.
+
+5. **No infrastructure overhead** - no Redis, no queue workers, no additional monitoring systems needed.
+
+**Upgrade Path**
+
+- **Phase 1** (implemented): In-process with retry ✅
+- **Phase 2** (when needed): Task queue for horizontal scaling
+- **Phase 3** (if needed): Swarm agent for semantic conflict detection
+
+### Retry Configuration
+
+```python
+WIKI_INGEST_MAX_RETRIES = 3      # Total attempts
+WIKI_INGEST_BASE_DELAY = 1.0     # Initial delay (seconds)
+WIKI_INGEST_MAX_DELAY = 30.0     # Maximum delay cap
+WIKI_INGEST_JITTER = 0.5         # Randomization factor (0-1)
+```
+
+Delay calculation: `min(base * 2^attempt, max) + jitter`
+
+Example delays: 1s → 2s → 4s (with random jitter added)
+
+### Background Processing Option (Future)
 
 For large summaries or high-volume workspaces, use background task:
 
@@ -310,6 +351,44 @@ Add ingestion status to summary cards:
 - Per-workspace disable option
 - Graceful degradation (don't fail delivery)
 - Rate limiting for very active workspaces
+
+---
+
+## Implementation Notes (2026-04-26)
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `src/data/migrations/057_wiki_auto_ingest.sql` | Created: adds `wiki_ingested`, `wiki_ingested_at` columns and guild `wiki_auto_ingest` setting |
+| `src/models/stored_summary.py` | Added `wiki_ingested: bool` and `wiki_ingested_at: Optional[datetime]` fields |
+| `src/data/sqlite/stored_summary_repository.py` | Updated INSERT query, added `mark_wiki_ingested()` and `find_not_wiki_ingested()` methods |
+| `src/scheduling/delivery/dashboard.py` | Added `_trigger_wiki_ingestion()` method, called via `asyncio.create_task()` after save |
+| `src/wiki/agents/ingest_agent.py` | Added `platform` parameter for platform-aware source titles |
+
+### Key Implementation Details
+
+1. **Background Processing**: Wiki ingestion runs as an async task via `asyncio.create_task()` to avoid blocking summary delivery.
+
+2. **Retry with Exponential Backoff**: Up to 3 attempts with delays of ~1s, ~2s, ~4s (plus jitter). Prevents thundering herd and handles transient failures.
+
+3. **Graceful Degradation**: All wiki ingestion errors are caught and logged - delivery never fails due to wiki issues. After max retries, error is logged but delivery succeeds.
+
+4. **Per-Guild Toggle**: Checks `wiki_auto_ingest` column in guilds table (defaults to True if column doesn't exist).
+
+5. **Tracking**: Each summary gets `wiki_ingested=True` and `wiki_ingested_at` timestamp after successful ingestion.
+
+6. **Platform Awareness**: Source titles now include platform prefix (e.g., "Discord: #general - 2026-04-26").
+
+### API Response Changes
+
+`StoredSummary.to_list_item_dict()` and `to_dict()` now include:
+```json
+{
+  "wiki_ingested": true,
+  "wiki_ingested_at": "2026-04-26T12:30:00"
+}
+```
 
 ---
 

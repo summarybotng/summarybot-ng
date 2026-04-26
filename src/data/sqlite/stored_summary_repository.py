@@ -58,8 +58,9 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             summary_json, created_at, viewed_at, pushed_at,
             push_deliveries, title, is_pinned, is_archived, tags,
             source, archive_period, archive_granularity, archive_source_key,
-            message_count, participant_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            message_count, participant_count,
+            wiki_ingested, wiki_ingested_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -84,6 +85,9 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             # ADR-017: Sortable columns
             message_count,
             participant_count,
+            # ADR-067: Wiki ingestion tracking
+            summary.wiki_ingested,
+            summary.wiki_ingested_at.isoformat() if summary.wiki_ingested_at else None,
         )
 
         await self.connection.execute(query, params)
@@ -659,6 +663,9 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             archive_period=row.get('archive_period'),
             archive_granularity=row.get('archive_granularity'),
             archive_source_key=row.get('archive_source_key'),
+            # ADR-067: Wiki ingestion tracking
+            wiki_ingested=bool(row.get('wiki_ingested', False)),
+            wiki_ingested_at=datetime.fromisoformat(row['wiki_ingested_at']) if row.get('wiki_ingested_at') else None,
         )
 
     def _dict_to_summary_result(self, data: Dict[str, Any]) -> SummaryResult:
@@ -976,3 +983,32 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             "offset": offset,
             "summaries": items,
         }
+
+    # ADR-067: Wiki ingestion tracking
+
+    async def mark_wiki_ingested(self, summary_id: str) -> bool:
+        """Mark a summary as ingested into wiki."""
+        query = """
+        UPDATE stored_summaries
+        SET wiki_ingested = 1, wiki_ingested_at = ?
+        WHERE id = ?
+        """
+        cursor = await self.connection.execute(
+            query, (utc_now_naive().isoformat(), summary_id)
+        )
+        return cursor.rowcount > 0
+
+    async def find_not_wiki_ingested(
+        self,
+        guild_id: str,
+        limit: int = 50,
+    ) -> List[StoredSummary]:
+        """Find summaries that haven't been ingested into wiki."""
+        query = """
+        SELECT * FROM stored_summaries
+        WHERE guild_id = ? AND (wiki_ingested = 0 OR wiki_ingested IS NULL)
+        ORDER BY created_at DESC
+        LIMIT ?
+        """
+        rows = await self.connection.fetch_all(query, (guild_id, limit))
+        return [self._row_to_stored_summary(row) for row in rows]

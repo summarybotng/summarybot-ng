@@ -73,6 +73,7 @@ class WikiIngestAgent:
         technical_terms: List[str],
         channel_name: str,
         timestamp: datetime,
+        platform: str = "discord",  # ADR-067: Platform awareness
     ) -> IngestResult:
         """
         Ingest a generated summary into the wiki.
@@ -92,14 +93,23 @@ class WikiIngestAgent:
             IngestResult with pages updated/created
         """
         try:
+            # ADR-067: Platform-aware source titles
+            platform_display = {
+                "discord": "Discord",
+                "whatsapp": "WhatsApp",
+                "slack": "Slack",
+                "telegram": "Telegram",
+            }.get(platform.lower(), platform.title())
+
             # 1. Store source document (immutable)
             source = WikiSource(
                 id=f"summary-{summary_id}",
                 guild_id=guild_id,
                 source_type=WikiSourceType.SUMMARY,
-                title=f"Summary: {channel_name} - {timestamp.strftime('%Y-%m-%d')}",
+                title=f"{platform_display}: {channel_name} - {timestamp.strftime('%Y-%m-%d')}",
                 content=summary_text,
                 metadata={
+                    "platform": platform,
                     "channel_name": channel_name,
                     "timestamp": timestamp.isoformat(),
                     "key_points": key_points,

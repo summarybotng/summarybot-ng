@@ -43,7 +43,7 @@ class WikiPageDetailResponse(BaseModel):
     id: str
     path: str
     title: str
-    content: str
+    content: str  # Raw updates
     topics: List[str] = []
     source_refs: List[str] = []
     inbound_links: int = 0
@@ -52,6 +52,10 @@ class WikiPageDetailResponse(BaseModel):
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     category: str = ""
+    # ADR-063: Synthesis fields
+    synthesis: Optional[str] = None
+    synthesis_updated_at: Optional[str] = None
+    synthesis_source_count: int = 0
 
 
 class WikiPagesResponse(BaseModel):
@@ -490,6 +494,14 @@ class ClearWikiResponse(BaseModel):
     sources_deleted: int
 
 
+class SynthesizeResponse(BaseModel):
+    """Response from synthesize operation (ADR-063)."""
+    success: bool
+    synthesis_length: int
+    source_count: int
+    conflicts_found: int
+
+
 @router.post(
     "/guilds/{guild_id}/wiki/populate",
     response_model=PopulateResponse,
@@ -669,4 +681,63 @@ async def get_wiki_stats(
         total_pages=total_pages,
         total_sources=total_sources,
         categories=categories,
+    )
+
+
+# -------------------------------------------------------------------------
+# Synthesis (ADR-063)
+# -------------------------------------------------------------------------
+
+@router.post(
+    "/guilds/{guild_id}/wiki/pages/{path:path}/synthesize",
+    response_model=SynthesizeResponse,
+    summary="Synthesize wiki page",
+    description="Generate an AI synthesis of a wiki page's content.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Page not found"},
+    },
+)
+async def synthesize_page(
+    guild_id: str = Path(..., description="Guild ID"),
+    path: str = Path(..., description="Wiki page path"),
+    user: dict = Depends(get_current_user),
+):
+    """Generate synthesis for a wiki page."""
+    from ...wiki.synthesis import synthesize_wiki_page
+
+    _check_guild_access(guild_id, user)
+
+    repo = await get_wiki_repository()
+    if not repo:
+        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": "Wiki service unavailable"})
+
+    # Get the page
+    page = await repo.get_page(guild_id, path)
+    if not page:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Page not found"})
+
+    # Generate synthesis (no LLM client for now - uses heuristic)
+    result = await synthesize_wiki_page(
+        page_title=page.title,
+        page_content=page.content,
+        source_refs=page.source_refs,
+        llm_client=None,  # TODO: Add LLM client integration
+    )
+
+    # Save synthesis to database
+    await repo.save_synthesis(
+        guild_id=guild_id,
+        path=path,
+        synthesis=result.synthesis,
+        source_count=result.source_count,
+    )
+
+    logger.info(f"Generated synthesis for {path}: {result.source_count} sources, {result.conflicts_found} conflicts")
+
+    return SynthesizeResponse(
+        success=True,
+        synthesis_length=len(result.synthesis),
+        source_count=result.source_count,
+        conflicts_found=result.conflicts_found,
     )

@@ -30,7 +30,7 @@ class WikiPage:
     guild_id: str
     path: str
     title: str
-    content: str
+    content: str  # Raw updates (append-only)
     topics: List[str] = field(default_factory=list)
     source_refs: List[str] = field(default_factory=list)
     inbound_links: int = 0
@@ -38,6 +38,10 @@ class WikiPage:
     confidence: int = 100
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    # ADR-063: Synthesis fields
+    synthesis: Optional[str] = None  # LLM-generated summary
+    synthesis_updated_at: Optional[datetime] = None
+    synthesis_source_count: int = 0
 
     @property
     def category(self) -> str:

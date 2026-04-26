@@ -506,6 +506,28 @@ class SQLiteWikiRepository:
         return changes
 
     # -------------------------------------------------------------------------
+    # Synthesis (ADR-063)
+    # -------------------------------------------------------------------------
+
+    async def save_synthesis(
+        self,
+        guild_id: str,
+        path: str,
+        synthesis: str,
+        source_count: int,
+    ) -> bool:
+        """Save synthesis for a wiki page."""
+        query = """
+        UPDATE wiki_pages
+        SET synthesis = ?,
+            synthesis_updated_at = datetime('now'),
+            synthesis_source_count = ?
+        WHERE guild_id = ? AND path = ?
+        """
+        result = await self.connection.execute(query, (synthesis, source_count, guild_id, path))
+        return result.rowcount > 0 if hasattr(result, 'rowcount') else True
+
+    # -------------------------------------------------------------------------
     # Clear Wiki
     # -------------------------------------------------------------------------
 
@@ -588,6 +610,10 @@ class SQLiteWikiRepository:
             confidence=row["confidence"],
             created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
             updated_at=datetime.fromisoformat(row["updated_at"]) if row["updated_at"] else None,
+            # ADR-063: Synthesis fields
+            synthesis=row.get("synthesis"),
+            synthesis_updated_at=datetime.fromisoformat(row["synthesis_updated_at"]) if row.get("synthesis_updated_at") else None,
+            synthesis_source_count=row.get("synthesis_source_count", 0) or 0,
         )
 
     def _row_to_page_summary(self, row: Dict[str, Any]) -> WikiPageSummary:

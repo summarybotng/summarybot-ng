@@ -47,7 +47,7 @@ interface WikiPage {
   id: string;
   path: string;
   title: string;
-  content: string;
+  content: string;  // Raw updates
   topics: string[];
   source_refs: string[];
   inbound_links: number;
@@ -55,6 +55,10 @@ interface WikiPage {
   confidence: number;
   created_at: string;
   updated_at: string;
+  // ADR-063: Synthesis fields
+  synthesis: string | null;
+  synthesis_updated_at: string | null;
+  synthesis_source_count: number;
 }
 
 interface WikiPageSummary {
@@ -192,9 +196,15 @@ function WikiNavTree({ tree, currentPath }: { tree: WikiTree; currentPath?: stri
   );
 }
 
+// Synthesize wiki page
+async function synthesizeWikiPage(guildId: string, path: string): Promise<{ success: boolean }> {
+  return api.post<{ success: boolean }>(`/guilds/${guildId}/wiki/pages/${path}/synthesize`);
+}
+
 function WikiPageView({ page }: { page: WikiPage }) {
   const { id: guildId } = useParams<{ id: string }>();
-  const [showSource, setShowSource] = useState(false);
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<"synthesis" | "updates">(page.synthesis ? "synthesis" : "updates");
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
 
@@ -203,10 +213,21 @@ function WikiPageView({ page }: { page: WikiPage }) {
   const category = pathParts[0];
 
   // Pre-process content to convert [source:summary-xxx] to links
-  // Match UUID format (summary-uuid), legacy format (summary-sum_xxx), and any alphanumeric
   const processedContent = page.content
     .replace(/\[source:(summary-[\w-]+)\]/g, '[📄 source](?source=$1)')
     .replace(/## Update from (summary-[\w-]+)/g, '## 📝 Update from [$1](?source=$1)');
+
+  // Regenerate synthesis mutation
+  const synthesizeMutation = useMutation({
+    mutationFn: () => synthesizeWikiPage(guildId!, page.path),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["wiki-page", guildId, page.path] });
+      toast({ title: "Synthesis regenerated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to generate synthesis", variant: "destructive" });
+    },
+  });
 
   // Copy page URL to clipboard
   const handleShare = async () => {
@@ -230,12 +251,10 @@ function WikiPageView({ page }: { page: WikiPage }) {
 
   // Handle wiki internal links
   const handleLink = (href: string) => {
-    // Source reference links
     if (href.startsWith("?source=")) {
       const sourceId = href.replace("?source=", "");
       return `/guilds/${guildId}/wiki?source=${sourceId}`;
     }
-    // Wiki page links
     if (href.startsWith("topics/") || href.startsWith("decisions/") ||
         href.startsWith("processes/") || href.startsWith("experts/") ||
         href.startsWith("questions/")) {
@@ -244,8 +263,62 @@ function WikiPageView({ page }: { page: WikiPage }) {
     return href;
   };
 
-  // Check if a link is a source reference
   const isSourceLink = (href: string) => href.startsWith("?source=");
+
+  // Markdown renderer component
+  const MarkdownContent = ({ content }: { content: string }) => (
+    <article className="prose prose-slate dark:prose-invert max-w-none
+      prose-headings:font-bold prose-headings:tracking-tight
+      prose-h1:text-2xl prose-h1:border-b prose-h1:pb-2 prose-h1:mb-4
+      prose-h2:text-xl prose-h2:mt-8 prose-h2:mb-4
+      prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-3
+      prose-p:leading-7 prose-p:mb-4
+      prose-ul:my-4 prose-ul:list-disc prose-ul:pl-6
+      prose-ol:my-4 prose-ol:list-decimal prose-ol:pl-6
+      prose-li:my-1
+      prose-a:text-primary prose-a:underline prose-a:underline-offset-2 hover:prose-a:text-primary/80
+      prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
+      prose-pre:bg-muted prose-pre:p-4 prose-pre:rounded-lg
+      prose-blockquote:border-l-4 prose-blockquote:border-primary prose-blockquote:pl-4 prose-blockquote:italic
+      prose-strong:font-bold
+      prose-table:border-collapse prose-th:border prose-th:p-2 prose-td:border prose-td:p-2
+    ">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ href, children }) => {
+            const isExternal = href?.startsWith('http');
+            const isSource = href ? isSourceLink(href) : false;
+            const finalHref = href ? handleLink(href) : '#';
+
+            if (isExternal) {
+              return (
+                <a href={finalHref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1">
+                  {children}
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              );
+            }
+
+            if (isSource) {
+              return (
+                <Link
+                  to={finalHref}
+                  className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/80 no-underline font-mono"
+                >
+                  {children}
+                </Link>
+              );
+            }
+
+            return <Link to={finalHref}>{children}</Link>;
+          },
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </article>
+  );
 
   return (
     <div className="space-y-6">
@@ -274,23 +347,21 @@ function WikiPageView({ page }: { page: WikiPage }) {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{page.title}</h1>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowSource(!showSource)}
-          >
-            {showSource ? (
-              <>
-                <Eye className="h-4 w-4 mr-1" />
-                Preview
-              </>
-            ) : (
-              <>
-                <Code className="h-4 w-4 mr-1" />
-                Source
-              </>
-            )}
-          </Button>
+          {activeTab === "synthesis" && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => synthesizeMutation.mutate()}
+              disabled={synthesizeMutation.isPending}
+            >
+              {synthesizeMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-1" />
+              )}
+              Regenerate
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={handleShare}>
             {copied ? (
               <>
@@ -307,68 +378,71 @@ function WikiPageView({ page }: { page: WikiPage }) {
         </div>
       </div>
 
-      {/* Content */}
-      <Card>
-        <CardContent className="pt-6">
-          {showSource ? (
-            <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-sm font-mono whitespace-pre-wrap">
-              {page.content}
-            </pre>
+      {/* ADR-063: Tabs for Synthesis and Updates */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "synthesis" | "updates")}>
+        <TabsList>
+          <TabsTrigger value="synthesis" className="gap-2">
+            <Sparkles className="h-4 w-4" />
+            Synthesis
+            {page.synthesis && (
+              <Badge variant="secondary" className="ml-1 text-xs">
+                {page.synthesis_source_count} sources
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="updates" className="gap-2">
+            <FileText className="h-4 w-4" />
+            Updates
+            <Badge variant="outline" className="ml-1 text-xs">
+              {page.source_refs.length}
+            </Badge>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="synthesis" className="mt-4">
+          {page.synthesis ? (
+            <Card>
+              <CardContent className="pt-6">
+                <MarkdownContent content={page.synthesis} />
+                {page.synthesis_updated_at && (
+                  <div className="mt-4 pt-4 border-t text-sm text-muted-foreground">
+                    Last synthesized: {new Date(page.synthesis_updated_at).toLocaleString()}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           ) : (
-            <article className="prose prose-slate dark:prose-invert max-w-none
-              prose-headings:font-bold prose-headings:tracking-tight
-              prose-h1:text-2xl prose-h1:border-b prose-h1:pb-2 prose-h1:mb-4
-              prose-h2:text-xl prose-h2:mt-8 prose-h2:mb-4
-              prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-3
-              prose-p:leading-7 prose-p:mb-4
-              prose-ul:my-4 prose-ul:list-disc prose-ul:pl-6
-              prose-ol:my-4 prose-ol:list-decimal prose-ol:pl-6
-              prose-li:my-1
-              prose-a:text-primary prose-a:underline prose-a:underline-offset-2 hover:prose-a:text-primary/80
-              prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
-              prose-pre:bg-muted prose-pre:p-4 prose-pre:rounded-lg
-              prose-blockquote:border-l-4 prose-blockquote:border-primary prose-blockquote:pl-4 prose-blockquote:italic
-              prose-strong:font-bold
-              prose-table:border-collapse prose-th:border prose-th:p-2 prose-td:border prose-td:p-2
-            ">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  a: ({ href, children }) => {
-                    const isExternal = href?.startsWith('http');
-                    const isSource = href ? isSourceLink(href) : false;
-                    const finalHref = href ? handleLink(href) : '#';
-
-                    if (isExternal) {
-                      return (
-                        <a href={finalHref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1">
-                          {children}
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                      );
-                    }
-
-                    if (isSource) {
-                      return (
-                        <Link
-                          to={finalHref}
-                          className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/80 no-underline font-mono"
-                        >
-                          {children}
-                        </Link>
-                      );
-                    }
-
-                    return <Link to={finalHref}>{children}</Link>;
-                  },
-                }}
-              >
-                {processedContent}
-              </ReactMarkdown>
-            </article>
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Sparkles className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="font-medium mb-2">No synthesis yet</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Generate an AI summary of all updates on this page
+                </p>
+                <Button
+                  onClick={() => synthesizeMutation.mutate()}
+                  disabled={synthesizeMutation.isPending}
+                >
+                  {synthesizeMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4 mr-2" />
+                  )}
+                  Generate Synthesis
+                </Button>
+              </CardContent>
+            </Card>
           )}
-        </CardContent>
-      </Card>
+        </TabsContent>
+
+        <TabsContent value="updates" className="mt-4">
+          <Card>
+            <CardContent className="pt-6">
+              <MarkdownContent content={processedContent} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Page info */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

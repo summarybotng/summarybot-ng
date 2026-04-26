@@ -334,7 +334,7 @@ async def get_page(
     # Audit log page view
     await audit_log(
         "access.wiki.view",
-        user_id=user.get("id"),
+        user_id=user.get("sub"),
         user_name=user.get("username"),
         guild_id=guild_id,
         resource_type="wiki_page",
@@ -700,7 +700,7 @@ async def populate_wiki(
     # Audit log
     await audit_log(
         "action.wiki.populate",
-        user_id=user.get("id"),
+        user_id=user.get("sub"),
         user_name=user.get("username"),
         guild_id=guild_id,
         resource_type="wiki",
@@ -791,7 +791,7 @@ async def clear_wiki(
     # Audit log
     await audit_log(
         "admin.wiki.clear",
-        user_id=user.get("id"),
+        user_id=user.get("sub"),
         user_name=user.get("username"),
         guild_id=guild_id,
         resource_type="wiki",
@@ -926,7 +926,7 @@ async def synthesize_page(
     # Audit log
     await audit_log(
         "action.wiki.synthesize",
-        user_id=user.get("id"),
+        user_id=user.get("sub"),
         user_name=user.get("username"),
         guild_id=guild_id,
         resource_type="wiki_page",
@@ -989,7 +989,7 @@ async def rate_synthesis(
     result = await repo.rate_synthesis(
         guild_id=guild_id,
         page_path=path,
-        user_id=user.get("id"),
+        user_id=user.get("sub"),
         rating=rating_request.rating,
         feedback=rating_request.feedback,
     )
@@ -997,7 +997,7 @@ async def rate_synthesis(
     # Audit log
     await audit_log(
         "action.wiki.rate",
-        user_id=user.get("id"),
+        user_id=user.get("sub"),
         user_name=user.get("username"),
         guild_id=guild_id,
         resource_type="wiki_page",

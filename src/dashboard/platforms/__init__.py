@@ -91,7 +91,7 @@ def _verify_user_authorization(guild_id: str, user: Optional[dict]) -> None:
 
     user_guilds = user.get("guilds", [])
     if guild_id not in user_guilds:
-        user_id = user.get("id") or user.get("user_id")
+        user_id = user.get("sub") or user.get("user_id")
         raise UnauthorizedAccessError(guild_id, user_id)
 
 

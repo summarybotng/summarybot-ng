@@ -156,7 +156,7 @@ async def set_push_template(
 
     # Save
     repo = await get_push_template_repository()
-    success = await repo.set_template(guild_id, template, user_id=user.get("id"))
+    success = await repo.set_template(guild_id, template, user_id=user.get("sub"))
 
     if not success:
         raise HTTPException(status_code=500, detail="Failed to save template")

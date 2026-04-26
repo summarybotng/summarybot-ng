@@ -544,7 +544,7 @@ async def generate_summary(
         category_id=body.category_id,
         period_start=start_time,
         period_end=end_time,
-        created_by=user.get("id"),
+        created_by=user.get("sub"),
         metadata={
             "summary_length": body.options.summary_length if body.options else "detailed",
             "include_action_items": body.options.include_action_items if body.options else True,
@@ -1801,7 +1801,7 @@ async def regenerate_stored_summary(
         period_start=start_time,
         period_end=end_time,
         summary_id=summary_id,  # Track which summary is being regenerated
-        created_by=user.get("id"),
+        created_by=user.get("sub"),
         metadata={
             "original_summary_id": summary_id,
             "method": regen_method,
@@ -2427,7 +2427,7 @@ async def push_to_channel(
             result = await push_service.push_to_channels_with_template(
                 summary_id=summary_id,
                 channel_ids=body.channel_ids,
-                user_id=user.get("id"),
+                user_id=user.get("sub"),
             )
         else:
             # Legacy embed/markdown/plain formats
@@ -2437,7 +2437,7 @@ async def push_to_channel(
                 format=body.format,
                 include_references=body.include_references,
                 custom_message=body.custom_message,
-                user_id=user.get("id"),
+                user_id=user.get("sub"),
                 include_key_points=body.include_key_points,
                 include_action_items=body.include_action_items,
                 include_participants=body.include_participants,
@@ -2519,7 +2519,7 @@ async def push_to_dm(
             format=body.format,
             include_references=body.include_references,
             custom_message=body.custom_message,
-            sender_id=user.get("id"),
+            sender_id=user.get("sub"),
             include_key_points=body.include_key_points,
             include_action_items=body.include_action_items,
             include_participants=body.include_participants,
@@ -2598,7 +2598,7 @@ async def push_summary_to_channel(
             format=body.format,
             include_references=body.include_references,
             custom_message=body.custom_message,
-            user_id=user.get("id"),
+            user_id=user.get("sub"),
             include_key_points=body.include_key_points,
             include_action_items=body.include_action_items,
             include_participants=body.include_participants,
@@ -3133,7 +3133,7 @@ async def retry_job(
         granularity=job.granularity,
         summary_type=job.summary_type,
         perspective=job.perspective,
-        created_by=user.get("id"),
+        created_by=user.get("sub"),
         metadata={**job.metadata, "retry_of": job_id},
     )
 

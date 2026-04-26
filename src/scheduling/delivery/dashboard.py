@@ -133,17 +133,15 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
         timestamp = utc_now_naive().strftime('%b %d, %H:%M')
         scope_type = summary.metadata.get("scope_type") if summary.metadata else None
 
-        # Get platform for title prefix (non-Discord platforms get a prefix)
+        # Get platform for title prefix (all platforms get a prefix)
         platform = getattr(context.scheduled_task, 'platform', 'discord') if context.scheduled_task else 'discord'
-        platform_prefix = ""
-        if platform and platform.lower() != "discord":
-            # Capitalize platform name (e.g., "whatsapp" -> "WhatsApp", "slack" -> "Slack")
-            platform_display = {
-                "whatsapp": "WhatsApp",
-                "slack": "Slack",
-                "telegram": "Telegram",
-            }.get(platform.lower(), platform.title())
-            platform_prefix = f"{platform_display}: "
+        platform_display = {
+            "discord": "Discord",
+            "whatsapp": "WhatsApp",
+            "slack": "Slack",
+            "telegram": "Telegram",
+        }.get(platform.lower() if platform else "discord", platform.title() if platform else "Discord")
+        platform_prefix = f"{platform_display}: "
 
         if scope_type == "guild" or len(scope_channel_ids) > 10:
             # Server-wide summary - use count instead of listing all

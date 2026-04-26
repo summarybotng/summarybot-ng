@@ -431,10 +431,11 @@ The formatting logic:
 3. Adds a clickable link icon to view the source
 
 ### Platform Prefix in Summary Titles
-Summary titles now include platform prefix for non-Discord sources:
-- Discord: `Server Summary (6 channels) — Apr 03, 05:11`
+Summary titles now include platform prefix for all sources:
+- Discord: `Discord: Server Summary (6 channels) — Apr 03, 05:11`
 - WhatsApp: `WhatsApp: Server Summary (6 channels) — Apr 03, 05:11`
 - Slack: `Slack: Server Summary (6 channels) — Apr 03, 05:11`
+- Telegram: `Telegram: Server Summary (6 channels) — Apr 03, 05:11`
 
 ---
 

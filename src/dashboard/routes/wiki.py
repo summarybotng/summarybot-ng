@@ -47,6 +47,14 @@ class WikiPageSummaryResponse(BaseModel):
     rating_count: int = 0
 
 
+class SourceMetadata(BaseModel):
+    """Metadata for a wiki source reference."""
+    id: str
+    title: str
+    source_type: str = "summary"
+    ingested_at: Optional[str] = None
+
+
 class WikiPageDetailResponse(BaseModel):
     """Full wiki page with content and metadata."""
     id: str
@@ -55,6 +63,7 @@ class WikiPageDetailResponse(BaseModel):
     content: str  # Raw updates
     topics: List[str] = []
     source_refs: List[str] = []
+    source_metadata: List[SourceMetadata] = []  # Readable titles for sources
     inbound_links: int = 0
     outbound_links: int = 0
     confidence: int = 100
@@ -191,7 +200,7 @@ def _page_to_summary_response(page) -> WikiPageSummaryResponse:
     )
 
 
-def _page_to_detail_response(page) -> WikiPageDetailResponse:
+def _page_to_detail_response(page, source_metadata: List[SourceMetadata] = None) -> WikiPageDetailResponse:
     """Convert WikiPage to response model."""
     return WikiPageDetailResponse(
         id=page.id,
@@ -200,6 +209,7 @@ def _page_to_detail_response(page) -> WikiPageDetailResponse:
         content=page.content,
         topics=page.topics,
         source_refs=page.source_refs,
+        source_metadata=source_metadata or [],
         inbound_links=page.inbound_links,
         outbound_links=page.outbound_links,
         confidence=page.confidence,
@@ -331,6 +341,20 @@ async def get_page(
     if not page:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"Page not found: {path}"})
 
+    # Fetch source metadata for readable titles
+    source_metadata = []
+    if page.source_refs:
+        sources = await repo.get_sources_by_ids(guild_id, page.source_refs)
+        source_metadata = [
+            SourceMetadata(
+                id=s.id,
+                title=s.title,
+                source_type=s.source_type,
+                ingested_at=s.ingested_at.isoformat() if s.ingested_at else None,
+            )
+            for s in sources
+        ]
+
     # Audit log page view
     await audit_log(
         "access.wiki.view",
@@ -343,7 +367,7 @@ async def get_page(
         action="view",
     )
 
-    return _page_to_detail_response(page)
+    return _page_to_detail_response(page, source_metadata)
 
 
 @router.get(

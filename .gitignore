@@ -202,3 +202,4 @@ hive-mind-prompt-*.txt
 screenshots/.credentials.json
 .agentic-qe/
 .roo/
+.coverage

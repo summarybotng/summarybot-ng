@@ -456,6 +456,18 @@ class SQLiteWikiRepository:
         row = await self.connection.fetch_one(query, (guild_id,))
         return row["count"] if row else 0
 
+    async def get_sources_by_ids(self, guild_id: str, source_ids: List[str]) -> List[WikiSource]:
+        """Get multiple source documents by their IDs."""
+        if not source_ids:
+            return []
+        placeholders = ",".join("?" for _ in source_ids)
+        query = f"""
+        SELECT * FROM wiki_sources
+        WHERE guild_id = ? AND id IN ({placeholders})
+        """
+        rows = await self.connection.fetch_all(query, (guild_id, *source_ids))
+        return [self._row_to_source(row) for row in rows]
+
     # -------------------------------------------------------------------------
     # Navigation Tree
     # -------------------------------------------------------------------------

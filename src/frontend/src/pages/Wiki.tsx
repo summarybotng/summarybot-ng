@@ -46,7 +46,20 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { api } from "@/api/client";
+
+interface SourceMetadata {
+  id: string;
+  title: string;
+  source_type: string;
+  ingested_at: string | null;
+}
 
 interface WikiPage {
   id: string;
@@ -55,6 +68,7 @@ interface WikiPage {
   content: string;  // Raw updates
   topics: string[];
   source_refs: string[];
+  source_metadata: SourceMetadata[];  // Readable titles for sources
   inbound_links: number;
   outbound_links: number;
   confidence: number;
@@ -373,10 +387,41 @@ function WikiPageView({ page }: { page: WikiPage }) {
   const pathParts = page.path.split("/");
   const category = pathParts[0];
 
+  // Build source ID to title map
+  const sourceMap = new Map(
+    page.source_metadata?.map((s) => [s.id, s.title]) || []
+  );
+
+  // Format source title for display (truncate long titles)
+  const formatSourceTitle = (sourceId: string) => {
+    const title = sourceMap.get(sourceId);
+    if (!title) return sourceId;
+    // Extract key info: "Summary: #welcome, +41 more — Apr 04, 11:12" -> "Server Summary (44 channels) — Apr 04, 11:12"
+    const match = title.match(/Summary:\s*(.+?)\s*—\s*(.+?)(?:\s*-\s*\d{4}-\d{2}-\d{2})?$/);
+    if (match) {
+      const channels = match[1];
+      const timestamp = match[2];
+      // Count channels mentioned
+      const plusMore = channels.match(/\+(\d+)\s*more/);
+      const explicitChannels = (channels.match(/#\w+/g) || []).length;
+      const totalChannels = plusMore ? explicitChannels + parseInt(plusMore[1]) : explicitChannels;
+      return totalChannels > 0
+        ? `Server Summary (${totalChannels} channel${totalChannels > 1 ? 's' : ''}) — ${timestamp}`
+        : `Summary — ${timestamp}`;
+    }
+    return title.length > 60 ? title.substring(0, 57) + '...' : title;
+  };
+
   // Pre-process content to convert [source:summary-xxx] to links
-  const processedContent = page.content
-    .replace(/\[source:(summary-[\w-]+)\]/g, '[📄 source](?source=$1)')
-    .replace(/## Update from (summary-[\w-]+)/g, '## 📝 Update from [$1](?source=$1)');
+  // Replace "## Update from summary-xxx" with readable titles
+  let processedContent = page.content
+    .replace(/\[source:(summary-[\w-]+)\]/g, '[📄 source](?source=$1)');
+
+  // Replace "## Update from summary-xxx" with readable source titles
+  processedContent = processedContent.replace(
+    /## Update from (summary-[\w-]+)/g,
+    (_, sourceId) => `## 📝 ${formatSourceTitle(sourceId)} [↗](?source=${sourceId})`
+  );
 
   // Regenerate synthesis mutation
   const synthesizeMutation = useMutation({
@@ -670,14 +715,23 @@ function WikiPageView({ page }: { page: WikiPage }) {
             <div className="text-2xl font-bold">{page.source_refs.length}</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-sm text-muted-foreground">Links</div>
-            <div className="text-2xl font-bold">
-              {page.inbound_links + page.outbound_links}
-            </div>
-          </CardContent>
-        </Card>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card className="cursor-help">
+                <CardContent className="pt-4">
+                  <div className="text-sm text-muted-foreground">Links</div>
+                  <div className="text-2xl font-bold">
+                    {page.inbound_links + page.outbound_links}
+                  </div>
+                </CardContent>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{page.inbound_links} inbound · {page.outbound_links} outbound</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         <Card>
           <CardContent className="pt-4">
             <div className="text-sm text-muted-foreground">Updated</div>

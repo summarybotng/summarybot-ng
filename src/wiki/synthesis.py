@@ -7,7 +7,10 @@ Generates LLM-synthesized summaries from raw wiki page updates.
 import logging
 import re
 from dataclasses import dataclass
-from typing import List, Optional, Any
+from typing import List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..summarization.claude_client import ClaudeClient
 
 logger = logging.getLogger(__name__)
 
@@ -22,35 +25,34 @@ class SynthesisResult:
     confidence: float  # 0-1 based on source agreement
 
 
-SYNTHESIS_PROMPT = """You are summarizing a wiki page about "{title}" for a software team.
+SYNTHESIS_SYSTEM_PROMPT = """You are a technical documentation synthesizer for a software team's wiki.
+Your task is to consolidate multiple updates into a single coherent document.
 
-The page contains multiple updates from different summaries. Synthesize these
-into a coherent, well-organized document that:
+Guidelines:
+- Write in present tense
+- Be concise but complete
+- Preserve key facts and decisions
+- Note any contradictions with [Conflict: ...]
+- Do NOT include source citations - they're shown separately
+- Use markdown formatting with headers and bullet points"""
 
-1. Consolidates duplicate/overlapping information
-2. Presents the most current understanding
-3. Notes any unresolved contradictions with [Conflict: ...]
-4. Preserves key facts and decisions
-5. Organizes into logical sections (Overview, Key Points, Related, etc.)
-
-Keep the synthesis concise but complete. Write in present tense.
-Do NOT include source citations in the synthesis - they're shown separately.
-
-## Raw Updates to Synthesize:
+SYNTHESIS_USER_PROMPT = """Synthesize this wiki page about "{title}" from the following updates:
 
 {content}
 
-## Output:
+Create a well-organized document with:
+1. A brief overview paragraph
+2. Key Points section with bullet points
+3. Any additional relevant sections
 
-Write clean Markdown. Group related information. Use bullet points for lists.
-Start with a brief overview paragraph, then organize into sections."""
+Output clean Markdown only."""
 
 
 async def synthesize_wiki_page(
     page_title: str,
     page_content: str,
     source_refs: List[str],
-    llm_client: Optional[Any] = None,
+    claude_client: Optional["ClaudeClient"] = None,
 ) -> SynthesisResult:
     """
     Generate a synthesized summary of wiki page content.
@@ -59,7 +61,7 @@ async def synthesize_wiki_page(
         page_title: Title of the wiki page
         page_content: Raw content with all updates
         source_refs: List of source IDs referenced
-        llm_client: Optional LLM client for AI synthesis
+        claude_client: Optional ClaudeClient for AI synthesis
 
     Returns:
         SynthesisResult with synthesized content
@@ -72,19 +74,36 @@ async def synthesize_wiki_page(
     # Extract topics mentioned
     topics_extracted = _extract_topics_from_content(page_content)
 
-    # If no LLM client, use heuristic synthesis
-    if llm_client is None:
+    # If no Claude client, use heuristic synthesis
+    if claude_client is None:
         synthesis = _heuristic_synthesis(page_title, page_content, source_count)
         confidence = 0.7 if conflicts_found == 0 else 0.5
     else:
         try:
-            # Use LLM for synthesis
-            prompt = SYNTHESIS_PROMPT.format(
+            from ..summarization.claude_client import ClaudeOptions
+
+            # Use Claude for synthesis
+            user_prompt = SYNTHESIS_USER_PROMPT.format(
                 title=page_title,
-                content=page_content[:8000],  # Limit to avoid token overflow
+                content=page_content[:12000],  # Limit to avoid token overflow
             )
-            synthesis = await llm_client.generate(prompt)
+
+            options = ClaudeOptions(
+                max_tokens=2000,
+                temperature=0.3,
+            )
+
+            response = await claude_client.create_summary_with_fallback(
+                prompt=user_prompt,
+                system_prompt=SYNTHESIS_SYSTEM_PROMPT,
+                options=options,
+            )
+
+            synthesis = response.content
             confidence = 0.9 if conflicts_found == 0 else 0.7
+
+            logger.info(f"Wiki synthesis generated: {response.input_tokens} in, {response.output_tokens} out, model={response.model}")
+
         except Exception as e:
             logger.warning(f"LLM synthesis failed, using heuristic: {e}")
             synthesis = _heuristic_synthesis(page_title, page_content, source_count)

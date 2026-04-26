@@ -460,3 +460,71 @@ class TestPopulateWiki:
         assert response.pages_created == 5
         assert response.pages_updated == 15
         assert len(response.errors) == 1
+
+
+class TestSynthesizePage:
+    """Test wiki page synthesis endpoint (ADR-063)."""
+
+    @pytest.mark.asyncio
+    async def test_synthesize_page_generates_synthesis(self, mock_wiki_repo, sample_page):
+        """Test synthesize endpoint generates synthesis."""
+        mock_wiki_repo.get_page.return_value = sample_page
+        mock_wiki_repo.save_synthesis.return_value = True
+
+        from src.dashboard.routes.wiki import synthesize_page
+        from unittest.mock import MagicMock
+
+        mock_request = MagicMock()
+
+        with patch("src.dashboard.routes.wiki.get_wiki_repository", return_value=mock_wiki_repo):
+            with patch("src.dashboard.routes.wiki.get_summarization_engine", return_value=None):
+                with patch("os.getenv", return_value=None):  # No OpenRouter key
+                    result = await synthesize_page(
+                        request=mock_request,
+                        guild_id="guild-456",
+                        path="topics/authentication.md",
+                        user={"id": "user-123", "username": "test", "guilds": ["guild-456"]},
+                    )
+
+        assert result.success is True
+        assert result.source_count == 1  # sample_page has 1 source_ref
+        mock_wiki_repo.save_synthesis.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_synthesize_page_returns_404_when_not_found(self, mock_wiki_repo):
+        """Test synthesize returns 404 for non-existent page."""
+        mock_wiki_repo.get_page.return_value = None
+
+        from src.dashboard.routes.wiki import synthesize_page
+        from fastapi import HTTPException
+        from unittest.mock import MagicMock
+
+        mock_request = MagicMock()
+
+        with patch("src.dashboard.routes.wiki.get_wiki_repository", return_value=mock_wiki_repo):
+            with pytest.raises(HTTPException) as exc_info:
+                await synthesize_page(
+                    request=mock_request,
+                    guild_id="guild-456",
+                    path="nonexistent.md",
+                    user={"id": "user-123", "username": "test", "guilds": ["guild-456"]},
+                )
+
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_synthesize_response_model_structure(self):
+        """Test SynthesizeResponse model structure."""
+        from src.dashboard.routes.wiki import SynthesizeResponse
+
+        response = SynthesizeResponse(
+            success=True,
+            synthesis_length=500,
+            source_count=3,
+            conflicts_found=0,
+        )
+
+        assert response.success is True
+        assert response.synthesis_length == 500
+        assert response.source_count == 3
+        assert response.conflicts_found == 0

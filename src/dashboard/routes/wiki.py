@@ -1,5 +1,5 @@
 """
-Wiki routes for dashboard API (ADR-056, ADR-058).
+Wiki routes for dashboard API (ADR-056, ADR-058, ADR-063).
 
 Provides REST endpoints for:
 - Browse wiki pages by category
@@ -7,16 +7,18 @@ Provides REST endpoints for:
 - Navigation tree
 - Recent changes
 - Contradiction review queue
+- Page synthesis with LLM
 """
 
 import logging
 from typing import Optional, List
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query, Path
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, Request
 from pydantic import BaseModel, Field
 
 from ..auth import get_current_user
-from . import get_wiki_repository
+from . import get_wiki_repository, get_summarization_engine
+from ...logging.audit_service import audit_log
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +178,10 @@ def _page_to_detail_response(page) -> WikiPageDetailResponse:
         created_at=page.created_at.isoformat() if page.created_at else None,
         updated_at=page.updated_at.isoformat() if page.updated_at else None,
         category=page.category,
+        # ADR-063: Synthesis fields
+        synthesis=getattr(page, 'synthesis', None),
+        synthesis_updated_at=page.synthesis_updated_at.isoformat() if getattr(page, 'synthesis_updated_at', None) else None,
+        synthesis_source_count=getattr(page, 'synthesis_source_count', 0),
     )
 
 
@@ -240,6 +246,18 @@ async def get_page(
     page = await repo.get_page(guild_id, path)
     if not page:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"Page not found: {path}"})
+
+    # Audit log page view
+    await audit_log(
+        "access.wiki.view",
+        user_id=user.get("id"),
+        user_name=user.get("username"),
+        guild_id=guild_id,
+        resource_type="wiki_page",
+        resource_id=path,
+        resource_name=page.title,
+        action="view",
+    )
 
     return _page_to_detail_response(page)
 
@@ -572,6 +590,23 @@ async def populate_wiki(
 
     logger.info(f"Wiki population complete: {pages_created} created, {pages_updated} updated, {len(errors)} errors")
 
+    # Audit log
+    await audit_log(
+        "action.wiki.populate",
+        user_id=user.get("id"),
+        user_name=user.get("username"),
+        guild_id=guild_id,
+        resource_type="wiki",
+        action="populate",
+        details={
+            "days": request.days,
+            "summaries_processed": len(summaries),
+            "pages_created": pages_created,
+            "pages_updated": pages_updated,
+            "errors": len(errors),
+        },
+    )
+
     return PopulateResponse(
         summaries_processed=len(summaries),
         pages_created=pages_created,
@@ -646,6 +681,17 @@ async def clear_wiki(
     result = await repo.clear_wiki(guild_id)
     logger.info(f"Wiki cleared for guild {guild_id}: {result}")
 
+    # Audit log
+    await audit_log(
+        "admin.wiki.clear",
+        user_id=user.get("id"),
+        user_name=user.get("username"),
+        guild_id=guild_id,
+        resource_type="wiki",
+        action="clear",
+        details=result,
+    )
+
     return ClearWikiResponse(**result)
 
 
@@ -699,12 +745,15 @@ async def get_wiki_stats(
     },
 )
 async def synthesize_page(
+    request: Request,
     guild_id: str = Path(..., description="Guild ID"),
     path: str = Path(..., description="Wiki page path"),
     user: dict = Depends(get_current_user),
 ):
     """Generate synthesis for a wiki page."""
+    import os
     from ...wiki.synthesis import synthesize_wiki_page
+    from ...summarization.claude_client import ClaudeClient
 
     _check_guild_access(guild_id, user)
 
@@ -717,12 +766,31 @@ async def synthesize_page(
     if not page:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Page not found"})
 
-    # Generate synthesis (no LLM client for now - uses heuristic)
+    # Get Claude client - try engine first, fall back to direct OpenRouter config
+    claude_client = None
+    engine = get_summarization_engine()
+    if engine and hasattr(engine, 'claude_client') and engine.claude_client:
+        claude_client = engine.claude_client
+        logger.info("Using claude_client from summarization engine")
+    else:
+        # Direct OpenRouter configuration fallback
+        openrouter_key = os.getenv('OPENROUTER_API_KEY')
+        if openrouter_key:
+            claude_client = ClaudeClient(
+                api_key=openrouter_key,
+                base_url='https://openrouter.ai/api',
+                max_retries=3,
+            )
+            logger.info("Created direct OpenRouter client for wiki synthesis")
+        else:
+            logger.warning("No OpenRouter API key configured - using heuristic synthesis")
+
+    # Generate synthesis with LLM
     result = await synthesize_wiki_page(
         page_title=page.title,
         page_content=page.content,
         source_refs=page.source_refs,
-        llm_client=None,  # TODO: Add LLM client integration
+        claude_client=claude_client,
     )
 
     # Save synthesis to database
@@ -731,6 +799,24 @@ async def synthesize_page(
         path=path,
         synthesis=result.synthesis,
         source_count=result.source_count,
+    )
+
+    # Audit log
+    await audit_log(
+        "action.wiki.synthesize",
+        user_id=user.get("id"),
+        user_name=user.get("username"),
+        guild_id=guild_id,
+        resource_type="wiki_page",
+        resource_id=path,
+        resource_name=page.title,
+        action="synthesize",
+        details={
+            "source_count": result.source_count,
+            "conflicts_found": result.conflicts_found,
+            "synthesis_length": len(result.synthesis),
+            "used_llm": claude_client is not None,
+        },
     )
 
     logger.info(f"Generated synthesis for {path}: {result.source_count} sources, {result.conflicts_found} conflicts")

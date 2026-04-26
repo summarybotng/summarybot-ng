@@ -156,7 +156,7 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
                 factory = get_repository_factory()
                 conn = await factory.get_connection()
                 row = await conn.fetch_one(
-                    "SELECT wiki_auto_ingest FROM guilds WHERE id = ?",
+                    "SELECT wiki_auto_ingest FROM guild_configs WHERE guild_id = ?",
                     (summary.guild_id,)
                 )
                 if row and row.get('wiki_auto_ingest') is not None:

@@ -29,6 +29,8 @@ import {
   CheckCircle2,
   AlertCircle,
   PauseCircle,
+  PlayCircle,
+  Pause,
   Clock,
   Calendar,
   Sparkles,
@@ -39,6 +41,7 @@ import {
   Server,
   Hash,
   DollarSign,
+  BookOpen,
 } from "lucide-react";
 
 interface JobProgress {
@@ -63,7 +66,7 @@ interface JobCost {
 interface Job {
   job_id: string;
   guild_id: string;
-  job_type: "manual" | "scheduled" | "retrospective" | "regenerate";
+  job_type: "manual" | "scheduled" | "retrospective" | "regenerate" | "wiki_backfill";
   status: "pending" | "running" | "completed" | "failed" | "cancelled" | "paused";
   scope: string | null;
   schedule_id: string | null;
@@ -105,6 +108,8 @@ function getJobTypeBadge(jobType: Job["job_type"]) {
       return { label: "Retrospective", className: "bg-orange-500/10 text-orange-600 border-orange-500/30", icon: History };
     case "regenerate":
       return { label: "Regenerate", className: "bg-green-500/10 text-green-600 border-green-500/30", icon: RefreshCw };
+    case "wiki_backfill":
+      return { label: "Wiki Backfill", className: "bg-indigo-500/10 text-indigo-600 border-indigo-500/30", icon: BookOpen };
     default:
       return { label: jobType, className: "", icon: null };
   }
@@ -134,11 +139,15 @@ interface JobCardProps {
   job: Job;
   onCancel: () => void;
   onRetry: () => void;
+  onPause: () => void;
+  onResume: () => void;
   isCancelling: boolean;
   isRetrying: boolean;
+  isPausing: boolean;
+  isResuming: boolean;
 }
 
-function JobCard({ job, onCancel, onRetry, isCancelling, isRetrying }: JobCardProps) {
+function JobCard({ job, onCancel, onRetry, onPause, onResume, isCancelling, isRetrying, isPausing, isResuming }: JobCardProps) {
   const typeBadge = getJobTypeBadge(job.job_type);
   const statusBadge = getStatusBadge(job.status);
   const TypeIcon = typeBadge.icon;
@@ -284,6 +293,41 @@ function JobCard({ job, onCancel, onRetry, isCancelling, isRetrying }: JobCardPr
 
           {/* Actions */}
           <div className="mt-3 flex gap-2">
+            {/* Pause button - only for running jobs */}
+            {job.status === "running" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onPause}
+                disabled={isPausing}
+                className="text-amber-600 hover:text-amber-700"
+              >
+                {isPausing ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : (
+                  <Pause className="mr-1 h-3 w-3" />
+                )}
+                Pause
+              </Button>
+            )}
+            {/* Resume button - only for paused jobs */}
+            {job.status === "paused" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onResume}
+                disabled={isResuming}
+                className="text-green-600 hover:text-green-700"
+              >
+                {isResuming ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : (
+                  <PlayCircle className="mr-1 h-3 w-3" />
+                )}
+                Resume
+              </Button>
+            )}
+            {/* Cancel button - for running, pending, or paused jobs */}
             {(job.status === "running" || job.status === "pending" || job.status === "paused") && (
               <Button
                 variant="outline"
@@ -300,6 +344,7 @@ function JobCard({ job, onCancel, onRetry, isCancelling, isRetrying }: JobCardPr
                 Cancel
               </Button>
             )}
+            {/* Retry button - only for failed jobs */}
             {job.status === "failed" && (
               <Button
                 variant="outline"
@@ -333,6 +378,8 @@ export function JobsTab({ guildId }: JobsTabProps) {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [cancellingJobId, setCancellingJobId] = useState<string | null>(null);
   const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
+  const [pausingJobId, setPausingJobId] = useState<string | null>(null);
+  const [resumingJobId, setResumingJobId] = useState<string | null>(null);
 
   // Fetch jobs with auto-refresh for active jobs
   const {
@@ -408,6 +455,54 @@ export function JobsTab({ guildId }: JobsTabProps) {
     },
   });
 
+  // Pause job mutation (ADR-068)
+  const pauseJob = useMutation({
+    mutationFn: async (jobId: string) => {
+      setPausingJobId(jobId);
+      const res = await api.post(`/guilds/${guildId}/jobs/${jobId}/pause`);
+      return res.data;
+    },
+    onSuccess: () => {
+      toast({ title: "Job paused successfully" });
+      queryClient.invalidateQueries({ queryKey: ["jobs", guildId] });
+      queryClient.invalidateQueries({ queryKey: ["job-stats", guildId] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to pause job",
+        description: error?.response?.data?.detail?.message || "An error occurred",
+        variant: "destructive",
+      });
+    },
+    onSettled: () => {
+      setPausingJobId(null);
+    },
+  });
+
+  // Resume job mutation (ADR-068)
+  const resumeJob = useMutation({
+    mutationFn: async (jobId: string) => {
+      setResumingJobId(jobId);
+      const res = await api.post(`/guilds/${guildId}/jobs/${jobId}/resume`);
+      return res.data;
+    },
+    onSuccess: () => {
+      toast({ title: "Job resumed successfully" });
+      queryClient.invalidateQueries({ queryKey: ["jobs", guildId] });
+      queryClient.invalidateQueries({ queryKey: ["job-stats", guildId] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to resume job",
+        description: error?.response?.data?.detail?.message || "An error occurred",
+        variant: "destructive",
+      });
+    },
+    onSettled: () => {
+      setResumingJobId(null);
+    },
+  });
+
   const jobs = jobsData?.jobs || [];
   const hasActiveJobs = jobs.some((j) => j.status === "running" || j.status === "pending");
 
@@ -427,6 +522,7 @@ export function JobsTab({ guildId }: JobsTabProps) {
               <SelectItem value="scheduled">Scheduled</SelectItem>
               <SelectItem value="retrospective">Retrospective</SelectItem>
               <SelectItem value="regenerate">Regenerate</SelectItem>
+              <SelectItem value="wiki_backfill">Wiki Backfill</SelectItem>
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -507,8 +603,12 @@ export function JobsTab({ guildId }: JobsTabProps) {
               job={job}
               onCancel={() => cancelJob.mutate(job.job_id)}
               onRetry={() => retryJob.mutate(job.job_id)}
+              onPause={() => pauseJob.mutate(job.job_id)}
+              onResume={() => resumeJob.mutate(job.job_id)}
               isCancelling={cancellingJobId === job.job_id}
               isRetrying={retryingJobId === job.job_id}
+              isPausing={pausingJobId === job.job_id}
+              isResuming={resumingJobId === job.job_id}
             />
           ))}
         </div>

@@ -24,6 +24,11 @@ import {
   Copy,
   Check,
   Link2,
+  Star,
+  Filter,
+  SlidersHorizontal,
+  X,
+  Cpu,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -59,6 +64,10 @@ interface WikiPage {
   synthesis: string | null;
   synthesis_updated_at: string | null;
   synthesis_source_count: number;
+  // ADR-064/065: Rating and model tracking
+  synthesis_model: string | null;
+  average_rating: number | null;
+  rating_count: number;
 }
 
 interface WikiPageSummary {
@@ -69,6 +78,40 @@ interface WikiPageSummary {
   updated_at: string;
   inbound_links: number;
   confidence: number;
+  // ADR-064: Filter fields
+  created_at?: string;
+  source_count: number;
+  has_synthesis: boolean;
+  synthesis_model?: string;
+  average_rating?: number;
+  rating_count: number;
+}
+
+// ADR-064: Filter facets
+interface WikiFilterFacets {
+  source_count: Record<string, number>;
+  rating: Record<string, number>;
+  synthesis_model: Record<string, number>;
+  has_synthesis: Record<string, number>;
+}
+
+// ADR-064: Wiki pages response with facets
+interface WikiPagesResponse {
+  total: number;
+  filtered: number;
+  pages: WikiPageSummary[];
+  facets?: WikiFilterFacets;
+}
+
+// ADR-064: Filter state
+interface WikiFilters {
+  min_sources?: number;
+  max_sources?: number;
+  has_synthesis?: boolean;
+  synthesis_model?: string;
+  min_rating?: number;
+  sort_by?: string;
+  sort_order?: string;
 }
 
 interface WikiTreeNode {
@@ -142,6 +185,54 @@ async function fetchSourceReferences(guildId: string, sourceId: string): Promise
   return api.get<WikiSourceResult>(`/guilds/${guildId}/wiki/sources/${sourceId}`);
 }
 
+// ADR-064: Fetch filtered pages with facets
+async function fetchWikiPages(
+  guildId: string,
+  filters: WikiFilters = {},
+  includeFacets: boolean = false
+): Promise<WikiPagesResponse> {
+  const params = new URLSearchParams();
+  if (filters.min_sources !== undefined) params.append("min_sources", String(filters.min_sources));
+  if (filters.max_sources !== undefined) params.append("max_sources", String(filters.max_sources));
+  if (filters.has_synthesis !== undefined) params.append("has_synthesis", String(filters.has_synthesis));
+  if (filters.synthesis_model) params.append("synthesis_model", filters.synthesis_model);
+  if (filters.min_rating !== undefined) params.append("min_rating", String(filters.min_rating));
+  if (filters.sort_by) params.append("sort_by", filters.sort_by);
+  if (filters.sort_order) params.append("sort_order", filters.sort_order);
+  if (includeFacets) params.append("include_facets", "true");
+  params.append("limit", "50");
+
+  return api.get<WikiPagesResponse>(`/guilds/${guildId}/wiki/pages?${params.toString()}`);
+}
+
+// ADR-065: Rate synthesis
+interface RateSynthesisResult {
+  success: boolean;
+  average_rating: number | null;
+  rating_count: number;
+}
+
+async function rateSynthesis(
+  guildId: string,
+  path: string,
+  rating: number,
+  feedback?: string
+): Promise<RateSynthesisResult> {
+  return api.post<RateSynthesisResult>(`/guilds/${guildId}/wiki/pages/${path}/rate`, {
+    rating,
+    feedback,
+  });
+}
+
+// ADR-065: Synthesize with options
+interface SynthesizeOptions {
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+  focus_areas?: string[];
+  custom_instructions?: string;
+}
+
 // Populate wiki from summaries
 interface PopulateResult {
   summaries_processed: number;
@@ -205,9 +296,59 @@ function WikiNavTree({ tree, currentPath }: { tree: WikiTree; currentPath?: stri
   );
 }
 
-// Synthesize wiki page
-async function synthesizeWikiPage(guildId: string, path: string): Promise<{ success: boolean }> {
-  return api.post<{ success: boolean }>(`/guilds/${guildId}/wiki/pages/${path}/synthesize`);
+// Synthesize wiki page (ADR-065: with options support)
+async function synthesizeWikiPage(
+  guildId: string,
+  path: string,
+  options?: SynthesizeOptions
+): Promise<{ success: boolean; model_used?: string }> {
+  return api.post<{ success: boolean; model_used?: string }>(
+    `/guilds/${guildId}/wiki/pages/${path}/synthesize`,
+    options || {}
+  );
+}
+
+// ADR-065: Star Rating component
+function StarRating({
+  rating,
+  onRate,
+  readonly = false,
+  size = "default",
+}: {
+  rating: number;
+  onRate?: (rating: number) => void;
+  readonly?: boolean;
+  size?: "default" | "small";
+}) {
+  const [hoverRating, setHoverRating] = useState(0);
+  const starSize = size === "small" ? "h-3 w-3" : "h-5 w-5";
+
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((star) => {
+        const filled = hoverRating ? star <= hoverRating : star <= rating;
+        return (
+          <button
+            key={star}
+            type="button"
+            disabled={readonly}
+            className={`${readonly ? "cursor-default" : "cursor-pointer hover:scale-110"} transition-transform`}
+            onMouseEnter={() => !readonly && setHoverRating(star)}
+            onMouseLeave={() => !readonly && setHoverRating(0)}
+            onClick={() => onRate?.(star)}
+          >
+            <Star
+              className={`${starSize} ${
+                filled
+                  ? "fill-yellow-400 text-yellow-400"
+                  : "fill-transparent text-muted-foreground"
+              }`}
+            />
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function WikiPageView({ page }: { page: WikiPage }) {
@@ -239,13 +380,28 @@ function WikiPageView({ page }: { page: WikiPage }) {
 
   // Regenerate synthesis mutation
   const synthesizeMutation = useMutation({
-    mutationFn: () => synthesizeWikiPage(guildId!, page.path),
+    mutationFn: (options?: SynthesizeOptions) => synthesizeWikiPage(guildId!, page.path, options),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["wiki-page", guildId, page.path] });
       toast({ title: "Synthesis regenerated" });
     },
     onError: () => {
       toast({ title: "Failed to generate synthesis", variant: "destructive" });
+    },
+  });
+
+  // ADR-065: Rating mutation
+  const ratingMutation = useMutation({
+    mutationFn: (rating: number) => rateSynthesis(guildId!, page.path, rating),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["wiki-page", guildId, page.path] });
+      toast({
+        title: "Rating submitted",
+        description: `Average rating: ${data.average_rating?.toFixed(1)} (${data.rating_count} ratings)`,
+      });
+    },
+    onError: () => {
+      toast({ title: "Failed to submit rating", variant: "destructive" });
     },
   });
 
@@ -428,11 +584,49 @@ function WikiPageView({ page }: { page: WikiPage }) {
             <Card>
               <CardContent className="pt-6">
                 <MarkdownContent content={page.synthesis} />
-                {page.synthesis_updated_at && (
-                  <div className="mt-4 pt-4 border-t text-sm text-muted-foreground">
-                    Last synthesized: {new Date(page.synthesis_updated_at).toLocaleString()}
+                {/* ADR-065: Synthesis footer with rating and metadata */}
+                <div className="mt-4 pt-4 border-t flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    {/* Model */}
+                    {page.synthesis_model && (
+                      <span className="flex items-center gap-1">
+                        <Cpu className="h-3 w-3" />
+                        {page.synthesis_model.replace("anthropic/", "")}
+                      </span>
+                    )}
+                    {/* Timestamp */}
+                    {page.synthesis_updated_at && (
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {new Date(page.synthesis_updated_at).toLocaleDateString()}
+                      </span>
+                    )}
+                    {/* Sources */}
+                    <span className="flex items-center gap-1">
+                      <FileText className="h-3 w-3" />
+                      {page.synthesis_source_count} sources
+                    </span>
                   </div>
-                )}
+                  <div className="flex items-center gap-4">
+                    {/* Current rating */}
+                    {page.rating_count > 0 && (
+                      <span className="flex items-center gap-1 text-sm">
+                        <StarRating rating={page.average_rating || 0} readonly size="small" />
+                        <span className="text-muted-foreground">
+                          {page.average_rating?.toFixed(1)} ({page.rating_count})
+                        </span>
+                      </span>
+                    )}
+                    {/* Rate button */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">Rate:</span>
+                      <StarRating
+                        rating={0}
+                        onRate={(r) => ratingMutation.mutate(r)}
+                      />
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           ) : (
@@ -766,6 +960,212 @@ function RecentChanges({ guildId }: { guildId: string }) {
   );
 }
 
+// ADR-064: Wiki Browser with filters
+function WikiBrowser({ guildId }: { guildId: string }) {
+  const [filters, setFilters] = useState<WikiFilters>({
+    sort_by: "updated_at",
+    sort_order: "desc",
+  });
+  const [showFilters, setShowFilters] = useState(false);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["wiki-pages", guildId, filters],
+    queryFn: () => fetchWikiPages(guildId, filters, true),
+  });
+
+  const clearFilters = () => {
+    setFilters({ sort_by: "updated_at", sort_order: "desc" });
+  };
+
+  const hasActiveFilters = filters.min_sources !== undefined ||
+    filters.has_synthesis !== undefined ||
+    filters.synthesis_model !== undefined ||
+    filters.min_rating !== undefined;
+
+  return (
+    <div className="space-y-4">
+      {/* Filter toggle */}
+      <div className="flex items-center justify-between">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowFilters(!showFilters)}
+          className={hasActiveFilters ? "border-primary" : ""}
+        >
+          <SlidersHorizontal className="h-4 w-4 mr-2" />
+          Filters
+          {hasActiveFilters && (
+            <Badge variant="secondary" className="ml-2">Active</Badge>
+          )}
+        </Button>
+        <div className="text-sm text-muted-foreground">
+          {data?.filtered || 0} of {data?.total || 0} pages
+        </div>
+      </div>
+
+      {/* Filter panel */}
+      {showFilters && (
+        <Card>
+          <CardContent className="pt-4 space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* Source count filter */}
+              <div>
+                <label className="text-sm font-medium mb-2 block">Sources</label>
+                <div className="flex flex-wrap gap-1">
+                  {["1", "2-5", "5-10", "10+"].map((bucket) => {
+                    const [min, max] = bucket === "1" ? [1, 1] :
+                      bucket === "2-5" ? [2, 5] :
+                      bucket === "5-10" ? [5, 10] : [10, undefined];
+                    const isActive = filters.min_sources === min;
+                    return (
+                      <Badge
+                        key={bucket}
+                        variant={isActive ? "default" : "outline"}
+                        className="cursor-pointer"
+                        onClick={() => setFilters(f => ({
+                          ...f,
+                          min_sources: isActive ? undefined : min,
+                          max_sources: isActive ? undefined : max,
+                        }))}
+                      >
+                        {bucket}
+                        {data?.facets?.source_count[bucket] !== undefined && (
+                          <span className="ml-1 opacity-60">
+                            ({data.facets.source_count[bucket]})
+                          </span>
+                        )}
+                      </Badge>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Synthesis filter */}
+              <div>
+                <label className="text-sm font-medium mb-2 block">Synthesis</label>
+                <div className="flex gap-1">
+                  <Badge
+                    variant={filters.has_synthesis === true ? "default" : "outline"}
+                    className="cursor-pointer"
+                    onClick={() => setFilters(f => ({
+                      ...f,
+                      has_synthesis: f.has_synthesis === true ? undefined : true,
+                    }))}
+                  >
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    With synthesis
+                    {data?.facets?.has_synthesis["true"] !== undefined && (
+                      <span className="ml-1 opacity-60">
+                        ({data.facets.has_synthesis["true"]})
+                      </span>
+                    )}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Rating filter */}
+              <div>
+                <label className="text-sm font-medium mb-2 block">Min Rating</label>
+                <div className="flex gap-1">
+                  {[3, 4, 5].map((rating) => (
+                    <Badge
+                      key={rating}
+                      variant={filters.min_rating === rating ? "default" : "outline"}
+                      className="cursor-pointer"
+                      onClick={() => setFilters(f => ({
+                        ...f,
+                        min_rating: f.min_rating === rating ? undefined : rating,
+                      }))}
+                    >
+                      {rating}+ ★
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sort */}
+              <div>
+                <label className="text-sm font-medium mb-2 block">Sort By</label>
+                <select
+                  className="w-full rounded-md border bg-background px-3 py-1 text-sm"
+                  value={filters.sort_by}
+                  onChange={(e) => setFilters(f => ({ ...f, sort_by: e.target.value }))}
+                >
+                  <option value="updated_at">Recently Updated</option>
+                  <option value="created_at">Recently Created</option>
+                  <option value="source_count">Most Sources</option>
+                  <option value="rating">Highest Rated</option>
+                  <option value="title">Title (A-Z)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Clear filters */}
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
+                <X className="h-4 w-4 mr-1" />
+                Clear filters
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Results */}
+      {isLoading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {data?.pages.map((page) => (
+            <Link
+              key={page.id}
+              to={`/guilds/${guildId}/wiki/${page.path}`}
+              className="block"
+            >
+              <Card className="hover:bg-accent/50 transition-colors">
+                <CardContent className="py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium truncate">{page.title}</span>
+                        {page.has_synthesis && (
+                          <Sparkles className="h-3 w-3 text-yellow-500 flex-shrink-0" />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
+                        <span>{page.source_count} sources</span>
+                        {page.average_rating && (
+                          <span className="flex items-center gap-1">
+                            <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                            {page.average_rating.toFixed(1)}
+                          </span>
+                        )}
+                        <span>{page.path}</span>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+          {(!data?.pages || data.pages.length === 0) && (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-muted-foreground">No pages match your filters</p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PopulateWiki({ guildId }: { guildId: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -1068,18 +1468,7 @@ export function Wiki() {
                 <RecentChanges guildId={guildId!} />
               </TabsContent>
               <TabsContent value="browse" className="mt-4">
-                <Card>
-                  <CardContent className="py-8 text-center">
-                    <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <h3 className="font-medium mb-2">
-                      Browse the Knowledge Base
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      Select a category from the navigation to explore wiki
-                      pages
-                    </p>
-                  </CardContent>
-                </Card>
+                <WikiBrowser guildId={guildId!} />
               </TabsContent>
               <TabsContent value="populate" className="mt-4">
                 <PopulateWiki guildId={guildId!} />

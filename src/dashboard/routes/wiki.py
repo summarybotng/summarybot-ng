@@ -55,6 +55,13 @@ class SourceMetadata(BaseModel):
     ingested_at: Optional[str] = None
 
 
+class LinkedPage(BaseModel):
+    """A linked wiki page."""
+    path: str
+    title: str
+    link_text: Optional[str] = None
+
+
 class WikiPageDetailResponse(BaseModel):
     """Full wiki page with content and metadata."""
     id: str
@@ -66,6 +73,8 @@ class WikiPageDetailResponse(BaseModel):
     source_metadata: List[SourceMetadata] = []  # Readable titles for sources
     inbound_links: int = 0
     outbound_links: int = 0
+    linked_pages_from: List[LinkedPage] = []  # Pages this page links to
+    linked_pages_to: List[LinkedPage] = []    # Pages that link to this page
     confidence: int = 100
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -200,7 +209,12 @@ def _page_to_summary_response(page) -> WikiPageSummaryResponse:
     )
 
 
-def _page_to_detail_response(page, source_metadata: List[SourceMetadata] = None) -> WikiPageDetailResponse:
+def _page_to_detail_response(
+    page,
+    source_metadata: List[SourceMetadata] = None,
+    linked_pages_from: List[LinkedPage] = None,
+    linked_pages_to: List[LinkedPage] = None,
+) -> WikiPageDetailResponse:
     """Convert WikiPage to response model."""
     return WikiPageDetailResponse(
         id=page.id,
@@ -212,6 +226,8 @@ def _page_to_detail_response(page, source_metadata: List[SourceMetadata] = None)
         source_metadata=source_metadata or [],
         inbound_links=page.inbound_links,
         outbound_links=page.outbound_links,
+        linked_pages_from=linked_pages_from or [],
+        linked_pages_to=linked_pages_to or [],
         confidence=page.confidence,
         created_at=page.created_at.isoformat() if page.created_at else None,
         updated_at=page.updated_at.isoformat() if page.updated_at else None,
@@ -355,6 +371,28 @@ async def get_page(
             for s in sources
         ]
 
+    # Fetch linked pages (outbound and inbound)
+    links_from = await repo.get_links_from(guild_id, path)
+    links_to = await repo.get_links_to(guild_id, path)
+
+    # Get page titles for linked pages
+    linked_paths = list(set([l.to_page for l in links_from] + [l.from_page for l in links_to]))
+    page_titles = {}
+    if linked_paths:
+        for lp in linked_paths:
+            linked_page = await repo.get_page(guild_id, lp)
+            if linked_page:
+                page_titles[lp] = linked_page.title
+
+    linked_pages_from = [
+        LinkedPage(path=l.to_page, title=page_titles.get(l.to_page, l.to_page), link_text=l.link_text)
+        for l in links_from
+    ]
+    linked_pages_to = [
+        LinkedPage(path=l.from_page, title=page_titles.get(l.from_page, l.from_page), link_text=l.link_text)
+        for l in links_to
+    ]
+
     # Audit log page view
     await audit_log(
         "access.wiki.view",
@@ -367,7 +405,7 @@ async def get_page(
         action="view",
     )
 
-    return _page_to_detail_response(page, source_metadata)
+    return _page_to_detail_response(page, source_metadata, linked_pages_from, linked_pages_to)
 
 
 @router.get(

@@ -61,6 +61,12 @@ interface SourceMetadata {
   ingested_at: string | null;
 }
 
+interface LinkedPage {
+  path: string;
+  title: string;
+  link_text: string | null;
+}
+
 interface WikiPage {
   id: string;
   path: string;
@@ -71,6 +77,8 @@ interface WikiPage {
   source_metadata: SourceMetadata[];  // Readable titles for sources
   inbound_links: number;
   outbound_links: number;
+  linked_pages_from: LinkedPage[];  // Pages this page links to
+  linked_pages_to: LinkedPage[];    // Pages that link to this page
   confidence: number;
   created_at: string;
   updated_at: string;
@@ -759,6 +767,54 @@ function WikiPageView({ page }: { page: WikiPage }) {
             </Badge>
           ))}
         </div>
+      )}
+
+      {/* Related Pages */}
+      {(page.linked_pages_from?.length > 0 || page.linked_pages_to?.length > 0) && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Link2 className="h-4 w-4" />
+              Related Pages
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {page.linked_pages_from?.length > 0 && (
+              <div>
+                <div className="text-sm text-muted-foreground mb-2">Links to:</div>
+                <div className="flex flex-wrap gap-2">
+                  {page.linked_pages_from.map((link) => (
+                    <Link
+                      key={link.path}
+                      to={`/guilds/${guildId}/wiki/${link.path}`}
+                      className="text-sm text-primary hover:underline flex items-center gap-1"
+                    >
+                      <FileText className="h-3 w-3" />
+                      {link.title}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+            {page.linked_pages_to?.length > 0 && (
+              <div>
+                <div className="text-sm text-muted-foreground mb-2">Linked from:</div>
+                <div className="flex flex-wrap gap-2">
+                  {page.linked_pages_to.map((link) => (
+                    <Link
+                      key={link.path}
+                      to={`/guilds/${guildId}/wiki/${link.path}`}
+                      className="text-sm text-primary hover:underline flex items-center gap-1"
+                    >
+                      <FileText className="h-3 w-3" />
+                      {link.title}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   );

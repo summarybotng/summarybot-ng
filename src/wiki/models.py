@@ -42,6 +42,22 @@ class WikiPage:
     synthesis: Optional[str] = None  # LLM-generated summary
     synthesis_updated_at: Optional[datetime] = None
     synthesis_source_count: int = 0
+    # ADR-064/065: Rating and model tracking
+    synthesis_model: Optional[str] = None
+    rating_sum: int = 0
+    rating_count: int = 0
+
+    @property
+    def average_rating(self) -> Optional[float]:
+        """Calculate average rating."""
+        if self.rating_count == 0:
+            return None
+        return self.rating_sum / self.rating_count
+
+    @property
+    def source_count(self) -> int:
+        """Number of sources referenced."""
+        return len(self.source_refs)
 
     @property
     def category(self) -> str:
@@ -60,6 +76,13 @@ class WikiPageSummary:
     updated_at: Optional[datetime]
     inbound_links: int = 0
     confidence: int = 100
+    # ADR-064: Filter fields
+    created_at: Optional[datetime] = None
+    source_count: int = 0
+    has_synthesis: bool = False
+    synthesis_model: Optional[str] = None
+    average_rating: Optional[float] = None
+    rating_count: int = 0
 
 
 @dataclass
@@ -172,3 +195,37 @@ class WikiChange:
     changed_at: datetime
     source_id: Optional[str] = None
     agent_id: Optional[str] = None
+
+
+@dataclass
+class SynthesisOptions:
+    """Options for wiki synthesis generation (ADR-065)."""
+    model: str = "auto"  # auto, haiku, sonnet, opus
+    temperature: float = 0.3
+    max_tokens: int = 2000
+    focus_areas: List[str] = field(default_factory=list)
+    custom_instructions: Optional[str] = None
+
+
+@dataclass
+class WikiSynthesisRating:
+    """A user rating for a wiki synthesis (ADR-065)."""
+    id: int
+    guild_id: str
+    page_path: str
+    user_id: str
+    rating: int  # 1-5
+    feedback: Optional[str] = None
+    synthesis_model: Optional[str] = None
+    synthesis_version: int = 1
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
+class WikiFilterFacets:
+    """Facet counts for wiki filtering (ADR-064)."""
+    source_count: Dict[str, int] = field(default_factory=dict)  # "1": 20, "2-5": 50
+    rating: Dict[str, int] = field(default_factory=dict)  # "unrated": 80, "5": 15
+    synthesis_model: Dict[str, int] = field(default_factory=dict)  # "haiku": 60
+    has_synthesis: Dict[str, int] = field(default_factory=dict)  # "true": 100

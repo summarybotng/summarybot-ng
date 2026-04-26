@@ -38,6 +38,13 @@ class WikiPageSummaryResponse(BaseModel):
     updated_at: Optional[str] = None
     inbound_links: int = 0
     confidence: int = 100
+    # ADR-064: Filter fields
+    created_at: Optional[str] = None
+    source_count: int = 0
+    has_synthesis: bool = False
+    synthesis_model: Optional[str] = None
+    average_rating: Optional[float] = None
+    rating_count: int = 0
 
 
 class WikiPageDetailResponse(BaseModel):
@@ -58,12 +65,26 @@ class WikiPageDetailResponse(BaseModel):
     synthesis: Optional[str] = None
     synthesis_updated_at: Optional[str] = None
     synthesis_source_count: int = 0
+    # ADR-064/065: Rating and model tracking
+    synthesis_model: Optional[str] = None
+    average_rating: Optional[float] = None
+    rating_count: int = 0
+
+
+class WikiFilterFacetsResponse(BaseModel):
+    """Facet counts for wiki filtering (ADR-064)."""
+    source_count: dict = {}
+    rating: dict = {}
+    synthesis_model: dict = {}
+    has_synthesis: dict = {}
 
 
 class WikiPagesResponse(BaseModel):
     """List of wiki pages."""
     total: int
+    filtered: Optional[int] = None
     pages: List[WikiPageSummaryResponse]
+    facets: Optional[WikiFilterFacetsResponse] = None
 
 
 class WikiTreeNodeResponse(BaseModel):
@@ -160,6 +181,13 @@ def _page_to_summary_response(page) -> WikiPageSummaryResponse:
         updated_at=page.updated_at.isoformat() if page.updated_at else None,
         inbound_links=page.inbound_links,
         confidence=page.confidence,
+        # ADR-064: Filter fields
+        created_at=page.created_at.isoformat() if getattr(page, 'created_at', None) else None,
+        source_count=getattr(page, 'source_count', 0),
+        has_synthesis=getattr(page, 'has_synthesis', False),
+        synthesis_model=getattr(page, 'synthesis_model', None),
+        average_rating=getattr(page, 'average_rating', None),
+        rating_count=getattr(page, 'rating_count', 0),
     )
 
 
@@ -182,6 +210,10 @@ def _page_to_detail_response(page) -> WikiPageDetailResponse:
         synthesis=getattr(page, 'synthesis', None),
         synthesis_updated_at=page.synthesis_updated_at.isoformat() if getattr(page, 'synthesis_updated_at', None) else None,
         synthesis_source_count=getattr(page, 'synthesis_source_count', 0),
+        # ADR-064/065: Rating and model tracking
+        synthesis_model=getattr(page, 'synthesis_model', None),
+        average_rating=page.average_rating if hasattr(page, 'average_rating') else None,
+        rating_count=getattr(page, 'rating_count', 0),
     )
 
 
@@ -193,7 +225,7 @@ def _page_to_detail_response(page) -> WikiPageDetailResponse:
     "/guilds/{guild_id}/wiki/pages",
     response_model=WikiPagesResponse,
     summary="List wiki pages",
-    description="Get paginated list of wiki pages, optionally filtered by category.",
+    description="Get paginated list of wiki pages with filtering and sorting (ADR-064).",
     responses={
         403: {"model": ErrorResponse, "description": "No permission"},
     },
@@ -201,23 +233,75 @@ def _page_to_detail_response(page) -> WikiPageDetailResponse:
 async def list_pages(
     guild_id: str = Path(..., description="Guild ID"),
     category: Optional[str] = Query(None, description="Filter by category (topics, decisions, processes, experts, questions)"),
+    min_sources: Optional[int] = Query(None, ge=0, description="Minimum source count"),
+    max_sources: Optional[int] = Query(None, ge=0, description="Maximum source count"),
+    created_after: Optional[str] = Query(None, description="Created after date (ISO format)"),
+    created_before: Optional[str] = Query(None, description="Created before date (ISO format)"),
+    updated_after: Optional[str] = Query(None, description="Updated after date (ISO format)"),
+    updated_before: Optional[str] = Query(None, description="Updated before date (ISO format)"),
+    min_rating: Optional[float] = Query(None, ge=0, le=5, description="Minimum average rating"),
+    has_synthesis: Optional[bool] = Query(None, description="Filter by synthesis presence"),
+    synthesis_model: Optional[str] = Query(None, description="Filter by synthesis model (comma-separated)"),
+    min_confidence: Optional[int] = Query(None, ge=0, le=100, description="Minimum confidence score"),
+    sort_by: str = Query("updated_at", description="Sort field: updated_at, created_at, rating, source_count, confidence, title"),
+    sort_order: str = Query("desc", description="Sort order: asc, desc"),
+    include_facets: bool = Query(False, description="Include facet counts"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     user: dict = Depends(get_current_user),
 ):
-    """List wiki pages for a guild."""
+    """List wiki pages for a guild with filtering (ADR-064)."""
     _check_guild_access(guild_id, user)
 
     repo = await get_wiki_repository()
     if not repo:
         raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": "Wiki service unavailable"})
 
-    pages = await repo.list_pages(guild_id, category=category, limit=limit, offset=offset)
+    # Parse date filters
+    created_after_dt = datetime.fromisoformat(created_after) if created_after else None
+    created_before_dt = datetime.fromisoformat(created_before) if created_before else None
+    updated_after_dt = datetime.fromisoformat(updated_after) if updated_after else None
+    updated_before_dt = datetime.fromisoformat(updated_before) if updated_before else None
+
+    # Parse synthesis models
+    synthesis_models = synthesis_model.split(",") if synthesis_model else None
+
+    pages = await repo.list_pages(
+        guild_id,
+        category=category,
+        min_sources=min_sources,
+        max_sources=max_sources,
+        created_after=created_after_dt,
+        created_before=created_before_dt,
+        updated_after=updated_after_dt,
+        updated_before=updated_before_dt,
+        min_rating=min_rating,
+        has_synthesis=has_synthesis,
+        synthesis_models=synthesis_models,
+        min_confidence=min_confidence,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        limit=limit,
+        offset=offset,
+    )
     total = await repo.count_pages(guild_id, category=category)
+
+    # Get facets if requested
+    facets = None
+    if include_facets:
+        facets_data = await repo.get_filter_facets(guild_id)
+        facets = WikiFilterFacetsResponse(
+            source_count=facets_data.source_count,
+            rating=facets_data.rating,
+            synthesis_model=facets_data.synthesis_model,
+            has_synthesis=facets_data.has_synthesis,
+        )
 
     return WikiPagesResponse(
         total=total,
+        filtered=len(pages),
         pages=[_page_to_summary_response(p) for p in pages],
+        facets=facets,
     )
 
 
@@ -518,6 +602,29 @@ class SynthesizeResponse(BaseModel):
     synthesis_length: int
     source_count: int
     conflicts_found: int
+    model_used: Optional[str] = None
+
+
+class SynthesizeRequest(BaseModel):
+    """Request options for synthesis regeneration (ADR-065)."""
+    model: str = "auto"
+    temperature: float = 0.3
+    max_tokens: int = 2000
+    focus_areas: List[str] = []
+    custom_instructions: Optional[str] = None
+
+
+class RateSynthesisRequest(BaseModel):
+    """Request to rate a wiki synthesis (ADR-065)."""
+    rating: int = Field(..., ge=1, le=5, description="Rating from 1-5")
+    feedback: Optional[str] = Field(None, max_length=2000, description="Optional feedback text")
+
+
+class RateSynthesisResponse(BaseModel):
+    """Response from rating a synthesis (ADR-065)."""
+    success: bool
+    average_rating: Optional[float] = None
+    rating_count: int = 0
 
 
 @router.post(
@@ -738,21 +845,22 @@ async def get_wiki_stats(
     "/guilds/{guild_id}/wiki/pages/{path:path}/synthesize",
     response_model=SynthesizeResponse,
     summary="Synthesize wiki page",
-    description="Generate an AI synthesis of a wiki page's content.",
+    description="Generate an AI synthesis of a wiki page's content (ADR-063/065).",
     responses={
         403: {"model": ErrorResponse, "description": "No permission"},
         404: {"model": ErrorResponse, "description": "Page not found"},
     },
 )
 async def synthesize_page(
-    request: Request,
     guild_id: str = Path(..., description="Guild ID"),
     path: str = Path(..., description="Wiki page path"),
+    options: Optional[SynthesizeRequest] = None,
     user: dict = Depends(get_current_user),
 ):
-    """Generate synthesis for a wiki page."""
+    """Generate synthesis for a wiki page with configurable options (ADR-065)."""
     import os
     from ...wiki.synthesis import synthesize_wiki_page
+    from ...wiki.models import SynthesisOptions
     from ...summarization.claude_client import ClaudeClient
 
     _check_guild_access(guild_id, user)
@@ -785,20 +893,34 @@ async def synthesize_page(
         else:
             logger.warning("No OpenRouter API key configured - using heuristic synthesis")
 
+    # Build synthesis options from request
+    synthesis_options = None
+    if options:
+        synthesis_options = SynthesisOptions(
+            model=options.model,
+            temperature=options.temperature,
+            max_tokens=options.max_tokens,
+            focus_areas=options.focus_areas,
+            custom_instructions=options.custom_instructions,
+        )
+
     # Generate synthesis with LLM
     result = await synthesize_wiki_page(
         page_title=page.title,
         page_content=page.content,
         source_refs=page.source_refs,
         claude_client=claude_client,
+        options=synthesis_options,
     )
 
-    # Save synthesis to database
+    # Save synthesis to database with model info
+    model_used = getattr(result, 'model_used', None) or (options.model if options else None)
     await repo.save_synthesis(
         guild_id=guild_id,
         path=path,
         synthesis=result.synthesis,
         source_count=result.source_count,
+        model=model_used,
     )
 
     # Audit log
@@ -816,6 +938,7 @@ async def synthesize_page(
             "conflicts_found": result.conflicts_found,
             "synthesis_length": len(result.synthesis),
             "used_llm": claude_client is not None,
+            "model": model_used,
         },
     )
 
@@ -826,4 +949,99 @@ async def synthesize_page(
         synthesis_length=len(result.synthesis),
         source_count=result.source_count,
         conflicts_found=result.conflicts_found,
+        model_used=model_used,
+    )
+
+
+# -------------------------------------------------------------------------
+# Rating (ADR-065)
+# -------------------------------------------------------------------------
+
+@router.post(
+    "/guilds/{guild_id}/wiki/pages/{path:path}/rate",
+    response_model=RateSynthesisResponse,
+    summary="Rate wiki synthesis",
+    description="Rate a wiki page's synthesis quality (ADR-065).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Page not found"},
+    },
+)
+async def rate_synthesis(
+    guild_id: str = Path(..., description="Guild ID"),
+    path: str = Path(..., description="Wiki page path"),
+    rating_request: RateSynthesisRequest = ...,
+    user: dict = Depends(get_current_user),
+):
+    """Rate a wiki page synthesis (ADR-065)."""
+    _check_guild_access(guild_id, user)
+
+    repo = await get_wiki_repository()
+    if not repo:
+        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": "Wiki service unavailable"})
+
+    # Check page exists
+    page = await repo.get_page(guild_id, path)
+    if not page:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Page not found"})
+
+    # Submit rating
+    result = await repo.rate_synthesis(
+        guild_id=guild_id,
+        page_path=path,
+        user_id=user.get("id"),
+        rating=rating_request.rating,
+        feedback=rating_request.feedback,
+    )
+
+    # Audit log
+    await audit_log(
+        "action.wiki.rate",
+        user_id=user.get("id"),
+        user_name=user.get("username"),
+        guild_id=guild_id,
+        resource_type="wiki_page",
+        resource_id=path,
+        resource_name=page.title,
+        action="rate",
+        details={
+            "rating": rating_request.rating,
+            "has_feedback": rating_request.feedback is not None,
+        },
+    )
+
+    return RateSynthesisResponse(
+        success=True,
+        average_rating=result.get("average_rating"),
+        rating_count=result.get("rating_count", 0),
+    )
+
+
+@router.get(
+    "/guilds/{guild_id}/wiki/facets",
+    response_model=WikiFilterFacetsResponse,
+    summary="Get wiki facets",
+    description="Get filter facet counts for the wiki (ADR-064).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def get_wiki_facets(
+    guild_id: str = Path(..., description="Guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Get wiki filter facets."""
+    _check_guild_access(guild_id, user)
+
+    repo = await get_wiki_repository()
+    if not repo:
+        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": "Wiki service unavailable"})
+
+    facets = await repo.get_filter_facets(guild_id)
+
+    return WikiFilterFacetsResponse(
+        source_count=facets.source_count,
+        rating=facets.rating,
+        synthesis_model=facets.synthesis_model,
+        has_synthesis=facets.has_synthesis,
     )

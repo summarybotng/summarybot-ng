@@ -1,7 +1,8 @@
 """
-Wiki Page Synthesis (ADR-063).
+Wiki Page Synthesis (ADR-063, ADR-065).
 
 Generates LLM-synthesized summaries from raw wiki page updates.
+Supports configurable options for model, temperature, focus areas.
 """
 
 import logging
@@ -12,7 +13,17 @@ from typing import List, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from ..summarization.claude_client import ClaudeClient
 
+from .models import SynthesisOptions
+
 logger = logging.getLogger(__name__)
+
+
+# Model mapping for synthesis options (ADR-065)
+MODEL_MAP = {
+    "haiku": "anthropic/claude-3-haiku",
+    "sonnet": "anthropic/claude-3.5-sonnet",
+    "opus": "anthropic/claude-3-opus",
+}
 
 
 @dataclass
@@ -23,6 +34,7 @@ class SynthesisResult:
     conflicts_found: int
     topics_extracted: List[str]
     confidence: float  # 0-1 based on source agreement
+    model_used: Optional[str] = None  # ADR-065: Track model used
 
 
 SYNTHESIS_SYSTEM_PROMPT = """You are a technical documentation synthesizer for a software team's wiki.
@@ -53,20 +65,23 @@ async def synthesize_wiki_page(
     page_content: str,
     source_refs: List[str],
     claude_client: Optional["ClaudeClient"] = None,
+    options: Optional[SynthesisOptions] = None,
 ) -> SynthesisResult:
     """
-    Generate a synthesized summary of wiki page content.
+    Generate a synthesized summary of wiki page content (ADR-063, ADR-065).
 
     Args:
         page_title: Title of the wiki page
         page_content: Raw content with all updates
         source_refs: List of source IDs referenced
         claude_client: Optional ClaudeClient for AI synthesis
+        options: Optional SynthesisOptions for customizing generation
 
     Returns:
         SynthesisResult with synthesized content
     """
     source_count = len(source_refs)
+    options = options or SynthesisOptions()
 
     # Check for potential conflicts in content
     conflicts_found = _count_potential_conflicts(page_content)
@@ -74,13 +89,23 @@ async def synthesize_wiki_page(
     # Extract topics mentioned
     topics_extracted = _extract_topics_from_content(page_content)
 
+    model_used = None
+
     # If no Claude client, use heuristic synthesis
     if claude_client is None:
         synthesis = _heuristic_synthesis(page_title, page_content, source_count)
         confidence = 0.7 if conflicts_found == 0 else 0.5
+        model_used = "heuristic"
     else:
         try:
             from ..summarization.claude_client import ClaudeOptions
+
+            # Build system prompt with optional customizations (ADR-065)
+            system_prompt = SYNTHESIS_SYSTEM_PROMPT
+            if options.focus_areas:
+                system_prompt += f"\n\nFocus especially on: {', '.join(options.focus_areas)}"
+            if options.custom_instructions:
+                system_prompt += f"\n\nAdditional instructions: {options.custom_instructions}"
 
             # Use Claude for synthesis
             user_prompt = SYNTHESIS_USER_PROMPT.format(
@@ -88,19 +113,24 @@ async def synthesize_wiki_page(
                 content=page_content[:12000],  # Limit to avoid token overflow
             )
 
-            options = ClaudeOptions(
-                max_tokens=2000,
-                temperature=0.3,
+            # Select model based on options (ADR-065)
+            model = _select_model(options.model, len(page_content))
+
+            claude_options = ClaudeOptions(
+                max_tokens=options.max_tokens,
+                temperature=options.temperature,
+                model=model,
             )
 
             response = await claude_client.create_summary_with_fallback(
                 prompt=user_prompt,
-                system_prompt=SYNTHESIS_SYSTEM_PROMPT,
-                options=options,
+                system_prompt=system_prompt,
+                options=claude_options,
             )
 
             synthesis = response.content
             confidence = 0.9 if conflicts_found == 0 else 0.7
+            model_used = response.model
 
             logger.info(f"Wiki synthesis generated: {response.input_tokens} in, {response.output_tokens} out, model={response.model}")
 
@@ -108,6 +138,7 @@ async def synthesize_wiki_page(
             logger.warning(f"LLM synthesis failed, using heuristic: {e}")
             synthesis = _heuristic_synthesis(page_title, page_content, source_count)
             confidence = 0.6
+            model_used = "heuristic"
 
     return SynthesisResult(
         synthesis=synthesis,
@@ -115,7 +146,22 @@ async def synthesize_wiki_page(
         conflicts_found=conflicts_found,
         topics_extracted=topics_extracted,
         confidence=confidence,
+        model_used=model_used,
     )
+
+
+def _select_model(preference: str, content_length: int) -> Optional[str]:
+    """Select model based on preference and content complexity (ADR-065)."""
+    if preference != "auto":
+        return MODEL_MAP.get(preference)
+
+    # Auto-select based on content length
+    if content_length < 2000:
+        return MODEL_MAP.get("haiku")
+    elif content_length < 8000:
+        return MODEL_MAP.get("sonnet")
+    else:
+        return MODEL_MAP.get("opus")
 
 
 def _heuristic_synthesis(title: str, content: str, source_count: int) -> str:

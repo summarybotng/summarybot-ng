@@ -1075,6 +1075,7 @@ class JobType(str, Enum):
     SCHEDULED = "scheduled"
     RETROSPECTIVE = "retrospective"
     REGENERATE = "regenerate"
+    WIKI_BACKFILL = "wiki_backfill"  # ADR-068: Wiki backfill job
 
 
 class JobStatus(str, Enum):

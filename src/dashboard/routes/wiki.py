@@ -784,6 +784,238 @@ async def populate_wiki(
     )
 
 
+# -------------------------------------------------------------------------
+# Backfill Jobs (ADR-068)
+# -------------------------------------------------------------------------
+
+class BackfillRequest(BaseModel):
+    """Request to start a wiki backfill job."""
+    mode: str = Field(default="unprocessed", description="Backfill mode: unprocessed, all, date_range")
+    date_from: Optional[str] = Field(default=None, description="Start date for date_range mode (ISO format)")
+    date_to: Optional[str] = Field(default=None, description="End date for date_range mode (ISO format)")
+    batch_size: int = Field(default=10, ge=1, le=50, description="Summaries per batch")
+    delay_between_batches: float = Field(default=1.0, ge=0.5, le=10.0, description="Delay between batches in seconds")
+
+
+class BackfillResponse(BaseModel):
+    """Response after starting a wiki backfill job."""
+    job_id: str
+    status: str
+    total_summaries: int
+    message: str
+
+
+class BackfillStatusResponse(BaseModel):
+    """Status of a wiki backfill job."""
+    job_id: str
+    status: str
+    progress_current: int
+    progress_total: int
+    progress_percent: float
+    message: Optional[str]
+    stats: Optional[dict]
+    errors: Optional[List[dict]]
+    created_at: str
+    started_at: Optional[str]
+    completed_at: Optional[str]
+
+
+@router.post(
+    "/guilds/{guild_id}/wiki/backfill",
+    response_model=BackfillResponse,
+    summary="Start wiki backfill",
+    description="Start a background job to backfill wiki from existing summaries (ADR-068).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        409: {"model": ErrorResponse, "description": "Backfill already in progress"},
+    },
+)
+async def start_wiki_backfill(
+    guild_id: str = Path(..., description="Guild ID"),
+    request: BackfillRequest = BackfillRequest(),
+    user: dict = Depends(get_current_user),
+):
+    """Start a wiki backfill job."""
+    import asyncio
+    from datetime import datetime
+    from ...data.repositories import get_stored_summary_repository, get_wiki_repository, get_summary_job_repository
+    from ...models.summary_job import SummaryJob, JobType, JobStatus
+    from ...wiki.backfill import WikiBackfillExecutor, generate_backfill_job_id
+
+    _check_guild_access(guild_id, user)
+
+    # Get repositories
+    wiki_repo = await get_wiki_repository()
+    if not wiki_repo:
+        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": "Wiki service unavailable"})
+
+    stored_repo = await get_stored_summary_repository()
+    job_repo = await get_summary_job_repository()
+
+    # Check for existing active backfill
+    existing = await job_repo.find_active_by_type(guild_id, JobType.WIKI_BACKFILL)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "CONFLICT", "message": f"Wiki backfill already in progress: {existing.id}"},
+        )
+
+    # Count summaries to process
+    if request.mode == "unprocessed":
+        summaries = await stored_repo.find_not_wiki_ingested(guild_id, limit=1000)
+        total = len(summaries)
+    elif request.mode == "date_range" and request.date_from and request.date_to:
+        date_from = datetime.fromisoformat(request.date_from)
+        date_to = datetime.fromisoformat(request.date_to)
+        summaries = await stored_repo.find_by_guild(
+            guild_id=guild_id,
+            created_after=date_from,
+            created_before=date_to,
+            limit=1000,
+        )
+        total = len(summaries)
+    else:
+        summaries = await stored_repo.find_by_guild(guild_id=guild_id, limit=1000)
+        total = len(summaries)
+
+    # Create job
+    job = SummaryJob(
+        id=generate_backfill_job_id(),
+        guild_id=guild_id,
+        job_type=JobType.WIKI_BACKFILL,
+        status=JobStatus.PENDING,
+        progress_total=total,
+        created_by=user.get("sub"),
+        metadata={
+            "mode": request.mode,
+            "batch_size": request.batch_size,
+            "delay": request.delay_between_batches,
+            "date_from": request.date_from,
+            "date_to": request.date_to,
+            "errors": [],
+            "stats": {"ingested": 0, "skipped": 0, "failed": 0},
+        },
+    )
+    await job_repo.save(job)
+
+    # Start executor in background
+    executor = WikiBackfillExecutor(wiki_repo, stored_repo, job_repo)
+    asyncio.create_task(executor.execute(job))
+
+    # Audit log
+    await audit_log(
+        "action.wiki.backfill_start",
+        user_id=user.get("sub"),
+        user_name=user.get("username"),
+        guild_id=guild_id,
+        resource_type="wiki",
+        action="backfill_start",
+        details={
+            "job_id": job.id,
+            "mode": request.mode,
+            "total_summaries": total,
+            "batch_size": request.batch_size,
+        },
+    )
+
+    logger.info(f"Started wiki backfill job {job.id} for guild {guild_id}: {total} summaries")
+
+    return BackfillResponse(
+        job_id=job.id,
+        status="pending",
+        total_summaries=total,
+        message=f"Wiki backfill job created: {total} summaries to process",
+    )
+
+
+@router.get(
+    "/guilds/{guild_id}/wiki/backfill/status",
+    response_model=Optional[BackfillStatusResponse],
+    summary="Get wiki backfill status",
+    description="Get status of active wiki backfill job (ADR-068).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def get_wiki_backfill_status(
+    guild_id: str = Path(..., description="Guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Get status of active wiki backfill job."""
+    from ...data.repositories import get_summary_job_repository
+    from ...models.summary_job import JobType
+
+    _check_guild_access(guild_id, user)
+
+    job_repo = await get_summary_job_repository()
+    job = await job_repo.find_active_by_type(guild_id, JobType.WIKI_BACKFILL)
+
+    if not job:
+        return None
+
+    return BackfillStatusResponse(
+        job_id=job.id,
+        status=job.status.value,
+        progress_current=job.progress_current,
+        progress_total=job.progress_total,
+        progress_percent=job.percent_complete,
+        message=job.progress_message,
+        stats=job.metadata.get("stats") if job.metadata else None,
+        errors=job.metadata.get("errors") if job.metadata else None,
+        created_at=job.created_at.isoformat(),
+        started_at=job.started_at.isoformat() if job.started_at else None,
+        completed_at=job.completed_at.isoformat() if job.completed_at else None,
+    )
+
+
+@router.post(
+    "/guilds/{guild_id}/wiki/backfill/cancel",
+    response_model=dict,
+    summary="Cancel wiki backfill",
+    description="Cancel an active wiki backfill job (ADR-068).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "No active backfill"},
+    },
+)
+async def cancel_wiki_backfill(
+    guild_id: str = Path(..., description="Guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Cancel active wiki backfill job."""
+    from ...data.repositories import get_summary_job_repository
+    from ...models.summary_job import JobType
+
+    _check_guild_access(guild_id, user)
+
+    job_repo = await get_summary_job_repository()
+    job = await job_repo.find_active_by_type(guild_id, JobType.WIKI_BACKFILL)
+
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "No active wiki backfill job"},
+        )
+
+    job.cancel()
+    await job_repo.update(job)
+
+    # Audit log
+    await audit_log(
+        "action.wiki.backfill_cancel",
+        user_id=user.get("sub"),
+        user_name=user.get("username"),
+        guild_id=guild_id,
+        resource_type="wiki",
+        action="backfill_cancel",
+        details={"job_id": job.id},
+    )
+
+    logger.info(f"Cancelled wiki backfill job {job.id} for guild {guild_id}")
+
+    return {"success": True, "job_id": job.id, "message": "Backfill cancelled"}
+
+
 class WikiSourceResponse(BaseModel):
     """Source document with pages that reference it."""
     source_id: str

@@ -18,6 +18,23 @@ class JobType(Enum):
     SCHEDULED = "scheduled"     # Scheduled task
     RETROSPECTIVE = "retrospective"  # Archive backfill
     REGENERATE = "regenerate"   # Regenerate existing summary
+    WIKI_BACKFILL = "wiki_backfill"  # ADR-068: Wiki knowledge base backfill
+
+
+class JobCategory(Enum):
+    """Category for job filtering in UI (ADR-068)."""
+    CHAT_SUMMARY = "chat_summary"       # Manual, Scheduled, Retrospective, Regenerate
+    WIKI_MANAGEMENT = "wiki_management"  # Wiki Backfill
+
+
+# Map job types to categories
+JOB_TYPE_CATEGORY = {
+    JobType.MANUAL: JobCategory.CHAT_SUMMARY,
+    JobType.SCHEDULED: JobCategory.CHAT_SUMMARY,
+    JobType.RETROSPECTIVE: JobCategory.CHAT_SUMMARY,
+    JobType.REGENERATE: JobCategory.CHAT_SUMMARY,
+    JobType.WIKI_BACKFILL: JobCategory.WIKI_MANAGEMENT,
+}
 
 
 class JobStatus(Enum):

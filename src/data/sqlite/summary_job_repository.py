@@ -237,3 +237,81 @@ class SQLiteSummaryJobRepository(SummaryJobRepository):
         """
         cursor = await self.connection.execute(query, (reason,))
         return cursor.rowcount
+
+    # ADR-068: Wiki backfill support
+
+    async def find_active_by_type(
+        self,
+        guild_id: str,
+        job_type: JobType,
+    ) -> Optional[SummaryJob]:
+        """Find an active job of a specific type for a guild."""
+        query = """
+        SELECT * FROM summary_jobs
+        WHERE guild_id = ? AND job_type = ? AND status IN ('pending', 'running', 'paused')
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+        row = await self.connection.fetch_one(query, (guild_id, job_type.value))
+        if not row:
+            return None
+        return SummaryJob.from_dict(dict(row))
+
+    async def count_active_by_types(
+        self,
+        job_types: List[JobType],
+        guild_id: Optional[str] = None,
+    ) -> int:
+        """Count active jobs of specific types (for priority yielding)."""
+        type_values = [t.value for t in job_types]
+        placeholders = ",".join("?" for _ in type_values)
+
+        if guild_id:
+            query = f"""
+            SELECT COUNT(*) as count FROM summary_jobs
+            WHERE guild_id = ? AND job_type IN ({placeholders})
+            AND status IN ('pending', 'running')
+            """
+            params = [guild_id] + type_values
+        else:
+            query = f"""
+            SELECT COUNT(*) as count FROM summary_jobs
+            WHERE job_type IN ({placeholders})
+            AND status IN ('pending', 'running')
+            """
+            params = type_values
+
+        row = await self.connection.fetch_one(query, tuple(params))
+        return row['count'] if row else 0
+
+    async def find_by_category(
+        self,
+        guild_id: str,
+        category: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[SummaryJob]:
+        """Find jobs by category (ADR-068)."""
+        from ...models.summary_job import JobCategory, JOB_TYPE_CATEGORY
+
+        # Get job types for this category
+        try:
+            cat_enum = JobCategory(category)
+        except ValueError:
+            return []
+
+        job_types = [jt.value for jt, cat in JOB_TYPE_CATEGORY.items() if cat == cat_enum]
+        if not job_types:
+            return []
+
+        placeholders = ",".join("?" for _ in job_types)
+        query = f"""
+        SELECT * FROM summary_jobs
+        WHERE guild_id = ? AND job_type IN ({placeholders})
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+        """
+        params = [guild_id] + job_types + [limit, offset]
+
+        rows = await self.connection.fetch_all(query, tuple(params))
+        return [SummaryJob.from_dict(dict(row)) for row in rows]

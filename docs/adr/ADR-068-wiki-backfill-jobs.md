@@ -1,7 +1,7 @@
 # ADR-068: Wiki Backfill Jobs
 
 ## Status
-Proposed
+Implemented (2026-04-26)
 
 ## Context
 

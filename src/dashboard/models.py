@@ -1167,3 +1167,17 @@ class JobRetryResponse(BaseModel):
     job_id: str
     new_job_id: Optional[str] = None
     message: str
+
+
+class JobPauseResponse(BaseModel):
+    """Response for job pause operation (ADR-068)."""
+    success: bool
+    job_id: str
+    message: str
+
+
+class JobResumeResponse(BaseModel):
+    """Response for job resume operation (ADR-068)."""
+    success: bool
+    job_id: str
+    message: str

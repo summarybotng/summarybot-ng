@@ -120,6 +120,45 @@ POST /guilds/{guild_id}/wiki/backfill
 | `all` | Re-ingest all summaries (overwrites existing) | Full rebuild |
 | `date_range` | Summaries within date range | Targeted backfill |
 
+### Resume Paused Job
+
+```
+POST /guilds/{guild_id}/jobs/{job_id}/resume
+```
+
+**Response:**
+```json
+{
+  "job_id": "wiki-backfill-abc123",
+  "status": "running",
+  "message": "Job resumed from summary 47/150"
+}
+```
+
+Resumes a paused job from where it left off. The job continues processing from `progress_current` position.
+
+**Error Cases:**
+- `404` - Job not found
+- `409` - Job is not paused (must be in PAUSED status)
+- `409` - Another backfill is already running
+
+### Pause Running Job
+
+```
+POST /guilds/{guild_id}/jobs/{job_id}/pause
+```
+
+**Response:**
+```json
+{
+  "job_id": "wiki-backfill-abc123",
+  "status": "paused",
+  "message": "Job paused at summary 47/150"
+}
+```
+
+Pauses a running job. The job can be resumed later with `/resume`.
+
 ---
 
 ## Job Execution Flow
@@ -143,6 +182,7 @@ POST /guilds/{guild_id}/wiki/backfill
 │       │                                                      │
 │       ├─→ [User clicks Cancel] → CANCELLED                   │
 │       ├─→ [User clicks Pause] → PAUSED                       │
+│       │     └─→ [User clicks Resume] → RUNNING (continues)   │
 │       ├─→ [Error occurs] → Continue or FAILED                │
 │       │                                                      │
 │  3. COMPLETED: All summaries processed                       │
@@ -192,6 +232,16 @@ class WikiBackfillProgress:
 │ Stats: 98 ingested · 2 skipped · 0 failed                  │
 │ Est. remaining: ~2 minutes                                  │
 │                                          [Pause] [Cancel]   │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│ [Wiki Backfill] Knowledge Base Update                 📚    │
+│ Paused: 2 minutes ago                                       │
+│ Status: ⏸ Paused at 67% (100/150 summaries)                │
+│                                                             │
+│ Stats: 98 ingested · 2 skipped · 0 failed                  │
+│ Paused by: User request                                     │
+│                                         [Resume] [Cancel]   │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐

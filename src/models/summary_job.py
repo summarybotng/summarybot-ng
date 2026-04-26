@@ -130,6 +130,16 @@ class SummaryJob:
         """Check if job can be retried."""
         return self.status == JobStatus.FAILED
 
+    @property
+    def can_pause(self) -> bool:
+        """Check if job can be paused (ADR-068)."""
+        return self.status == JobStatus.RUNNING
+
+    @property
+    def can_resume(self) -> bool:
+        """Check if job can be resumed (ADR-068)."""
+        return self.status == JobStatus.PAUSED
+
     def start(self) -> None:
         """Mark job as started."""
         self.status = JobStatus.RUNNING

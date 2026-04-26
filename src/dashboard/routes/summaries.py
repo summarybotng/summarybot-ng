@@ -2867,6 +2867,8 @@ from ..models import (
     JobDetailResponse,
     JobsListResponse,
     JobCancelResponse,
+    JobPauseResponse,
+    JobResumeResponse,
     JobRetryResponse,
 )
 
@@ -3071,6 +3073,126 @@ async def cancel_job(
         success=True,
         job_id=job_id,
         message="Job cancelled successfully",
+    )
+
+
+@router.post(
+    "/guilds/{guild_id}/jobs/{job_id}/pause",
+    response_model=JobPauseResponse,
+    summary="Pause job (ADR-068)",
+    description="Pause a running job. Can be resumed later.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Job not found"},
+        400: {"model": ErrorResponse, "description": "Job cannot be paused"},
+    },
+)
+async def pause_job(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    job_id: str = Path(..., description="Job ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Pause a running job."""
+    _check_guild_access(guild_id, user)
+
+    job_repo = await get_summary_job_repository()
+    job = await job_repo.get_by_id(job_id)
+
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Job not found"},
+        )
+
+    if job.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Job not found"},
+        )
+
+    if not job.can_pause:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "CANNOT_PAUSE", "message": f"Job with status '{job.status.value}' cannot be paused"},
+        )
+
+    job.pause(reason="user_requested")
+    await job_repo.update(job)
+
+    logger.info(f"Paused job {job_id} by user {user.get('id')}")
+
+    return JobPauseResponse(
+        success=True,
+        job_id=job_id,
+        message=f"Job paused at {job.progress_current}/{job.progress_total}",
+    )
+
+
+@router.post(
+    "/guilds/{guild_id}/jobs/{job_id}/resume",
+    response_model=JobResumeResponse,
+    summary="Resume job (ADR-068)",
+    description="Resume a paused job from where it left off.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Job not found"},
+        400: {"model": ErrorResponse, "description": "Job cannot be resumed"},
+        409: {"model": ErrorResponse, "description": "Another job is already running"},
+    },
+)
+async def resume_job(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    job_id: str = Path(..., description="Job ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Resume a paused job."""
+    _check_guild_access(guild_id, user)
+
+    job_repo = await get_summary_job_repository()
+    job = await job_repo.get_by_id(job_id)
+
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Job not found"},
+        )
+
+    if job.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Job not found"},
+        )
+
+    if not job.can_resume:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "CANNOT_RESUME", "message": f"Job with status '{job.status.value}' cannot be resumed"},
+        )
+
+    # For wiki backfill jobs, check no other backfill is running
+    if job.job_type.value == "wiki_backfill":
+        from ...models.summary_job import JobType, JobStatus
+        active_backfills = await job_repo.find_by_guild(
+            guild_id,
+            job_type=JobType.WIKI_BACKFILL.value,
+            status=JobStatus.RUNNING.value,
+            limit=1,
+        )
+        if active_backfills:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "CONFLICT", "message": "Another wiki backfill is already running"},
+            )
+
+    job.resume()
+    await job_repo.update(job)
+
+    logger.info(f"Resumed job {job_id} by user {user.get('id')}")
+
+    return JobResumeResponse(
+        success=True,
+        job_id=job_id,
+        message=f"Job resumed from {job.progress_current}/{job.progress_total}",
     )
 
 

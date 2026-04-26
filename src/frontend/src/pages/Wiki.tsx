@@ -203,10 +203,21 @@ async function synthesizeWikiPage(guildId: string, path: string): Promise<{ succ
 
 function WikiPageView({ page }: { page: WikiPage }) {
   const { id: guildId } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"synthesis" | "updates">(page.synthesis ? "synthesis" : "updates");
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
+
+  // URL-based tab selection (ADR-063): ?tab=synthesis or ?tab=updates
+  const tabFromUrl = searchParams.get("tab") as "synthesis" | "updates" | null;
+  const defaultTab = page.synthesis ? "synthesis" : "updates";
+  const activeTab = tabFromUrl && ["synthesis", "updates"].includes(tabFromUrl) ? tabFromUrl : defaultTab;
+
+  const setActiveTab = (tab: "synthesis" | "updates") => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set("tab", tab);
+    setSearchParams(newParams, { replace: true });
+  };
 
   // Parse path for breadcrumb
   const pathParts = page.path.split("/");
@@ -229,15 +240,19 @@ function WikiPageView({ page }: { page: WikiPage }) {
     },
   });
 
-  // Copy page URL to clipboard
+  // Copy page URL to clipboard (includes current tab)
   const handleShare = async () => {
-    const url = window.location.href;
+    // Build URL with current tab parameter
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", activeTab);
+    const shareUrl = url.toString();
+
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       toast({
         title: "Link copied!",
-        description: "Wiki page URL copied to clipboard",
+        description: `Wiki page URL copied (${activeTab} view)`,
       });
       setTimeout(() => setCopied(false), 2000);
     } catch {

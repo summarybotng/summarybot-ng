@@ -29,6 +29,9 @@ import {
   SlidersHorizontal,
   X,
   Cpu,
+  Play,
+  Square,
+  Settings2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -265,6 +268,54 @@ interface PopulateResult {
 
 async function populateWiki(guildId: string, days: number = 30): Promise<PopulateResult> {
   return api.post<PopulateResult>(`/guilds/${guildId}/wiki/populate`, { days });
+}
+
+// ADR-068: Wiki Backfill Jobs
+interface BackfillRequest {
+  mode: "unprocessed" | "all" | "date_range";
+  batch_size?: number;
+  delay_between_batches?: number;
+  date_from?: string;
+  date_to?: string;
+}
+
+interface BackfillJobResponse {
+  job_id: string;
+  status: string;
+  total_summaries: number;
+  message: string;
+}
+
+interface BackfillStatus {
+  job_id: string;
+  status: string;
+  progress_current: number;
+  progress_total: number;
+  progress_message: string;
+  stats: {
+    ingested: number;
+    skipped: number;
+    failed: number;
+  };
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+async function startBackfill(guildId: string, request: BackfillRequest): Promise<BackfillJobResponse> {
+  return api.post<BackfillJobResponse>(`/guilds/${guildId}/wiki/backfill`, request);
+}
+
+async function getBackfillStatus(guildId: string): Promise<BackfillStatus | null> {
+  try {
+    return await api.get<BackfillStatus>(`/guilds/${guildId}/wiki/backfill/status`);
+  } catch {
+    return null;
+  }
+}
+
+async function cancelBackfill(guildId: string): Promise<{ success: boolean }> {
+  return api.post<{ success: boolean }>(`/guilds/${guildId}/wiki/backfill/cancel`, {});
 }
 
 // Clear wiki
@@ -1280,6 +1331,7 @@ function PopulateWiki({ guildId }: { guildId: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [backfillMode, setBackfillMode] = useState<"unprocessed" | "all">("unprocessed");
 
   // Fetch stats
   const { data: stats, isLoading: statsLoading } = useQuery({
@@ -1287,11 +1339,62 @@ function PopulateWiki({ guildId }: { guildId: string }) {
     queryFn: () => fetchWikiStats(guildId),
   });
 
-  // Populate mutation
+  // ADR-068: Fetch backfill status (poll every 3s when active)
+  const { data: backfillStatus, refetch: refetchBackfill } = useQuery({
+    queryKey: ["wiki-backfill-status", guildId],
+    queryFn: () => getBackfillStatus(guildId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "running" || status === "pending" ? 3000 : false;
+    },
+  });
+
+  const isBackfillActive = backfillStatus?.status === "running" || backfillStatus?.status === "pending";
+
+  // ADR-068: Start backfill mutation
+  const startBackfillMutation = useMutation({
+    mutationFn: (mode: "unprocessed" | "all") => startBackfill(guildId, {
+      mode,
+      batch_size: 10,
+      delay_between_batches: 1.0,
+    }),
+    onSuccess: (data) => {
+      refetchBackfill();
+      toast({
+        title: "Backfill started",
+        description: data.message,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to start backfill",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // ADR-068: Cancel backfill mutation
+  const cancelBackfillMutation = useMutation({
+    mutationFn: () => cancelBackfill(guildId),
+    onSuccess: () => {
+      refetchBackfill();
+      queryClient.invalidateQueries({ queryKey: ["wiki-stats", guildId] });
+      toast({ title: "Backfill cancelled" });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to cancel backfill",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Populate mutation (legacy sync)
   const populateMutation = useMutation({
     mutationFn: (days: number) => populateWiki(guildId, days),
     onSuccess: () => {
-      // Invalidate all wiki queries to refresh
       queryClient.invalidateQueries({ queryKey: ["wiki-tree", guildId] });
       queryClient.invalidateQueries({ queryKey: ["wiki-stats", guildId] });
       queryClient.invalidateQueries({ queryKey: ["wiki-recent", guildId] });
@@ -1319,6 +1422,11 @@ function PopulateWiki({ guildId }: { guildId: string }) {
       });
     },
   });
+
+  // Calculate backfill progress percentage
+  const backfillPercent = backfillStatus?.progress_total
+    ? Math.round((backfillStatus.progress_current / backfillStatus.progress_total) * 100)
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -1363,18 +1471,130 @@ function PopulateWiki({ guildId }: { guildId: string }) {
         </CardContent>
       </Card>
 
-      {/* Populate Card */}
-      <Card>
+      {/* ADR-068: Backfill Card */}
+      <Card className="border-primary/50">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <RefreshCw className="h-5 w-5" />
-            Populate Wiki
+            Backfill Wiki from Summaries
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Populate the wiki from your existing summaries. This will analyze your
-            summaries and create wiki pages for topics, decisions, and expertise.
+            Process existing summaries that haven't been ingested into the wiki yet.
+            This runs as a background job with progress tracking.
+          </p>
+
+          {/* Active backfill status */}
+          {isBackfillActive && backfillStatus && (
+            <div className="space-y-3 p-4 bg-muted rounded-lg">
+              <div className="flex items-center justify-between">
+                <span className="font-medium flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Backfill in progress
+                </span>
+                <Badge variant="secondary">{backfillPercent}%</Badge>
+              </div>
+              <div className="w-full bg-background rounded-full h-2">
+                <div
+                  className="bg-primary h-2 rounded-full transition-all"
+                  style={{ width: `${backfillPercent}%` }}
+                />
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {backfillStatus.progress_message || `${backfillStatus.progress_current} / ${backfillStatus.progress_total} summaries`}
+              </div>
+              {backfillStatus.stats && (
+                <div className="flex gap-4 text-xs">
+                  <span className="text-green-600">✓ {backfillStatus.stats.ingested} ingested</span>
+                  <span className="text-yellow-600">○ {backfillStatus.stats.skipped} skipped</span>
+                  <span className="text-red-600">✕ {backfillStatus.stats.failed} failed</span>
+                </div>
+              )}
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => cancelBackfillMutation.mutate()}
+                disabled={cancelBackfillMutation.isPending}
+              >
+                <Square className="h-3 w-3 mr-1" />
+                Cancel
+              </Button>
+            </div>
+          )}
+
+          {/* Completed backfill status */}
+          {backfillStatus?.status === "completed" && (
+            <Alert>
+              <Sparkles className="h-4 w-4" />
+              <AlertTitle>Backfill Complete</AlertTitle>
+              <AlertDescription>
+                Processed {backfillStatus.progress_total} summaries.
+                {backfillStatus.stats && (
+                  <span>
+                    {" "}{backfillStatus.stats.ingested} ingested, {backfillStatus.stats.failed} failed.
+                  </span>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Start backfill controls */}
+          {!isBackfillActive && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="backfillMode"
+                    checked={backfillMode === "unprocessed"}
+                    onChange={() => setBackfillMode("unprocessed")}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm">Only un-processed summaries</span>
+                  <Badge variant="secondary">Recommended</Badge>
+                </label>
+              </div>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="backfillMode"
+                    checked={backfillMode === "all"}
+                    onChange={() => setBackfillMode("all")}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm">All summaries (full rebuild)</span>
+                </label>
+              </div>
+              <Button
+                onClick={() => startBackfillMutation.mutate(backfillMode)}
+                disabled={startBackfillMutation.isPending}
+              >
+                {startBackfillMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4 mr-2" />
+                )}
+                Start Backfill
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Quick Populate Card (legacy sync) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Settings2 className="h-5 w-5" />
+            Quick Populate (Sync)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Quick sync populate from recent summaries. Use for small batches;
+            for large datasets use the backfill job above.
           </p>
 
           {populateMutation.isSuccess && (
@@ -1406,20 +1626,21 @@ function PopulateWiki({ guildId }: { guildId: string }) {
 
           <div className="flex gap-2">
             <Button
+              variant="outline"
               onClick={() => populateMutation.mutate(30)}
-              disabled={populateMutation.isPending}
+              disabled={populateMutation.isPending || isBackfillActive}
             >
               {populateMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
                 <RefreshCw className="h-4 w-4 mr-2" />
               )}
-              Populate from Last 30 Days
+              Last 30 Days
             </Button>
             <Button
               variant="outline"
               onClick={() => populateMutation.mutate(90)}
-              disabled={populateMutation.isPending}
+              disabled={populateMutation.isPending || isBackfillActive}
             >
               Last 90 Days
             </Button>
@@ -1445,7 +1666,7 @@ function PopulateWiki({ guildId }: { guildId: string }) {
             <Button
               variant="destructive"
               onClick={() => setShowClearConfirm(true)}
-              disabled={clearMutation.isPending || !stats?.total_pages}
+              disabled={clearMutation.isPending || !stats?.total_pages || isBackfillActive}
             >
               Clear All Wiki Data
             </Button>

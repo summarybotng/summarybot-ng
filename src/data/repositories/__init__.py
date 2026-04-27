@@ -22,6 +22,7 @@ from ..sqlite import (
     SQLiteAuditRepository,
     SQLiteSlackRepository,
     SQLiteWikiRepository,
+    SQLiteIssueRepository,
 )
 from .google_admin_groups import GoogleAdminGroupsRepository
 
@@ -212,6 +213,17 @@ class RepositoryFactory:
         else:
             raise ValueError(f"Unsupported backend: {self.backend}")
 
+    async def get_issue_repository(self) -> SQLiteIssueRepository:
+        """Create and return an issue repository instance (ADR-070)."""
+        connection = await self.get_connection()
+
+        if self.backend == "sqlite":
+            return SQLiteIssueRepository(connection)
+        elif self.backend == "postgresql":
+            raise NotImplementedError("PostgreSQL support is not yet implemented")
+        else:
+            raise ValueError(f"Unsupported backend: {self.backend}")
+
     async def close(self) -> None:
         """Close database connections."""
         if self._connection:
@@ -338,3 +350,9 @@ async def get_wiki_repository() -> SQLiteWikiRepository:
     """Get the default wiki repository instance (ADR-056)."""
     factory = get_repository_factory()
     return await factory.get_wiki_repository()
+
+
+async def get_issue_repository() -> SQLiteIssueRepository:
+    """Get the default issue repository instance (ADR-070)."""
+    factory = get_repository_factory()
+    return await factory.get_issue_repository()

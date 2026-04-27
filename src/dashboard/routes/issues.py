@@ -15,8 +15,6 @@ from ..models import (
     IssueListResponse,
     IssueConfigResponse,
 )
-from ...data.sqlite.issue_repository import SQLiteIssueRepository
-from ...data.repositories import get_database
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +25,13 @@ ISSUE_TRACKER_URL = "https://github.com/summarybotng/summarybot-ng/issues"
 ISSUE_TRACKER_ENABLED = True
 
 
-def get_issue_repository() -> SQLiteIssueRepository:
+async def get_issue_repository():
     """Get the issue repository instance."""
-    db = get_database()
-    return SQLiteIssueRepository(db)
+    try:
+        from ...data.repositories import get_issue_repository as _get_repo
+        return await _get_repo()
+    except RuntimeError:
+        return None
 
 
 @router.get("/config", response_model=IssueConfigResponse)
@@ -63,7 +64,9 @@ async def create_issue(
     if hasattr(request.state, "user") and request.state.user:
         reporter_discord_id = request.state.user.id
 
-    repo = get_issue_repository()
+    repo = await get_issue_repository()
+    if not repo:
+        raise HTTPException(status_code=503, detail="Issue tracker unavailable")
 
     try:
         issue = await repo.create_issue(
@@ -105,7 +108,9 @@ async def list_issues(
 
     For now, returns issues for the specified guild or all issues if no guild specified.
     """
-    repo = get_issue_repository()
+    repo = await get_issue_repository()
+    if not repo:
+        raise HTTPException(status_code=503, detail="Issue tracker unavailable")
 
     try:
         issues, total = await repo.list_issues(

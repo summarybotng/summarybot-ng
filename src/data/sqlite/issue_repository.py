@@ -8,9 +8,9 @@ import logging
 import secrets
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List, Tuple
 
-from ..base import BaseRepository
+from .connection import SQLiteConnection
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +35,11 @@ class LocalIssue:
     updated_at: datetime
 
 
-class SQLiteIssueRepository(BaseRepository):
+class SQLiteIssueRepository:
     """Repository for local issue storage."""
+
+    def __init__(self, connection: SQLiteConnection):
+        self.connection = connection
 
     def _generate_id(self) -> str:
         """Generate a short random ID."""
@@ -58,22 +61,22 @@ class SQLiteIssueRepository(BaseRepository):
         issue_id = self._generate_id()
         now = datetime.utcnow().isoformat()
 
-        await self.execute(
-            """
+        query = """
             INSERT INTO local_issues (
                 id, guild_id, title, description, issue_type,
                 reporter_email, reporter_discord_id,
                 page_url, browser_info, app_version,
                 status, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
-            """,
-            (
-                issue_id, guild_id, title, description, issue_type,
-                reporter_email, reporter_discord_id,
-                page_url, browser_info, app_version,
-                now, now
-            )
+        """
+        params = (
+            issue_id, guild_id, title, description, issue_type,
+            reporter_email, reporter_discord_id,
+            page_url, browser_info, app_version,
+            now, now
         )
+
+        await self.connection.execute(query, params)
 
         logger.info(f"Created local issue {issue_id}: {title[:50]}")
 
@@ -97,13 +100,11 @@ class SQLiteIssueRepository(BaseRepository):
 
     async def get_issue(self, issue_id: str) -> Optional[LocalIssue]:
         """Get an issue by ID."""
-        row = await self.fetch_one(
-            "SELECT * FROM local_issues WHERE id = ?",
-            (issue_id,)
-        )
+        query = "SELECT * FROM local_issues WHERE id = ?"
+        row = await self.connection.fetch_one(query, (issue_id,))
         if not row:
             return None
-        return self._row_to_issue(row)
+        return self._row_to_issue(dict(row))
 
     async def list_issues(
         self,
@@ -112,10 +113,10 @@ class SQLiteIssueRepository(BaseRepository):
         issue_type: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> tuple[list[LocalIssue], int]:
+    ) -> Tuple[List[LocalIssue], int]:
         """List issues with optional filters."""
         conditions = []
-        params = []
+        params: List = []
 
         if guild_id is not None:
             conditions.append("guild_id = ?")
@@ -132,24 +133,20 @@ class SQLiteIssueRepository(BaseRepository):
         where_clause = " AND ".join(conditions) if conditions else "1=1"
 
         # Get total count
-        count_row = await self.fetch_one(
-            f"SELECT COUNT(*) as count FROM local_issues WHERE {where_clause}",
-            tuple(params)
-        )
+        count_query = f"SELECT COUNT(*) as count FROM local_issues WHERE {where_clause}"
+        count_row = await self.connection.fetch_one(count_query, tuple(params))
         total = count_row["count"] if count_row else 0
 
         # Get paginated results
-        rows = await self.fetch_all(
-            f"""
+        list_query = f"""
             SELECT * FROM local_issues
             WHERE {where_clause}
             ORDER BY created_at DESC
             LIMIT ? OFFSET ?
-            """,
-            tuple(params) + (limit, offset)
-        )
+        """
+        rows = await self.connection.fetch_all(list_query, tuple(params) + (limit, offset))
 
-        issues = [self._row_to_issue(row) for row in rows]
+        issues = [self._row_to_issue(dict(row)) for row in rows]
         return issues, total
 
     async def update_issue(
@@ -161,7 +158,7 @@ class SQLiteIssueRepository(BaseRepository):
     ) -> Optional[LocalIssue]:
         """Update an issue's status or metadata."""
         updates = []
-        params = []
+        params: List = []
 
         if status is not None:
             updates.append("status = ?")
@@ -182,20 +179,16 @@ class SQLiteIssueRepository(BaseRepository):
         params.append(datetime.utcnow().isoformat())
         params.append(issue_id)
 
-        await self.execute(
-            f"UPDATE local_issues SET {', '.join(updates)} WHERE id = ?",
-            tuple(params)
-        )
+        query = f"UPDATE local_issues SET {', '.join(updates)} WHERE id = ?"
+        await self.connection.execute(query, tuple(params))
 
         return await self.get_issue(issue_id)
 
     async def delete_issue(self, issue_id: str) -> bool:
         """Delete an issue."""
-        result = await self.execute(
-            "DELETE FROM local_issues WHERE id = ?",
-            (issue_id,)
-        )
-        return result.rowcount > 0
+        query = "DELETE FROM local_issues WHERE id = ?"
+        await self.connection.execute(query, (issue_id,))
+        return True
 
     def _row_to_issue(self, row: dict) -> LocalIssue:
         """Convert a database row to a LocalIssue."""

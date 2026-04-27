@@ -10,6 +10,15 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
+
+def _make_naive(dt: Optional[datetime]) -> Optional[datetime]:
+    """Convert timezone-aware datetime to naive (UTC) for comparison."""
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        return dt.replace(tzinfo=None)
+    return dt
+
 from ...data.repositories import get_coverage_repository, get_stored_summary_repository
 from ...data.sqlite.coverage_repository import (
     ChannelCoverage,
@@ -379,8 +388,9 @@ class CoverageService:
         else:
             total_coverage = 0
 
-        earliest = min((c.content_start for c in coverage_results if c.content_start), default=None)
-        latest = max((c.content_end for c in coverage_results if c.content_end), default=None)
+        # Normalize datetimes to naive for comparison (some may be timezone-aware)
+        earliest = min((_make_naive(c.content_start) for c in coverage_results if c.content_start), default=None)
+        latest = max((_make_naive(c.content_end) for c in coverage_results if c.content_end), default=None)
 
         return CoverageReport(
             guild_id=guild_id,

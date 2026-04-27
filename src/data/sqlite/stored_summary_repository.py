@@ -259,6 +259,10 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             conditions.append("LOWER(json_extract(summary_json, '$.metadata.perspective')) = LOWER(?)")
             params.append(filter.perspective)
 
+        # Exclude custom perspectives (summaries with prompt_template_id)
+        if filter.exclude_custom_perspectives:
+            conditions.append("json_extract(summary_json, '$.metadata.prompt_template_id') IS NULL")
+
         # ADR-041: Access issues filter (partial coverage detection)
         if filter.has_access_issues is True:
             conditions.append("json_extract(summary_json, '$.metadata.has_access_issues') = 1")
@@ -303,6 +307,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         # ADR-035: Generation settings filters
         summary_length: Optional[str] = None,
         perspective: Optional[str] = None,
+        exclude_custom_perspectives: Optional[bool] = None,
         # ADR-041: Access issues filter
         has_access_issues: Optional[bool] = None,
     ) -> List[StoredSummary]:
@@ -354,6 +359,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             platform=platform,
             summary_length=summary_length,
             perspective=perspective,
+            exclude_custom_perspectives=exclude_custom_perspectives,
             has_access_issues=has_access_issues,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
@@ -422,6 +428,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         # ADR-035: Generation settings filters
         summary_length: Optional[str] = None,
         perspective: Optional[str] = None,
+        exclude_custom_perspectives: Optional[bool] = None,
         # ADR-041: Access issues filter
         has_access_issues: Optional[bool] = None,
     ) -> int:
@@ -450,6 +457,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             platform=platform,
             summary_length=summary_length,
             perspective=perspective,
+            exclude_custom_perspectives=exclude_custom_perspectives,
             has_access_issues=has_access_issues,
         )
         where_clause, params = self._build_filter_clause(filter_obj)

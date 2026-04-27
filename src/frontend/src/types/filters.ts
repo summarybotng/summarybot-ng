@@ -71,6 +71,8 @@ export interface SummaryFilterCriteria {
   summaryLength?: string;
   /** Filter by perspective (general, developer, marketing, etc.) */
   perspective?: string;
+  /** Exclude summaries with custom prompt templates */
+  excludeCustomPerspectives?: boolean;
 
   // === Access Issues (ADR-041) ===
   /** Filter by channel access issues (true = partial access, false = full access) */
@@ -152,6 +154,7 @@ export function criteriaToSearchParams(criteria: SummaryFilterCriteria): URLSear
   if (criteria.platform) params.set("platform", criteria.platform);
   if (criteria.summaryLength) params.set("summary_length", criteria.summaryLength);
   if (criteria.perspective) params.set("perspective", criteria.perspective);
+  if (criteria.excludeCustomPerspectives) params.set("exclude_custom_perspectives", "true");
 
   // ADR-041: Access issues filter
   if (criteria.hasAccessIssues !== undefined) {

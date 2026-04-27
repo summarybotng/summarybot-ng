@@ -70,6 +70,7 @@ interface StoredSummariesParams {
   // ADR-035: Generation settings filters
   summaryLength?: string;
   perspective?: string;
+  excludeCustomPerspectives?: boolean;
 }
 
 export function useStoredSummaries(
@@ -110,6 +111,7 @@ export function useStoredSummaries(
   // ADR-035: Generation settings filters
   if (params.summaryLength) queryParams.set("summary_length", params.summaryLength);
   if (params.perspective) queryParams.set("perspective", params.perspective);
+  if (params.excludeCustomPerspectives) queryParams.set("exclude_custom_perspectives", "true");
 
   const queryString = queryParams.toString();
 

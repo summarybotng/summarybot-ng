@@ -1091,6 +1091,7 @@ async def list_stored_summaries(
     # ADR-035: Generation settings filters
     summary_length: Optional[str] = Query(None, description="Filter by summary length (brief, detailed, comprehensive)"),
     perspective: Optional[str] = Query(None, description="Filter by perspective (general, developer, etc.)"),
+    exclude_custom_perspectives: Optional[bool] = Query(None, description="Exclude summaries with custom prompt templates"),
     # ADR-041: Access issues filter
     has_access_issues: Optional[bool] = Query(None, description="Filter by channel access issues (True = partial access, False = full access)"),
     user: dict = Depends(get_current_user),
@@ -1163,6 +1164,7 @@ async def list_stored_summaries(
         # ADR-035: Generation settings filters
         summary_length=summary_length,
         perspective=perspective,
+        exclude_custom_perspectives=exclude_custom_perspectives,
         # ADR-041: Access issues filter
         has_access_issues=has_access_issues,
     )
@@ -1194,6 +1196,7 @@ async def list_stored_summaries(
         # ADR-035: Generation settings filters
         summary_length=summary_length,
         perspective=perspective,
+        exclude_custom_perspectives=exclude_custom_perspectives,
         # ADR-041: Access issues filter
         has_access_issues=has_access_issues,
     )

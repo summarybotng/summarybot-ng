@@ -215,8 +215,19 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Perspective:</span>
             <Select
-              value={filters.perspective || "standard"}
-              onValueChange={(v) => onFiltersChange({ ...filters, perspective: v === "standard" ? undefined : v })}
+              value={filters.perspective || (filters.excludeCustomPerspectives !== false ? "standard" : "all")}
+              onValueChange={(v) => {
+                if (v === "standard") {
+                  // Standard Perspectives = exclude custom, no specific perspective filter
+                  onFiltersChange({ ...filters, perspective: undefined, excludeCustomPerspectives: true });
+                } else if (v === "all") {
+                  // All Perspectives = include custom, no specific perspective filter
+                  onFiltersChange({ ...filters, perspective: undefined, excludeCustomPerspectives: false });
+                } else {
+                  // Specific perspective selected
+                  onFiltersChange({ ...filters, perspective: v, excludeCustomPerspectives: undefined });
+                }
+              }}
             >
               <SelectTrigger className="w-[160px] h-8">
                 <SelectValue />
@@ -807,22 +818,22 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
             </Badge>
           )}
           {/* ADR-035: Perspective filter badge */}
-          {filters.perspective && filters.perspective !== "all" && (
+          {filters.perspective && (
             <Badge variant="secondary" className="gap-1">
               Perspective: {filters.perspective}
               <button
-                onClick={() => onFiltersChange({ ...filters, perspective: undefined })}
+                onClick={() => onFiltersChange({ ...filters, perspective: undefined, excludeCustomPerspectives: true })}
                 className="ml-1 hover:text-destructive"
               >
                 <X className="h-3 w-3" />
               </button>
             </Badge>
           )}
-          {filters.perspective === "all" && (
+          {filters.excludeCustomPerspectives === false && (
             <Badge variant="secondary" className="gap-1">
               Including custom perspectives
               <button
-                onClick={() => onFiltersChange({ ...filters, perspective: undefined })}
+                onClick={() => onFiltersChange({ ...filters, excludeCustomPerspectives: true })}
                 className="ml-1 hover:text-destructive"
               >
                 <X className="h-3 w-3" />

@@ -192,6 +192,7 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
     // ADR-035: Generation settings filters
     summaryLength: filters.summaryLength,
     perspective: filters.perspective,
+    excludeCustomPerspectives: filters.excludeCustomPerspectives,
   });
 
   const updateMutation = useUpdateStoredSummary(guildId);

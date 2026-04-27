@@ -16,7 +16,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { LogOut, User, Shield, Slack } from "lucide-react";
+import { LogOut, User, Shield, Slack, MessageSquare } from "lucide-react";
 import { ReportIssueButton } from "@/components/issues";
 
 // Build info injected at build time
@@ -100,6 +100,12 @@ export function Header() {
                 <Link to="/admin/audit" className="cursor-pointer">
                   <Shield className="mr-2 h-4 w-4" />
                   System Audit Log
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/admin/issues" className="cursor-pointer">
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                  Local Issues
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />

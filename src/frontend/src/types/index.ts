@@ -3,6 +3,7 @@ export interface User {
   id: string;
   username: string;
   avatar_url: string;
+  email?: string;  // ADR-070: Available from Google auth, optional for Discord
 }
 
 export interface AuthState {

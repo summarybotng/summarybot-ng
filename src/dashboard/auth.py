@@ -26,8 +26,8 @@ DISCORD_API_BASE = "https://discord.com/api/v10"
 DISCORD_OAUTH_AUTHORIZE = "https://discord.com/oauth2/authorize"
 DISCORD_OAUTH_TOKEN = f"{DISCORD_API_BASE}/oauth2/token"
 
-# Required OAuth scopes
-OAUTH_SCOPES = ["identify", "guilds"]
+# Required OAuth scopes (ADR-070: added email for issue tracker)
+OAUTH_SCOPES = ["identify", "guilds", "email"]
 
 
 class DashboardAuth:
@@ -232,6 +232,7 @@ class DashboardAuth:
             username=data["username"],
             discriminator=data.get("discriminator"),
             avatar=data.get("avatar"),
+            email=data.get("email"),  # ADR-070: Include email for issue tracker
         )
 
     async def get_user_guilds(self, access_token: str) -> List[DashboardGuild]:
@@ -295,6 +296,7 @@ class DashboardAuth:
             "sub": user.id,
             "username": user.username,
             "avatar": user.avatar,
+            "email": user.email,  # ADR-070: Include email for issue tracker
             "guilds": guild_ids,
             "guild_roles": guild_roles or {},  # Maps guild_id to role string
             "iat": now,
@@ -355,6 +357,7 @@ class DashboardAuth:
             username=payload["username"],
             discriminator=None,
             avatar=payload.get("avatar"),
+            email=payload.get("email"),  # ADR-070: Preserve email
         )
         return self.create_jwt(user, payload["guilds"], payload.get("guild_roles", {}))
 
@@ -381,6 +384,7 @@ class DashboardAuth:
             username=payload["username"],
             discriminator=None,
             avatar=payload.get("avatar"),
+            email=payload.get("email"),  # ADR-070: Preserve email
         )
 
         # Try to get the session so we can call Discord for fresh guilds

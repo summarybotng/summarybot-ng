@@ -6,7 +6,7 @@
  * 2. Local submission - for users without GitHub
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Bug, Lightbulb, HelpCircle, Github, Mail, ExternalLink, Loader2, Check } from "lucide-react";
 import {
@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/api/client";
+import { useAuthStore } from "@/stores/authStore";
 
 // GitHub issues URL
 const GITHUB_ISSUES_URL = "https://github.com/summarybotng/summarybot-ng/issues";
@@ -94,6 +95,14 @@ export function ReportIssueDialog({ open, onClose, pageUrl, guildId }: ReportIss
   const [description, setDescription] = useState("");
   const [email, setEmail] = useState("");
   const { toast } = useToast();
+  const user = useAuthStore((state) => state.user);
+
+  // Pre-fill email from user context when dialog opens (ADR-070)
+  useEffect(() => {
+    if (open && user?.email) {
+      setEmail(user.email);
+    }
+  }, [open, user?.email]);
 
   // Submit local issue
   const submitMutation = useMutation({
@@ -124,18 +133,31 @@ export function ReportIssueDialog({ open, onClose, pageUrl, guildId }: ReportIss
   };
 
   const handleLocalSubmit = () => {
-    if (!title.trim() || !description.trim()) {
+    const trimmedTitle = title.trim();
+    const trimmedDescription = description.trim();
+
+    // Validate minimum lengths (matches backend requirements)
+    if (trimmedTitle.length < 5) {
       toast({
-        title: "Missing fields",
-        description: "Please fill in title and description.",
+        title: "Title too short",
+        description: "Please provide a title with at least 5 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (trimmedDescription.length < 10) {
+      toast({
+        title: "Description too short",
+        description: "Please provide a description with at least 10 characters.",
         variant: "destructive",
       });
       return;
     }
 
     submitMutation.mutate({
-      title: title.trim(),
-      description: description.trim(),
+      title: trimmedTitle,
+      description: trimmedDescription,
       issue_type: issueType,
       email: email.trim() || undefined,
       page_url: pageUrl || window.location.href,
@@ -246,10 +268,15 @@ export function ReportIssueDialog({ open, onClose, pageUrl, guildId }: ReportIss
 
             {/* Title */}
             <div className="space-y-2">
-              <Label htmlFor="title">Title *</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="title">Title *</Label>
+                <span className={`text-xs ${title.trim().length < 5 ? "text-muted-foreground" : "text-green-600"}`}>
+                  {title.trim().length}/5 min
+                </span>
+              </div>
               <Input
                 id="title"
-                placeholder="Brief summary of the issue"
+                placeholder="Brief summary of the issue (min 5 characters)"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 maxLength={200}
@@ -258,15 +285,20 @@ export function ReportIssueDialog({ open, onClose, pageUrl, guildId }: ReportIss
 
             {/* Description */}
             <div className="space-y-2">
-              <Label htmlFor="description">Description *</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="description">Description *</Label>
+                <span className={`text-xs ${description.trim().length < 10 ? "text-muted-foreground" : "text-green-600"}`}>
+                  {description.trim().length}/10 min
+                </span>
+              </div>
               <Textarea
                 id="description"
                 placeholder={
                   issueType === "bug"
-                    ? "What happened? What did you expect to happen?"
+                    ? "What happened? What did you expect to happen? (min 10 characters)"
                     : issueType === "feature"
-                    ? "Describe the feature and how it would help you."
-                    : "What would you like to know?"
+                    ? "Describe the feature and how it would help you. (min 10 characters)"
+                    : "What would you like to know? (min 10 characters)"
                 }
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}

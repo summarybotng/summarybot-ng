@@ -174,6 +174,7 @@ async def callback(request: Request, body: AuthCallbackRequest):
             id=user.id,
             username=user.username,
             avatar_url=user.avatar_url,
+            email=user.email,  # ADR-070: Include email for issue tracker pre-fill
         ),
         guilds=guild_responses,
     )
@@ -261,12 +262,20 @@ async def logout(
 )
 async def get_me(user: dict = Depends(get_current_user)):
     """Get current user info."""
+    # Build avatar URL - Google users have direct URL, Discord uses CDN pattern
+    avatar = user.get("avatar")
+    if avatar and avatar.startswith("http"):
+        avatar_url = avatar  # Google users have direct URL
+    elif avatar:
+        avatar_url = f"https://cdn.discordapp.com/avatars/{user['sub']}/{avatar}.png"
+    else:
+        avatar_url = None
+
     return UserResponse(
         id=user["sub"],
         username=user["username"],
-        avatar_url=f"https://cdn.discordapp.com/avatars/{user['sub']}/{user.get('avatar')}.png"
-        if user.get("avatar")
-        else None,
+        avatar_url=avatar_url,
+        email=user.get("email"),  # ADR-070: Include email for issue tracker pre-fill
     )
 
 
@@ -350,6 +359,7 @@ async def dev_token(body: DevTokenRequest):
             avatar_url=f"https://cdn.discordapp.com/avatars/{user.id}/{user.avatar}.png"
             if user.avatar
             else None,
+            email=user.email,  # ADR-070: Include email for issue tracker pre-fill
         ),
         guilds=guild_responses,
     )

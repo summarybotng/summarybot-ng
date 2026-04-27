@@ -25,6 +25,7 @@ import { Settings } from "@/pages/Settings";
 import { PromptTemplates } from "@/pages/PromptTemplates";
 import { AuditLog } from "@/pages/AuditLog";
 import { AdminAudit } from "@/pages/AdminAudit";
+import { AdminIssues } from "@/pages/AdminIssues";
 import NotFound from "./pages/NotFound";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -66,6 +67,7 @@ const App = () => (
             <Route path="/guilds" element={<><Header /><Guilds /></>} />
             <Route path="/slack" element={<><Header /><SlackWorkspaces /></>} />
             <Route path="/admin/audit" element={<><Header /><AdminAudit /></>} />
+            <Route path="/admin/issues" element={<><Header /><AdminIssues /></>} />
             <Route
               path="/guilds/:id"
               element={

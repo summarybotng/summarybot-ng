@@ -2,6 +2,7 @@
 Issue Tracker API Routes (ADR-070)
 
 Public issue submission for users to report bugs, features, and questions.
+Integrated with audit logging (ADR-045).
 """
 
 import logging
@@ -17,6 +18,43 @@ from ..models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _audit_issue_event(
+    event_type: str,
+    request: Request,
+    issue_id: Optional[str] = None,
+    issue_type: Optional[str] = None,
+    guild_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    success: bool = True,
+    error_message: Optional[str] = None,
+    details: Optional[dict] = None,
+):
+    """Log an issue tracker event to the audit log."""
+    try:
+        from ...logging import get_audit_service
+        service = await get_audit_service()
+
+        ip_address = request.client.host if request.client else None
+        user_agent = request.headers.get("user-agent", "")[:500]
+
+        await service.log(
+            event_type,
+            user_id=user_id,
+            guild_id=guild_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=success,
+            error_message=error_message,
+            details={
+                "issue_id": issue_id,
+                "issue_type": issue_type,
+                **(details or {}),
+            },
+        )
+    except Exception as e:
+        logger.warning(f"Failed to log audit event: {e}")
 
 router = APIRouter(prefix="/issues", tags=["issues"])
 
@@ -83,6 +121,21 @@ async def create_issue(
 
         logger.info(f"Issue {issue.id} created: {body.issue_type.value} - {body.title[:50]}")
 
+        # Audit log the issue creation (ADR-045)
+        await _audit_issue_event(
+            "issue.created",
+            request,
+            issue_id=issue.id,
+            issue_type=body.issue_type.value,
+            guild_id=guild_id,
+            user_id=reporter_discord_id,
+            success=True,
+            details={
+                "title": body.title[:100],
+                "page_url": body.page_url,
+            },
+        )
+
         return CreateIssueResponse(
             success=True,
             id=issue.id,
@@ -91,6 +144,16 @@ async def create_issue(
         )
     except Exception as e:
         logger.error(f"Failed to create issue: {e}")
+        # Audit log the failure
+        await _audit_issue_event(
+            "issue.create_failed",
+            request,
+            issue_type=body.issue_type.value,
+            guild_id=guild_id,
+            user_id=reporter_discord_id,
+            success=False,
+            error_message=str(e)[:200],
+        )
         raise HTTPException(status_code=500, detail="Failed to submit issue")
 
 

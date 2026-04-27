@@ -44,6 +44,7 @@ export function GoogleCallback() {
         id: userData.id,
         username: userData.username,
         avatar_url: userData.avatar || null,
+        email: userData.email || undefined,  // ADR-070: Pre-fill in issue tracker
       };
 
       // Create guild objects from guild IDs

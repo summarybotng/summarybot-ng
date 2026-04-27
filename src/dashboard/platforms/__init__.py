@@ -139,7 +139,7 @@ async def get_platform_fetcher(
         return None
 
     elif platform == Platform.DISCORD:
-        from src.discord_bot import get_discord_bot
+        from src.dashboard.routes import get_discord_bot
         import discord
 
         bot = get_discord_bot()

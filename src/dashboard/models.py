@@ -38,6 +38,7 @@ class DashboardUser:
     username: str
     discriminator: Optional[str]
     avatar: Optional[str]
+    email: Optional[str] = None  # ADR-070: Added for issue tracker
 
     @property
     def avatar_url(self) -> Optional[str]:
@@ -121,6 +122,7 @@ class UserResponse(BaseModel):
     id: str
     username: str
     avatar_url: Optional[str]
+    email: Optional[str] = None  # ADR-070: Added for issue tracker
 
 
 class GuildBriefResponse(BaseModel):

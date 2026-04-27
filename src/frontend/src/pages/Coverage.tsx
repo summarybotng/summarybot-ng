@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -203,7 +203,7 @@ function CoverageOverview({ report }: { report: CoverageReport }) {
   );
 }
 
-function ChannelCoverageList({ channels }: { channels: ChannelCoverage[] }) {
+function ChannelCoverageList({ channels, guildId }: { channels: ChannelCoverage[]; guildId: string }) {
   const sortedChannels = [...channels].sort((a, b) => a.coverage_percent - b.coverage_percent);
 
   return (
@@ -217,9 +217,10 @@ function ChannelCoverageList({ channels }: { channels: ChannelCoverage[] }) {
             : "bg-red-500";
 
           return (
-            <div
+            <Link
               key={channel.channel_id}
-              className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent/50 transition-colors"
+              to={`/guilds/${guildId}/summaries?channel=${channel.channel_id}`}
+              className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent/50 transition-colors cursor-pointer"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
@@ -250,7 +251,7 @@ function ChannelCoverageList({ channels }: { channels: ChannelCoverage[] }) {
                 </div>
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </div>
-            </div>
+            </Link>
           );
         })}
         {channels.length === 0 && (
@@ -667,7 +668,7 @@ export function Coverage() {
                       <Skeleton className="h-16" />
                     </div>
                   ) : (
-                    <ChannelCoverageList channels={report?.channels || []} />
+                    <ChannelCoverageList channels={report?.channels || []} guildId={guildId || ""} />
                   )}
                 </CardContent>
               </Card>

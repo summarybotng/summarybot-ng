@@ -1225,207 +1225,68 @@ function RecentChanges({ guildId }: { guildId: string }) {
   );
 }
 
-// ADR-064/069: Wiki Browser with filters (default >1 sources)
-function WikiBrowser({ guildId, filters, setFilters }: {
+// ADR-064/069: Wiki Browser (filters moved to sidebar per ADR-069)
+function WikiBrowser({ guildId, filters }: {
   guildId: string;
   filters: WikiFilters;
-  setFilters: React.Dispatch<React.SetStateAction<WikiFilters>>;
 }) {
-  const [showFilters, setShowFilters] = useState(false);
-
   const { data, isLoading } = useQuery({
     queryKey: ["wiki-pages", guildId, filters],
-    queryFn: () => fetchWikiPages(guildId, filters, true),
+    queryFn: () => fetchWikiPages(guildId, filters, false),
   });
 
-  const clearFilters = () => {
-    setFilters({ sort_by: "updated_at", sort_order: "desc" });
-  };
-
-  const hasActiveFilters = filters.min_sources !== undefined ||
-    filters.has_synthesis !== undefined ||
-    filters.synthesis_model !== undefined ||
-    filters.min_rating !== undefined;
+  // Results only - filters are in sidebar
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-16 w-full" />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-4">
-      {/* Filter toggle */}
-      <div className="flex items-center justify-between">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowFilters(!showFilters)}
-          className={hasActiveFilters ? "border-primary" : ""}
+    <div className="space-y-2">
+      {data?.pages.map((page) => (
+        <Link
+          key={page.id}
+          to={`/guilds/${guildId}/wiki/${page.path}`}
+          className="block"
         >
-          <SlidersHorizontal className="h-4 w-4 mr-2" />
-          Filters
-          {hasActiveFilters && (
-            <Badge variant="secondary" className="ml-2">Active</Badge>
-          )}
-        </Button>
-        <div className="text-sm text-muted-foreground">
-          {data?.filtered || 0} of {data?.total || 0} pages
-        </div>
-      </div>
-
-      {/* Filter panel */}
-      {showFilters && (
-        <Card>
-          <CardContent className="pt-4 space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {/* Source count filter */}
-              <div>
-                <label className="text-sm font-medium mb-2 block">Sources</label>
-                <div className="flex flex-wrap gap-1">
-                  {["1", "2-5", "5-10", "10+"].map((bucket) => {
-                    const [min, max] = bucket === "1" ? [1, 1] :
-                      bucket === "2-5" ? [2, 5] :
-                      bucket === "5-10" ? [5, 10] : [10, undefined];
-                    const isActive = filters.min_sources === min;
-                    return (
-                      <Badge
-                        key={bucket}
-                        variant={isActive ? "default" : "outline"}
-                        className="cursor-pointer"
-                        onClick={() => setFilters(f => ({
-                          ...f,
-                          min_sources: isActive ? undefined : min,
-                          max_sources: isActive ? undefined : max,
-                        }))}
-                      >
-                        {bucket}
-                        {data?.facets?.source_count[bucket] !== undefined && (
-                          <span className="ml-1 opacity-60">
-                            ({data.facets.source_count[bucket]})
-                          </span>
-                        )}
-                      </Badge>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Synthesis filter */}
-              <div>
-                <label className="text-sm font-medium mb-2 block">Synthesis</label>
-                <div className="flex gap-1">
-                  <Badge
-                    variant={filters.has_synthesis === true ? "default" : "outline"}
-                    className="cursor-pointer"
-                    onClick={() => setFilters(f => ({
-                      ...f,
-                      has_synthesis: f.has_synthesis === true ? undefined : true,
-                    }))}
-                  >
-                    <Sparkles className="h-3 w-3 mr-1" />
-                    With synthesis
-                    {data?.facets?.has_synthesis["true"] !== undefined && (
-                      <span className="ml-1 opacity-60">
-                        ({data.facets.has_synthesis["true"]})
+          <Card className="hover:bg-accent/50 transition-colors">
+            <CardContent className="py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium truncate">{page.title}</span>
+                    {page.has_synthesis && (
+                      <Sparkles className="h-3 w-3 text-yellow-500 flex-shrink-0" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
+                    <span>{page.source_count} sources</span>
+                    {page.average_rating && (
+                      <span className="flex items-center gap-1">
+                        <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                        {page.average_rating.toFixed(1)}
                       </span>
                     )}
-                  </Badge>
+                    <span>{page.path}</span>
+                  </div>
                 </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
               </div>
-
-              {/* Rating filter */}
-              <div>
-                <label className="text-sm font-medium mb-2 block">Min Rating</label>
-                <div className="flex gap-1">
-                  {[3, 4, 5].map((rating) => (
-                    <Badge
-                      key={rating}
-                      variant={filters.min_rating === rating ? "default" : "outline"}
-                      className="cursor-pointer"
-                      onClick={() => setFilters(f => ({
-                        ...f,
-                        min_rating: f.min_rating === rating ? undefined : rating,
-                      }))}
-                    >
-                      {rating}+ ★
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-
-              {/* Sort */}
-              <div>
-                <label className="text-sm font-medium mb-2 block">Sort By</label>
-                <select
-                  className="w-full rounded-md border bg-background px-3 py-1 text-sm"
-                  value={filters.sort_by}
-                  onChange={(e) => setFilters(f => ({ ...f, sort_by: e.target.value }))}
-                >
-                  <option value="updated_at">Recently Updated</option>
-                  <option value="created_at">Recently Created</option>
-                  <option value="source_count">Most Sources</option>
-                  <option value="rating">Highest Rated</option>
-                  <option value="title">Title (A-Z)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Clear filters */}
-            {hasActiveFilters && (
-              <Button variant="ghost" size="sm" onClick={clearFilters}>
-                <X className="h-4 w-4 mr-1" />
-                Clear filters
-              </Button>
-            )}
+            </CardContent>
+          </Card>
+        </Link>
+      ))}
+      {(!data?.pages || data.pages.length === 0) && (
+        <Card>
+          <CardContent className="py-8 text-center">
+            <p className="text-muted-foreground">No pages match your filters</p>
           </CardContent>
         </Card>
-      )}
-
-      {/* Results */}
-      {isLoading ? (
-        <div className="space-y-2">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {data?.pages.map((page) => (
-            <Link
-              key={page.id}
-              to={`/guilds/${guildId}/wiki/${page.path}`}
-              className="block"
-            >
-              <Card className="hover:bg-accent/50 transition-colors">
-                <CardContent className="py-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium truncate">{page.title}</span>
-                        {page.has_synthesis && (
-                          <Sparkles className="h-3 w-3 text-yellow-500 flex-shrink-0" />
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
-                        <span>{page.source_count} sources</span>
-                        {page.average_rating && (
-                          <span className="flex items-center gap-1">
-                            <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                            {page.average_rating.toFixed(1)}
-                          </span>
-                        )}
-                        <span>{page.path}</span>
-                      </div>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-          {(!data?.pages || data.pages.length === 0) && (
-            <Card>
-              <CardContent className="py-8 text-center">
-                <p className="text-muted-foreground">No pages match your filters</p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
       )}
     </div>
   );
@@ -1826,10 +1687,17 @@ export function Wiki() {
     enabled: !!guildId,
   });
 
-  // ADR-069: Fetch filtered pages for navigation
+  // ADR-069: Fetch filtered pages for navigation with facets
   const { data: filteredPages } = useQuery({
     queryKey: ["wiki-pages-nav", guildId, filters],
-    queryFn: () => fetchWikiPages(guildId!, filters, false),
+    queryFn: () => fetchWikiPages(guildId!, filters, true),
+    enabled: !!guildId,
+  });
+
+  // Fetch total pages (unfiltered) for count display
+  const { data: totalPages } = useQuery({
+    queryKey: ["wiki-pages-total", guildId],
+    queryFn: () => fetchWikiPages(guildId!, { sort_by: "updated_at", sort_order: "desc" }, false),
     enabled: !!guildId,
   });
 
@@ -1837,6 +1705,18 @@ export function Wiki() {
   const filteredPagePaths = filteredPages?.pages
     ? new Set(filteredPages.pages.map(p => p.path))
     : undefined;
+
+  // ADR-069: Filter UI state
+  const [showFilters, setShowFilters] = useState(false);
+
+  const hasActiveFilters = filters.min_sources !== undefined ||
+    filters.has_synthesis !== undefined ||
+    filters.synthesis_model !== undefined ||
+    filters.min_rating !== undefined;
+
+  const clearFilters = () => {
+    setFilters({ sort_by: "updated_at", sort_order: "desc" });
+  };
 
   // Fetch page if path is provided (and not just viewing source/search)
   const hasValidPath = !!pagePath && pagePath.length > 0 && pagePath !== "undefined";
@@ -1870,10 +1750,139 @@ export function Wiki() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Sidebar */}
         <Card className="lg:col-span-1">
-          <CardHeader>
+          <CardHeader className="pb-2">
             <CardTitle className="text-base">Navigation</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {/* ADR-069: Filter controls in sidebar */}
+            <div className="space-y-3 pb-3 border-b">
+              {/* Count display: filtered/total */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">
+                  {filteredPages?.filtered ?? 0}/{totalPages?.total ?? 0}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => setShowFilters(!showFilters)}
+                >
+                  <Filter className="h-3.5 w-3.5 mr-1" />
+                  <span className="text-xs">Filters</span>
+                  {hasActiveFilters && (
+                    <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                      {(filters.min_sources ? 1 : 0) +
+                       (filters.has_synthesis ? 1 : 0) +
+                       (filters.min_rating ? 1 : 0)}
+                    </Badge>
+                  )}
+                </Button>
+              </div>
+
+              {/* Expandable filter panel */}
+              {showFilters && (
+                <div className="space-y-3 pt-2">
+                  {/* Source count filter */}
+                  <div>
+                    <label className="text-xs font-medium mb-1.5 block text-muted-foreground">Sources</label>
+                    <div className="flex flex-wrap gap-1">
+                      {[
+                        { label: "All", min: undefined, max: undefined },
+                        { label: "2+", min: 2, max: undefined },
+                        { label: "5+", min: 5, max: undefined },
+                        { label: "10+", min: 10, max: undefined },
+                      ].map((opt) => {
+                        const isActive = filters.min_sources === opt.min;
+                        return (
+                          <Badge
+                            key={opt.label}
+                            variant={isActive ? "default" : "outline"}
+                            className="cursor-pointer text-xs"
+                            onClick={() => setFilters(f => ({
+                              ...f,
+                              min_sources: opt.min,
+                              max_sources: opt.max,
+                            }))}
+                          >
+                            {opt.label}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Synthesis filter */}
+                  <div>
+                    <label className="text-xs font-medium mb-1.5 block text-muted-foreground">Content</label>
+                    <div className="flex gap-1">
+                      <Badge
+                        variant={filters.has_synthesis === true ? "default" : "outline"}
+                        className="cursor-pointer text-xs"
+                        onClick={() => setFilters(f => ({
+                          ...f,
+                          has_synthesis: f.has_synthesis === true ? undefined : true,
+                        }))}
+                      >
+                        <Sparkles className="h-3 w-3 mr-1" />
+                        With synthesis
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Rating filter */}
+                  <div>
+                    <label className="text-xs font-medium mb-1.5 block text-muted-foreground">Min Rating</label>
+                    <div className="flex gap-1">
+                      {[3, 4, 5].map((rating) => (
+                        <Badge
+                          key={rating}
+                          variant={filters.min_rating === rating ? "default" : "outline"}
+                          className="cursor-pointer text-xs"
+                          onClick={() => setFilters(f => ({
+                            ...f,
+                            min_rating: f.min_rating === rating ? undefined : rating,
+                          }))}
+                        >
+                          {rating}+
+                          <Star className="h-2.5 w-2.5 ml-0.5 fill-current" />
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Sort */}
+                  <div>
+                    <label className="text-xs font-medium mb-1.5 block text-muted-foreground">Sort By</label>
+                    <select
+                      className="w-full rounded-md border bg-background px-2 py-1 text-xs"
+                      value={filters.sort_by}
+                      onChange={(e) => setFilters(f => ({ ...f, sort_by: e.target.value }))}
+                    >
+                      <option value="updated_at">Recently Updated</option>
+                      <option value="created_at">Recently Created</option>
+                      <option value="source_count">Most Sources</option>
+                      <option value="rating">Highest Rated</option>
+                      <option value="title">Title (A-Z)</option>
+                    </select>
+                  </div>
+
+                  {/* Clear filters */}
+                  {hasActiveFilters && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full text-xs h-7"
+                      onClick={clearFilters}
+                    >
+                      <X className="h-3 w-3 mr-1" />
+                      Clear filters
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Navigation tree */}
             {treeLoading ? (
               <div className="space-y-2">
                 <Skeleton className="h-6 w-full" />
@@ -1881,30 +1890,12 @@ export function Wiki() {
                 <Skeleton className="h-6 w-1/2" />
               </div>
             ) : tree ? (
-              <>
-                <WikiNavTree
-                  tree={tree}
-                  currentPath={pagePath}
-                  filters={filters}
-                  filteredPagePaths={filteredPagePaths}
-                />
-                {/* ADR-069: Show filter status */}
-                {filters.min_sources && filters.min_sources > 1 && (
-                  <div className="mt-4 pt-4 border-t">
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Showing pages with {filters.min_sources}+ sources
-                    </p>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full text-xs"
-                      onClick={() => setFilters(f => ({ ...f, min_sources: undefined }))}
-                    >
-                      Show all pages
-                    </Button>
-                  </div>
-                )}
-              </>
+              <WikiNavTree
+                tree={tree}
+                currentPath={pagePath}
+                filters={filters}
+                filteredPagePaths={filteredPagePaths}
+              />
             ) : (
               <p className="text-sm text-muted-foreground">
                 No wiki pages yet
@@ -1945,7 +1936,7 @@ export function Wiki() {
                 <RecentChanges guildId={guildId!} />
               </TabsContent>
               <TabsContent value="browse" className="mt-4">
-                <WikiBrowser guildId={guildId!} filters={filters} setFilters={setFilters} />
+                <WikiBrowser guildId={guildId!} filters={filters} />
               </TabsContent>
               <TabsContent value="populate" className="mt-4">
                 <PopulateWiki guildId={guildId!} />

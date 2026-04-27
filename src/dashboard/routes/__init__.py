@@ -154,6 +154,7 @@ from .slack import router as slack_router  # ADR-043
 from .google_auth import router as google_auth_router  # ADR-049
 from .google_admin_groups import router as google_admin_groups_router  # ADR-050
 from .wiki import router as wiki_router  # ADR-056
+from .issues import router as issues_router  # ADR-070
 
 __all__ = [
     "auth_router",
@@ -174,6 +175,7 @@ __all__ = [
     "google_auth_router",
     "google_admin_groups_router",
     "wiki_router",
+    "issues_router",
     "set_services",
     "get_discord_bot",
     "get_summarization_engine",

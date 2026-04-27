@@ -1195,3 +1195,70 @@ class JobResumeResponse(BaseModel):
     success: bool
     job_id: str
     message: str
+
+
+# ============================================================================
+# Issue Tracker Models (ADR-070)
+# ============================================================================
+
+class IssueType(str, Enum):
+    """Type of issue being reported."""
+    BUG = "bug"
+    FEATURE = "feature"
+    QUESTION = "question"
+
+
+class IssueStatus(str, Enum):
+    """Issue lifecycle status."""
+    OPEN = "open"
+    TRIAGED = "triaged"
+    REPLICATED = "replicated"
+    CLOSED = "closed"
+
+
+class CreateIssueRequest(BaseModel):
+    """Request to create a local issue."""
+    title: str = Field(..., min_length=5, max_length=200)
+    description: str = Field(..., min_length=10, max_length=10000)
+    issue_type: IssueType
+    email: Optional[str] = Field(None, max_length=254)
+    page_url: Optional[str] = None
+    browser_info: Optional[str] = None
+    app_version: Optional[str] = None
+
+
+class IssueResponse(BaseModel):
+    """Response for a single issue."""
+    id: str
+    guild_id: Optional[str] = None
+    title: str
+    description: str
+    issue_type: str
+    reporter_email: Optional[str] = None
+    page_url: Optional[str] = None
+    browser_info: Optional[str] = None
+    app_version: Optional[str] = None
+    status: str
+    github_issue_url: Optional[str] = None
+    created_at: datetime
+
+
+class CreateIssueResponse(BaseModel):
+    """Response after creating an issue."""
+    success: bool
+    id: str
+    message: str
+    github_url: Optional[str] = None
+
+
+class IssueListResponse(BaseModel):
+    """Response for issue list endpoint."""
+    issues: List[IssueResponse]
+    total: int
+
+
+class IssueConfigResponse(BaseModel):
+    """Configuration for issue tracker."""
+    enabled: bool
+    github_url: str
+    allow_local: bool

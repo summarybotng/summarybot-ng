@@ -17,6 +17,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { LogOut, User, Shield, Slack } from "lucide-react";
+import { ReportIssueButton } from "@/components/issues";
 
 // Build info injected at build time
 const buildCommit = __BUILD_COMMIT__;
@@ -60,7 +61,9 @@ export function Header() {
         </TooltipProvider>
 
         {isAuthenticated() && user && (
-          <DropdownMenu>
+          <div className="flex items-center gap-2">
+            <ReportIssueButton />
+            <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                 <Avatar className="h-9 w-9">
@@ -106,6 +109,7 @@ export function Header() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         )}
       </div>
     </header>

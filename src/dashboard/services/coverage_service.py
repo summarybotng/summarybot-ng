@@ -196,9 +196,11 @@ class CoverageService:
             for channel_id in (summary.source_channel_ids or []):
                 if channel_id not in channel_summaries:
                     channel_summaries[channel_id] = []
-                # Access start_time/end_time from the nested summary_result
+                # Access start_time/end_time from the nested summary_result (normalize to naive)
                 if summary.summary_result and summary.summary_result.start_time and summary.summary_result.end_time:
-                    channel_summaries[channel_id].append((summary.summary_result.start_time, summary.summary_result.end_time))
+                    start = _make_naive(summary.summary_result.start_time)
+                    end = _make_naive(summary.summary_result.end_time)
+                    channel_summaries[channel_id].append((start, end))
 
         # Get channel info from inventory or existing coverage
         if inventory:
@@ -420,9 +422,10 @@ class CoverageService:
 
         summary = await repo.get_coverage_summary(guild_id, platform)
 
-        earliest = min((c.content_start for c in coverage if c.content_start), default=None)
-        latest = max((c.content_end for c in coverage if c.content_end), default=None)
-        last_computed = max((c.last_computed_at for c in coverage), default=datetime.utcnow())
+        # Normalize datetimes to naive for comparison
+        earliest = min((_make_naive(c.content_start) for c in coverage if c.content_start), default=None)
+        latest = max((_make_naive(c.content_end) for c in coverage if c.content_end), default=None)
+        last_computed = max((_make_naive(c.last_computed_at) for c in coverage if c.last_computed_at), default=datetime.utcnow())
 
         return CoverageReport(
             guild_id=guild_id,

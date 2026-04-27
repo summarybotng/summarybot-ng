@@ -187,8 +187,9 @@ class CoverageService:
             for channel_id in (summary.source_channel_ids or []):
                 if channel_id not in channel_summaries:
                     channel_summaries[channel_id] = []
-                if summary.start_time and summary.end_time:
-                    channel_summaries[channel_id].append((summary.start_time, summary.end_time))
+                # Access start_time/end_time from the nested summary_result
+                if summary.summary_result and summary.summary_result.start_time and summary.summary_result.end_time:
+                    channel_summaries[channel_id].append((summary.summary_result.start_time, summary.summary_result.end_time))
 
         # Get channel info from inventory or existing coverage
         if inventory:

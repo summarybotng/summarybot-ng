@@ -357,6 +357,20 @@ class SummaryDetailResponse(BaseModel):
     references: List[SummaryReferenceResponse] = Field(default_factory=list)  # ADR-004 source references
 
 
+class SummaryMetadataLightResponse(BaseModel):
+    """Lightweight summary metadata for wiki source references (ADR-069)."""
+    id: str
+    title: str
+    platform: Optional[str] = None
+    source_key: Optional[str] = None
+    scope: Optional[str] = None
+    channel_count: Optional[int] = None
+    channels: Optional[List[str]] = None
+    created_at: Optional[datetime] = None
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
+
+
 class SummaryPromptResponse(BaseModel):
     """Prompt and source content for a summary."""
     summary_id: str

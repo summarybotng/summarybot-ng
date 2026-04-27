@@ -15,6 +15,7 @@ from ..models import (
     SummaryListItem,
     SummaryDetailResponse,
     SummaryPromptResponse,
+    SummaryMetadataLightResponse,  # ADR-069
     ActionItemResponse,
     TechnicalTermResponse,
     ParticipantResponse,
@@ -336,6 +337,74 @@ async def get_summary(
         created_at=summary.created_at,
         has_prompt_data=has_prompt_data,
         references=references,
+    )
+
+
+@router.get(
+    "/guilds/{guild_id}/summaries/{summary_id}/metadata",
+    response_model=SummaryMetadataLightResponse,
+    summary="Get summary metadata (ADR-069)",
+    description="Get lightweight metadata for a summary, useful for wiki source references.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Summary not found"},
+    },
+)
+async def get_summary_metadata(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    summary_id: str = Path(..., description="Summary ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Get lightweight summary metadata for wiki source references (ADR-069)."""
+    _check_guild_access(guild_id, user)
+
+    summary_repo = await get_summary_repository()
+    if not summary_repo:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "DATABASE_UNAVAILABLE", "message": "Database not available"},
+        )
+
+    summary = await summary_repo.get_summary(summary_id)
+    if not summary or summary.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Summary not found"},
+        )
+
+    # Derive platform from source_key
+    platform = None
+    if summary.source_key:
+        if "discord" in summary.source_key.lower():
+            platform = "Discord"
+        elif "whatsapp" in summary.source_key.lower():
+            platform = "WhatsApp"
+        elif "telegram" in summary.source_key.lower():
+            platform = "Telegram"
+
+    # Get channel info
+    channel_count = None
+    channels = None
+    if summary.context:
+        if summary.context.channel_ids:
+            channel_count = len(summary.context.channel_ids)
+        if summary.context.channel_names:
+            channels = summary.context.channel_names
+
+    # Build title
+    title = summary.title if hasattr(summary, "title") and summary.title else f"Summary — {summary.created_at.strftime('%b %d, %H:%M')}"
+
+    return SummaryMetadataLightResponse(
+        id=summary.id,
+        title=title,
+        platform=platform,
+        source_key=summary.source_key,
+        scope=summary.context.scope if summary.context else None,
+        channel_count=channel_count,
+        channels=channels,
+        created_at=summary.created_at,
+        period_start=summary.start_time,
+        period_end=summary.end_time,
     )
 
 

@@ -328,7 +328,13 @@ async function clearWiki(guildId: string): Promise<ClearWikiResult> {
   return api.delete<ClearWikiResult>(`/guilds/${guildId}/wiki`);
 }
 
-function WikiNavTree({ tree, currentPath }: { tree: WikiTree; currentPath?: string }) {
+// ADR-069: WikiNavTree with filter support
+function WikiNavTree({ tree, currentPath, filters, filteredPagePaths }: {
+  tree: WikiTree;
+  currentPath?: string;
+  filters?: WikiFilters;
+  filteredPagePaths?: Set<string>;
+}) {
   const { id: guildId } = useParams<{ id: string }>();
 
   const categoryIcons: Record<string, React.ReactNode> = {
@@ -351,7 +357,9 @@ function WikiNavTree({ tree, currentPath }: { tree: WikiTree; currentPath?: stri
                 {category.page_count}
               </Badge>
             </div>
-            {category.children.map((child) => (
+            {category.children
+              .filter((child) => !filteredPagePaths || filteredPagePaths.has(child.path))
+              .map((child) => (
               <Link
                 key={child.path}
                 to={`/guilds/${guildId}/wiki/${child.path}`}
@@ -978,6 +986,28 @@ function WikiSearch({ guildId }: { guildId: string }) {
   );
 }
 
+// ADR-069: Summary metadata for source references
+interface SummaryMetadata {
+  id: string;
+  title: string;
+  platform?: string;
+  source_key?: string;
+  scope?: string;
+  channel_count?: number;
+  channels?: string[];
+  created_at?: string;
+  period_start?: string;
+  period_end?: string;
+}
+
+async function fetchSummaryMetadata(guildId: string, summaryId: string): Promise<SummaryMetadata | null> {
+  try {
+    return await api.get<SummaryMetadata>(`/guilds/${guildId}/summaries/${summaryId}/metadata`);
+  } catch {
+    return null;
+  }
+}
+
 function SourceReferences({ guildId, sourceId }: { guildId: string; sourceId: string }) {
   const { data: result, isLoading, error } = useQuery({
     queryKey: ["wiki-source", guildId, sourceId],
@@ -986,6 +1016,19 @@ function SourceReferences({ guildId, sourceId }: { guildId: string; sourceId: st
 
   // Extract summary ID from source ID (e.g., "summary-abc123" -> "abc123")
   const summaryId = sourceId.startsWith("summary-") ? sourceId.slice(8) : null;
+
+  // ADR-069: Fetch summary metadata for richer display
+  const { data: summaryMeta } = useQuery({
+    queryKey: ["summary-metadata", guildId, summaryId],
+    queryFn: () => fetchSummaryMetadata(guildId!, summaryId!),
+    enabled: !!guildId && !!summaryId,
+  });
+
+  // Derive platform from source_key or title
+  const platform = summaryMeta?.platform ||
+    (summaryMeta?.source_key?.includes("discord") ? "Discord" :
+     summaryMeta?.source_key?.includes("whatsapp") ? "WhatsApp" :
+     summaryMeta?.source_key?.includes("telegram") ? "Telegram" : null);
 
   if (isLoading) {
     return (
@@ -1011,13 +1054,13 @@ function SourceReferences({ guildId, sourceId }: { guildId: string; sourceId: st
 
   return (
     <div className="space-y-6">
-      {/* Source info */}
+      {/* ADR-069: Enhanced source info with metadata */}
       <Card className="border-primary/50">
         <CardHeader>
           <CardTitle className="flex items-center justify-between text-base">
             <span className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
-              Source Reference
+              {summaryMeta?.title || "Source Reference"}
             </span>
             {summaryId && (
               <Link to={`/guilds/${guildId}/summaries?view=${summaryId}`}>
@@ -1029,11 +1072,72 @@ function SourceReferences({ guildId, sourceId }: { guildId: string; sourceId: st
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <code className="text-sm bg-muted px-2 py-1 rounded">{sourceId}</code>
-          <p className="text-sm text-muted-foreground mt-2">
-            {result?.pages.length || 0} page{result?.pages.length !== 1 ? "s" : ""} reference this source
-          </p>
+        <CardContent className="space-y-4">
+          {/* Metadata grid */}
+          {summaryMeta && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
+              {platform && (
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Platform</div>
+                  <div className="font-medium flex items-center gap-1">
+                    {platform === "Discord" && <span className="text-indigo-500">●</span>}
+                    {platform === "WhatsApp" && <span className="text-green-500">●</span>}
+                    {platform === "Telegram" && <span className="text-blue-500">●</span>}
+                    {platform}
+                  </div>
+                </div>
+              )}
+              {(summaryMeta.period_start || summaryMeta.created_at) && (
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Date</div>
+                  <div className="font-medium">
+                    {new Date(summaryMeta.period_start || summaryMeta.created_at!).toLocaleDateString()}
+                  </div>
+                </div>
+              )}
+              {summaryMeta.scope && (
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Scope</div>
+                  <div className="font-medium capitalize">{summaryMeta.scope}</div>
+                </div>
+              )}
+              {(summaryMeta.channel_count || summaryMeta.channels?.length) && (
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Channels</div>
+                  <div className="font-medium">
+                    {summaryMeta.channel_count || summaryMeta.channels?.length} channel{(summaryMeta.channel_count || summaryMeta.channels?.length || 0) !== 1 ? "s" : ""}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Channel list if available */}
+          {summaryMeta?.channels && summaryMeta.channels.length > 0 && (
+            <div>
+              <div className="text-xs text-muted-foreground mb-2">Channels included:</div>
+              <div className="flex flex-wrap gap-1">
+                {summaryMeta.channels.slice(0, 10).map((ch) => (
+                  <Badge key={ch} variant="secondary" className="text-xs">
+                    #{ch}
+                  </Badge>
+                ))}
+                {summaryMeta.channels.length > 10 && (
+                  <Badge variant="outline" className="text-xs">
+                    +{summaryMeta.channels.length - 10} more
+                  </Badge>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Source ID */}
+          <div className="flex items-center justify-between pt-2 border-t">
+            <code className="text-xs bg-muted px-2 py-1 rounded">{sourceId}</code>
+            <span className="text-sm text-muted-foreground">
+              {result?.pages.length || 0} page{result?.pages.length !== 1 ? "s" : ""} reference this
+            </span>
+          </div>
         </CardContent>
       </Card>
 
@@ -1121,12 +1225,12 @@ function RecentChanges({ guildId }: { guildId: string }) {
   );
 }
 
-// ADR-064: Wiki Browser with filters
-function WikiBrowser({ guildId }: { guildId: string }) {
-  const [filters, setFilters] = useState<WikiFilters>({
-    sort_by: "updated_at",
-    sort_order: "desc",
-  });
+// ADR-064/069: Wiki Browser with filters (default >1 sources)
+function WikiBrowser({ guildId, filters, setFilters }: {
+  guildId: string;
+  filters: WikiFilters;
+  setFilters: React.Dispatch<React.SetStateAction<WikiFilters>>;
+}) {
   const [showFilters, setShowFilters] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -1708,12 +1812,31 @@ export function Wiki() {
   const searchQuery = searchParams.get("q");
   const sourceId = searchParams.get("source");
 
+  // ADR-069: Shared filter state (default >1 sources for quality content)
+  const [filters, setFilters] = useState<WikiFilters>({
+    min_sources: 2,
+    sort_by: "updated_at",
+    sort_order: "desc",
+  });
+
   // Fetch tree
   const { data: tree, isLoading: treeLoading } = useQuery({
     queryKey: ["wiki-tree", guildId],
     queryFn: () => fetchWikiTree(guildId!),
     enabled: !!guildId,
   });
+
+  // ADR-069: Fetch filtered pages for navigation
+  const { data: filteredPages } = useQuery({
+    queryKey: ["wiki-pages-nav", guildId, filters],
+    queryFn: () => fetchWikiPages(guildId!, filters, false),
+    enabled: !!guildId,
+  });
+
+  // Build set of paths that pass filters for nav filtering
+  const filteredPagePaths = filteredPages?.pages
+    ? new Set(filteredPages.pages.map(p => p.path))
+    : undefined;
 
   // Fetch page if path is provided (and not just viewing source/search)
   const hasValidPath = !!pagePath && pagePath.length > 0 && pagePath !== "undefined";
@@ -1758,7 +1881,30 @@ export function Wiki() {
                 <Skeleton className="h-6 w-1/2" />
               </div>
             ) : tree ? (
-              <WikiNavTree tree={tree} currentPath={pagePath} />
+              <>
+                <WikiNavTree
+                  tree={tree}
+                  currentPath={pagePath}
+                  filters={filters}
+                  filteredPagePaths={filteredPagePaths}
+                />
+                {/* ADR-069: Show filter status */}
+                {filters.min_sources && filters.min_sources > 1 && (
+                  <div className="mt-4 pt-4 border-t">
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Showing pages with {filters.min_sources}+ sources
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full text-xs"
+                      onClick={() => setFilters(f => ({ ...f, min_sources: undefined }))}
+                    >
+                      Show all pages
+                    </Button>
+                  </div>
+                )}
+              </>
             ) : (
               <p className="text-sm text-muted-foreground">
                 No wiki pages yet
@@ -1799,7 +1945,7 @@ export function Wiki() {
                 <RecentChanges guildId={guildId!} />
               </TabsContent>
               <TabsContent value="browse" className="mt-4">
-                <WikiBrowser guildId={guildId!} />
+                <WikiBrowser guildId={guildId!} filters={filters} setFilters={setFilters} />
               </TabsContent>
               <TabsContent value="populate" className="mt-4">
                 <PopulateWiki guildId={guildId!} />

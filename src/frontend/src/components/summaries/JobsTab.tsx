@@ -115,6 +115,72 @@ function getJobTypeBadge(jobType: Job["job_type"]) {
   }
 }
 
+// ADR-069: Generate human-readable job title
+function generateJobTitle(job: Job): string {
+  switch (job.job_type) {
+    case "wiki_backfill":
+      return "Wiki Knowledge Base Backfill";
+    case "manual":
+      if (job.server_name) return `${job.server_name} Summary`;
+      if (job.scope === "server") return "Server Summary";
+      if (job.scope === "category") return "Category Summary";
+      return "Manual Summary";
+    case "scheduled":
+      if (job.granularity === "daily") return "Daily Summary";
+      if (job.granularity === "weekly") return "Weekly Summary";
+      return "Scheduled Summary";
+    case "retrospective":
+      return "Retrospective Summary";
+    case "regenerate":
+      return "Regenerated Summary";
+    default:
+      return "Summary Job";
+  }
+}
+
+// ADR-069: Generate job description with key details
+function generateJobDescription(job: Job): string {
+  const parts: string[] = [];
+
+  // Platform from source_key
+  if (job.source_key?.includes("discord")) parts.push("Discord");
+  else if (job.source_key?.includes("whatsapp")) parts.push("WhatsApp");
+  else if (job.source_key?.includes("telegram")) parts.push("Telegram");
+
+  // Server name
+  if (job.server_name && !parts.includes(job.server_name)) {
+    parts.push(job.server_name);
+  }
+
+  // Scope
+  if (job.scope) {
+    parts.push(`${job.scope} scope`);
+  }
+
+  // Channels
+  if (job.channel_ids?.length) {
+    parts.push(`${job.channel_ids.length} channel${job.channel_ids.length !== 1 ? "s" : ""}`);
+  }
+
+  // Date range
+  if (job.date_range?.start && job.date_range?.end) {
+    const start = new Date(job.date_range.start).toLocaleDateString();
+    const end = new Date(job.date_range.end).toLocaleDateString();
+    if (start === end) {
+      parts.push(start);
+    } else {
+      parts.push(`${start} - ${end}`);
+    }
+  }
+
+  // Granularity for scheduled jobs
+  if (job.granularity && job.job_type === "scheduled") {
+    parts.push(job.granularity);
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : "Processing...";
+}
+
 // Status badge styling
 function getStatusBadge(status: Job["status"]) {
   switch (status) {
@@ -154,6 +220,8 @@ function JobCard({ job, onCancel, onRetry, onPause, onResume, isCancelling, isRe
   const StatusIcon = statusBadge.icon;
 
   const relativeTime = formatRelativeTime(job.created_at);
+  const jobTitle = generateJobTitle(job);
+  const jobDescription = generateJobDescription(job);
 
   return (
     <motion.div
@@ -167,24 +235,37 @@ function JobCard({ job, onCancel, onRetry, onPause, onResume, isCancelling, isRe
         ${job.status === "paused" ? "border-amber-500/30 bg-amber-500/5" : ""}
       `}>
         <CardContent className="p-4">
-          <div className="flex items-start justify-between mb-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Job Type Badge */}
-              <Badge variant="outline" className={typeBadge.className}>
-                {TypeIcon && <TypeIcon className="mr-1 h-3 w-3" />}
-                {typeBadge.label}
-              </Badge>
-              {/* Status Badge */}
-              <Badge variant="outline" className={statusBadge.className}>
-                {StatusIcon && <StatusIcon className={`mr-1 h-3 w-3 ${job.status === "running" ? "animate-spin" : ""}`} />}
-                {statusBadge.label}
-              </Badge>
-              {/* Job ID */}
-              <span className="text-xs text-muted-foreground font-mono">
-                {job.job_id.substring(0, 12)}
-              </span>
+          {/* ADR-069: Prominent job title and description */}
+          <div className="flex items-start gap-3 mb-3">
+            {TypeIcon && (
+              <div className={`p-2 rounded-lg ${typeBadge.className}`}>
+                <TypeIcon className="h-5 w-5" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-medium truncate">{jobTitle}</h3>
+                <span className="text-sm text-muted-foreground flex-shrink-0">{relativeTime}</span>
+              </div>
+              <p className="text-sm text-muted-foreground truncate">{jobDescription}</p>
             </div>
-            <span className="text-sm text-muted-foreground">{relativeTime}</span>
+          </div>
+
+          {/* Badges row */}
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            {/* Status Badge */}
+            <Badge variant="outline" className={statusBadge.className}>
+              {StatusIcon && <StatusIcon className={`mr-1 h-3 w-3 ${job.status === "running" ? "animate-spin" : ""}`} />}
+              {statusBadge.label}
+            </Badge>
+            {/* Job Type Badge */}
+            <Badge variant="outline" className={typeBadge.className}>
+              {typeBadge.label}
+            </Badge>
+            {/* Job ID */}
+            <span className="text-xs text-muted-foreground font-mono">
+              {job.job_id.substring(0, 12)}
+            </span>
           </div>
 
           {/* Progress bar for running jobs */}

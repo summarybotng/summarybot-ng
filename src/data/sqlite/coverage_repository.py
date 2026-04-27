@@ -154,23 +154,23 @@ class SQLiteCoverageRepository:
 
         return [
             ChannelCoverage(
-                id=row[0],
-                guild_id=row[1],
-                channel_id=row[2],
-                channel_name=row[3],
-                platform=row[4],
-                content_start=self._parse_datetime(row[5]),
-                content_end=self._parse_datetime(row[6]),
-                estimated_messages=row[7] or 0,
-                covered_start=self._parse_datetime(row[8]),
-                covered_end=self._parse_datetime(row[9]),
-                summary_count=row[10] or 0,
-                coverage_percent=row[11] or 0,
-                gap_count=row[12] or 0,
-                covered_days=row[13] or 0,
-                total_days=row[14] or 0,
-                last_summary_at=self._parse_datetime(row[15]),
-                last_computed_at=self._parse_datetime(row[16]) or datetime.utcnow(),
+                id=row["id"],
+                guild_id=row["guild_id"],
+                channel_id=row["channel_id"],
+                channel_name=row["channel_name"],
+                platform=row["platform"],
+                content_start=self._parse_datetime(row["content_start"]),
+                content_end=self._parse_datetime(row["content_end"]),
+                estimated_messages=row["estimated_messages"] or 0,
+                covered_start=self._parse_datetime(row["covered_start"]),
+                covered_end=self._parse_datetime(row["covered_end"]),
+                summary_count=row["summary_count"] or 0,
+                coverage_percent=row["coverage_percent"] or 0,
+                gap_count=row["gap_count"] or 0,
+                covered_days=row["covered_days"] or 0,
+                total_days=row["total_days"] or 0,
+                last_summary_at=self._parse_datetime(row["last_summary_at"]),
+                last_computed_at=self._parse_datetime(row["last_computed_at"]) or datetime.utcnow(),
             )
             for row in rows
         ]
@@ -251,10 +251,10 @@ class SQLiteCoverageRepository:
 
         # Get total count
         row = await self.connection.fetch_one(
-            f"SELECT COUNT(*) FROM coverage_gaps WHERE {where_clause}",
+            f"SELECT COUNT(*) as count FROM coverage_gaps WHERE {where_clause}",
             tuple(params),
         )
-        total = row[0] if row else 0
+        total = row["count"] if row else 0
 
         # Get gaps
         params.extend([limit, offset])
@@ -274,23 +274,23 @@ class SQLiteCoverageRepository:
 
         gaps = [
             CoverageGap(
-                id=row[0],
-                guild_id=row[1],
-                channel_id=row[2],
-                channel_name=row[3],
-                platform=row[4],
-                gap_start=self._parse_datetime(row[5]) or datetime.utcnow(),
-                gap_end=self._parse_datetime(row[6]) or datetime.utcnow(),
-                gap_days=row[7] or 0,
-                status=row[8],
-                priority=row[9] or 0,
-                job_id=row[10],
-                summary_id=row[11],
-                error_message=row[12],
-                scheduled_for=self._parse_datetime(row[13]),
-                started_at=self._parse_datetime(row[14]),
-                completed_at=self._parse_datetime(row[15]),
-                created_at=self._parse_datetime(row[16]) or datetime.utcnow(),
+                id=row["id"],
+                guild_id=row["guild_id"],
+                channel_id=row["channel_id"],
+                channel_name=row["channel_name"],
+                platform=row["platform"],
+                gap_start=self._parse_datetime(row["gap_start"]) or datetime.utcnow(),
+                gap_end=self._parse_datetime(row["gap_end"]) or datetime.utcnow(),
+                gap_days=row["gap_days"] or 0,
+                status=row["status"],
+                priority=row["priority"] or 0,
+                job_id=row["job_id"],
+                summary_id=row["summary_id"],
+                error_message=row["error_message"],
+                scheduled_for=self._parse_datetime(row["scheduled_for"]),
+                started_at=self._parse_datetime(row["started_at"]),
+                completed_at=self._parse_datetime(row["completed_at"]),
+                created_at=self._parse_datetime(row["created_at"]) or datetime.utcnow(),
             )
             for row in rows
         ]
@@ -408,28 +408,28 @@ class SQLiteCoverageRepository:
             return None
 
         channels = []
-        if row[3]:
+        if row["channels"]:
             try:
-                channels = json.loads(row[3])
+                channels = json.loads(row["channels"])
             except json.JSONDecodeError:
                 pass
 
         return BackfillSchedule(
-            id=row[0],
-            guild_id=row[1],
-            platform=row[2],
+            id=row["id"],
+            guild_id=row["guild_id"],
+            platform=row["platform"],
             channels=channels,
-            priority_mode=row[4],
-            rate_limit=row[5],
-            enabled=bool(row[6]),
-            paused=bool(row[7]),
-            total_gaps=row[8] or 0,
-            completed_gaps=row[9] or 0,
-            failed_gaps=row[10] or 0,
-            last_run_at=self._parse_datetime(row[11]),
-            next_run_at=self._parse_datetime(row[12]),
-            created_at=self._parse_datetime(row[13]) or datetime.utcnow(),
-            updated_at=self._parse_datetime(row[14]) or datetime.utcnow(),
+            priority_mode=row["priority_mode"],
+            rate_limit=row["rate_limit"],
+            enabled=bool(row["enabled"]),
+            paused=bool(row["paused"]),
+            total_gaps=row["total_gaps"] or 0,
+            completed_gaps=row["completed_gaps"] or 0,
+            failed_gaps=row["failed_gaps"] or 0,
+            last_run_at=self._parse_datetime(row["last_run_at"]),
+            next_run_at=self._parse_datetime(row["next_run_at"]),
+            created_at=self._parse_datetime(row["created_at"]) or datetime.utcnow(),
+            updated_at=self._parse_datetime(row["updated_at"]) or datetime.utcnow(),
         )
 
     async def upsert_backfill_schedule(self, schedule: BackfillSchedule) -> None:

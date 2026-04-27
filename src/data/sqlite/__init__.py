@@ -46,6 +46,7 @@ from .audit_repository import SQLiteAuditRepository
 from .slack_repository import SQLiteSlackRepository
 from .wiki_repository import SQLiteWikiRepository
 from .issue_repository import SQLiteIssueRepository
+from .coverage_repository import SQLiteCoverageRepository
 
 __all__ = [
     # Connection
@@ -68,4 +69,5 @@ __all__ = [
     'SQLiteSlackRepository',
     'SQLiteWikiRepository',
     'SQLiteIssueRepository',
+    'SQLiteCoverageRepository',
 ]

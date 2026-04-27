@@ -32,6 +32,7 @@ import {
   FileCode,
   Shield,
   BookOpen,
+  BarChart3,
 } from "lucide-react";
 
 // ADR-040: Jobs promoted to top-level navigation
@@ -46,6 +47,7 @@ const navItems = [
   { icon: Rss, label: "Feeds", path: "/feeds" },
   { icon: AlertTriangle, label: "Errors", path: "/errors", showBadge: true },
   { icon: BookOpen, label: "Wiki", path: "/wiki" },
+  { icon: BarChart3, label: "Coverage", path: "/coverage" },
   { icon: Shield, label: "Audit Log", path: "/audit" },
   { icon: Archive, label: "Retrospective", path: "/archive" },
   { icon: Settings, label: "Settings", path: "/settings" },

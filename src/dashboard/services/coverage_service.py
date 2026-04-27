@@ -190,6 +190,9 @@ class CoverageService:
         # Get all summaries for this guild
         summaries = await stored_repo.find_by_guild(guild_id, limit=10000)
 
+        # Track unique summaries with valid time ranges for the total count
+        unique_summary_ids_with_time: set = set()
+
         # Build a map of channel -> summary ranges
         channel_summaries: dict = {}
         for summary in summaries:
@@ -201,6 +204,7 @@ class CoverageService:
                     start = _make_naive(summary.summary_result.start_time)
                     end = _make_naive(summary.summary_result.end_time)
                     channel_summaries[channel_id].append((start, end))
+                    unique_summary_ids_with_time.add(summary.id)
 
         # Get channel info from inventory or existing coverage
         if inventory:
@@ -382,7 +386,8 @@ class CoverageService:
         # Compute totals
         total_channels = len(coverage_results)
         covered_channels = sum(1 for c in coverage_results if c.coverage_percent > 0)
-        total_summaries = sum(c.summary_count for c in coverage_results)
+        # Use unique summary count, not sum of per-channel counts (a summary covering 10 channels should count as 1)
+        total_summaries = len(unique_summary_ids_with_time)
         total_days_sum = sum(c.total_days for c in coverage_results)
 
         if total_days_sum > 0:

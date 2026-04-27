@@ -522,7 +522,14 @@ class SQLiteCoverageRepository:
         total_channels = len(coverage)
         covered_channels = sum(1 for c in coverage if c.coverage_percent > 0)
         total_gaps = sum(c.gap_count for c in coverage)
-        total_summaries = sum(c.summary_count for c in coverage)
+
+        # Query the actual unique summary count from stored_summaries
+        # (per-channel summary_count sums would over-count multi-channel summaries)
+        row = await self.connection.fetch_one(
+            "SELECT COUNT(*) as count FROM stored_summaries WHERE guild_id = ?",
+            (guild_id,),
+        )
+        total_summaries = row["count"] if row else 0
 
         # Weighted average by total days
         total_days_sum = sum(c.total_days for c in coverage)

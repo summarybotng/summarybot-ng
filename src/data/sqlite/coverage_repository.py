@@ -138,7 +138,7 @@ class SQLiteCoverageRepository:
 
     async def get_coverage(self, guild_id: str, platform: str = "discord") -> List[ChannelCoverage]:
         """Get coverage for all channels in a guild."""
-        async with self.connection.execute(
+        rows = await self.connection.fetch_all(
             """
             SELECT id, guild_id, channel_id, channel_name, platform,
                    content_start, content_end, estimated_messages,
@@ -150,8 +150,7 @@ class SQLiteCoverageRepository:
             ORDER BY channel_name
             """,
             (guild_id, platform),
-        ) as cursor:
-            rows = await cursor.fetchall()
+        )
 
         return [
             ChannelCoverage(
@@ -251,16 +250,15 @@ class SQLiteCoverageRepository:
         where_clause = " AND ".join(conditions)
 
         # Get total count
-        async with self.connection.execute(
+        row = await self.connection.fetch_one(
             f"SELECT COUNT(*) FROM coverage_gaps WHERE {where_clause}",
             tuple(params),
-        ) as cursor:
-            row = await cursor.fetchone()
-            total = row[0] if row else 0
+        )
+        total = row[0] if row else 0
 
         # Get gaps
         params.extend([limit, offset])
-        async with self.connection.execute(
+        rows = await self.connection.fetch_all(
             f"""
             SELECT id, guild_id, channel_id, channel_name, platform,
                    gap_start, gap_end, gap_days, status, priority,
@@ -272,8 +270,7 @@ class SQLiteCoverageRepository:
             LIMIT ? OFFSET ?
             """,
             tuple(params),
-        ) as cursor:
-            rows = await cursor.fetchall()
+        )
 
         gaps = [
             CoverageGap(
@@ -365,11 +362,11 @@ class SQLiteCoverageRepository:
 
     async def delete_gaps_for_guild(self, guild_id: str, platform: str = "discord") -> int:
         """Delete all gaps for a guild (for recomputation)."""
-        async with self.connection.execute(
+        cursor = await self.connection.execute(
             "DELETE FROM coverage_gaps WHERE guild_id = ? AND platform = ? AND status = 'pending'",
             (guild_id, platform),
-        ) as cursor:
-            return cursor.rowcount
+        )
+        return cursor.rowcount
 
     async def get_pending_gaps(
         self,
@@ -396,7 +393,7 @@ class SQLiteCoverageRepository:
         platform: str = "discord",
     ) -> Optional[BackfillSchedule]:
         """Get backfill schedule for a guild."""
-        async with self.connection.execute(
+        row = await self.connection.fetch_one(
             """
             SELECT id, guild_id, platform, channels, priority_mode, rate_limit,
                    enabled, paused, total_gaps, completed_gaps, failed_gaps,
@@ -405,8 +402,7 @@ class SQLiteCoverageRepository:
             WHERE guild_id = ? AND platform = ?
             """,
             (guild_id, platform),
-        ) as cursor:
-            row = await cursor.fetchone()
+        )
 
         if not row:
             return None

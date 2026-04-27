@@ -19,7 +19,6 @@ from ...models.summary import SummaryOptions, SummaryLength, SummarizationContex
 from ...models.stored_summary import StoredSummary, SummarySource
 from ...utils.time import utc_now_naive
 from ...data.repositories import get_summary_job_repository, get_stored_summary_repository
-from ..dependencies import get_discord_bot, get_summarization_engine
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +70,8 @@ async def _execute_manual_job(job: SummaryJob) -> None:
     logger.info(f"[{job_id}] Scope: {job.scope}, Time range: {job.period_start} to {job.period_end}")
     logger.info(f"[{job_id}] Channels ({len(job.channel_ids)}): {job.channel_ids}")
 
-    # Get required services
+    # Get required services (lazy import to avoid circular dependency)
+    from ..routes import get_discord_bot, get_summarization_engine
     bot = get_discord_bot()
     engine = get_summarization_engine()
 

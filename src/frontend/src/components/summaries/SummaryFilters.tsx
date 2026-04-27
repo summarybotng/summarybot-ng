@@ -97,6 +97,10 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
   const { perspectives } = usePerspectiveOptions(guildId);
 
+  // Split perspectives into standard (system) and custom
+  const standardPerspectives = perspectives.filter(p => !p.isCustom);
+  const customPerspectives = perspectives.filter(p => p.isCustom);
+
   const activeFilterCount = [
     filters.archivePeriod,  // Calendar date selection
     filters.createdAfter,
@@ -211,19 +215,34 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Perspective:</span>
             <Select
-              value={filters.perspective || "all"}
-              onValueChange={(v) => onFiltersChange({ ...filters, perspective: v === "all" ? undefined : v })}
+              value={filters.perspective || "standard"}
+              onValueChange={(v) => onFiltersChange({ ...filters, perspective: v === "standard" ? undefined : v })}
             >
-              <SelectTrigger className="w-[140px] h-8">
+              <SelectTrigger className="w-[160px] h-8">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Perspectives</SelectItem>
-                {perspectives.map((p) => (
+                <SelectItem value="standard">Standard Perspectives</SelectItem>
+                {customPerspectives.length > 0 && (
+                  <SelectItem value="all">All Perspectives</SelectItem>
+                )}
+                <div className="h-px bg-border my-1" />
+                {standardPerspectives.map((p) => (
                   <SelectItem key={p.value} value={p.value}>
-                    {p.label}{p.isCustom ? " *" : ""}
+                    {p.label}
                   </SelectItem>
                 ))}
+                {customPerspectives.length > 0 && (
+                  <>
+                    <div className="h-px bg-border my-1" />
+                    <div className="px-2 py-1 text-xs text-muted-foreground">Custom</div>
+                    {customPerspectives.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -788,9 +807,20 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
             </Badge>
           )}
           {/* ADR-035: Perspective filter badge */}
-          {filters.perspective && (
+          {filters.perspective && filters.perspective !== "all" && (
             <Badge variant="secondary" className="gap-1">
               Perspective: {filters.perspective}
+              <button
+                onClick={() => onFiltersChange({ ...filters, perspective: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {filters.perspective === "all" && (
+            <Badge variant="secondary" className="gap-1">
+              Including custom perspectives
               <button
                 onClick={() => onFiltersChange({ ...filters, perspective: undefined })}
                 className="ml-1 hover:text-destructive"

@@ -367,7 +367,7 @@ async def get_summary_metadata(
         stored = await stored_repo.get(summary_id)
         if stored and stored.guild_id == guild_id:
             sr = stored.summary_result
-            # Derive platform from archive_source_key or context
+            # Derive platform from archive_source_key
             platform = None
             source_key = stored.archive_source_key
             if source_key:
@@ -377,20 +377,26 @@ async def get_summary_metadata(
                     platform = "WhatsApp"
                 elif "telegram" in source_key.lower():
                     platform = "Telegram"
-            elif sr and sr.context and sr.context.scope:
-                # Default to Discord for legacy summaries with context
+            else:
+                # Default to Discord for legacy summaries
                 platform = "Discord"
 
-            # Get channel info from context
-            channel_count = None
+            # Get channel info from stored summary
+            channel_count = len(stored.source_channel_ids) if stored.source_channel_ids else None
+            # Channel names come from context if available
             channels = None
+            if sr and sr.context and sr.context.channel_name:
+                channels = [sr.context.channel_name]
+
+            # Scope: derive from source or channel count
+            from ...models.stored_summary import SummarySource
             scope = None
-            if sr and sr.context:
-                if sr.context.channel_ids:
-                    channel_count = len(sr.context.channel_ids)
-                if sr.context.channel_names:
-                    channels = sr.context.channel_names
-                scope = sr.context.scope
+            if stored.source == SummarySource.ARCHIVE:
+                scope = "archive"
+            elif channel_count and channel_count > 1:
+                scope = "guild"
+            elif channel_count == 1:
+                scope = "channel"
 
             # Build title
             title = stored.title or (f"Summary — {stored.created_at.strftime('%b %d, %H:%M')}" if stored.created_at else "Summary")
@@ -423,34 +429,32 @@ async def get_summary_metadata(
             detail={"code": "NOT_FOUND", "message": "Summary not found"},
         )
 
-    # Derive platform from source_key
+    # Derive platform from source_key or default to Discord
     platform = None
-    if summary.source_key:
-        if "discord" in summary.source_key.lower():
+    source_key = getattr(summary, 'source_key', None)
+    if source_key:
+        if "discord" in source_key.lower():
             platform = "Discord"
-        elif "whatsapp" in summary.source_key.lower():
+        elif "whatsapp" in source_key.lower():
             platform = "WhatsApp"
-        elif "telegram" in summary.source_key.lower():
+        elif "telegram" in source_key.lower():
             platform = "Telegram"
+    else:
+        platform = "Discord"
 
-    # Get channel info
-    channel_count = None
-    channels = None
-    if summary.context:
-        if summary.context.channel_ids:
-            channel_count = len(summary.context.channel_ids)
-        if summary.context.channel_names:
-            channels = summary.context.channel_names
+    # Get channel info from summary
+    channel_count = 1 if summary.channel_id else None
+    channels = [summary.context.channel_name] if summary.context and summary.context.channel_name else None
 
     # Build title
-    title = summary.title if hasattr(summary, "title") and summary.title else f"Summary — {summary.created_at.strftime('%b %d, %H:%M')}"
+    title = getattr(summary, 'title', None) or f"Summary — {summary.created_at.strftime('%b %d, %H:%M')}"
 
     return SummaryMetadataLightResponse(
         id=summary.id,
         title=title,
         platform=platform,
-        source_key=summary.source_key,
-        scope=summary.context.scope if summary.context else None,
+        source_key=source_key,
+        scope="channel",  # Regular summaries are per-channel
         channel_count=channel_count,
         channels=channels,
         created_at=summary.created_at,

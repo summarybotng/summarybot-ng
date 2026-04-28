@@ -338,6 +338,10 @@ class SummaryReferenceResponse(BaseModel):
     timestamp: datetime
     content: str
     message_id: Optional[str] = None
+    channel_id: Optional[str] = None
+    channel_name: Optional[str] = None
+    guild_id: Optional[str] = None
+    jump_link: Optional[str] = None  # Discord jump link to the message
 
 
 class SummaryDetailResponse(BaseModel):

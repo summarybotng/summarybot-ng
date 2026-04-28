@@ -89,6 +89,10 @@ export interface SummaryReference {
   timestamp: string;
   content: string;
   message_id?: string;
+  channel_id?: string;
+  channel_name?: string;
+  guild_id?: string;
+  jump_link?: string;
 }
 
 export interface SummaryDetail extends Omit<Summary, 'preview' | 'summary_length'> {

@@ -1405,17 +1405,35 @@ async def get_stored_summary(
     # Build references from summary_result if available (ADR-004)
     from ..models import SummaryReferenceResponse
     references = []
+
+    # Build channel name lookup from guild
+    channel_names: dict = {}
+    if guild:
+        for channel in guild.text_channels:
+            channel_names[str(channel.id)] = channel.name
+
     if summary_result and hasattr(summary_result, 'reference_index') and summary_result.reference_index:
         for ref in summary_result.reference_index:
             # Handle both object and dict formats
             if hasattr(ref, 'position'):
                 # Object format
+                ref_channel_id = getattr(ref, 'channel_id', None)
+                ref_guild_id = getattr(ref, 'guild_id', None) or guild_id
+                ref_channel_name = channel_names.get(ref_channel_id) if ref_channel_id else None
+                # Build jump link
+                jump_link = None
+                if ref_guild_id and ref_channel_id and ref.message_id:
+                    jump_link = f"https://discord.com/channels/{ref_guild_id}/{ref_channel_id}/{ref.message_id}"
                 references.append(SummaryReferenceResponse(
                     id=ref.position,
                     author=ref.sender,
                     timestamp=ref.timestamp,
                     content=ref.snippet,
                     message_id=ref.message_id,
+                    channel_id=ref_channel_id,
+                    channel_name=ref_channel_name,
+                    guild_id=ref_guild_id,
+                    jump_link=jump_link,
                 ))
             elif isinstance(ref, dict):
                 # Dict format (from DB)
@@ -1423,12 +1441,23 @@ async def get_stored_summary(
                 ts = ref.get('timestamp')
                 if isinstance(ts, str):
                     ts = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                ref_channel_id = ref.get('channel_id')
+                ref_guild_id = ref.get('guild_id') or guild_id
+                ref_channel_name = channel_names.get(ref_channel_id) if ref_channel_id else None
+                # Build jump link
+                jump_link = None
+                if ref_guild_id and ref_channel_id and ref.get('message_id'):
+                    jump_link = f"https://discord.com/channels/{ref_guild_id}/{ref_channel_id}/{ref.get('message_id')}"
                 references.append(SummaryReferenceResponse(
                     id=ref.get('position', 0),
                     author=ref.get('sender', 'Unknown'),
                     timestamp=ts,
                     content=ref.get('snippet', ''),
                     message_id=ref.get('message_id'),
+                    channel_id=ref_channel_id,
+                    channel_name=ref_channel_name,
+                    guild_id=ref_guild_id,
+                    jump_link=jump_link,
                 ))
 
     # ADR-020: Get navigation (prev/next)

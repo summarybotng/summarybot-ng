@@ -60,6 +60,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  Hash,
 } from "lucide-react";
 import {
   Select,
@@ -121,6 +123,190 @@ function groupSummariesByRecency(summaries: StoredSummary[]): {
   }
 
   return groups;
+}
+
+// References Card Component with channel info and expandable content
+import type { SummaryReference } from "@/types";
+
+interface ReferencesCardProps {
+  references: SummaryReference[];
+  formatTime: (timestamp: string) => string;
+}
+
+function ReferencesCard({ references, formatTime }: ReferencesCardProps) {
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const [allExpanded, setAllExpanded] = useState(false);
+
+  const toggleExpand = (id: number) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (allExpanded) {
+      setExpandedIds(new Set());
+      setAllExpanded(false);
+    } else {
+      setExpandedIds(new Set(references.map(r => r.id)));
+      setAllExpanded(true);
+    }
+  };
+
+  // Group references by channel
+  const channelGroups = useMemo(() => {
+    const groups: Record<string, SummaryReference[]> = {};
+    for (const ref of references) {
+      const key = ref.channel_name || ref.channel_id || "unknown";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(ref);
+    }
+    return groups;
+  }, [references]);
+
+  const hasMultipleChannels = Object.keys(channelGroups).length > 1;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Link className="h-4 w-4" />
+          References ({references.length})
+        </CardTitle>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleAll}
+            className="h-7 text-xs"
+          >
+            {allExpanded ? (
+              <>
+                <ChevronUp className="h-3 w-3 mr-1" />
+                Collapse All
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-3 w-3 mr-1" />
+                Expand All
+              </>
+            )}
+          </Button>
+          <CopyButton
+            text={references.map(ref =>
+              `[${ref.id}] ${ref.channel_name ? `#${ref.channel_name} - ` : ""}${ref.author} (${ref.timestamp}): ${ref.content}`
+            ).join("\n")}
+            label="references"
+          />
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {hasMultipleChannels ? (
+          // Group by channel when multiple channels
+          Object.entries(channelGroups).map(([channelKey, refs]) => (
+            <div key={channelKey} className="space-y-2">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Hash className="h-3 w-3" />
+                {channelKey}
+              </div>
+              <div className="space-y-1 pl-5">
+                {refs.map(ref => (
+                  <ReferenceRow
+                    key={ref.id}
+                    ref={ref}
+                    isExpanded={expandedIds.has(ref.id)}
+                    onToggle={() => toggleExpand(ref.id)}
+                    formatTime={formatTime}
+                    showChannel={false}
+                  />
+                ))}
+              </div>
+            </div>
+          ))
+        ) : (
+          // Single channel or no channel info - show flat list
+          <div className="space-y-1">
+            {references.map(ref => (
+              <ReferenceRow
+                key={ref.id}
+                ref={ref}
+                isExpanded={expandedIds.has(ref.id)}
+                onToggle={() => toggleExpand(ref.id)}
+                formatTime={formatTime}
+                showChannel={!!ref.channel_name}
+              />
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface ReferenceRowProps {
+  ref: SummaryReference;
+  isExpanded: boolean;
+  onToggle: () => void;
+  formatTime: (timestamp: string) => string;
+  showChannel: boolean;
+}
+
+function ReferenceRow({ ref, isExpanded, onToggle, formatTime, showChannel }: ReferenceRowProps) {
+  const truncatedContent = ref.content.length > 80 ? ref.content.slice(0, 80) + "..." : ref.content;
+  const needsExpand = ref.content.length > 80;
+
+  return (
+    <div className="group rounded-md border border-border/50 bg-muted/30 hover:bg-muted/50 transition-colors">
+      <div
+        className={`flex items-start gap-3 p-2 ${needsExpand ? "cursor-pointer" : ""}`}
+        onClick={needsExpand ? onToggle : undefined}
+      >
+        <span className="text-xs text-muted-foreground font-mono shrink-0">[{ref.id}]</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium text-sm">{ref.author}</span>
+            <span className="text-xs text-muted-foreground">{formatTime(ref.timestamp)}</span>
+            {showChannel && ref.channel_name && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Hash className="h-3 w-3" />
+                {ref.channel_name}
+              </span>
+            )}
+            {ref.jump_link && (
+              <a
+                href={ref.jump_link}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-xs text-primary hover:underline flex items-center gap-1"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Jump
+              </a>
+            )}
+          </div>
+          <p className={`text-sm text-muted-foreground mt-1 ${isExpanded ? "" : "line-clamp-2"}`}>
+            {isExpanded ? ref.content : truncatedContent}
+          </p>
+        </div>
+        {needsExpand && (
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 shrink-0">
+            {isExpanded ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 interface StoredSummariesTabProps {
@@ -1093,46 +1279,7 @@ function StoredSummaryDetailSheet({
 
               {/* References (ADR-004) */}
               {summary.references && summary.references.length > 0 && (
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Link className="h-4 w-4" />
-                      References
-                    </CardTitle>
-                    <CopyButton
-                      text={summary.references.map(ref =>
-                        `[${ref.id}] ${ref.author} (${ref.timestamp}): ${ref.content}`
-                      ).join("\n")}
-                      label="references"
-                    />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b text-left text-muted-foreground">
-                            <th className="pb-2 pr-4 font-medium">#</th>
-                            <th className="pb-2 pr-4 font-medium">Who</th>
-                            <th className="pb-2 pr-4 font-medium">When</th>
-                            <th className="pb-2 font-medium">Said</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {summary.references.map((ref) => (
-                            <tr key={ref.id} className="border-b border-border/50 last:border-0">
-                              <td className="py-2 pr-4 text-muted-foreground">[{ref.id}]</td>
-                              <td className="py-2 pr-4 font-medium">{ref.author}</td>
-                              <td className="py-2 pr-4 text-muted-foreground whitespace-nowrap">
-                                {formatTime(ref.timestamp)}
-                              </td>
-                              <td className="py-2 text-muted-foreground">{ref.content}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </CardContent>
-                </Card>
+                <ReferencesCard references={summary.references} formatTime={formatTime} />
               )}
 
               {/* ADR-010: How This Summary Was Generated - ALL METADATA */}

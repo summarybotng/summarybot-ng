@@ -537,7 +537,7 @@ async def update_config(
                         audit_entry = AuditLog(
                             id=secrets.token_hex(16),
                             event_type="LOCKED_CHANNEL_ENABLED",
-                            category=AuditEventCategory.SETTINGS,
+                            category=AuditEventCategory.ADMIN,
                             severity=AuditSeverity.WARNING,
                             user_id=user.get("id"),
                             user_name=user.get("username"),

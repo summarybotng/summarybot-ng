@@ -78,6 +78,10 @@ export interface SummaryFilterCriteria {
   /** Filter by channel access issues (true = partial access, false = full access) */
   hasAccessIssues?: boolean;
 
+  // === Private Channels (ADR-073) ===
+  /** Filter by private/locked channel content (true = contains private content) */
+  containsPrivateChannels?: boolean;
+
   // === Sorting (for list views, not feeds) ===
   sortBy?: SortByType;
   sortOrder?: SortOrderType;
@@ -161,6 +165,11 @@ export function criteriaToSearchParams(criteria: SummaryFilterCriteria): URLSear
     params.set("has_access_issues", criteria.hasAccessIssues.toString());
   }
 
+  // ADR-073: Private channels filter
+  if (criteria.containsPrivateChannels !== undefined) {
+    params.set("contains_private_channels", criteria.containsPrivateChannels.toString());
+  }
+
   // Sorting
   if (criteria.sortBy) params.set("sort_by", criteria.sortBy);
   if (criteria.sortOrder) params.set("sort_order", criteria.sortOrder);
@@ -199,6 +208,8 @@ export function criteriaToApiBody(criteria: SummaryFilterCriteria): Record<strin
   if (criteria.perspective) body.perspective = criteria.perspective;
   // ADR-041: Access issues filter
   if (criteria.hasAccessIssues !== undefined) body.has_access_issues = criteria.hasAccessIssues;
+  // ADR-073: Private channels filter
+  if (criteria.containsPrivateChannels !== undefined) body.contains_private_channels = criteria.containsPrivateChannels;
 
   return body;
 }

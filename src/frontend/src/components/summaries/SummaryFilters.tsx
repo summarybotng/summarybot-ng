@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { format, parse } from "date-fns";
-import { Calendar as CalendarIcon, ArrowUpDown, Filter, X, Hash, AlertTriangle, CheckCircle2, ListChecks, Users, MessageSquare } from "lucide-react";
+import { Calendar as CalendarIcon, ArrowUpDown, Filter, X, Hash, AlertTriangle, CheckCircle2, ListChecks, Users, MessageSquare, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -119,6 +119,8 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
     filters.minParticipants !== undefined || filters.maxParticipants !== undefined,
     // ADR-041: Access issues filter
     filters.hasAccessIssues !== undefined,
+    // ADR-073: Private channels filter
+    filters.containsPrivateChannels !== undefined,
   ].filter(Boolean).length;
 
   const handleClearFilters = () => {
@@ -144,6 +146,8 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
       maxParticipants: undefined,
       // ADR-041: Clear access issues filter
       hasAccessIssues: undefined,
+      // ADR-073: Clear private channels filter
+      containsPrivateChannels: undefined,
     });
   };
 
@@ -447,6 +451,39 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
                   >
                     <AlertTriangle className="mr-1 h-3 w-3" />
                     Partial Access
+                  </Button>
+                </div>
+              </div>
+
+              {/* ADR-073: Private channels filter */}
+              <div className="space-y-2">
+                <label className="text-sm text-muted-foreground">Channel Privacy</label>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={filters.containsPrivateChannels === false ? "default" : "outline"}
+                    size="sm"
+                    onClick={() =>
+                      onFiltersChange({
+                        ...filters,
+                        containsPrivateChannels: filters.containsPrivateChannels === false ? undefined : false,
+                      })
+                    }
+                  >
+                    Public Only
+                  </Button>
+                  <Button
+                    variant={filters.containsPrivateChannels === true ? "default" : "outline"}
+                    size="sm"
+                    onClick={() =>
+                      onFiltersChange({
+                        ...filters,
+                        containsPrivateChannels: filters.containsPrivateChannels === true ? undefined : true,
+                      })
+                    }
+                    className={filters.containsPrivateChannels === true ? "bg-red-600 hover:bg-red-700" : ""}
+                  >
+                    <Lock className="mr-1 h-3 w-3" />
+                    Private Channels
                   </Button>
                 </div>
               </div>
@@ -846,6 +883,22 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
               {filters.hasAccessIssues ? "Partial Access" : "Full Access"}
               <button
                 onClick={() => onFiltersChange({ ...filters, hasAccessIssues: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {/* ADR-073: Private channels filter badge */}
+          {filters.containsPrivateChannels !== undefined && (
+            <Badge
+              variant={filters.containsPrivateChannels ? "destructive" : "secondary"}
+              className="gap-1"
+            >
+              <Lock className="h-3 w-3" />
+              {filters.containsPrivateChannels ? "Private Channels" : "Public Only"}
+              <button
+                onClick={() => onFiltersChange({ ...filters, containsPrivateChannels: undefined })}
                 className="ml-1 hover:text-destructive"
               >
                 <X className="h-3 w-3" />

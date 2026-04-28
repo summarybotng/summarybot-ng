@@ -269,6 +269,12 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         elif filter.has_access_issues is False:
             conditions.append("(json_extract(summary_json, '$.metadata.has_access_issues') IS NULL OR json_extract(summary_json, '$.metadata.has_access_issues') = 0)")
 
+        # ADR-073: Private channel content filter
+        if filter.contains_private_channels is True:
+            conditions.append("contains_sensitive_channels = 1")
+        elif filter.contains_private_channels is False:
+            conditions.append("(contains_sensitive_channels IS NULL OR contains_sensitive_channels = 0)")
+
         where_clause = " AND ".join(conditions)
         return where_clause, params
 
@@ -310,6 +316,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         exclude_custom_perspectives: Optional[bool] = None,
         # ADR-041: Access issues filter
         has_access_issues: Optional[bool] = None,
+        # ADR-073: Private channel content filter
+        contains_private_channels: Optional[bool] = None,
     ) -> List[StoredSummary]:
         """Find stored summaries for a guild.
 
@@ -361,6 +369,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             perspective=perspective,
             exclude_custom_perspectives=exclude_custom_perspectives,
             has_access_issues=has_access_issues,
+            contains_private_channels=contains_private_channels,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 
@@ -431,8 +440,10 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         exclude_custom_perspectives: Optional[bool] = None,
         # ADR-041: Access issues filter
         has_access_issues: Optional[bool] = None,
+        # ADR-073: Private channel content filter
+        contains_private_channels: Optional[bool] = None,
     ) -> int:
-        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026, ADR-035, ADR-041)."""
+        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026, ADR-035, ADR-041, ADR-073)."""
         # CS-002: Use shared filter builder
         filter_obj = StoredSummaryFilter(
             guild_id=guild_id,
@@ -459,6 +470,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             perspective=perspective,
             exclude_custom_perspectives=exclude_custom_perspectives,
             has_access_issues=has_access_issues,
+            contains_private_channels=contains_private_channels,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 

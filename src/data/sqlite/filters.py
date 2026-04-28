@@ -47,3 +47,5 @@ class StoredSummaryFilter:
     exclude_custom_perspectives: Optional[bool] = None  # True = exclude summaries with custom prompt templates
     # ADR-041: Access issues filter
     has_access_issues: Optional[bool] = None  # True = partial access, False = full access
+    # ADR-073: Private channel content filter
+    contains_private_channels: Optional[bool] = None  # True = contains locked channel content

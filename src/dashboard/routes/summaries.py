@@ -1149,6 +1149,8 @@ async def list_stored_summaries(
     exclude_custom_perspectives: Optional[bool] = Query(None, description="Exclude summaries with custom prompt templates"),
     # ADR-041: Access issues filter
     has_access_issues: Optional[bool] = Query(None, description="Filter by channel access issues (True = partial access, False = full access)"),
+    # ADR-073: Private channel content filter
+    contains_private_channels: Optional[bool] = Query(None, description="Filter by private/locked channel content (True = contains private content)"),
     user: dict = Depends(get_current_user),
 ):
     """List stored summaries for a guild.
@@ -1159,6 +1161,7 @@ async def list_stored_summaries(
     ADR-026: Platform filtering by archive_source_key prefix.
     ADR-035: Generation settings filtering by summary_length, perspective.
     ADR-041: Access issues filtering for partial coverage detection.
+    ADR-073: Private channel content filtering.
     """
     _check_guild_access(guild_id, user)
     _get_guild_or_404(guild_id)
@@ -1222,6 +1225,8 @@ async def list_stored_summaries(
         exclude_custom_perspectives=exclude_custom_perspectives,
         # ADR-041: Access issues filter
         has_access_issues=has_access_issues,
+        # ADR-073: Private channel content filter
+        contains_private_channels=contains_private_channels,
     )
 
     total = await stored_repo.count_by_guild(
@@ -1254,6 +1259,8 @@ async def list_stored_summaries(
         exclude_custom_perspectives=exclude_custom_perspectives,
         # ADR-041: Access issues filter
         has_access_issues=has_access_issues,
+        # ADR-073: Private channel content filter
+        contains_private_channels=contains_private_channels,
     )
 
     # ADR-046: Filter sensitive summaries for non-admin users

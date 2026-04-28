@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useGuild, useUpdateConfig, useSyncChannels } from "@/hooks/useGuilds";
@@ -12,8 +12,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Hash, Volume2, MessageSquare, RefreshCw, ChevronDown, Check, Lock, AlertTriangle } from "lucide-react";
+import { Hash, Volume2, MessageSquare, RefreshCw, ChevronDown, Check, Lock, AlertTriangle, Eye } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import type { Channel } from "@/types";
 
 const channelIcons = {
@@ -32,11 +33,16 @@ export function Channels() {
   const [openCategories, setOpenCategories] = useState<Set<string>>(new Set(["uncategorized"]));
   const [enabledChannels, setEnabledChannels] = useState<Set<string>>(new Set());
   const [hasChanges, setHasChanges] = useState(false);
+  const initializedRef = useRef(false);
+  const lastGuildIdRef = useRef<string | null>(null);
 
-  // Initialize enabled channels from guild config
-  useMemo(() => {
-    if (guild) {
+  // Initialize enabled channels from guild config - only on first load or guild change
+  useEffect(() => {
+    if (guild && (!initializedRef.current || lastGuildIdRef.current !== guild.id)) {
       setEnabledChannels(new Set(guild.config.enabled_channels));
+      setHasChanges(false);
+      initializedRef.current = true;
+      lastGuildIdRef.current = guild.id;
     }
   }, [guild]);
 
@@ -161,17 +167,39 @@ export function Channels() {
             <RefreshCw className={`mr-2 h-4 w-4 ${syncChannels.isPending ? "animate-spin" : ""}`} />
             Sync Channels
           </Button>
-          {hasChanges && (
-            <Button onClick={saveChanges} disabled={updateConfig.isPending}>
-              <Check className="mr-2 h-4 w-4" />
-              Save Changes
-            </Button>
-          )}
+          <Button
+            onClick={saveChanges}
+            disabled={!hasChanges || updateConfig.isPending}
+            variant={hasChanges ? "default" : "outline"}
+          >
+            <Check className="mr-2 h-4 w-4" />
+            {hasChanges ? "Save Changes" : "Saved"}
+          </Button>
         </div>
       </motion.div>
 
+      {/* Locked channels being summarized warning */}
+      {(() => {
+        const lockedSummarizing = guild?.channels.filter(c =>
+          c.is_locked && (enabledChannels.has(c.id) || c.locked_override)
+        ) || [];
+        if (lockedSummarizing.length > 0) {
+          return (
+            <Alert className="border-red-500/50 bg-red-500/10">
+              <AlertTriangle className="h-4 w-4 text-red-500" />
+              <AlertDescription className="text-red-700 dark:text-red-300">
+                <strong>{lockedSummarizing.length} private channel{lockedSummarizing.length > 1 ? 's are' : ' is'} being summarized:</strong>{' '}
+                {lockedSummarizing.map(c => c.name).join(', ')}.
+                These summaries may contain sensitive content.
+              </AlertDescription>
+            </Alert>
+          );
+        }
+        return null;
+      })()}
+
       {/* Locked channels notice */}
-      {guild?.channels.some(c => c.is_locked) && (
+      {guild?.channels.some(c => c.is_locked && !enabledChannels.has(c.id) && !c.locked_override) && (
         <Alert className="border-amber-500/50 bg-amber-500/10">
           <Lock className="h-4 w-4 text-amber-500" />
           <AlertDescription className="text-amber-700 dark:text-amber-300">
@@ -249,12 +277,18 @@ export function Channels() {
                           const isEnabled = enabledChannels.has(channel.id);
                           const isLocked = channel.is_locked;
                           const hasOverride = channel.locked_override;
+                          // A locked channel is "summarizing" if it's enabled (locally or via override)
+                          const isLockedAndSummarizing = isLocked && (isEnabled || hasOverride);
 
                           return (
                             <div
                               key={channel.id}
                               className={`flex items-center justify-between rounded-lg px-4 py-3 ${
-                                isLocked ? "bg-amber-500/10 border border-amber-500/20" : "bg-muted/30"
+                                isLockedAndSummarizing
+                                  ? "bg-red-500/10 border border-red-500/30"
+                                  : isLocked
+                                    ? "bg-amber-500/10 border border-amber-500/20"
+                                    : "bg-muted/30"
                               }`}
                             >
                               <div className="flex items-center gap-3">
@@ -264,15 +298,18 @@ export function Channels() {
                                   <div className="flex items-center gap-1">
                                     <Lock className="h-3 w-3 text-amber-500" />
                                     <span className="text-xs text-amber-500">Private</span>
-                                    {hasOverride && (
-                                      <span className="text-xs text-amber-600 ml-1">(override)</span>
+                                    {isLockedAndSummarizing && (
+                                      <Badge variant="destructive" className="ml-1 text-xs py-0 px-1.5">
+                                        <Eye className="h-3 w-3 mr-1" />
+                                        Summarizing
+                                      </Badge>
                                     )}
                                   </div>
                                 )}
                               </div>
                               <div className="flex items-center gap-2">
                                 {isLocked && isEnabled && !hasOverride && (
-                                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                                  <AlertTriangle className="h-4 w-4 text-amber-500" title="Pending save - will be logged" />
                                 )}
                                 <Switch
                                   checked={isEnabled}

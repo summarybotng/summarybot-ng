@@ -229,12 +229,12 @@ refs = summary_data.get("references") or summary_data.get("reference_index") or 
 **Resolution**: Create proper management command or migration script in codebase.
 
 ### TD-074-3: Detection Not Integrated at Generation Time
-**Severity**: Medium
+**Severity**: Medium — **RESOLVED**
 **Description**: `contains_sensitive_channels` is calculated via backfill, not set automatically when summaries are created.
 
 **Impact**: New summaries may not have accurate flag until next backfill.
 
-**Resolution**: Integrate `determine_private_content()` into summary storage pipeline.
+**Resolution**: ✅ Integrated `_calculate_private_content()` into `SQLiteStoredSummaryRepository.save()`. New summaries now have the flag calculated automatically at save time.
 
 ### TD-074-4: UI Doesn't Show Source Channels
 **Severity**: Low

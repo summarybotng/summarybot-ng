@@ -9,6 +9,7 @@ from datetime import datetime
 
 from ..base import StoredSummaryRepository
 from src.utils.time import utc_now_naive
+from src.utils.channel_privacy import determine_private_content, get_references_from_summary
 from ...models.summary import (
     SummaryResult,
     ActionItem,
@@ -52,6 +53,10 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             message_count = summary.summary_result.message_count or 0
             participant_count = len(summary.summary_result.participants) if summary.summary_result.participants else 0
 
+        # ADR-074: Calculate contains_sensitive_channels at save time
+        contains_sensitive = await self._calculate_private_content(summary)
+        summary.contains_sensitive_channels = contains_sensitive  # Update model too
+
         query = """
         INSERT OR REPLACE INTO stored_summaries (
             id, guild_id, source_channel_ids, schedule_id,
@@ -59,8 +64,9 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             push_deliveries, title, is_pinned, is_archived, tags,
             source, archive_period, archive_granularity, archive_source_key,
             message_count, participant_count,
-            wiki_ingested, wiki_ingested_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            wiki_ingested, wiki_ingested_at,
+            contains_sensitive_channels
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -88,6 +94,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             # ADR-067: Wiki ingestion tracking
             summary.wiki_ingested,
             summary.wiki_ingested_at.isoformat() if summary.wiki_ingested_at else None,
+            # ADR-074: Private channel content flag
+            contains_sensitive,
         )
 
         await self.connection.execute(query, params)
@@ -133,6 +141,42 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         except Exception as e:
             # FTS is optional - don't fail the save if FTS update fails
             logger.warning(f"Failed to update FTS for summary {summary.id}: {e}")
+
+    async def _calculate_private_content(self, summary: StoredSummary) -> bool:
+        """Calculate if summary contains private channel content (ADR-074).
+
+        Uses refined detection logic:
+        1. Check grounded references for locked channel content
+        2. For single-channel summaries, check if channel is locked
+        3. For multi-channel without references, default to False
+        """
+        try:
+            # Get locked channel IDs for this guild
+            query = """
+                SELECT channel_id FROM channel_settings
+                WHERE guild_id = ? AND is_locked = 1
+            """
+            rows = await self.connection.fetch_all(query, (summary.guild_id,))
+            locked_channel_ids = set(row[0] for row in rows)
+
+            if not locked_channel_ids:
+                return False
+
+            # Get references from summary_result
+            references = []
+            if summary.summary_result:
+                summary_dict = summary.summary_result.to_dict()
+                references = get_references_from_summary(summary_dict)
+
+            # Use refined detection logic
+            return determine_private_content(
+                source_channel_ids=summary.source_channel_ids,
+                references=references,
+                locked_channel_ids=locked_channel_ids,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to calculate private content for {summary.id}: {e}")
+            return False
 
     async def get(self, summary_id: str) -> Optional[StoredSummary]:
         """Retrieve a stored summary by its ID."""

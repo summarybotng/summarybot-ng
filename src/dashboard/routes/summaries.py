@@ -355,9 +355,60 @@ async def get_summary_metadata(
     summary_id: str = Path(..., description="Summary ID"),
     user: dict = Depends(get_current_user),
 ):
-    """Get lightweight summary metadata for wiki source references (ADR-069)."""
+    """Get lightweight summary metadata for wiki source references (ADR-069).
+
+    Checks both stored_summaries (used by wiki) and summaries tables.
+    """
     _check_guild_access(guild_id, user)
 
+    # First try stored_summaries (this is what wiki uses)
+    stored_repo = await _get_stored_summary_repository()
+    if stored_repo:
+        stored = await stored_repo.get(summary_id)
+        if stored and stored.guild_id == guild_id:
+            sr = stored.summary_result
+            # Derive platform from archive_source_key or context
+            platform = None
+            source_key = stored.archive_source_key
+            if source_key:
+                if "discord" in source_key.lower():
+                    platform = "Discord"
+                elif "whatsapp" in source_key.lower():
+                    platform = "WhatsApp"
+                elif "telegram" in source_key.lower():
+                    platform = "Telegram"
+            elif sr and sr.context and sr.context.scope:
+                # Default to Discord for legacy summaries with context
+                platform = "Discord"
+
+            # Get channel info from context
+            channel_count = None
+            channels = None
+            scope = None
+            if sr and sr.context:
+                if sr.context.channel_ids:
+                    channel_count = len(sr.context.channel_ids)
+                if sr.context.channel_names:
+                    channels = sr.context.channel_names
+                scope = sr.context.scope
+
+            # Build title
+            title = stored.title or (f"Summary — {stored.created_at.strftime('%b %d, %H:%M')}" if stored.created_at else "Summary")
+
+            return SummaryMetadataLightResponse(
+                id=stored.id,
+                title=title,
+                platform=platform,
+                source_key=source_key,
+                scope=scope,
+                channel_count=channel_count,
+                channels=channels,
+                created_at=stored.created_at,
+                period_start=sr.start_time if sr else None,
+                period_end=sr.end_time if sr else None,
+            )
+
+    # Fall back to summaries table
     summary_repo = await get_summary_repository()
     if not summary_repo:
         raise HTTPException(

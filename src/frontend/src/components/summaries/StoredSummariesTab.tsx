@@ -216,12 +216,12 @@ function ReferencesCard({ references, formatTime }: ReferencesCardProps) {
                 {channelKey}
               </div>
               <div className="space-y-1 pl-5">
-                {refs.map(ref => (
+                {refs.map(r => (
                   <ReferenceRow
-                    key={ref.id}
-                    ref={ref}
-                    isExpanded={expandedIds.has(ref.id)}
-                    onToggle={() => toggleExpand(ref.id)}
+                    key={r.id}
+                    reference={r}
+                    isExpanded={expandedIds.has(r.id)}
+                    onToggle={() => toggleExpand(r.id)}
                     formatTime={formatTime}
                     showChannel={false}
                   />
@@ -232,14 +232,14 @@ function ReferencesCard({ references, formatTime }: ReferencesCardProps) {
         ) : (
           // Single channel or no channel info - show flat list
           <div className="space-y-1">
-            {references.map(ref => (
+            {references.map(r => (
               <ReferenceRow
-                key={ref.id}
-                ref={ref}
-                isExpanded={expandedIds.has(ref.id)}
-                onToggle={() => toggleExpand(ref.id)}
+                key={r.id}
+                reference={r}
+                isExpanded={expandedIds.has(r.id)}
+                onToggle={() => toggleExpand(r.id)}
                 formatTime={formatTime}
-                showChannel={!!ref.channel_name}
+                showChannel={!!r.channel_name}
               />
             ))}
           </div>
@@ -250,16 +250,16 @@ function ReferencesCard({ references, formatTime }: ReferencesCardProps) {
 }
 
 interface ReferenceRowProps {
-  ref: SummaryReference;
+  reference: SummaryReference;
   isExpanded: boolean;
   onToggle: () => void;
   formatTime: (timestamp: string) => string;
   showChannel: boolean;
 }
 
-function ReferenceRow({ ref, isExpanded, onToggle, formatTime, showChannel }: ReferenceRowProps) {
-  const truncatedContent = ref.content.length > 80 ? ref.content.slice(0, 80) + "..." : ref.content;
-  const needsExpand = ref.content.length > 80;
+function ReferenceRow({ reference, isExpanded, onToggle, formatTime, showChannel }: ReferenceRowProps) {
+  const truncatedContent = reference.content.length > 80 ? reference.content.slice(0, 80) + "..." : reference.content;
+  const needsExpand = reference.content.length > 80;
 
   return (
     <div className="group rounded-md border border-border/50 bg-muted/30 hover:bg-muted/50 transition-colors">
@@ -267,20 +267,20 @@ function ReferenceRow({ ref, isExpanded, onToggle, formatTime, showChannel }: Re
         className={`flex items-start gap-3 p-2 ${needsExpand ? "cursor-pointer" : ""}`}
         onClick={needsExpand ? onToggle : undefined}
       >
-        <span className="text-xs text-muted-foreground font-mono shrink-0">[{ref.id}]</span>
+        <span className="text-xs text-muted-foreground font-mono shrink-0">[{reference.id}]</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-sm">{ref.author}</span>
-            <span className="text-xs text-muted-foreground">{formatTime(ref.timestamp)}</span>
-            {showChannel && ref.channel_name && (
+            <span className="font-medium text-sm">{reference.author}</span>
+            <span className="text-xs text-muted-foreground">{formatTime(reference.timestamp)}</span>
+            {showChannel && reference.channel_name && (
               <span className="text-xs text-muted-foreground flex items-center gap-1">
                 <Hash className="h-3 w-3" />
-                {ref.channel_name}
+                {reference.channel_name}
               </span>
             )}
-            {ref.jump_link && (
+            {reference.jump_link && (
               <a
-                href={ref.jump_link}
+                href={reference.jump_link}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
@@ -292,7 +292,7 @@ function ReferenceRow({ ref, isExpanded, onToggle, formatTime, showChannel }: Re
             )}
           </div>
           <p className={`text-sm text-muted-foreground mt-1 ${isExpanded ? "" : "line-clamp-2"}`}>
-            {isExpanded ? ref.content : truncatedContent}
+            {isExpanded ? reference.content : truncatedContent}
           </p>
         </div>
         {needsExpand && (

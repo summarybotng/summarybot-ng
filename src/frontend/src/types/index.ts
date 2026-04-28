@@ -369,6 +369,8 @@ export interface StoredSummary {
   // ADR-041: Access issues indicator
   has_access_issues?: boolean;
   access_coverage_percent?: number;
+  // ADR-073: Private channel content indicator
+  contains_sensitive_channels?: boolean;
 }
 
 // ADR-020: Navigation for prev/next summary

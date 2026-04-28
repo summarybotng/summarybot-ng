@@ -62,6 +62,7 @@ import {
   ChevronRight,
   ChevronUp,
   Hash,
+  Lock,
 } from "lucide-react";
 import {
   Select,
@@ -1296,6 +1297,16 @@ function StoredSummaryDetailSheet({
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
+                    {/* ADR-073: Privacy indicator - shown prominently if contains private channels */}
+                    {summary.contains_sensitive_channels && (
+                      <div className="flex items-center gap-2 p-2 bg-red-500/10 border border-red-500/30 rounded-md text-sm">
+                        <Lock className="h-4 w-4 text-red-500" />
+                        <span className="text-red-600 dark:text-red-400 font-medium">
+                          Contains content from private/locked channels
+                        </span>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       {/* Core generation settings */}
                       {(summary.metadata.model_used || summary.metadata.model) && (

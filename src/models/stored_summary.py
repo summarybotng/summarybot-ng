@@ -114,6 +114,9 @@ class StoredSummary(BaseModel):
     wiki_ingested: bool = False
     wiki_ingested_at: Optional[datetime] = None
 
+    # ADR-073: Private channel content indicator
+    contains_sensitive_channels: bool = False
+
     def get_pushed_channel_ids(self) -> List[str]:
         """Get list of channel IDs this summary was pushed to."""
         return [d.channel_id for d in self.push_deliveries if d.success]
@@ -328,6 +331,8 @@ class StoredSummary(BaseModel):
             # ADR-067: Wiki ingestion status
             "wiki_ingested": self.wiki_ingested,
             "wiki_ingested_at": self.wiki_ingested_at.isoformat() if self.wiki_ingested_at else None,
+            # ADR-073: Private channel content indicator
+            "contains_sensitive_channels": self.contains_sensitive_channels,
         }
 
     def to_dict(self) -> Dict[str, Any]:

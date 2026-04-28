@@ -686,6 +686,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             # ADR-067: Wiki ingestion tracking
             wiki_ingested=bool(row.get('wiki_ingested', False)),
             wiki_ingested_at=datetime.fromisoformat(row['wiki_ingested_at']) if row.get('wiki_ingested_at') else None,
+            # ADR-073: Private channel content indicator
+            contains_sensitive_channels=bool(row.get('contains_sensitive_channels', False)),
         )
 
     def _dict_to_summary_result(self, data: Dict[str, Any]) -> SummaryResult:

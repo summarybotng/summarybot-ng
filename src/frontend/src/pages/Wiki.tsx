@@ -1052,29 +1052,53 @@ function SourceReferences({ guildId, sourceId }: { guildId: string; sourceId: st
     );
   }
 
+  // Format date range for display
+  const formatDateRange = (start?: string, end?: string) => {
+    if (!start && !end) return null;
+    const startDate = start ? new Date(start) : null;
+    const endDate = end ? new Date(end) : null;
+
+    const formatDate = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const formatTime = (d: Date) => d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+    if (startDate && endDate) {
+      // Same day - show date + time range
+      if (startDate.toDateString() === endDate.toDateString()) {
+        return `${formatDate(startDate)}, ${formatTime(startDate)} – ${formatTime(endDate)}`;
+      }
+      // Different days - show date range
+      return `${formatDate(startDate)} – ${formatDate(endDate)}`;
+    }
+    return startDate ? formatDate(startDate) : endDate ? formatDate(endDate) : null;
+  };
+
+  const dateRange = formatDateRange(summaryMeta?.period_start, summaryMeta?.period_end);
+
   return (
     <div className="space-y-6">
       {/* ADR-069: Enhanced source info with metadata */}
       <Card className="border-primary/50">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between text-base">
-            <span className="flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              {summaryMeta?.title || "Source Reference"}
-            </span>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <div className="text-xs text-muted-foreground mb-1">Source Reference</div>
+              <CardTitle className="text-lg truncate">
+                {summaryMeta?.title || `Summary ${summaryId?.slice(0, 8) || sourceId.slice(0, 12)}...`}
+              </CardTitle>
+            </div>
             {summaryId && (
               <Link to={`/guilds/${guildId}/summaries?view=${summaryId}`}>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" className="shrink-0">
                   <ExternalLink className="h-4 w-4 mr-1" />
                   View Summary
                 </Button>
               </Link>
             )}
-          </CardTitle>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Metadata grid */}
-          {summaryMeta && (
+          {(summaryMeta || platform || dateRange) && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
               {platform && (
                 <div>
@@ -1087,21 +1111,19 @@ function SourceReferences({ guildId, sourceId }: { guildId: string; sourceId: st
                   </div>
                 </div>
               )}
-              {(summaryMeta.period_start || summaryMeta.created_at) && (
+              {dateRange && (
                 <div>
-                  <div className="text-xs text-muted-foreground mb-1">Date</div>
-                  <div className="font-medium">
-                    {new Date(summaryMeta.period_start || summaryMeta.created_at!).toLocaleDateString()}
-                  </div>
+                  <div className="text-xs text-muted-foreground mb-1">Date Range</div>
+                  <div className="font-medium">{dateRange}</div>
                 </div>
               )}
-              {summaryMeta.scope && (
+              {summaryMeta?.scope && (
                 <div>
                   <div className="text-xs text-muted-foreground mb-1">Scope</div>
                   <div className="font-medium capitalize">{summaryMeta.scope}</div>
                 </div>
               )}
-              {(summaryMeta.channel_count || summaryMeta.channels?.length) && (
+              {(summaryMeta?.channel_count || summaryMeta?.channels?.length) && (
                 <div>
                   <div className="text-xs text-muted-foreground mb-1">Channels</div>
                   <div className="font-medium">

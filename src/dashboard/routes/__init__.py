@@ -135,6 +135,15 @@ async def get_wiki_repository():
         return None
 
 
+async def get_channel_settings_repository():
+    """Get channel settings repository instance (ADR-073)."""
+    try:
+        from ...data.repositories import get_channel_settings_repository as _get_repo
+        return await _get_repo()
+    except RuntimeError:
+        return None
+
+
 # Import routers
 from .auth import router as auth_router
 from .guilds import router as guilds_router

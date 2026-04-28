@@ -12,7 +12,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Hash, Volume2, MessageSquare, RefreshCw, ChevronDown, Check } from "lucide-react";
+import { Hash, Volume2, MessageSquare, RefreshCw, ChevronDown, Check, Lock, AlertTriangle } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { Channel } from "@/types";
 
 const channelIcons = {
@@ -169,6 +170,17 @@ export function Channels() {
         </div>
       </motion.div>
 
+      {/* Locked channels notice */}
+      {guild?.channels.some(c => c.is_locked) && (
+        <Alert className="border-amber-500/50 bg-amber-500/10">
+          <Lock className="h-4 w-4 text-amber-500" />
+          <AlertDescription className="text-amber-700 dark:text-amber-300">
+            <strong>Private channels detected.</strong> Channels marked with 🔒 have restricted access.
+            These are disabled by default to protect sensitive content. Enabling them will be logged for audit.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="space-y-4">
         {categories.map((category, categoryIndex) => {
           const channels = channelsByCategory[category];
@@ -235,20 +247,52 @@ export function Channels() {
                         {channels.map((channel) => {
                           const Icon = channelIcons[channel.type];
                           const isEnabled = enabledChannels.has(channel.id);
+                          const isLocked = channel.is_locked;
+                          const hasOverride = channel.locked_override;
 
                           return (
                             <div
                               key={channel.id}
-                              className="flex items-center justify-between rounded-lg bg-muted/30 px-4 py-3"
+                              className={`flex items-center justify-between rounded-lg px-4 py-3 ${
+                                isLocked ? "bg-amber-500/10 border border-amber-500/20" : "bg-muted/30"
+                              }`}
                             >
                               <div className="flex items-center gap-3">
                                 <Icon className="h-4 w-4 text-muted-foreground" />
                                 <span className="font-medium">{channel.name}</span>
+                                {isLocked && (
+                                  <div className="flex items-center gap-1">
+                                    <Lock className="h-3 w-3 text-amber-500" />
+                                    <span className="text-xs text-amber-500">Private</span>
+                                    {hasOverride && (
+                                      <span className="text-xs text-amber-600 ml-1">(override)</span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
-                              <Switch
-                                checked={isEnabled}
-                                onCheckedChange={() => toggleChannel(channel.id)}
-                              />
+                              <div className="flex items-center gap-2">
+                                {isLocked && isEnabled && !hasOverride && (
+                                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                                )}
+                                <Switch
+                                  checked={isEnabled}
+                                  onCheckedChange={() => {
+                                    if (isLocked && !isEnabled) {
+                                      // Show warning for enabling locked channels
+                                      if (window.confirm(
+                                        `⚠️ "${channel.name}" is a private/locked channel.\n\n` +
+                                        `Enabling summarization may expose sensitive content. ` +
+                                        `This action will be logged for audit purposes.\n\n` +
+                                        `Are you sure you want to enable summarization?`
+                                      )) {
+                                        toggleChannel(channel.id);
+                                      }
+                                    } else {
+                                      toggleChannel(channel.id);
+                                    }
+                                  }}
+                                />
+                              </div>
                             </div>
                           );
                         })}

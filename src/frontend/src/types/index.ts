@@ -47,6 +47,8 @@ export interface Channel {
   type: "text" | "voice" | "forum";
   category: string | null;
   enabled: boolean;
+  is_locked?: boolean;
+  locked_override?: boolean;
 }
 
 export interface Category {

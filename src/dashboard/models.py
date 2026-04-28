@@ -174,6 +174,8 @@ class ChannelResponse(BaseModel):
     type: str
     category: Optional[str]
     enabled: bool
+    is_locked: bool = False
+    locked_override: bool = False
 
 
 class CategoryResponse(BaseModel):

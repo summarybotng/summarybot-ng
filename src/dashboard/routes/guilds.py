@@ -25,12 +25,46 @@ from ..models import (
     ConfigStatus,
     ErrorResponse,
 )
-from . import get_discord_bot, get_config_manager, get_config_repository, get_summary_repository, get_task_repository, get_webhook_repository, get_feed_repository
+from . import get_discord_bot, get_config_manager, get_config_repository, get_summary_repository, get_task_repository, get_webhook_repository, get_feed_repository, get_channel_settings_repository, get_audit_repository
 from ...data.base import SearchCriteria
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _is_channel_locked(channel, guild) -> bool:
+    """
+    Check if a channel is "locked down" (restricted access).
+
+    A channel is considered locked if @everyone lacks:
+    - VIEW_CHANNEL permission, or
+    - READ_MESSAGE_HISTORY permission
+
+    Per ADR-073, locked channels should be disabled by default.
+    """
+    try:
+        everyone_role = guild.default_role
+        overwrites = channel.overwrites_for(everyone_role)
+
+        # Check for explicit denies
+        if overwrites.view_channel is False:
+            return True
+        if overwrites.read_message_history is False:
+            return True
+
+        # Also check category-level restrictions
+        if channel.category:
+            cat_overwrites = channel.category.overwrites_for(everyone_role)
+            if cat_overwrites.view_channel is False:
+                return True
+            if cat_overwrites.read_message_history is False:
+                return True
+
+        return False
+    except Exception as e:
+        logger.warning(f"Error checking channel lock status: {e}")
+        return False
 
 
 def _get_guild_or_404(guild_id: str):
@@ -205,12 +239,21 @@ async def get_guild(
         if current_config:
             guild_config = current_config.guild_configs.get(guild_id)
 
-    enabled_channels = guild_config.enabled_channels if guild_config else []
+    # Get enabled channels from guild_config (legacy) and channel_settings (new ADR-073)
+    enabled_channels_legacy = set(guild_config.enabled_channels if guild_config else [])
     excluded_channels = guild_config.excluded_channels if guild_config else []
+
+    # Get channel settings from ADR-073 table
+    channel_settings_repo = await get_channel_settings_repository()
+    channel_settings_map = {}
+    if channel_settings_repo:
+        settings_list = await channel_settings_repo.get_guild_settings(guild_id)
+        channel_settings_map = {s.channel_id: s for s in settings_list}
 
     # Build channel list
     channels = []
     categories = {}
+    settings_to_save = []  # New settings to persist
 
     # Get text channels - always fetch from Discord API to ensure fresh data
     text_channels = list(guild.text_channels)
@@ -228,6 +271,7 @@ async def get_guild(
             text_channels = []
 
     for channel in text_channels:
+        channel_id_str = str(channel.id)
         category_name = channel.category.name if channel.category else None
         category_id = str(channel.category.id) if channel.category else None
 
@@ -241,15 +285,51 @@ async def get_guild(
         if category_id:
             categories[category_id]["channel_count"] += 1
 
+        # Check locked status
+        is_locked = _is_channel_locked(channel, guild)
+
+        # Determine enabled state from channel_settings or fallback to legacy
+        settings = channel_settings_map.get(channel_id_str)
+        if settings:
+            # Use persistent channel settings
+            enabled = settings.enabled
+            locked_override = settings.locked_override
+        else:
+            # Fallback to legacy enabled_channels, but locked channels default to disabled
+            if is_locked:
+                enabled = False  # Locked channels disabled by default (ADR-073)
+                locked_override = False
+            else:
+                enabled = channel_id_str in enabled_channels_legacy
+                locked_override = False
+
+            # Create initial settings record for new channels
+            from ...data.sqlite.channel_settings_repository import ChannelSettings
+            settings_to_save.append(ChannelSettings(
+                guild_id=guild_id,
+                channel_id=channel_id_str,
+                platform="discord",
+                enabled=enabled,
+                is_locked=is_locked,
+                locked_override=False,
+                wiki_visible=not is_locked,  # Locked channels not wiki-visible by default
+            ))
+
         channels.append(
             ChannelResponse(
-                id=str(channel.id),
+                id=channel_id_str,
                 name=channel.name,
                 type="text",
                 category=category_name,
-                enabled=str(channel.id) in enabled_channels,
+                enabled=enabled,
+                is_locked=is_locked,
+                locked_override=locked_override,
             )
         )
+
+    # Persist new channel settings
+    if settings_to_save and channel_settings_repo:
+        await channel_settings_repo.bulk_upsert_settings(settings_to_save)
 
     # Build category list
     category_list = [
@@ -261,10 +341,11 @@ async def get_guild(
         for cat in categories.values()
     ]
 
-    # Build config response
+    # Build config response - use the actual enabled channels from channel list
+    enabled_channel_ids = [c.id for c in channels if c.enabled]
     default_opts = guild_config.default_summary_options if guild_config else None
     config_response = GuildConfigResponse(
-        enabled_channels=enabled_channels,
+        enabled_channels=enabled_channel_ids,
         excluded_channels=excluded_channels,
         default_options=SummaryOptionsResponse(
             summary_length=default_opts.summary_length.value if default_opts else "detailed",
@@ -390,6 +471,86 @@ async def update_config(
     # Update fields
     if body.enabled_channels is not None:
         guild_config.enabled_channels = body.enabled_channels
+
+        # Also persist to channel_settings table (ADR-073)
+        channel_settings_repo = await get_channel_settings_repository()
+        if channel_settings_repo:
+            # Get current settings to check for locked channel overrides
+            current_settings = await channel_settings_repo.get_guild_settings(guild_id)
+            settings_by_id = {s.channel_id: s for s in current_settings}
+
+            enabled_set = set(body.enabled_channels)
+            from ...data.sqlite.channel_settings_repository import ChannelSettings
+            settings_to_save = []
+            locked_overrides = []
+
+            for channel_id in enabled_set:
+                existing = settings_by_id.get(channel_id)
+                if existing:
+                    # Check if enabling a locked channel (requires audit)
+                    if existing.is_locked and not existing.locked_override:
+                        locked_overrides.append(channel_id)
+                        settings_to_save.append(ChannelSettings(
+                            guild_id=guild_id,
+                            channel_id=channel_id,
+                            platform="discord",
+                            enabled=True,
+                            is_locked=True,
+                            locked_override=True,
+                            locked_override_by=user.get("id"),
+                            locked_override_at=datetime.utcnow(),
+                            wiki_visible=existing.wiki_visible,
+                        ))
+                    elif existing.enabled != True:
+                        existing.enabled = True
+                        settings_to_save.append(existing)
+                else:
+                    # New channel being enabled
+                    settings_to_save.append(ChannelSettings(
+                        guild_id=guild_id,
+                        channel_id=channel_id,
+                        platform="discord",
+                        enabled=True,
+                    ))
+
+            # Handle disabled channels
+            for channel_id, existing in settings_by_id.items():
+                if channel_id not in enabled_set and existing.enabled:
+                    existing.enabled = False
+                    # Clear override if disabling a locked channel
+                    if existing.is_locked:
+                        existing.locked_override = False
+                        existing.locked_override_by = None
+                        existing.locked_override_at = None
+                    settings_to_save.append(existing)
+
+            if settings_to_save:
+                await channel_settings_repo.bulk_upsert_settings(settings_to_save)
+
+            # Log audit events for locked channel overrides
+            if locked_overrides:
+                audit_repo = await get_audit_repository()
+                if audit_repo:
+                    from ...models.audit_log import AuditLog, AuditEventCategory, AuditSeverity
+                    import secrets
+                    for channel_id in locked_overrides:
+                        audit_entry = AuditLog(
+                            id=secrets.token_hex(16),
+                            event_type="LOCKED_CHANNEL_ENABLED",
+                            category=AuditEventCategory.SETTINGS,
+                            severity=AuditSeverity.WARNING,
+                            user_id=user.get("id"),
+                            user_name=user.get("username"),
+                            guild_id=guild_id,
+                            resource_type="channel",
+                            resource_id=channel_id,
+                            action="enable_locked_channel",
+                            details={"warning": "Summarization enabled on locked/private channel"},
+                            success=True,
+                            timestamp=datetime.utcnow(),
+                        )
+                        await audit_repo.save(audit_entry)
+                        logger.warning(f"Locked channel {channel_id} enabled for summarization by {user.get('username')} in guild {guild_id}")
 
     if body.excluded_channels is not None:
         guild_config.excluded_channels = body.excluded_channels

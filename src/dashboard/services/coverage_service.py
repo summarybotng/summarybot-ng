@@ -253,6 +253,16 @@ class CoverageService:
                 except Exception:
                     pass
 
+            # Fallback: try to fetch channel directly from Discord API (for deleted/moved channels)
+            if not channel_name and discord_bot and discord_bot.client:
+                try:
+                    fetched_channel = await discord_bot.client.fetch_channel(int(channel_id))
+                    if fetched_channel:
+                        channel_name = getattr(fetched_channel, 'name', None)
+                except Exception:
+                    # Channel doesn't exist or bot can't access it
+                    pass
+
             # Sort ranges by start time
             ranges.sort(key=lambda r: r[0])
 
@@ -268,18 +278,18 @@ class CoverageService:
             covered_start = merged[0][0] if merged else None
             covered_end = merged[-1][1] if merged else None
 
-            # Determine content boundaries
+            # Determine content boundaries (normalize to naive for consistent comparison)
             if info and hasattr(info, 'earliest_message') and info.earliest_message:
-                content_start = info.earliest_message
+                content_start = _make_naive(info.earliest_message)
             elif info and hasattr(info, 'content_start') and info.content_start:
-                content_start = info.content_start
+                content_start = _make_naive(info.content_start)
             else:
                 content_start = covered_start
 
             if info and hasattr(info, 'latest_message') and info.latest_message:
-                content_end = info.latest_message
+                content_end = _make_naive(info.latest_message)
             elif info and hasattr(info, 'content_end') and info.content_end:
-                content_end = info.content_end
+                content_end = _make_naive(info.content_end)
             else:
                 content_end = covered_end or now
 
@@ -362,8 +372,10 @@ class CoverageService:
         if inventory:
             for inv_channel in inventory.channels:
                 if inv_channel.channel_id not in channel_summaries and inv_channel.accessible:
-                    if inv_channel.earliest_message and inv_channel.latest_message:
-                        total_days = (inv_channel.latest_message - inv_channel.earliest_message).days + 1
+                    earliest = _make_naive(inv_channel.earliest_message)
+                    latest = _make_naive(inv_channel.latest_message)
+                    if earliest and latest:
+                        total_days = (latest - earliest).days + 1
 
                         # The entire channel is a gap
                         all_gaps.append(CoverageGap(
@@ -372,8 +384,8 @@ class CoverageService:
                             channel_id=inv_channel.channel_id,
                             channel_name=inv_channel.channel_name,
                             platform=platform,
-                            gap_start=inv_channel.earliest_message,
-                            gap_end=inv_channel.latest_message,
+                            gap_start=earliest,
+                            gap_end=latest,
                             gap_days=total_days,
                             status="pending",
                             priority=total_days,
@@ -392,8 +404,8 @@ class CoverageService:
                             channel_id=inv_channel.channel_id,
                             channel_name=inv_channel.channel_name,
                             platform=platform,
-                            content_start=inv_channel.earliest_message,
-                            content_end=inv_channel.latest_message,
+                            content_start=earliest,
+                            content_end=latest,
                             estimated_messages=inv_channel.estimated_messages,
                             covered_start=None,
                             covered_end=None,

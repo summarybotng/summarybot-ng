@@ -1406,11 +1406,16 @@ async def get_stored_summary(
     from ..models import SummaryReferenceResponse
     references = []
 
-    # Build channel name lookup from guild
+    # Build channel name lookup from guild (for reference channel names)
     channel_names: dict = {}
-    if guild:
-        for channel in guild.text_channels:
-            channel_names[str(channel.id)] = channel.name
+    try:
+        guild = _get_guild_or_404(guild_id)
+        if guild:
+            for channel in guild.text_channels:
+                channel_names[str(channel.id)] = channel.name
+    except HTTPException:
+        # Guild not available (bot not connected), continue without channel names
+        pass
 
     if summary_result and hasattr(summary_result, 'reference_index') and summary_result.reference_index:
         for ref in summary_result.reference_index:

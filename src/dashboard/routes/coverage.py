@@ -239,15 +239,16 @@ async def refresh_coverage(
 
     service = get_coverage_service()
 
+    # Get Discord bot for channel name lookup
+    from . import get_discord_bot
+    bot = get_discord_bot()
+
     inventory = None
     if include_inventory and platform == "discord":
-        # Get Discord bot for inventory
-        from . import get_discord_bot
-        bot = get_discord_bot()
         if bot and bot.client:
             inventory = await service.get_discord_inventory(guild_id, bot.client)
 
-    report = await service.compute_coverage(guild_id, platform, inventory)
+    report = await service.compute_coverage(guild_id, platform, inventory, discord_bot=bot)
     return _report_to_response(report)
 
 

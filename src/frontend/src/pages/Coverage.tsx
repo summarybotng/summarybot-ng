@@ -564,6 +564,11 @@ export function Coverage() {
             <h1 className="text-2xl font-bold">Content Coverage</h1>
             <p className="text-sm text-muted-foreground">
               Track how much of your server's history has been summarized
+              {report && (
+                <Badge variant="outline" className="ml-2 capitalize">
+                  {report.platform}
+                </Badge>
+              )}
             </p>
           </div>
         </div>

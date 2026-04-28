@@ -182,6 +182,7 @@ class CoverageService:
         guild_id: str,
         platform: str = "discord",
         inventory: Optional[GuildInventory] = None,
+        discord_bot=None,
     ) -> CoverageReport:
         """Compute coverage for a guild based on existing summaries."""
         repo = await self._get_repo()
@@ -193,9 +194,18 @@ class CoverageService:
         # Track unique summaries with valid time ranges for the total count
         unique_summary_ids_with_time: set = set()
 
-        # Build a map of channel -> summary ranges
+        # Build a map of channel -> summary ranges, also collect channel names from summaries
         channel_summaries: dict = {}
+        channel_names_from_summaries: dict = {}
         for summary in summaries:
+            # Try to extract channel names from summary context
+            if summary.summary_result and summary.summary_result.context:
+                ctx = summary.summary_result.context
+                if ctx.channel_name and summary.source_channel_ids:
+                    # Single channel case - use the context channel name
+                    if len(summary.source_channel_ids) == 1:
+                        channel_names_from_summaries[summary.source_channel_ids[0]] = ctx.channel_name
+
             for channel_id in (summary.source_channel_ids or []):
                 if channel_id not in channel_summaries:
                     channel_summaries[channel_id] = []
@@ -213,6 +223,14 @@ class CoverageService:
             existing_coverage = await repo.get_coverage(guild_id, platform)
             channel_info = {c.channel_id: c for c in existing_coverage}
 
+        # Try to get Discord guild for channel name lookup if not in inventory
+        discord_guild = None
+        if not inventory and platform == "discord" and discord_bot and discord_bot.client:
+            try:
+                discord_guild = discord_bot.client.get_guild(int(guild_id))
+            except Exception:
+                pass
+
         # Compute coverage for each channel
         coverage_results = []
         all_gaps = []
@@ -221,7 +239,19 @@ class CoverageService:
         # Process channels with summaries
         for channel_id, ranges in channel_summaries.items():
             info = channel_info.get(channel_id)
-            channel_name = info.channel_name if info else None
+            # Try multiple sources for channel name
+            channel_name = None
+            if info and info.channel_name:
+                channel_name = info.channel_name
+            elif channel_id in channel_names_from_summaries:
+                channel_name = channel_names_from_summaries[channel_id]
+            elif discord_guild:
+                try:
+                    dc_channel = discord_guild.get_channel(int(channel_id))
+                    if dc_channel:
+                        channel_name = dc_channel.name
+                except Exception:
+                    pass
 
             # Sort ranges by start time
             ranges.sort(key=lambda r: r[0])

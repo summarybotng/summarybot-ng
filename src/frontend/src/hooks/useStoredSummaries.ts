@@ -71,6 +71,10 @@ interface StoredSummariesParams {
   summaryLength?: string;
   perspective?: string;
   excludeCustomPerspectives?: boolean;
+  // ADR-041: Access issues filter
+  hasAccessIssues?: boolean;
+  // ADR-073: Private channels filter
+  containsPrivateChannels?: boolean;
 }
 
 export function useStoredSummaries(
@@ -112,6 +116,10 @@ export function useStoredSummaries(
   if (params.summaryLength) queryParams.set("summary_length", params.summaryLength);
   if (params.perspective) queryParams.set("perspective", params.perspective);
   if (params.excludeCustomPerspectives) queryParams.set("exclude_custom_perspectives", "true");
+  // ADR-041: Access issues filter
+  if (params.hasAccessIssues !== undefined) queryParams.set("has_access_issues", params.hasAccessIssues.toString());
+  // ADR-073: Private channels filter
+  if (params.containsPrivateChannels !== undefined) queryParams.set("contains_private_channels", params.containsPrivateChannels.toString());
 
   const queryString = queryParams.toString();
 

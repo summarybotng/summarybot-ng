@@ -379,6 +379,10 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
     summaryLength: filters.summaryLength,
     perspective: filters.perspective,
     excludeCustomPerspectives: filters.excludeCustomPerspectives,
+    // ADR-041: Access issues filter
+    hasAccessIssues: filters.hasAccessIssues,
+    // ADR-073: Private channels filter
+    containsPrivateChannels: filters.containsPrivateChannels,
   });
 
   const updateMutation = useUpdateStoredSummary(guildId);

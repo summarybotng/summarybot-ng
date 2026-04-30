@@ -198,22 +198,191 @@ POST /guilds/{guild_id}/wiki/curation/{action_id}/rollback
 - Potential for incorrect auto-merges (mitigated by approval workflow)
 - Complexity in rollback for multi-page operations
 
+## Claude Code Integration
+
+The wiki curator leverages existing Claude Code agents and skills as building blocks.
+
+### Existing Agents Mapped to Curation Skills
+
+| Curation Skill | Claude Code Agent | Capability Leveraged |
+|----------------|-------------------|---------------------|
+| Topic Merger | `researcher` | Deep information gathering, pattern recognition |
+| Topic Merger | `qe-code-intelligence` | Semantic search, HNSW vector similarity |
+| Quality Assessor | `analyst` | Comprehensive quality analysis |
+| Quality Assessor | `qe-quality-assessment` | Quality gates, metrics evaluation |
+| Cross-Linker | `qe-kg-builder` | Knowledge graph construction, entity extraction |
+| Cross-Linker | `qe-dependency-mapper` | Relationship inference, coupling analysis |
+| Contradiction Resolver | `qe-devils-advocate` | Challenge outputs, find gaps, critique completeness |
+| Contradiction Resolver | `sherlock-review` | Evidence-based investigation |
+| Content Pruner | `qe-gap-detector` | Coverage gap detection, redundancy identification |
+| Synthesis Improver | `reviewer` | Quality assurance, actionable feedback |
+| Synthesis Improver | `technical-writing` | Clear, engaging documentation |
+| Gap Detector | `qe-coverage-specialist` | O(log n) coverage analysis, risk-weighted gaps |
+| Gap Detector | `qe-requirements-validator` | Traceability, acceptance criteria validation |
+
+### Reusable Skills
+
+```yaml
+# Existing skills to leverage
+analysis_skills:
+  - six-thinking-hats        # Multi-perspective evaluation (White/Red/Black/Yellow/Green/Blue)
+  - brutal-honesty-review    # Unvarnished technical criticism
+  - sherlock-review          # Evidence-based investigative review
+
+quality_skills:
+  - qe-quality-assessment    # Quality gates and metrics
+  - verification-quality     # Truth scoring, completeness validation
+  - testability-scoring      # Assess content against 10 testability principles
+
+structure_skills:
+  - refactoring-patterns     # Safe restructuring patterns
+  - qe-code-intelligence     # Semantic search, impact analysis
+  - qe-kg-builder            # Knowledge graph with HNSW indexing
+
+generation_skills:
+  - technical-writing        # Clear, engaging technical content
+  - qe-bdd-generator         # Structured scenario generation (Gherkin)
+```
+
+### Proposed New Wiki Skills
+
+New skills to be created in `.claude/skills/wiki/`:
+
+```yaml
+# wiki-topic-similarity.yaml
+name: wiki-topic-similarity
+description: |
+  Detect semantically similar wiki topics for merge candidates.
+  Uses HNSW vector similarity on page titles, content, and topics.
+  Returns ranked list of merge candidates with confidence scores.
+agents:
+  - qe-code-intelligence
+  - researcher
+inputs:
+  - guild_id: Target guild
+  - similarity_threshold: Minimum similarity score (default: 0.75)
+outputs:
+  - merge_candidates: List of (page_a, page_b, similarity, rationale)
+
+# wiki-quality-score.yaml
+name: wiki-quality-score
+description: |
+  Score wiki page quality on multiple dimensions:
+  - Source count and diversity
+  - Content recency (days since last update)
+  - Synthesis quality (rating, model used)
+  - Link density (inbound + outbound)
+  - Topic coverage completeness
+agents:
+  - qe-quality-assessment
+  - analyst
+inputs:
+  - guild_id: Target guild
+  - page_path: Optional specific page (null for all)
+outputs:
+  - scores: List of (page_path, overall_score, dimension_scores, issues)
+
+# wiki-contradiction-detect.yaml
+name: wiki-contradiction-detect
+description: |
+  Find conflicting statements across wiki sources.
+  Compares claims within and across pages, flags temporal conflicts
+  (older vs newer information), and suggests resolutions.
+agents:
+  - qe-devils-advocate
+  - sherlock-review
+inputs:
+  - guild_id: Target guild
+  - scope: "all" | "category" | "page"
+outputs:
+  - contradictions: List of (claim_a, claim_b, sources, severity, suggested_resolution)
+
+# wiki-auto-linker.yaml
+name: wiki-auto-linker
+description: |
+  Analyze wiki content and add missing cross-references.
+  Detects topic mentions that should link to existing pages,
+  suggests bidirectional links, builds topic clusters.
+agents:
+  - qe-kg-builder
+  - qe-dependency-mapper
+inputs:
+  - guild_id: Target guild
+  - page_path: Optional specific page
+outputs:
+  - suggested_links: List of (from_page, to_page, anchor_text, confidence)
+  - topic_clusters: List of related page groups
+
+# wiki-content-dedup.yaml
+name: wiki-content-dedup
+description: |
+  Identify and remove duplicate content across wiki pages.
+  Detects repeated key points, redundant sections, and
+  content that was ingested multiple times from same source.
+agents:
+  - qe-gap-detector
+  - refactoring-patterns
+inputs:
+  - guild_id: Target guild
+  - dry_run: Preview changes without applying (default: true)
+outputs:
+  - duplicates: List of (content_hash, occurrences, suggested_action)
+  - savings: Estimated content reduction percentage
+```
+
+### Agent Orchestration
+
+The wiki curator orchestrates multiple agents using the Task tool:
+
+```python
+async def run_curation(guild_id: str, skills: List[str]):
+    """Orchestrate wiki curation with parallel agent execution."""
+
+    # Phase 1: Analysis (parallel)
+    analysis_tasks = []
+    if "quality_assessor" in skills:
+        analysis_tasks.append(
+            Task(subagent_type="analyst", prompt=f"Score wiki quality for {guild_id}")
+        )
+    if "topic_merger" in skills:
+        analysis_tasks.append(
+            Task(subagent_type="researcher", prompt=f"Find similar topics in {guild_id}")
+        )
+    if "contradiction_resolver" in skills:
+        analysis_tasks.append(
+            Task(subagent_type="qe-devils-advocate", prompt=f"Find contradictions in {guild_id}")
+        )
+
+    # Run analysis in parallel
+    results = await asyncio.gather(*[t.run() for t in analysis_tasks])
+
+    # Phase 2: Generate curation actions from results
+    actions = generate_curation_actions(results)
+
+    # Phase 3: Apply or queue based on confidence
+    for action in actions:
+        if action.confidence > 0.9:
+            await apply_action(action)
+        else:
+            await queue_for_approval(action)
+```
+
 ## Implementation Phases
 
 ### Phase 1: Foundation
 - Curation queue and logging tables
-- Quality assessor skill
+- Quality assessor skill (`wiki-quality-score`)
 - Basic API endpoints
 - UI for viewing suggestions
 
 ### Phase 2: Core Skills
-- Topic merger with semantic similarity
-- Cross-linker
-- Content pruner
+- Topic merger with semantic similarity (`wiki-topic-similarity`)
+- Cross-linker (`wiki-auto-linker`)
+- Content pruner (`wiki-content-dedup`)
 
 ### Phase 3: Advanced
-- Contradiction resolver
-- Gap detector
+- Contradiction resolver (`wiki-contradiction-detect`)
+- Gap detector (leverage `qe-coverage-specialist`)
 - Scheduled curation jobs
 - Auto-apply with confidence thresholds
 
@@ -221,3 +390,5 @@ POST /guilds/{guild_id}/wiki/curation/{action_id}/rollback
 - ADR-056: Compounding Wiki Architecture
 - ADR-063: Wiki Synthesis
 - ADR-076: Continuous Wiki Synthesis
+- [Claude Code Agent Types](https://docs.anthropic.com/claude-code/agents)
+- [Agentic QE v3 Skills](/.claude/skills/)

@@ -20,6 +20,8 @@ class StoredSummaryFilter:
     include_archived: bool = False
     tags: Optional[List[str]] = None
     source: Optional[str] = None  # ADR-008: Filter by source
+    # Full-text search query (searches title, summary text, key points)
+    search_query: Optional[str] = None
     # ADR-017: Enhanced filtering
     created_after: Optional[datetime] = None
     created_before: Optional[datetime] = None

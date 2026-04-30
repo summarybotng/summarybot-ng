@@ -24,6 +24,10 @@ export type SortOrderType = "asc" | "desc";
  * Used by summary lists, feeds, bulk operations, and future features.
  */
 export interface SummaryFilterCriteria {
+  // === Text Search ===
+  /** Full-text search query (searches title, summary text, key points, action items) */
+  searchQuery?: string;
+
   // === Source Filtering ===
   /** Filter by summary source type */
   source?: SummarySourceType;
@@ -92,6 +96,11 @@ export interface SummaryFilterCriteria {
  */
 export function criteriaToSearchParams(criteria: SummaryFilterCriteria): URLSearchParams {
   const params = new URLSearchParams();
+
+  // Text search
+  if (criteria.searchQuery) {
+    params.set("q", criteria.searchQuery);
+  }
 
   // Source filtering
   if (criteria.source && criteria.source !== "all") {
@@ -219,6 +228,7 @@ export function criteriaToApiBody(criteria: SummaryFilterCriteria): Record<strin
  */
 export function countActiveFilters(criteria: SummaryFilterCriteria): number {
   return [
+    criteria.searchQuery,
     criteria.source && criteria.source !== "all",
     criteria.archived === true,
     criteria.createdAfter,

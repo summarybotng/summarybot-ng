@@ -900,6 +900,9 @@ class StoredSummaryDetailResponse(BaseModel):
     prompt_template_id: Optional[str] = None  # Custom template ID if used
     # ADR-020: Navigation
     navigation: Optional[Dict[str, Optional[str]]] = None  # prev/next summary IDs
+    # ADR-074: Private channel info - which source channels are locked
+    private_source_channels: Optional[List[Dict[str, str]]] = None  # [{channel_id, channel_name}]
+    contains_sensitive_channels: bool = False  # ADR-073: Quick check flag
 
 
 class StoredSummaryUpdateRequest(BaseModel):
@@ -960,6 +963,12 @@ class RegenerateOptionsRequest(BaseModel):
     model: Optional[str] = Field(None, description="Model to use (e.g., claude-3-5-sonnet-20241022)")
     summary_length: Optional[str] = Field(None, description="Length: brief, detailed, comprehensive")
     perspective: Optional[str] = Field(None, description="Perspective: general, developer, marketing, executive, support")
+    # ADR-075: Split option for summaries with private channel content
+    split_private: Optional[bool] = Field(
+        None,
+        description="Split summary into public and private portions (ADR-075). "
+                    "Creates separate summary for private channels, original becomes public-only."
+    )
 
 
 class BulkRegenerateRequest(BaseModel):

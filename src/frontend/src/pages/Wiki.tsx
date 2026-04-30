@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -208,6 +209,20 @@ interface WikiSourceResult {
 
 async function fetchSourceReferences(guildId: string, sourceId: string): Promise<WikiSourceResult> {
   return api.get<WikiSourceResult>(`/guilds/${guildId}/wiki/sources/${sourceId}`);
+}
+
+// ADR-076: Wiki settings
+interface WikiSettings {
+  wiki_auto_ingest: boolean;
+  wiki_auto_synthesis: boolean;
+}
+
+async function fetchWikiSettings(guildId: string): Promise<WikiSettings> {
+  return api.get<WikiSettings>(`/guilds/${guildId}/wiki/settings`);
+}
+
+async function updateWikiSettings(guildId: string, settings: Partial<WikiSettings>): Promise<WikiSettings> {
+  return api.patch<WikiSettings>(`/guilds/${guildId}/wiki/settings`, settings);
 }
 
 // ADR-064: Fetch filtered pages with facets
@@ -1748,6 +1763,21 @@ export function Wiki() {
     enabled: !!guildId && hasValidPath && !sourceId && !searchQuery,
   });
 
+  // ADR-076: Wiki settings
+  const queryClient = useQueryClient();
+  const { data: wikiSettings } = useQuery({
+    queryKey: ["wiki-settings", guildId],
+    queryFn: () => fetchWikiSettings(guildId!),
+    enabled: !!guildId,
+  });
+
+  const settingsMutation = useMutation({
+    mutationFn: (settings: Partial<WikiSettings>) => updateWikiSettings(guildId!, settings),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["wiki-settings", guildId] });
+    },
+  });
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -1760,12 +1790,33 @@ export function Wiki() {
           <BookOpen className="h-6 w-6 text-primary" />
           <h1 className="text-2xl font-bold">Wiki</h1>
         </div>
-        <Link to={`/guilds/${guildId}/wiki?q=`}>
-          <Button variant="outline">
-            <Search className="h-4 w-4 mr-2" />
-            Search
-          </Button>
-        </Link>
+        <div className="flex items-center gap-4">
+          {/* ADR-076: Auto-synthesis toggle */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-2">
+                  <Sparkles className={`h-4 w-4 ${wikiSettings?.wiki_auto_synthesis ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <span className="text-sm text-muted-foreground">Auto-synthesis</span>
+                  <Switch
+                    checked={wikiSettings?.wiki_auto_synthesis ?? true}
+                    onCheckedChange={(checked) => settingsMutation.mutate({ wiki_auto_synthesis: checked })}
+                    disabled={settingsMutation.isPending}
+                  />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>When enabled, wiki pages are automatically re-synthesized<br/>when new content is ingested</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <Link to={`/guilds/${guildId}/wiki?q=`}>
+            <Button variant="outline">
+              <Search className="h-4 w-4 mr-2" />
+              Search
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Main layout */}

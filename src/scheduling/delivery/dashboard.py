@@ -195,7 +195,7 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
             last_error = None
             for attempt in range(WIKI_INGEST_MAX_RETRIES):
                 try:
-                    await agent.ingest_summary(
+                    ingest_result = await agent.ingest_summary(
                         guild_id=summary.guild_id,
                         summary_id=summary.id,
                         summary_text=result.summary_text or "",
@@ -211,6 +211,13 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
                     # Mark as ingested on success
                     await stored_summary_repo.mark_wiki_ingested(summary.id)
                     logger.info(f"Wiki ingested summary {summary.id} (attempt {attempt + 1})")
+
+                    # ADR-076: Trigger auto-synthesis if enabled
+                    await self._trigger_wiki_synthesis_if_enabled(
+                        guild_id=summary.guild_id,
+                        ingest_result=ingest_result,
+                        wiki_repo=wiki_repo,
+                    )
                     return  # Success - exit retry loop
 
                 except Exception as e:
@@ -240,6 +247,82 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
         except Exception as e:
             # Don't fail summary delivery if wiki ingestion fails
             logger.warning(f"Wiki ingestion setup failed for {summary.id}: {e}")
+
+    async def _trigger_wiki_synthesis_if_enabled(
+        self,
+        guild_id: str,
+        ingest_result: Any,
+        wiki_repo: Any,
+    ) -> None:
+        """ADR-076: Trigger wiki synthesis for updated pages if auto-synthesis is enabled."""
+        try:
+            from ...data.repositories import get_repository_factory
+
+            # Check if auto-synthesis is enabled for this guild (default: enabled)
+            auto_synthesis_enabled = True
+            try:
+                factory = get_repository_factory()
+                conn = await factory.get_connection()
+                row = await conn.fetch_one(
+                    "SELECT wiki_auto_synthesis FROM guild_configs WHERE guild_id = ?",
+                    (guild_id,)
+                )
+                if row and row.get('wiki_auto_synthesis') is not None:
+                    auto_synthesis_enabled = bool(row['wiki_auto_synthesis'])
+            except Exception as e:
+                # Column may not exist yet, default to enabled
+                logger.debug(f"Could not check wiki_auto_synthesis setting: {e}")
+
+            if not auto_synthesis_enabled:
+                logger.debug(f"Wiki auto-synthesis disabled for guild {guild_id}")
+                return
+
+            # Get pages that were updated/created
+            affected_pages = (ingest_result.pages_updated or []) + (ingest_result.pages_created or [])
+            if not affected_pages:
+                return
+
+            # Import synthesis module
+            from ...wiki.synthesis import synthesize_wiki_page
+
+            # Get Claude client for synthesis
+            claude_client = None
+            try:
+                from ...summarization.claude_client import get_claude_client
+                claude_client = await get_claude_client()
+            except Exception:
+                logger.debug("Claude client not available for wiki synthesis")
+
+            # Synthesize each affected page
+            for page_path in affected_pages[:5]:  # Limit to 5 pages per ingest
+                try:
+                    page = await wiki_repo.get_page(guild_id, page_path)
+                    if not page:
+                        continue
+
+                    result = await synthesize_wiki_page(
+                        page_title=page.title,
+                        page_content=page.content,
+                        source_refs=page.source_refs or [],
+                        claude_client=claude_client,
+                    )
+
+                    # Update page with synthesis
+                    page.synthesis = result.synthesis
+                    page.synthesis_source_count = result.source_count
+                    page.confidence = result.confidence
+                    await wiki_repo.save_page(page)
+
+                    logger.debug(f"Auto-synthesized wiki page {page_path}")
+
+                except Exception as e:
+                    logger.warning(f"Failed to auto-synthesize page {page_path}: {e}")
+
+            logger.info(f"Auto-synthesized {len(affected_pages)} wiki pages for guild {guild_id}")
+
+        except Exception as e:
+            # Don't fail if synthesis fails
+            logger.warning(f"Wiki auto-synthesis failed for guild {guild_id}: {e}")
 
     def _generate_title(
         self,

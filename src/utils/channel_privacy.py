@@ -166,3 +166,32 @@ def get_private_channel_sources(
         if ref_channel_id and ref_channel_id in locked_channel_ids:
             private_sources.add(ref_channel_id)
     return list(private_sources)
+
+
+def group_channels_by_privacy(
+    channel_ids: List[str],
+    locked_channel_ids: set,
+) -> Dict[str, List[str]]:
+    """
+    Group channel IDs into public and private sets (ADR-075).
+
+    Args:
+        channel_ids: List of all channel IDs in scope
+        locked_channel_ids: Set of channel IDs that are locked/private
+
+    Returns:
+        Dict with 'public' and 'private' keys, each containing a list of channel IDs
+    """
+    public_channels = []
+    private_channels = []
+
+    for channel_id in channel_ids:
+        if channel_id in locked_channel_ids:
+            private_channels.append(channel_id)
+        else:
+            public_channels.append(channel_id)
+
+    return {
+        "public": public_channels,
+        "private": private_channels,
+    }

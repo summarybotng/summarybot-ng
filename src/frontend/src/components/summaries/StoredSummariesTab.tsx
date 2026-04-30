@@ -352,6 +352,8 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
   const { data, isLoading, isError, refetch } = useStoredSummaries(guildId, {
     page,
     limit: 20,
+    // Text search
+    searchQuery: filters.searchQuery,
     archived: filters.archived,
     source: filters.source,
     createdAfter: filters.createdAfter,
@@ -1185,6 +1187,31 @@ function StoredSummaryDetailSheet({
                         </SelectContent>
                       </Select>
                     </div>
+
+                    {/* ADR-075: Split option for summaries with private content */}
+                    {summary.contains_sensitive_channels && (
+                      <div className="flex items-start space-x-3 p-3 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950">
+                        <Checkbox
+                          id="split-private"
+                          checked={regenerateOptions.split_private || false}
+                          onCheckedChange={(checked) =>
+                            setRegenerateOptions(prev => ({ ...prev, split_private: checked === true }))
+                          }
+                        />
+                        <div className="grid gap-1.5 leading-none">
+                          <label
+                            htmlFor="split-private"
+                            className="text-sm font-medium leading-none cursor-pointer"
+                          >
+                            Split into public/private summaries
+                          </label>
+                          <p className="text-xs text-muted-foreground">
+                            Creates two separate summaries: public content (replaces this summary) and
+                            private content (new linked summary). Public portion can be wiki-ingested.
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setRegenerateDialogOpen(false)}>
@@ -1297,13 +1324,61 @@ function StoredSummaryDetailSheet({
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {/* ADR-073: Privacy indicator - shown prominently if contains private channels */}
+                    {/* ADR-073/074: Privacy indicator - shown prominently if contains private channels */}
                     {summary.contains_sensitive_channels && (
-                      <div className="flex items-center gap-2 p-2 bg-red-500/10 border border-red-500/30 rounded-md text-sm">
-                        <Lock className="h-4 w-4 text-red-500" />
-                        <span className="text-red-600 dark:text-red-400 font-medium">
-                          Contains content from private/locked channels
-                        </span>
+                      <div className="p-2 bg-red-500/10 border border-red-500/30 rounded-md text-sm space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Lock className="h-4 w-4 text-red-500" />
+                          <span className="text-red-600 dark:text-red-400 font-medium">
+                            Contains content from private/locked channels
+                          </span>
+                        </div>
+                        {summary.private_source_channels && summary.private_source_channels.length > 0 && (
+                          <div className="flex flex-wrap gap-1 ml-6">
+                            {summary.private_source_channels.map((ch) => (
+                              <Badge
+                                key={ch.channel_id}
+                                variant="outline"
+                                className="text-xs border-red-500/50 text-red-600 dark:text-red-400"
+                              >
+                                <Lock className="h-3 w-3 mr-1" />
+                                #{ch.channel_name}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ADR-075: Split relationship indicator */}
+                    {(summary.split_from || summary.split_private_id || summary.split_public_id) && (
+                      <div className="flex items-center gap-2 p-2 bg-blue-500/10 border border-blue-500/30 rounded-md text-sm">
+                        <Link className="h-4 w-4 text-blue-500" />
+                        <div className="text-blue-600 dark:text-blue-400">
+                          {summary.split_from && (
+                            <span>
+                              Split from summary{" "}
+                              <button
+                                onClick={() => setSelectedSummaryId(summary.split_public_id || summary.split_from || null)}
+                                className="underline hover:no-underline font-medium"
+                              >
+                                {(summary.split_public_id || summary.split_from)?.slice(0, 8)}...
+                              </button>
+                              {" "}(this contains private content)
+                            </span>
+                          )}
+                          {summary.split_private_id && (
+                            <span>
+                              Private portion available:{" "}
+                              <button
+                                onClick={() => setSelectedSummaryId(summary.split_private_id || null)}
+                                className="underline hover:no-underline font-medium"
+                              >
+                                {summary.split_private_id?.slice(0, 8)}...
+                              </button>
+                            </span>
+                          )}
+                        </div>
                       </div>
                     )}
 

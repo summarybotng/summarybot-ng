@@ -43,6 +43,8 @@ interface StoredSummariesParams {
   pinned?: boolean;
   archived?: boolean;
   tags?: string[];
+  // Full-text search
+  searchQuery?: string;
   source?: SummarySourceType;  // ADR-008: Filter by source
   // ADR-017: Enhanced filters
   createdAfter?: string;  // ISO date
@@ -87,6 +89,8 @@ export function useStoredSummaries(
   if (params.pinned !== undefined) queryParams.set("pinned", params.pinned.toString());
   if (params.archived !== undefined) queryParams.set("archived", params.archived.toString());
   if (params.tags?.length) queryParams.set("tags", params.tags.join(","));
+  // Full-text search
+  if (params.searchQuery) queryParams.set("q", params.searchQuery);
   // ADR-008: Source filtering
   if (params.source && params.source !== "all") queryParams.set("source", params.source);
   // ADR-017: Enhanced filters
@@ -277,6 +281,11 @@ export function useSendToEmail(guildId: string) {
 interface RegenerateResponse {
   task_id: string;
   status: string;
+  // ADR-075: Split info when split_private was used
+  split?: {
+    public_summary_id: string | null;
+    private_summary_id: string | null;
+  };
 }
 
 // Regenerate options
@@ -284,6 +293,8 @@ export interface RegenerateOptions {
   model?: string;
   summary_length?: string;
   perspective?: string;
+  // ADR-075: Split option for summaries with private channel content
+  split_private?: boolean;
 }
 
 export function useRegenerateSummary(guildId: string) {
@@ -295,15 +306,32 @@ export function useRegenerateSummary(guildId: string) {
         `/guilds/${guildId}/stored-summaries/${summaryId}/regenerate`,
         options || undefined
       ),
-    onSuccess: (_, { summaryId }) => {
-      // Invalidate after a delay to allow regeneration to complete
-      setTimeout(() => {
+    onSuccess: (response, { summaryId }) => {
+      // ADR-075: Immediate invalidation to show regeneration started
+      queryClient.invalidateQueries({
+        queryKey: ["stored-summary", guildId, summaryId],
+      });
+
+      // Invalidate list after delays to catch completion
+      // Regeneration typically takes 3-10 seconds
+      const invalidateAll = () => {
         queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] });
         queryClient.invalidateQueries({ queryKey: ["summary-calendar", guildId] });
         queryClient.invalidateQueries({
           queryKey: ["stored-summary", guildId, summaryId],
         });
-      }, 5000);
+        // If split created a new summary, invalidate to show it
+        if (response?.split?.private_summary_id) {
+          queryClient.invalidateQueries({
+            queryKey: ["stored-summary", guildId, response.split.private_summary_id],
+          });
+        }
+      };
+
+      // Multiple invalidation points to catch completion
+      setTimeout(invalidateAll, 3000);
+      setTimeout(invalidateAll, 8000);
+      setTimeout(invalidateAll, 15000);
     },
   });
 }

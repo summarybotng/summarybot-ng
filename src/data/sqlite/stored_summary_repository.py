@@ -65,8 +65,9 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             source, archive_period, archive_granularity, archive_source_key,
             message_count, participant_count,
             wiki_ingested, wiki_ingested_at,
-            contains_sensitive_channels
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            contains_sensitive_channels,
+            split_from, split_private_id, split_public_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -96,6 +97,10 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             summary.wiki_ingested_at.isoformat() if summary.wiki_ingested_at else None,
             # ADR-074: Private channel content flag
             contains_sensitive,
+            # ADR-075: Split tracking
+            summary.split_from,
+            summary.split_private_id,
+            summary.split_public_id,
         )
 
         await self.connection.execute(query, params)
@@ -119,6 +124,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             if not sr:
                 return
 
+            title = summary.title or ""
             summary_text = sr.summary_text or ""
             key_points = " ".join(sr.key_points) if sr.key_points else ""
             action_items = " ".join(
@@ -131,12 +137,12 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
                 term.term for term in sr.technical_terms
             ) if sr.technical_terms else ""
 
-            # Insert into FTS
+            # Insert into FTS (includes title for ADR-075 search by title)
             await self.connection.execute(
                 """INSERT INTO summary_fts
-                   (summary_id, guild_id, summary_text, key_points, action_items, participants, technical_terms)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (summary.id, summary.guild_id, summary_text, key_points, action_items, participants, technical_terms)
+                   (summary_id, guild_id, title, summary_text, key_points, action_items, participants, technical_terms)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (summary.id, summary.guild_id, title, summary_text, key_points, action_items, participants, technical_terms)
             )
         except Exception as e:
             # FTS is optional - don't fail the save if FTS update fails
@@ -331,6 +337,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         include_archived: bool = False,
         tags: Optional[List[str]] = None,
         source: Optional[str] = None,  # ADR-008: Filter by source
+        search_query: Optional[str] = None,  # Full-text search
         # ADR-017: Enhanced filtering
         created_after: Optional[datetime] = None,
         created_before: Optional[datetime] = None,
@@ -392,6 +399,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             include_archived=include_archived,
             tags=tags,
             source=source,
+            search_query=search_query,
             created_after=created_after,
             created_before=created_before,
             archive_period=archive_period,
@@ -432,14 +440,33 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         # Always sort pinned first, then by the selected field
         order_clause = f"is_pinned DESC, {sort_field} {sort_direction}"
 
-        query = f"""
-        SELECT * FROM stored_summaries
-        WHERE {where_clause}
-        ORDER BY {order_clause}
-        LIMIT ? OFFSET ?
-        """
-
-        params.extend([limit, offset])
+        # Full-text search uses subquery with FTS table
+        # Also support direct ID lookup (summary_id is UNINDEXED in FTS)
+        if search_query:
+            # Escape FTS special characters and wrap in quotes for phrase matching
+            fts_query = search_query.replace('"', '""')
+            # Support partial ID matching with LIKE
+            id_pattern = f"%{search_query}%"
+            query = f"""
+            SELECT * FROM stored_summaries
+            WHERE (
+                id IN (SELECT summary_id FROM summary_fts WHERE summary_fts MATCH ?)
+                OR id LIKE ?
+            )
+              AND {where_clause}
+            ORDER BY {order_clause}
+            LIMIT ? OFFSET ?
+            """
+            # Prepend FTS match parameter and ID pattern
+            params = [f'"{fts_query}"', id_pattern] + params + [limit, offset]
+        else:
+            query = f"""
+            SELECT * FROM stored_summaries
+            WHERE {where_clause}
+            ORDER BY {order_clause}
+            LIMIT ? OFFSET ?
+            """
+            params.extend([limit, offset])
 
         rows = await self.connection.fetch_all(query, tuple(params))
         summaries = [self._row_to_stored_summary(row) for row in rows]
@@ -458,6 +485,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         guild_id: str,
         include_archived: bool = False,
         source: Optional[str] = None,
+        search_query: Optional[str] = None,  # Full-text search
         created_after: Optional[datetime] = None,
         created_before: Optional[datetime] = None,
         archive_period: Optional[str] = None,
@@ -493,6 +521,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             guild_id=guild_id,
             include_archived=include_archived,
             source=source,
+            search_query=search_query,
             created_after=created_after,
             created_before=created_before,
             archive_period=archive_period,
@@ -518,7 +547,22 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 
-        query = f"SELECT COUNT(*) as count FROM stored_summaries WHERE {where_clause}"
+        # Full-text search uses subquery with FTS table
+        # Also support direct ID lookup (summary_id is UNINDEXED in FTS)
+        if search_query:
+            fts_query = search_query.replace('"', '""')
+            id_pattern = f"%{search_query}%"
+            query = f"""
+            SELECT COUNT(*) as count FROM stored_summaries
+            WHERE (
+                id IN (SELECT summary_id FROM summary_fts WHERE summary_fts MATCH ?)
+                OR id LIKE ?
+            )
+              AND {where_clause}
+            """
+            params = [f'"{fts_query}"', id_pattern] + params
+        else:
+            query = f"SELECT COUNT(*) as count FROM stored_summaries WHERE {where_clause}"
 
         row = await self.connection.fetch_one(query, tuple(params))
         return row['count'] if row else 0
@@ -732,6 +776,10 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             wiki_ingested_at=datetime.fromisoformat(row['wiki_ingested_at']) if row.get('wiki_ingested_at') else None,
             # ADR-073: Private channel content indicator
             contains_sensitive_channels=bool(row.get('contains_sensitive_channels', False)),
+            # ADR-075: Split tracking
+            split_from=row.get('split_from'),
+            split_private_id=row.get('split_private_id'),
+            split_public_id=row.get('split_public_id'),
         )
 
     def _dict_to_summary_result(self, data: Dict[str, Any]) -> SummaryResult:
@@ -891,6 +939,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         total = count_row["total"] if count_row else 0
 
         # Get matching results with snippets
+        # FTS column indices: 0=summary_id, 1=guild_id, 2=title, 3=summary_text, 4=key_points, 5=action_items
         search_query = f"""
         SELECT
             s.id,
@@ -899,9 +948,10 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             s.created_at,
             s.source,
             bm25(fts) as relevance_score,
-            snippet(fts, 1, '<mark>', '</mark>', '...', 32) as summary_snippet,
-            snippet(fts, 2, '<mark>', '</mark>', '...', 32) as key_points_snippet,
-            snippet(fts, 3, '<mark>', '</mark>', '...', 32) as action_items_snippet
+            snippet(fts, 2, '<mark>', '</mark>', '...', 32) as title_snippet,
+            snippet(fts, 3, '<mark>', '</mark>', '...', 32) as summary_snippet,
+            snippet(fts, 4, '<mark>', '</mark>', '...', 32) as key_points_snippet,
+            snippet(fts, 5, '<mark>', '</mark>', '...', 32) as action_items_snippet
         FROM summary_fts fts
         JOIN stored_summaries s ON fts.summary_id = s.id
         WHERE fts MATCH ? AND {where_clause}
@@ -914,6 +964,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         items = []
         for row in rows:
             highlights = []
+            if row["title_snippet"] and "<mark>" in row["title_snippet"]:
+                highlights.append({"field": "title", "snippet": row["title_snippet"]})
             if row["summary_snippet"] and "<mark>" in row["summary_snippet"]:
                 highlights.append({"field": "summary_text", "snippet": row["summary_snippet"]})
             if row["key_points_snippet"] and "<mark>" in row["key_points_snippet"]:

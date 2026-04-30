@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { format, parse } from "date-fns";
-import { Calendar as CalendarIcon, ArrowUpDown, Filter, X, Hash, AlertTriangle, CheckCircle2, ListChecks, Users, MessageSquare, Lock } from "lucide-react";
+import { Calendar as CalendarIcon, ArrowUpDown, Filter, X, Hash, AlertTriangle, CheckCircle2, ListChecks, Users, MessageSquare, Lock, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -95,13 +95,28 @@ function DebouncedNumberInput({ value, onChange, placeholder, className, min }: 
 
 export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }: SummaryFiltersProps) {
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState(filters.searchQuery || "");
   const { perspectives } = usePerspectiveOptions(guildId);
+
+  // Sync searchInput when external filter changes
+  useEffect(() => {
+    setSearchInput(filters.searchQuery || "");
+  }, [filters.searchQuery]);
+
+  // Debounced search - commits on blur or Enter
+  const handleSearchCommit = useCallback(() => {
+    const trimmed = searchInput.trim();
+    if (trimmed !== (filters.searchQuery || "")) {
+      onFiltersChange({ ...filters, searchQuery: trimmed || undefined });
+    }
+  }, [searchInput, filters, onFiltersChange]);
 
   // Split perspectives into standard (system) and custom
   const standardPerspectives = perspectives.filter(p => !p.isCustom);
   const customPerspectives = perspectives.filter(p => p.isCustom);
 
   const activeFilterCount = [
+    filters.searchQuery,  // Text search
     filters.archivePeriod,  // Calendar date selection
     filters.createdAfter,
     filters.createdBefore,
@@ -124,8 +139,10 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
   ].filter(Boolean).length;
 
   const handleClearFilters = () => {
+    setSearchInput("");  // Clear local search state
     onFiltersChange({
       ...filters,
+      searchQuery: undefined,
       createdAfter: undefined,
       createdBefore: undefined,
       archivePeriod: undefined,
@@ -155,6 +172,24 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
     <div className="space-y-3">
       {/* Main filter row */}
       <div className="flex flex-wrap items-center gap-3">
+        {/* Text search */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Search title, content..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onBlur={handleSearchCommit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                handleSearchCommit();
+              }
+            }}
+            className="h-8 w-[200px] pl-8"
+          />
+        </div>
+
         {/* Source filter */}
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Source:</span>

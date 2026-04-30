@@ -371,6 +371,10 @@ export interface StoredSummary {
   access_coverage_percent?: number;
   // ADR-073: Private channel content indicator
   contains_sensitive_channels?: boolean;
+  // ADR-075: Split tracking
+  split_from?: string;           // Original summary ID this was split from
+  split_private_id?: string;     // Reference to private portion (on public summary)
+  split_public_id?: string;      // Reference to public portion (on private summary)
 }
 
 // ADR-020: Navigation for prev/next summary
@@ -401,6 +405,8 @@ export interface StoredSummaryDetail extends StoredSummary {
   prompt_template_id?: string;
   // ADR-020: Navigation
   navigation?: SummaryNavigation;
+  // ADR-074: Private source channels - which locked channels are in this summary
+  private_source_channels?: Array<{ channel_id: string; channel_name: string }>;
 }
 
 export interface PushDelivery {

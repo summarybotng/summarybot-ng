@@ -1074,6 +1074,12 @@ async def _get_stored_summary_repository():
     return await get_stored_summary_repository()
 
 
+async def _get_channel_settings_repository():
+    """Get the channel settings repository (ADR-075)."""
+    from ...data.repositories import get_channel_settings_repository
+    return await get_channel_settings_repository()
+
+
 def _summary_contains_sensitive_channels(
     summary: StoredSummary,
     sensitive_channels: set,
@@ -1113,6 +1119,7 @@ async def list_stored_summaries(
     guild_id: str = Path(..., description="Discord guild ID"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
+    q: Optional[str] = Query(None, description="Full-text search query (searches title, summary text, key points)"),
     pinned: Optional[bool] = Query(None, description="Filter by pinned status"),
     archived: bool = Query(False, description="Include archived summaries"),
     tags: Optional[str] = Query(None, description="Filter by tags (comma-separated)"),
@@ -1197,6 +1204,7 @@ async def list_stored_summaries(
         include_archived=archived,
         tags=tag_list,
         source=source,
+        search_query=q,  # Full-text search
         created_after=created_after_dt,
         created_before=created_before_dt,
         archive_period=archive_period,
@@ -1233,6 +1241,7 @@ async def list_stored_summaries(
         guild_id=guild_id,
         include_archived=archived,
         source=source,
+        search_query=q,  # Full-text search
         created_after=created_after_dt,
         created_before=created_before_dt,
         archive_period=archive_period,
@@ -1534,6 +1543,36 @@ async def get_stored_summary(
         source=stored.source.value if stored.source else None,
     )
 
+    # ADR-074: Get which REFERENCED channels are private/locked
+    # Only show private channels that actually have cited content (references)
+    private_source_channels = []
+    actual_contains_sensitive = False
+    try:
+        channel_settings_repo = await _get_channel_settings_repository()
+        if channel_settings_repo:
+            settings_list = await channel_settings_repo.get_guild_settings(guild_id)
+            locked_channel_ids = {s.channel_id for s in settings_list if s.is_locked}
+
+            # Check which locked channels have actual references
+            referenced_private_channels = set()
+            for ref in references:
+                ref_channel_id = ref.channel_id
+                if ref_channel_id and ref_channel_id in locked_channel_ids:
+                    referenced_private_channels.add(ref_channel_id)
+
+            # Only include channels that have references
+            for ch_id in referenced_private_channels:
+                private_source_channels.append({
+                    "channel_id": ch_id,
+                    "channel_name": channel_names.get(ch_id) or "Unknown Channel"
+                })
+
+            # Recalculate contains_sensitive based on actual references
+            actual_contains_sensitive = len(referenced_private_channels) > 0
+    except Exception as e:
+        logger.warning(f"Failed to get private source channels: {e}")
+        actual_contains_sensitive = stored.contains_sensitive_channels
+
     return StoredSummaryDetailResponse(
         id=stored.id,
         title=stored.title,
@@ -1569,6 +1608,9 @@ async def get_stored_summary(
         prompt_template_id=summary_result.prompt_template_id if summary_result else None,
         # ADR-020: Navigation
         navigation=navigation,
+        # ADR-074: Private channel info (based on actual references, not scope)
+        private_source_channels=private_source_channels if private_source_channels else None,
+        contains_sensitive_channels=actual_contains_sensitive,
     )
 
 
@@ -1958,6 +2000,36 @@ async def regenerate_stored_summary(
     else:
         regen_method = "source_content"
 
+    # ADR-075: Check if split is requested and prepare channel groups
+    split_requested = body and body.split_private
+    channel_groups = None
+    locked_channel_ids = set()
+
+    logger.info(f"[{job_id}] Split requested: {split_requested}, body: {body}")
+
+    if split_requested and can_use_discord:
+        from ...utils.channel_privacy import group_channels_by_privacy
+        # Get locked channels from database
+        try:
+            channel_settings_repo = await _get_channel_settings_repository()
+            if channel_settings_repo:
+                settings_list = await channel_settings_repo.get_guild_settings(guild_id)
+                locked_channel_ids = {s.channel_id for s in settings_list if s.is_locked}
+        except Exception as e:
+            logger.warning(f"Failed to get locked channels for split: {e}")
+
+        logger.info(f"[{job_id}] Found {len(locked_channel_ids)} locked channels")
+        if locked_channel_ids:
+            channel_groups = group_channels_by_privacy(channel_ids, locked_channel_ids)
+            logger.info(f"[{job_id}] Channel groups: public={len(channel_groups['public'])}, private={len(channel_groups['private'])}")
+            # Validate that split makes sense (has both public and private)
+            if not channel_groups["public"] or not channel_groups["private"]:
+                logger.info(f"[{job_id}] Split requested but no mixed channels - proceeding without split")
+                split_requested = False
+                channel_groups = None
+            else:
+                logger.info(f"[{job_id}] Split will be performed")
+
     # ADR-013: Create persistent job record for regeneration
     job = SummaryJob(
         id=job_id,
@@ -1976,6 +2048,9 @@ async def regenerate_stored_summary(
             "repairs": repairs_made,
             "summary_length": body.summary_length if body and body.summary_length else None,
             "perspective": body.perspective if body and body.perspective else None,
+            # ADR-075: Split tracking
+            "split_private": split_requested,
+            "channel_groups": channel_groups,
         },
     )
 
@@ -2145,57 +2220,168 @@ async def regenerate_stored_summary(
             time_span_hours = (actual_end - actual_start).total_seconds() / 3600
             unique_authors = {msg.author_id for msg in processed}
 
-            context = SummarizationContext(
-                channel_name=channel_name if len(channel_ids) <= 1 else f"{len(channel_ids)} channels",
-                guild_name=guild_name,
-                total_participants=len(unique_authors),
-                time_span_hours=time_span_hours,
-            )
+            # ADR-075: Handle split regeneration
+            if split_requested and channel_groups:
+                logger.info(f"[{job_id}] Split regeneration: public={len(channel_groups['public'])} private={len(channel_groups['private'])}")
 
-            # Generate new summary with grounding (skip cache for regeneration)
-            logger.info(f"[{job_id}] Generating summary with grounding...")
-            new_result = await engine.summarize_messages(
-                messages=processed,
-                options=options,
-                context=context,
-                guild_id=guild_id,
-                channel_id=channel_ids[0] if channel_ids else "",
-                skip_cache=True,  # Always generate fresh for regeneration
-            )
+                # Separate messages by channel
+                public_messages = [m for m in processed if m.channel_id in channel_groups['public']]
+                private_messages = [m for m in processed if m.channel_id in channel_groups['private']]
 
-            # Check grounding
-            has_refs = bool(new_result.reference_index)
-            logger.info(f"[{job_id}] New summary has {len(new_result.reference_index)} references, grounded={has_refs}")
+                logger.info(f"[{job_id}] Public messages: {len(public_messages)}, Private messages: {len(private_messages)}")
 
-            # Update progress
-            job.update_progress(2, 3, "Saving summary")
-            if job_repo:
-                try:
-                    await job_repo.update(job)
-                except Exception:
-                    pass
+                from ...models.base import generate_id
 
-            # Preserve original ID but update the summary_result
-            new_result.id = summary_id
+                # Generate new ID for private summary
+                private_summary_id = generate_id()
 
-            # Update the stored summary
-            stored.summary_result = new_result
-            await stored_repo.update(stored)
+                # Generate public summary (if has messages)
+                public_result = None
+                if public_messages:
+                    public_context = SummarizationContext(
+                        channel_name=f"{len(channel_groups['public'])} public channels",
+                        guild_name=guild_name,
+                        total_participants=len({m.author_id for m in public_messages}),
+                        time_span_hours=time_span_hours,
+                    )
+                    public_result = await engine.summarize_messages(
+                        messages=public_messages,
+                        options=options,
+                        context=public_context,
+                        guild_id=guild_id,
+                        channel_id=channel_groups['public'][0] if channel_groups['public'] else "",
+                        skip_cache=True,
+                    )
+                    public_result.id = summary_id  # Preserve original ID
 
-            _generation_tasks[job_id]["status"] = "completed"
-            _generation_tasks[job_id]["summary_id"] = summary_id
-            _generation_tasks[job_id]["grounded"] = has_refs
-            _generation_tasks[job_id]["reference_count"] = len(new_result.reference_index)
+                # Generate private summary (if has messages)
+                private_result = None
+                if private_messages:
+                    private_context = SummarizationContext(
+                        channel_name=f"{len(channel_groups['private'])} private channels",
+                        guild_name=guild_name,
+                        total_participants=len({m.author_id for m in private_messages}),
+                        time_span_hours=time_span_hours,
+                    )
+                    private_result = await engine.summarize_messages(
+                        messages=private_messages,
+                        options=options,
+                        context=private_context,
+                        guild_id=guild_id,
+                        channel_id=channel_groups['private'][0] if channel_groups['private'] else "",
+                        skip_cache=True,
+                    )
+                    private_result.id = private_summary_id
 
-            # Mark job as completed
-            job.complete(summary_id)
-            if job_repo:
-                try:
-                    await job_repo.update(job)
-                except Exception:
-                    pass
+                # Update progress
+                job.update_progress(2, 3, "Saving split summaries")
+                if job_repo:
+                    try:
+                        await job_repo.update(job)
+                    except Exception:
+                        pass
 
-            logger.info(f"[{job_id}] Regeneration complete")
+                # Save public summary (replaces original)
+                if public_result:
+                    stored.summary_result = public_result
+                    stored.source_channel_ids = channel_groups['public']
+                    stored.split_private_id = private_summary_id if private_result else None
+                    stored.split_from = None  # Original, not split from anything
+                    stored.contains_sensitive_channels = False  # Now public-only
+                    await stored_repo.update(stored)
+                    logger.info(f"[{job_id}] Saved public summary {summary_id}")
+
+                # Save private summary (new)
+                if private_result:
+                    from ...models.stored_summary import StoredSummary
+                    private_stored = StoredSummary(
+                        id=private_summary_id,
+                        guild_id=guild_id,
+                        source_channel_ids=channel_groups['private'],
+                        schedule_id=stored.schedule_id,
+                        summary_result=private_result,
+                        created_at=utc_now_naive(),
+                        title=f"{stored.title} (Private)" if stored.title else "Private Channels Summary",
+                        source=stored.source,
+                        archive_period=stored.archive_period,
+                        archive_granularity=stored.archive_granularity,
+                        split_from=summary_id,
+                        split_public_id=summary_id,
+                        contains_sensitive_channels=True,
+                    )
+                    await stored_repo.save(private_stored)
+                    logger.info(f"[{job_id}] Saved private summary {private_summary_id}")
+
+                _generation_tasks[job_id]["status"] = "completed"
+                _generation_tasks[job_id]["summary_id"] = summary_id
+                _generation_tasks[job_id]["split"] = {
+                    "public_summary_id": summary_id if public_result else None,
+                    "private_summary_id": private_summary_id if private_result else None,
+                }
+                _generation_tasks[job_id]["grounded"] = bool(public_result and public_result.reference_index)
+
+                job.complete(summary_id)
+                if job_repo:
+                    try:
+                        await job_repo.update(job)
+                    except Exception:
+                        pass
+
+                logger.info(f"[{job_id}] Split regeneration complete")
+
+            else:
+                # Standard regeneration (no split)
+                context = SummarizationContext(
+                    channel_name=channel_name if len(channel_ids) <= 1 else f"{len(channel_ids)} channels",
+                    guild_name=guild_name,
+                    total_participants=len(unique_authors),
+                    time_span_hours=time_span_hours,
+                )
+
+                # Generate new summary with grounding (skip cache for regeneration)
+                logger.info(f"[{job_id}] Generating summary with grounding...")
+                new_result = await engine.summarize_messages(
+                    messages=processed,
+                    options=options,
+                    context=context,
+                    guild_id=guild_id,
+                    channel_id=channel_ids[0] if channel_ids else "",
+                    skip_cache=True,  # Always generate fresh for regeneration
+                )
+
+                # Check grounding
+                has_refs = bool(new_result.reference_index)
+                logger.info(f"[{job_id}] New summary has {len(new_result.reference_index)} references, grounded={has_refs}")
+
+                # Update progress
+                job.update_progress(2, 3, "Saving summary")
+                if job_repo:
+                    try:
+                        await job_repo.update(job)
+                    except Exception:
+                        pass
+
+                # Preserve original ID but update the summary_result
+                new_result.id = summary_id
+
+                # Update the stored summary
+                stored.summary_result = new_result
+                await stored_repo.update(stored)
+
+                _generation_tasks[job_id]["status"] = "completed"
+                _generation_tasks[job_id]["summary_id"] = summary_id
+                _generation_tasks[job_id]["grounded"] = has_refs
+                _generation_tasks[job_id]["reference_count"] = len(new_result.reference_index)
+
+                # Mark job as completed
+                job.complete(summary_id)
+                if job_repo:
+                    try:
+                        await job_repo.update(job)
+                    except Exception:
+                        pass
+
+                logger.info(f"[{job_id}] Regeneration complete")
 
         except Exception as e:
             logger.error(f"[{job_id}] Regeneration failed: {e}", exc_info=True)

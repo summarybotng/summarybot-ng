@@ -1,7 +1,7 @@
 # ADR-075: Private Content Regeneration Split
 
 ## Status
-Proposed
+Accepted (Backend Implemented)
 
 ## Context
 
@@ -144,11 +144,11 @@ Rejected: More complex, harder to implement wiki boundary
 
 ## Implementation Order
 
-1. Add split tracking columns to database
-2. Implement channel grouping logic in regeneration
-3. Update regeneration endpoint to accept `split_private` option
-4. Add UI for split option in regenerate dialog
-5. Show split relationship in summary cards/detail
+1. ✅ Add split tracking columns to database (Migration 061)
+2. ✅ Implement channel grouping logic in regeneration (`group_channels_by_privacy()`)
+3. ✅ Update regeneration endpoint to accept `split_private` option
+4. ✅ Add UI for split option in regenerate dialog
+5. ✅ Show split relationship in summary cards/detail
 6. (Optional) Bulk split tool for existing mixed summaries
 
 ## Related ADRs

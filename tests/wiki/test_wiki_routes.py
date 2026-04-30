@@ -583,7 +583,7 @@ class TestRateSynthesis:
                 guild_id="guild-456",
                 path="topics/authentication.md",
                 rating_request=request,
-                user={"id": "user-123", "username": "test", "guilds": ["guild-456"]},
+                user={"sub": "user-123", "username": "test", "guilds": ["guild-456"]},
             )
 
         assert result.success is True
@@ -613,7 +613,7 @@ class TestRateSynthesis:
                     guild_id="guild-456",
                     path="nonexistent.md",
                     rating_request=request,
-                    user={"id": "user-123", "username": "test", "guilds": ["guild-456"]},
+                    user={"sub": "user-123", "username": "test", "guilds": ["guild-456"]},
                 )
 
         assert exc_info.value.status_code == 404

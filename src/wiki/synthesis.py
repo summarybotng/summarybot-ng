@@ -46,7 +46,11 @@ Guidelines:
 - Preserve key facts and decisions
 - Note any contradictions with [Conflict: ...]
 - Do NOT include source citations - they're shown separately
-- Use markdown formatting with headers and bullet points"""
+- Use markdown formatting with headers and bullet points
+- Include markdown links to related wiki topics using format: [Topic Name](topics/topic-name.md)
+  - Link to relevant concepts, technologies, and related pages
+  - Use lowercase with hyphens for paths (e.g., topics/api-authentication.md)
+  - This enables GitHub wiki compatibility when exported"""
 
 SYNTHESIS_USER_PROMPT = """Synthesize this wiki page about "{title}" from the following updates:
 
@@ -56,6 +60,7 @@ Create a well-organized document with:
 1. A brief overview paragraph
 2. Key Points section with bullet points
 3. Any additional relevant sections
+4. Include markdown links to related topics where relevant (format: [Topic](topics/topic-name.md))
 
 Output clean Markdown only."""
 
@@ -223,6 +228,15 @@ def _heuristic_synthesis(title: str, content: str, source_count: int) -> str:
         synthesis += "## Key Points\n\n"
         for point in key_points[:10]:  # Limit to 10 points
             synthesis += f"- {point}\n"
+        synthesis += "\n"
+
+    # Add related topics section with markdown links
+    related_topics = _extract_topics_from_content(" ".join(key_points))
+    if related_topics:
+        synthesis += "## Related Topics\n\n"
+        for topic in related_topics[:5]:
+            topic_slug = topic.lower().replace(" ", "-")
+            synthesis += f"- [{topic.title()}](topics/{topic_slug}.md)\n"
         synthesis += "\n"
 
     # Add metadata footer

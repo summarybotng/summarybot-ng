@@ -189,6 +189,86 @@ def _check_guild_access(guild_id: str, user: dict):
         )
 
 
+async def _maybe_synthesize_on_access(guild_id: str, page, repo) -> any:
+    """ADR-076: Synthesize wiki page on access if auto-synthesis is enabled and page is stale.
+
+    A page is considered stale if:
+    - It has no synthesis, OR
+    - page.updated_at > page.synthesis_updated_at
+
+    Returns the (potentially updated) page.
+    """
+    from ...data.repositories import get_repository_factory
+
+    # Check if page is stale
+    is_stale = (
+        page.synthesis is None or
+        (page.updated_at and page.synthesis_updated_at and page.updated_at > page.synthesis_updated_at)
+    )
+
+    if not is_stale:
+        return page
+
+    # Check if auto-synthesis is enabled
+    auto_synthesis_enabled = True
+    try:
+        factory = get_repository_factory()
+        conn = await factory.get_connection()
+        row = await conn.fetch_one(
+            "SELECT wiki_auto_synthesis FROM guild_configs WHERE guild_id = ?",
+            (guild_id,)
+        )
+        if row and row.get('wiki_auto_synthesis') is not None:
+            auto_synthesis_enabled = bool(row['wiki_auto_synthesis'])
+    except Exception as e:
+        logger.debug(f"Could not check wiki_auto_synthesis setting: {e}")
+
+    if not auto_synthesis_enabled:
+        return page
+
+    # Perform synthesis
+    try:
+        from ...wiki.synthesis import synthesize_wiki_page
+
+        # Get Claude client for synthesis
+        claude_client = None
+        try:
+            engine = await get_summarization_engine()
+            if engine:
+                claude_client = engine.client
+        except Exception:
+            logger.debug("Claude client not available for on-access wiki synthesis")
+
+        result = await synthesize_wiki_page(
+            page_title=page.title,
+            page_content=page.content,
+            source_refs=page.source_refs or [],
+            claude_client=claude_client,
+        )
+
+        # Save synthesis using dedicated method (updates synthesis_updated_at)
+        await repo.save_synthesis(
+            guild_id=guild_id,
+            path=page.path,
+            synthesis=result.synthesis,
+            source_count=result.source_count,
+            model=result.model_used,
+        )
+
+        # Update in-memory page object for this request
+        page.synthesis = result.synthesis
+        page.synthesis_source_count = result.source_count
+        page.confidence = int(result.confidence * 100)
+        page.synthesis_model = result.model_used
+
+        logger.info(f"On-access synthesized wiki page {page.path} for guild {guild_id}")
+
+    except Exception as e:
+        logger.warning(f"On-access wiki synthesis failed for {page.path}: {e}")
+
+    return page
+
+
 def _page_to_summary_response(page) -> WikiPageSummaryResponse:
     """Convert WikiPageSummary to response model."""
     return WikiPageSummaryResponse(
@@ -356,6 +436,9 @@ async def get_page(
     page = await repo.get_page(guild_id, path)
     if not page:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"Page not found: {path}"})
+
+    # ADR-076: On-demand synthesis if auto-synthesis is enabled and page is stale
+    page = await _maybe_synthesize_on_access(guild_id, page, repo)
 
     # Fetch source metadata for readable titles
     source_metadata = []
@@ -1339,3 +1422,125 @@ async def get_wiki_facets(
         synthesis_model=facets.synthesis_model,
         has_synthesis=facets.has_synthesis,
     )
+
+
+# -------------------------------------------------------------------------
+# Wiki Settings (ADR-076)
+# -------------------------------------------------------------------------
+
+class WikiSettingsResponse(BaseModel):
+    """Wiki settings for a guild."""
+    wiki_auto_ingest: bool = True
+    wiki_auto_synthesis: bool = True
+
+
+class WikiSettingsUpdateRequest(BaseModel):
+    """Request to update wiki settings."""
+    wiki_auto_ingest: Optional[bool] = None
+    wiki_auto_synthesis: Optional[bool] = None
+
+
+@router.get(
+    "/guilds/{guild_id}/wiki/settings",
+    response_model=WikiSettingsResponse,
+    summary="Get wiki settings",
+    description="Get wiki settings for the guild (ADR-076).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def get_wiki_settings(
+    guild_id: str = Path(..., description="Guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Get wiki settings for a guild."""
+    _check_guild_access(guild_id, user)
+
+    from ...data.repositories import get_repository_factory
+
+    try:
+        factory = get_repository_factory()
+        conn = await factory.get_connection()
+        row = await conn.fetch_one(
+            "SELECT wiki_auto_ingest, wiki_auto_synthesis FROM guild_configs WHERE guild_id = ?",
+            (guild_id,)
+        )
+
+        if row:
+            return WikiSettingsResponse(
+                wiki_auto_ingest=row.get('wiki_auto_ingest', True) if row.get('wiki_auto_ingest') is not None else True,
+                wiki_auto_synthesis=row.get('wiki_auto_synthesis', True) if row.get('wiki_auto_synthesis') is not None else True,
+            )
+        return WikiSettingsResponse()
+    except Exception as e:
+        # Columns may not exist yet
+        logger.debug(f"Could not get wiki settings: {e}")
+        return WikiSettingsResponse()
+
+
+@router.patch(
+    "/guilds/{guild_id}/wiki/settings",
+    response_model=WikiSettingsResponse,
+    summary="Update wiki settings",
+    description="Update wiki settings for the guild (ADR-076).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def update_wiki_settings(
+    settings: WikiSettingsUpdateRequest,
+    guild_id: str = Path(..., description="Guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Update wiki settings for a guild."""
+    _check_guild_access(guild_id, user)
+
+    from ...data.repositories import get_repository_factory
+
+    try:
+        factory = get_repository_factory()
+        conn = await factory.get_connection()
+
+        # Build update query dynamically
+        updates = []
+        params = []
+        if settings.wiki_auto_ingest is not None:
+            updates.append("wiki_auto_ingest = ?")
+            params.append(settings.wiki_auto_ingest)
+        if settings.wiki_auto_synthesis is not None:
+            updates.append("wiki_auto_synthesis = ?")
+            params.append(settings.wiki_auto_synthesis)
+
+        if updates:
+            params.append(guild_id)
+            # Ensure row exists first
+            await conn.execute(
+                "INSERT OR IGNORE INTO guild_configs (guild_id) VALUES (?)",
+                (guild_id,)
+            )
+            await conn.execute(
+                f"UPDATE guild_configs SET {', '.join(updates)} WHERE guild_id = ?",
+                tuple(params)
+            )
+
+        # Return updated settings
+        row = await conn.fetch_one(
+            "SELECT wiki_auto_ingest, wiki_auto_synthesis FROM guild_configs WHERE guild_id = ?",
+            (guild_id,)
+        )
+
+        await audit_log(
+            "action.wiki.settings_update",
+            user_id=user.get("id", "unknown"),
+            guild_id=guild_id,
+            details={"auto_ingest": settings.wiki_auto_ingest, "auto_synthesis": settings.wiki_auto_synthesis},
+        )
+
+        return WikiSettingsResponse(
+            wiki_auto_ingest=row.get('wiki_auto_ingest', True) if row and row.get('wiki_auto_ingest') is not None else True,
+            wiki_auto_synthesis=row.get('wiki_auto_synthesis', True) if row and row.get('wiki_auto_synthesis') is not None else True,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to update wiki settings: {e}")
+        raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": str(e)})

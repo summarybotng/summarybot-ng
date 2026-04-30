@@ -117,6 +117,11 @@ class StoredSummary(BaseModel):
     # ADR-073: Private channel content indicator
     contains_sensitive_channels: bool = False
 
+    # ADR-075: Split tracking for regeneration
+    split_from: Optional[str] = None          # Original summary ID this was split from
+    split_private_id: Optional[str] = None    # Reference to private portion (on public summary)
+    split_public_id: Optional[str] = None     # Reference to public portion (on private summary)
+
     def get_pushed_channel_ids(self) -> List[str]:
         """Get list of channel IDs this summary was pushed to."""
         return [d.channel_id for d in self.push_deliveries if d.success]
@@ -333,6 +338,10 @@ class StoredSummary(BaseModel):
             "wiki_ingested_at": self.wiki_ingested_at.isoformat() if self.wiki_ingested_at else None,
             # ADR-073: Private channel content indicator
             "contains_sensitive_channels": self.contains_sensitive_channels,
+            # ADR-075: Split tracking
+            "split_from": self.split_from,
+            "split_private_id": self.split_private_id,
+            "split_public_id": self.split_public_id,
         }
 
     def to_dict(self) -> Dict[str, Any]:
@@ -359,6 +368,12 @@ class StoredSummary(BaseModel):
             # ADR-067: Wiki ingestion status
             "wiki_ingested": self.wiki_ingested,
             "wiki_ingested_at": self.wiki_ingested_at.isoformat() if self.wiki_ingested_at else None,
+            # ADR-073: Private channel content indicator
+            "contains_sensitive_channels": self.contains_sensitive_channels,
+            # ADR-075: Split tracking
+            "split_from": self.split_from,
+            "split_private_id": self.split_private_id,
+            "split_public_id": self.split_public_id,
         }
 
     @classmethod
@@ -394,4 +409,10 @@ class StoredSummary(BaseModel):
             # ADR-067: Wiki ingestion status
             wiki_ingested=data.get("wiki_ingested", False),
             wiki_ingested_at=datetime.fromisoformat(data["wiki_ingested_at"]) if data.get("wiki_ingested_at") else None,
+            # ADR-073: Private channel content indicator
+            contains_sensitive_channels=data.get("contains_sensitive_channels", False),
+            # ADR-075: Split tracking
+            split_from=data.get("split_from"),
+            split_private_id=data.get("split_private_id"),
+            split_public_id=data.get("split_public_id"),
         )

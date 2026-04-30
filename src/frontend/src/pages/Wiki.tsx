@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
@@ -456,6 +456,12 @@ function WikiPageView({ page }: { page: WikiPage }) {
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
 
+  // Set browser title to wiki page title
+  useEffect(() => {
+    document.title = `${page.title} | Wiki | SummaryBot`;
+    return () => { document.title = "SummaryBot Dashboard"; };
+  }, [page.title]);
+
   // URL-based tab selection (ADR-063): ?tab=synthesis or ?tab=updates
   const tabFromUrl = searchParams.get("tab") as "synthesis" | "updates" | null;
   const defaultTab = page.synthesis ? "synthesis" : "updates";
@@ -496,14 +502,14 @@ function WikiPageView({ page }: { page: WikiPage }) {
     return title.length > 60 ? title.substring(0, 57) + '...' : title;
   };
 
-  // Pre-process content to convert [source:summary-xxx] to links
-  // Replace "## Update from summary-xxx" with readable titles
+  // Pre-process content to convert [source:xxx] to links
+  // Handles: summary-uuid, summary-sum_xxx, sum_xxx, and other formats
   let processedContent = page.content
-    .replace(/\[source:(summary-[\w-]+)\]/g, '[📄 source](?source=$1)');
+    .replace(/\[source:([\w-]+)\]/g, '[📄 source](?source=$1)');
 
-  // Replace "## Update from summary-xxx" with readable source titles
+  // Replace "## Update from xxx" with readable source titles
   processedContent = processedContent.replace(
-    /## Update from (summary-[\w-]+)/g,
+    /## Update from ([\w-]+)/g,
     (_, sourceId) => `## 📝 ${formatSourceTitle(sourceId)} [↗](?source=${sourceId})`
   );
 
@@ -1048,7 +1054,7 @@ function SourceReferences({ guildId, sourceId }: { guildId: string; sourceId: st
   });
 
   // Extract summary ID from source ID (e.g., "summary-abc123" -> "abc123")
-  const summaryId = sourceId.startsWith("summary-") ? sourceId.slice(8) : null;
+  const summaryId = sourceId.startsWith("summary-") ? sourceId.slice(8) : sourceId;
 
   // ADR-069: Fetch summary metadata for richer display
   const { data: summaryMeta } = useQuery({
@@ -1056,6 +1062,13 @@ function SourceReferences({ guildId, sourceId }: { guildId: string; sourceId: st
     queryFn: () => fetchSummaryMetadata(guildId!, summaryId!),
     enabled: !!guildId && !!summaryId,
   });
+
+  // Set browser title to source/summary title
+  useEffect(() => {
+    const title = summaryMeta?.title || `Source ${sourceId.slice(0, 12)}...`;
+    document.title = `${title} | Wiki | SummaryBot`;
+    return () => { document.title = "SummaryBot Dashboard"; };
+  }, [summaryMeta?.title, sourceId]);
 
   // Derive platform from source_key or title
   const platform = summaryMeta?.platform ||

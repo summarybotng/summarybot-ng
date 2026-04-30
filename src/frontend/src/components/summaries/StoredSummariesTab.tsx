@@ -1046,6 +1046,14 @@ function StoredSummaryDetailSheet({
   const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
   const [regenerateOptions, setRegenerateOptions] = useState<RegenerateOptions>({});
 
+  // Set browser title to summary title
+  useEffect(() => {
+    if (summary?.title && open) {
+      document.title = `${summary.title} | SummaryBot`;
+      return () => { document.title = "SummaryBot Dashboard"; };
+    }
+  }, [summary?.title, open]);
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-[50vw] lg:max-w-[70vw]">

@@ -1050,19 +1050,66 @@ async def estimate_generation_cost(request: GenerateRequest):
     )
 
 
+def _derive_group_info_from_filename(filename: str) -> tuple[str, str]:
+    """
+    Derive group name and ID from a WhatsApp export filename.
+
+    WhatsApp exports typically have filenames like:
+    - "WhatsApp Chat with GroupName.txt"
+    - "WhatsApp Chat with GroupName.zip"
+    - "_chat.txt" (inside zip, less useful)
+
+    Returns:
+        Tuple of (group_id, group_name)
+    """
+    import re
+    import hashlib
+
+    # Remove file extension
+    name = filename
+    for ext in ['.zip', '.txt', '.json']:
+        if name.lower().endswith(ext):
+            name = name[:-len(ext)]
+
+    # Try to extract group name from "WhatsApp Chat with X" pattern
+    match = re.match(r'^WhatsApp Chat with (.+)$', name, re.IGNORECASE)
+    if match:
+        group_name = match.group(1).strip()
+    else:
+        # Fall back to filename (without extension) as group name
+        group_name = name.strip()
+
+    # Clean up group name - remove any trailing underscore + numbers (dedup suffixes)
+    group_name = re.sub(r'_\d+$', '', group_name)
+
+    # Generate a deterministic group_id from the name
+    # This ensures same filename always gets same ID
+    slug = re.sub(r'[^\w\s-]', '', group_name.lower())
+    slug = re.sub(r'[-\s]+', '-', slug).strip('-')
+
+    # Add a short hash to ensure uniqueness for different names that might slug the same
+    name_hash = hashlib.md5(group_name.encode()).hexdigest()[:6]
+    group_id = f"{slug[:30]}-{name_hash}" if slug else name_hash
+
+    return group_id, group_name
+
+
 @router.post("/import/whatsapp")
 async def import_whatsapp(
     file: UploadFile = File(...),
-    group_id: str = Query(...),
-    group_name: str = Query(...),
+    group_id: Optional[str] = Query(None, description="Group ID (derived from filename if not provided)"),
+    group_name: Optional[str] = Query(None, description="Group name (derived from filename if not provided)"),
     format: str = Query("whatsapp_txt"),  # "whatsapp_txt" or "reader_bot"
 ):
     """
     Import WhatsApp chat export.
 
     ADR-006: Supports both .txt and .zip file formats.
+    ADR-078: Derives group name and ID from filename if not provided.
+
     When a .zip file is uploaded, the archive is extracted and the
-    contained .txt file is processed.
+    contained .txt file is processed. The group name is extracted from
+    filenames like "WhatsApp Chat with GroupName.zip".
     """
     from src.archive.importers.whatsapp import WhatsAppImporter
     import tempfile
@@ -1078,6 +1125,7 @@ async def import_whatsapp(
         tmp_path = Path(tmp.name)
 
     extracted_path = None  # Track extracted file for cleanup
+    derived_name_source = None  # Track where we derived the name from
 
     try:
         # ADR-006: Handle .zip files by extracting the .txt file inside
@@ -1111,6 +1159,17 @@ async def import_whatsapp(
                     extracted_path = extract_dir / txt_filename
                     file_to_process = extracted_path
 
+                    # ADR-078: Derive group info from the inner .txt filename first (more specific)
+                    # then fall back to the outer .zip filename
+                    if not group_id or not group_name:
+                        # Try inner filename first (e.g., "WhatsApp Chat with Family.txt")
+                        inner_id, inner_name = _derive_group_info_from_filename(txt_filename)
+                        # If inner filename is generic (like "_chat.txt"), use outer filename
+                        if inner_name.lower() in ['_chat', 'chat', 'whatsapp chat']:
+                            derived_name_source = original_filename
+                        else:
+                            derived_name_source = txt_filename
+
                     # Update original filename for result metadata
                     original_filename = txt_filename
 
@@ -1119,6 +1178,22 @@ async def import_whatsapp(
                     400,
                     "Invalid ZIP file. Please upload a valid WhatsApp export ZIP or .txt file."
                 )
+        else:
+            # For .txt files, use the filename directly
+            derived_name_source = original_filename
+
+        # ADR-078: Derive group_id and group_name from filename if not provided
+        if not group_id or not group_name:
+            source_filename = derived_name_source or original_filename
+            derived_id, derived_name = _derive_group_info_from_filename(source_filename)
+
+            if not group_id:
+                group_id = derived_id
+                logger.info(f"Derived group_id from filename: {group_id}")
+
+            if not group_name:
+                group_name = derived_name
+                logger.info(f"Derived group_name from filename: {group_name}")
 
         # Process the file
         if format == "reader_bot":

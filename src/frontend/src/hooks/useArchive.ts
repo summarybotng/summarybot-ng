@@ -201,15 +201,21 @@ export function useImportWhatsApp() {
       format,
     }: {
       file: File;
-      groupId: string;
-      groupName: string;
-      format: "whatsapp_txt" | "reader_bot";
+      groupId?: string;  // Optional - derived from filename if not provided
+      groupName?: string;  // Optional - derived from filename if not provided
+      format?: "whatsapp_txt" | "reader_bot";
     }) => {
       const formData = new FormData();
       formData.append("file", file);
 
+      // Build query params - only include if provided
+      const params = new URLSearchParams();
+      if (groupId) params.set("group_id", groupId);
+      if (groupName) params.set("group_name", groupName);
+      params.set("format", format || "whatsapp_txt");
+
       const response = await fetch(
-        `/api/v1/archive/import/whatsapp?group_id=${encodeURIComponent(groupId)}&group_name=${encodeURIComponent(groupName)}&format=${format}`,
+        `/api/v1/archive/import/whatsapp?${params.toString()}`,
         {
           method: "POST",
           body: formData,
@@ -217,7 +223,8 @@ export function useImportWhatsApp() {
       );
 
       if (!response.ok) {
-        throw new Error("Import failed");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || "Import failed");
       }
 
       return response.json();

@@ -172,17 +172,17 @@ export function Archive() {
             <ImportDialog
               onImport={async (file, groupId, groupName, format) => {
                 try {
-                  await importWhatsApp.mutateAsync({ file, groupId, groupName, format });
+                  const result = await importWhatsApp.mutateAsync({ file, groupId, groupName, format });
                   toast({
                     title: "Import successful",
-                    description: "WhatsApp chat has been imported",
+                    description: `Imported ${result.message_count || 0} messages from "${result.filename || file.name}"`,
                   });
                   setImportOpen(false);
                   refetchSources();
-                } catch {
+                } catch (error) {
                   toast({
                     title: "Import failed",
-                    description: "Failed to import chat data",
+                    description: error instanceof Error ? error.message : "Failed to import chat data",
                     variant: "destructive",
                   });
                 }
@@ -842,31 +842,46 @@ function GenerateDialog({
   );
 }
 
-// Import Dialog
+// Import Dialog - ADR-078: Simplified import with auto-derived group name
 function ImportDialog({
   onImport,
   isPending,
 }: {
-  onImport: (file: File, groupId: string, groupName: string, format: "whatsapp_txt" | "reader_bot") => Promise<void>;
+  onImport: (file: File, groupId?: string, groupName?: string, format?: "whatsapp_txt" | "reader_bot") => Promise<void>;
   isPending: boolean;
 }) {
   const [file, setFile] = useState<File | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [groupId, setGroupId] = useState("");
   const [groupName, setGroupName] = useState("");
   const [format, setFormat] = useState<"whatsapp_txt" | "reader_bot">("whatsapp_txt");
 
+  // Derive preview name from filename
+  const derivedName = file?.name
+    ? file.name
+        .replace(/\.zip$/i, "")
+        .replace(/\.txt$/i, "")
+        .replace(/^WhatsApp Chat with /i, "")
+    : "";
+
   const handleSubmit = () => {
-    if (file && groupId && groupName) {
-      onImport(file, groupId, groupName, format);
+    if (file) {
+      // Only pass groupId/groupName if user provided them (override auto-derive)
+      onImport(
+        file,
+        groupId || undefined,
+        groupName || undefined,
+        format
+      );
     }
   };
 
   return (
     <DialogContent className="sm:max-w-md">
       <DialogHeader>
-        <DialogTitle>Import Chat Data</DialogTitle>
+        <DialogTitle>Import WhatsApp Chat</DialogTitle>
         <DialogDescription>
-          Import WhatsApp chat exports for archiving
+          Upload a WhatsApp export file (.zip or .txt)
         </DialogDescription>
       </DialogHeader>
 
@@ -875,47 +890,80 @@ function ImportDialog({
           <Label>Chat Export File</Label>
           <Input
             type="file"
-            accept=".txt,.json"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            accept=".txt,.json,.zip"
+            onChange={(e) => {
+              setFile(e.target.files?.[0] || null);
+              // Clear manual overrides when file changes
+              setGroupId("");
+              setGroupName("");
+            }}
           />
+          <p className="text-xs text-muted-foreground">
+            Export from WhatsApp: Chat &gt; More &gt; Export chat
+          </p>
         </div>
 
-        <div className="space-y-2">
-          <Label>Format</Label>
-          <Select value={format} onValueChange={(v) => setFormat(v as typeof format)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="whatsapp_txt">WhatsApp .txt Export</SelectItem>
-              <SelectItem value="reader_bot">Reader Bot JSON</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {file && derivedName && (
+          <div className="rounded-lg bg-muted/50 p-3">
+            <p className="text-sm">
+              <span className="text-muted-foreground">Group name: </span>
+              <span className="font-medium">{derivedName}</span>
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Derived from filename
+            </p>
+          </div>
+        )}
 
-        <div className="space-y-2">
-          <Label>Group ID</Label>
-          <Input
-            placeholder="e.g., family-group"
-            value={groupId}
-            onChange={(e) => setGroupId(e.target.value)}
-          />
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
+        >
+          <ChevronDown className={`h-4 w-4 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
+          Advanced options
+        </button>
 
-        <div className="space-y-2">
-          <Label>Group Name</Label>
-          <Input
-            placeholder="e.g., Family Group Chat"
-            value={groupName}
-            onChange={(e) => setGroupName(e.target.value)}
-          />
-        </div>
+        {showAdvanced && (
+          <div className="space-y-4 border-l-2 border-muted pl-4">
+            <div className="space-y-2">
+              <Label>Format</Label>
+              <Select value={format} onValueChange={(v) => setFormat(v as typeof format)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="whatsapp_txt">WhatsApp .txt Export</SelectItem>
+                  <SelectItem value="reader_bot">Reader Bot JSON</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Group Name (optional override)</Label>
+              <Input
+                placeholder={derivedName || "Auto-derived from filename"}
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Group ID (optional override)</Label>
+              <Input
+                placeholder="Auto-generated from name"
+                value={groupId}
+                onChange={(e) => setGroupId(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <DialogFooter>
         <Button
           onClick={handleSubmit}
-          disabled={isPending || !file || !groupId || !groupName}
+          disabled={isPending || !file}
         >
           {isPending ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />

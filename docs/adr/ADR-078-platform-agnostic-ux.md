@@ -9,7 +9,6 @@ SummaryBot has evolved from a Discord-only bot to a multi-platform system suppor
 - **Discord** - Real-time bot integration
 - **WhatsApp** - Zip file import via retrospectives
 - **Slack** - OAuth workspace integration (ADR-043)
-- **Telegram** - Planned
 
 However, the UI remains heavily Discord-centric, creating several UX problems:
 
@@ -51,13 +50,13 @@ Replace Discord-centric "Guild" concept with platform-agnostic "Workspace":
 interface Workspace {
   id: string;
   name: string;
-  platform: "discord" | "slack" | "whatsapp" | "telegram";
+  platform: "discord" | "slack" | "whatsapp";
   icon_url?: string;
 
   // Platform-specific metadata (optional)
   discord?: { guild_id: string; member_count: number; };
   slack?: { workspace_id: string; domain: string; };
-  whatsapp?: { phone_number: string; };
+  whatsapp?: { chat_name: string; };
 }
 ```
 
@@ -92,7 +91,6 @@ interface Workspace {
   /connect/discord
   /connect/slack
   /connect/whatsapp
-  /connect/telegram
 ```
 
 ### 3. Unified Sources Page
@@ -124,7 +122,7 @@ Replace "Channels" with "Sources" showing all connected platforms:
 │ └─────────────────────────────────────────────────────────┘ │
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ 🔗 Connect New Source                                   │ │
-│ │   [Discord]  [Slack]  [WhatsApp]  [Telegram]           │ │
+│ │   [Discord]  [Slack]  [WhatsApp]                       │ │
 │ └─────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -157,8 +155,8 @@ For new users, show platform selection:
 │   [🎮 Discord Server]     [📱 Slack Workspace]              │
 │   Real-time bot           OAuth integration                │
 │                                                             │
-│   [💬 WhatsApp Chat]      [✈️ Telegram Group]               │
-│   Import zip export       Coming soon                      │
+│   [💬 WhatsApp Chat]                                        │
+│   Import zip export                                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -195,14 +193,12 @@ function SourceItem({ source }: { source: Source }) {
     discord: "#",
     slack: "#",
     whatsapp: "",
-    telegram: "",
   }[source.platform];
 
   const icon = {
     discord: <Hash />,
     slack: <Hash />,
     whatsapp: <MessageCircle />,
-    telegram: <Send />,
   }[source.platform];
 
   return (
@@ -258,32 +254,35 @@ function ScopeSelector() {
 └──────────────────┴──────────────────┴──────────────────┘
 ```
 
-### 8. Settings Page Platform Sections
+### 8. Unified Sources View
 
-Replace single "Discord Server" card with platform tabs:
+Replace separate platform sections with a **unified channel list** showing all sources together, filterable by platform:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Connected Platforms                                         │
+│ Sources                                     [+ Add Source]  │
 ├─────────────────────────────────────────────────────────────┤
-│ [Discord] [Slack] [WhatsApp]                                │
+│ Filter: [All ▾] [Discord ▾] [Slack ▾] [WhatsApp ▾]         │
+│ View:   [List] [Grid] [By Platform]                         │
 ├─────────────────────────────────────────────────────────────┤
-│ Discord Connection                          [✓ Connected]  │
-│ ├─ Server: My Server                                        │
-│ ├─ Server ID: 123456789                                     │
-│ ├─ Members: 1,234                                           │
-│ ├─ Channels: 45 (12 enabled)                                │
-│ └─ [Refresh] [Disconnect]                                   │
-├─────────────────────────────────────────────────────────────┤
-│ Slack Connection                            [○ Not Connected]│
-│ └─ [Connect Slack Workspace]                                │
-├─────────────────────────────────────────────────────────────┤
-│ WhatsApp Imports                            [3 chats]       │
-│ ├─ Family Chat (imported 2024-01-15)                        │
-│ ├─ Work Group (imported 2024-02-20)                         │
-│ └─ [Import New Chat]                                        │
+│ 🎮 #general              Discord    ✓ Enabled    Daily 9am │
+│ 🎮 #engineering          Discord    ✓ Enabled    Daily 9am │
+│ 📱 #team-updates         Slack      ✓ Enabled    Weekly    │
+│ 💬 Family Chat           WhatsApp   ✓ Imported   Archived  │
+│ 🎮 #random               Discord    ○ Disabled             │
+│ 📱 #announcements        Slack      ✓ Enabled    Daily     │
+│ 💬 Work Group            WhatsApp   ✓ Imported   Archived  │
+│ 🎮 #support              Discord    ✓ Enabled    Hourly    │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+**Key Features:**
+- **Unified list** - All channels from all platforms in one view
+- **Platform filter** - Filter by Discord, Slack, WhatsApp, or show all
+- **Multiple views** - List (default), Grid, or grouped By Platform
+- **Platform icons** - Visual distinction via icons (🎮 Discord, 📱 Slack, 💬 WhatsApp)
+- **Sortable** - By name, platform, status, schedule
+- **Bulk actions** - Enable/disable multiple channels at once
 
 ### 9. URL Structure Migration
 
@@ -316,7 +315,6 @@ const platformBadges = {
   discord: { icon: <Gamepad2 />, color: "indigo", label: "Discord" },
   slack: { icon: <Slack />, color: "purple", label: "Slack" },
   whatsapp: { icon: <MessageCircle />, color: "green", label: "WhatsApp" },
-  telegram: { icon: <Send />, color: "blue", label: "Telegram" },
 };
 
 // Consistent badge rendering across all views
@@ -363,7 +361,7 @@ function PlatformBadge({ platform }: { platform: Platform }) {
 - Better discoverability for WhatsApp and Slack features
 - Clearer mental model for multi-platform users
 - Easier onboarding for non-Discord users
-- Foundation for adding Telegram, Teams, etc.
+- Foundation for adding more platforms in future
 - More accurate marketing of capabilities
 
 ### Negative

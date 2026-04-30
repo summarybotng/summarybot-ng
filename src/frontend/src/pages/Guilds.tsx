@@ -363,7 +363,7 @@ export function Guilds() {
         {!isLoading && guilds?.length === 0 && (
           <div className="py-20 text-center">
             <p className="text-lg text-muted-foreground">
-              No servers found. Make sure SummaryBot is added to your Discord servers.
+              No workspaces found. Connect Discord, Slack, or import WhatsApp chats to get started.
             </p>
           </div>
         )}

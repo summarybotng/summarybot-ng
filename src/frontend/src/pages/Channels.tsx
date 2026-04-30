@@ -120,7 +120,7 @@ export function Channels() {
       await syncChannels.mutateAsync();
       toast({
         title: "Channels synced",
-        description: "Channel list has been refreshed from Discord.",
+        description: "Channel list has been refreshed.",
       });
     } catch (error: unknown) {
       const errorMessage = error instanceof Error 

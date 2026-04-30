@@ -17,7 +17,7 @@ const features = [
   {
     icon: MessageSquare,
     title: "Smart Summaries",
-    description: "AI-powered summaries of your Discord conversations with key points and action items.",
+    description: "AI-powered summaries of your conversations with key points and action items.",
   },
   {
     icon: Calendar,
@@ -26,8 +26,8 @@ const features = [
   },
   {
     icon: Zap,
-    title: "Multiple Perspectives",
-    description: "Get summaries tailored for developers, executives, support, or marketing teams.",
+    title: "Multiple Platforms",
+    description: "Summarize Discord servers, Slack workspaces, and WhatsApp chat exports.",
   },
   {
     icon: Shield,
@@ -165,13 +165,13 @@ export function Landing() {
             </div>
 
             <h1 className="mb-6 text-4xl font-bold tracking-tight sm:text-6xl">
-              Never Miss What Matters in{" "}
-              <span className="text-gradient">Discord</span>
+              Never Miss What Matters in Your{" "}
+              <span className="text-gradient">Conversations</span>
             </h1>
 
             <p className="mb-10 text-lg text-muted-foreground sm:text-xl">
-              SummaryBot uses AI to summarize your Discord channels, extract action items,
-              and keep your team informed. Configure once, stay updated forever.
+              SummaryBot uses AI to summarize Discord, Slack, and WhatsApp conversations,
+              extract action items, and keep your team informed.
             </p>
 
             <motion.div
@@ -244,7 +244,7 @@ export function Landing() {
         >
           <h2 className="mb-4 text-3xl font-bold">Powerful Features</h2>
           <p className="text-muted-foreground">
-            Everything you need to stay on top of your Discord communications
+            Everything you need to stay on top of your team communications
           </p>
         </motion.div>
 
@@ -274,7 +274,7 @@ export function Landing() {
       {/* Footer */}
       <footer className="border-t border-border/40 py-8">
         <div className="container text-center text-sm text-muted-foreground">
-          <p>© 2024 SummaryBot. Made with ❤️ for Discord communities.</p>
+          <p>© 2024 SummaryBot. Made with ❤️ for teams everywhere.</p>
         </div>
       </footer>
     </div>

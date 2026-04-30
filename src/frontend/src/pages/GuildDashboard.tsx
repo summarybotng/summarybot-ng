@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Calendar, Hash, Sparkles, ArrowRight, Clock, AlertTriangle } from "lucide-react";
+import { FileText, Calendar, Hash, Sparkles, ArrowRight, Clock, AlertTriangle, MessageCircle, Upload } from "lucide-react";
 
 export function GuildDashboard() {
   const { id } = useParams<{ id: string }>();
@@ -184,6 +184,22 @@ export function GuildDashboard() {
                   </div>
                 </div>
                 <ArrowRight className="h-5 w-5 text-muted-foreground" />
+              </Link>
+
+              <Link
+                to={`/guilds/${id}/archive`}
+                className="flex items-center justify-between rounded-lg bg-green-500/10 border border-green-500/20 p-4 transition-colors hover:bg-green-500/20"
+              >
+                <div className="flex items-center gap-3">
+                  <MessageCircle className="h-5 w-5 text-green-600" />
+                  <div>
+                    <p className="font-medium">Import WhatsApp Chat</p>
+                    <p className="text-sm text-muted-foreground">
+                      Upload a WhatsApp export zip file
+                    </p>
+                  </div>
+                </div>
+                <Upload className="h-5 w-5 text-green-600" />
               </Link>
             </CardContent>
           </Card>

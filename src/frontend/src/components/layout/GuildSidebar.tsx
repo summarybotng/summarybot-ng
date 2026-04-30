@@ -20,6 +20,7 @@ import {
 import {
   LayoutDashboard,
   Hash,
+  Layers,
   FileText,
   Briefcase,
   Calendar,
@@ -36,8 +37,10 @@ import {
 } from "lucide-react";
 
 // ADR-040: Jobs promoted to top-level navigation
+// ADR-078: Added Sources for platform-agnostic channel view
 const navItems = [
   { icon: LayoutDashboard, label: "Overview", path: "" },
+  { icon: Layers, label: "Sources", path: "/sources" },
   { icon: Hash, label: "Channels", path: "/channels" },
   { icon: FileText, label: "Summaries", path: "/summaries" },
   { icon: Briefcase, label: "Jobs", path: "/jobs", showJobsBadge: true },

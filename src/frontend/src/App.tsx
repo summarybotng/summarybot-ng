@@ -15,6 +15,7 @@ import { Guilds } from "@/pages/Guilds";
 import { SlackWorkspaces } from "@/pages/SlackWorkspaces";
 import { GuildDashboard } from "@/pages/GuildDashboard";
 import { Channels } from "@/pages/Channels";
+import { Sources } from "@/pages/Sources";
 import { Summaries } from "@/pages/Summaries";
 import { Jobs } from "@/pages/Jobs";
 import { Schedules } from "@/pages/Schedules";
@@ -79,6 +80,7 @@ const App = () => (
               }
             >
               <Route index element={<GuildDashboard />} />
+              <Route path="sources" element={<Sources />} />
               <Route path="channels" element={<Channels />} />
               <Route path="summaries" element={<Summaries />} />
               <Route path="stored-summaries/:summaryId" element={<Summaries />} />

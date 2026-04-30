@@ -87,6 +87,8 @@ class WikiPageDetailResponse(BaseModel):
     synthesis_model: Optional[str] = None
     average_rating: Optional[float] = None
     rating_count: int = 0
+    # ADR-076: Auto-synthesis indicator
+    auto_synthesized: bool = False
 
 
 class WikiFilterFacetsResponse(BaseModel):
@@ -260,8 +262,26 @@ async def _maybe_synthesize_on_access(guild_id: str, page, repo) -> any:
         page.synthesis_source_count = result.source_count
         page.confidence = int(result.confidence * 100)
         page.synthesis_model = result.model_used
+        # Mark as auto-synthesized for this request
+        page._auto_synthesized = True
 
         logger.info(f"On-access synthesized wiki page {page.path} for guild {guild_id}")
+
+        # ADR-076: Audit log for auto-synthesis
+        await audit_log(
+            "action.wiki.auto_synthesize",
+            guild_id=guild_id,
+            resource_type="wiki_page",
+            resource_id=page.path,
+            resource_name=page.title,
+            action="auto_synthesize",
+            details={
+                "trigger": "on_access",
+                "source_count": result.source_count,
+                "model": result.model_used,
+                "conflicts_found": result.conflicts_found,
+            },
+        )
 
     except Exception as e:
         logger.warning(f"On-access wiki synthesis failed for {page.path}: {e}")
@@ -320,6 +340,8 @@ def _page_to_detail_response(
         synthesis_model=getattr(page, 'synthesis_model', None),
         average_rating=page.average_rating if hasattr(page, 'average_rating') else None,
         rating_count=getattr(page, 'rating_count', 0),
+        # ADR-076: Auto-synthesis indicator
+        auto_synthesized=getattr(page, '_auto_synthesized', False),
     )
 
 

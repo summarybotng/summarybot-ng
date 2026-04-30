@@ -94,6 +94,8 @@ interface WikiPage {
   synthesis_model: string | null;
   average_rating: number | null;
   rating_count: number;
+  // ADR-076: Auto-synthesis indicator
+  auto_synthesized: boolean;
 }
 
 interface WikiPageSummary {
@@ -711,9 +713,16 @@ function WikiPageView({ page }: { page: WikiPage }) {
             <Card>
               <CardContent className="pt-6">
                 <MarkdownContent content={page.synthesis} />
-                {/* ADR-065: Synthesis footer with rating and metadata */}
+                {/* ADR-065/076: Synthesis footer with rating and metadata */}
                 <div className="mt-4 pt-4 border-t flex items-center justify-between flex-wrap gap-4">
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    {/* ADR-076: Auto-synthesized indicator */}
+                    {page.auto_synthesized && (
+                      <Badge variant="secondary" className="text-xs bg-primary/10 text-primary">
+                        <Sparkles className="h-3 w-3 mr-1" />
+                        Auto-synthesized
+                      </Badge>
+                    )}
                     {/* Model */}
                     {page.synthesis_model && (
                       <span className="flex items-center gap-1">
@@ -723,10 +732,19 @@ function WikiPageView({ page }: { page: WikiPage }) {
                     )}
                     {/* Timestamp */}
                     {page.synthesis_updated_at && (
-                      <span className="flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {new Date(page.synthesis_updated_at).toLocaleDateString()}
-                      </span>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="flex items-center gap-1 cursor-help">
+                              <Clock className="h-3 w-3" />
+                              {new Date(page.synthesis_updated_at).toLocaleDateString()}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Synthesized: {new Date(page.synthesis_updated_at).toLocaleString()}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     )}
                     {/* Sources */}
                     <span className="flex items-center gap-1">

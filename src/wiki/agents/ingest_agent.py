@@ -131,6 +131,11 @@ class WikiIngestAgent:
                 existing = await self.repository.get_page(guild_id, path)
 
                 if existing:
+                    # ADR-076: Check source_refs first for authoritative deduplication
+                    if source.id in existing.source_refs:
+                        logger.debug(f"Source {source.id} already in page {path} source_refs, skipping")
+                        continue
+
                     # Update existing page with topic-filtered content
                     updated_content = self._update_page_content(
                         existing.content, topic, key_points, source.id

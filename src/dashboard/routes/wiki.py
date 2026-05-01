@@ -900,6 +900,8 @@ class BackfillRequest(BaseModel):
     date_to: Optional[str] = Field(default=None, description="End date for date_range mode (ISO format)")
     batch_size: int = Field(default=10, ge=1, le=50, description="Summaries per batch")
     delay_between_batches: float = Field(default=1.0, ge=0.5, le=10.0, description="Delay between batches in seconds")
+    # ADR-080: Update threshold - minimum sources to update a page
+    update_threshold: int = Field(default=2, ge=1, le=10, description="Minimum new sources to update a wiki page")
 
 
 class BackfillResponse(BaseModel):
@@ -942,8 +944,9 @@ async def start_wiki_backfill(
 ):
     """Start a wiki backfill job."""
     import asyncio
+    import json
     from datetime import datetime
-    from ...data.repositories import get_stored_summary_repository, get_wiki_repository, get_summary_job_repository
+    from ...data.repositories import get_stored_summary_repository, get_wiki_repository, get_summary_job_repository, get_repository_factory
     from ...models.summary_job import SummaryJob, JobType, JobStatus
     from ...wiki.backfill import WikiBackfillExecutor, generate_backfill_job_id
 
@@ -965,10 +968,23 @@ async def start_wiki_backfill(
             detail={"code": "CONFLICT", "message": f"Wiki backfill already in progress: {existing.id}"},
         )
 
+    # ADR-080: Get allowed perspectives for filtering
+    allowed_perspectives = ["general"]
+    try:
+        factory = get_repository_factory()
+        conn = await factory.get_connection()
+        row = await conn.fetch_one(
+            "SELECT wiki_allowed_perspectives FROM guild_configs WHERE guild_id = ?",
+            (guild_id,)
+        )
+        if row and row.get('wiki_allowed_perspectives'):
+            allowed_perspectives = json.loads(row['wiki_allowed_perspectives'])
+    except Exception as e:
+        logger.debug(f"Could not get wiki_allowed_perspectives: {e}")
+
     # Count summaries to process
     if request.mode == "unprocessed":
         summaries = await stored_repo.find_not_wiki_ingested(guild_id, limit=1000)
-        total = len(summaries)
     elif request.mode == "date_range" and request.date_from and request.date_to:
         date_from = datetime.fromisoformat(request.date_from)
         date_to = datetime.fromisoformat(request.date_to)
@@ -978,10 +994,21 @@ async def start_wiki_backfill(
             created_before=date_to,
             limit=1000,
         )
-        total = len(summaries)
     else:
         summaries = await stored_repo.find_by_guild(guild_id=guild_id, limit=1000)
-        total = len(summaries)
+
+    # ADR-080: Filter summaries by allowed perspectives
+    def get_summary_perspective(summary) -> str:
+        if summary.summary_result and summary.summary_result.metadata:
+            return summary.summary_result.metadata.get('perspective', 'general')
+        return 'general'
+
+    filtered_summaries = [
+        s for s in summaries
+        if get_summary_perspective(s) in allowed_perspectives
+    ]
+    total = len(filtered_summaries)
+    total_before_filter = len(summaries)
 
     # Create job
     job = SummaryJob(
@@ -997,6 +1024,9 @@ async def start_wiki_backfill(
             "delay": request.delay_between_batches,
             "date_from": request.date_from,
             "date_to": request.date_to,
+            # ADR-080: Perspective filtering
+            "allowed_perspectives": allowed_perspectives,
+            "update_threshold": request.update_threshold,
             "errors": [],
             "stats": {"ingested": 0, "skipped": 0, "failed": 0},
         },
@@ -1025,11 +1055,17 @@ async def start_wiki_backfill(
 
     logger.info(f"Started wiki backfill job {job.id} for guild {guild_id}: {total} summaries")
 
+    # Build informative message showing filtering impact
+    if total_before_filter != total:
+        message = f"Wiki backfill job created: {total} summaries to process ({total_before_filter} total, filtered to {allowed_perspectives})"
+    else:
+        message = f"Wiki backfill job created: {total} summaries to process"
+
     return BackfillResponse(
         job_id=job.id,
         status="pending",
         total_summaries=total,
-        message=f"Wiki backfill job created: {total} summaries to process",
+        message=message,
     )
 
 

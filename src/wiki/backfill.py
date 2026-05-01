@@ -30,6 +30,10 @@ class BackfillConfig:
     delay_between_batches: float = 1.0
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
+    # ADR-080: Perspective filtering
+    allowed_perspectives: List[str] = field(default_factory=lambda: ["general"])
+    # ADR-080: Update threshold - minimum sources to update a page
+    update_threshold: int = 2
     # Adaptive rate control
     enable_priority_yielding: bool = True
     enable_resource_monitoring: bool = True
@@ -171,6 +175,9 @@ class WikiBackfillExecutor:
             delay_between_batches=meta.get("delay", 1.0),
             date_from=datetime.fromisoformat(meta["date_from"]) if meta.get("date_from") else None,
             date_to=datetime.fromisoformat(meta["date_to"]) if meta.get("date_to") else None,
+            # ADR-080: Perspective filtering
+            allowed_perspectives=meta.get("allowed_perspectives", ["general"]),
+            update_threshold=meta.get("update_threshold", 2),
             enable_priority_yielding=meta.get("enable_priority_yielding", True),
             enable_resource_monitoring=meta.get("enable_resource_monitoring", True),
             cpu_threshold=meta.get("cpu_threshold", 80.0),
@@ -182,26 +189,48 @@ class WikiBackfillExecutor:
         guild_id: str,
         config: BackfillConfig,
     ) -> List[StoredSummary]:
-        """Get summaries to process based on config mode."""
+        """Get summaries to process based on config mode.
+
+        ADR-080: Filters by allowed perspectives.
+        """
+        # Get raw summaries based on mode
         if config.mode == "unprocessed":
-            return await self.stored_summary_repo.find_not_wiki_ingested(
+            summaries = await self.stored_summary_repo.find_not_wiki_ingested(
                 guild_id=guild_id,
                 limit=1000,  # Cap at 1000 for safety
             )
         elif config.mode == "date_range":
-            return await self.stored_summary_repo.find_by_guild(
+            summaries = await self.stored_summary_repo.find_by_guild(
                 guild_id=guild_id,
                 created_after=config.date_from,
                 created_before=config.date_to,
                 limit=1000,
             )
         elif config.mode == "all":
-            return await self.stored_summary_repo.find_by_guild(
+            summaries = await self.stored_summary_repo.find_by_guild(
                 guild_id=guild_id,
                 limit=1000,
             )
         else:
             return []
+
+        # ADR-080: Filter by allowed perspectives
+        def get_perspective(summary: StoredSummary) -> str:
+            if summary.summary_result and summary.summary_result.metadata:
+                return summary.summary_result.metadata.get('perspective', 'general')
+            return 'general'
+
+        filtered = [
+            s for s in summaries
+            if get_perspective(s) in config.allowed_perspectives
+        ]
+
+        logger.info(
+            f"Backfill: {len(summaries)} total summaries, "
+            f"{len(filtered)} match perspectives {config.allowed_perspectives}"
+        )
+
+        return filtered
 
     async def _process_summary(
         self,

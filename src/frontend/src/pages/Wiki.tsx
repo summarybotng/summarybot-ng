@@ -307,6 +307,8 @@ interface BackfillRequest {
   delay_between_batches?: number;
   date_from?: string;
   date_to?: string;
+  // ADR-080: Update threshold - minimum sources to update a page
+  update_threshold?: number;
 }
 
 interface BackfillJobResponse {
@@ -1378,6 +1380,8 @@ function PopulateWiki({ guildId }: { guildId: string }) {
   const { toast } = useToast();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [backfillMode, setBackfillMode] = useState<"unprocessed" | "all">("unprocessed");
+  // ADR-080: Update threshold - minimum sources to update a page
+  const [updateThreshold, setUpdateThreshold] = useState(2);
 
   // Fetch stats
   const { data: stats, isLoading: statsLoading } = useQuery({
@@ -1437,10 +1441,11 @@ function PopulateWiki({ guildId }: { guildId: string }) {
 
   // ADR-068: Start backfill mutation
   const startBackfillMutation = useMutation({
-    mutationFn: (mode: "unprocessed" | "all") => startBackfill(guildId, {
-      mode,
+    mutationFn: (params: { mode: "unprocessed" | "all"; updateThreshold: number }) => startBackfill(guildId, {
+      mode: params.mode,
       batch_size: 10,
       delay_between_batches: 1.0,
+      update_threshold: params.updateThreshold,
     }),
     onSuccess: (data) => {
       refetchBackfill();
@@ -1727,8 +1732,23 @@ function PopulateWiki({ guildId }: { guildId: string }) {
                   <span className="text-sm">All summaries (full rebuild)</span>
                 </label>
               </div>
+              {/* ADR-080: Update threshold control */}
+              <div className="flex items-center gap-4 mb-3">
+                <label className="text-sm text-muted-foreground whitespace-nowrap">
+                  Min sources to update page:
+                </label>
+                <select
+                  className="w-20 rounded-md border bg-background px-2 py-1 text-sm"
+                  value={updateThreshold}
+                  onChange={(e) => setUpdateThreshold(Number(e.target.value))}
+                >
+                  {[1, 2, 3, 5, 10].map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
               <Button
-                onClick={() => startBackfillMutation.mutate(backfillMode)}
+                onClick={() => startBackfillMutation.mutate({ mode: backfillMode, updateThreshold })}
                 disabled={startBackfillMutation.isPending}
               >
                 {startBackfillMutation.isPending ? (

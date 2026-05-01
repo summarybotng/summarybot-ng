@@ -217,6 +217,8 @@ async function fetchSourceReferences(guildId: string, sourceId: string): Promise
 interface WikiSettings {
   wiki_auto_ingest: boolean;
   wiki_auto_synthesis: boolean;
+  // ADR-080: Perspective filtering
+  wiki_allowed_perspectives: string[];
 }
 
 async function fetchWikiSettings(guildId: string): Promise<WikiSettings> {
@@ -225,6 +227,17 @@ async function fetchWikiSettings(guildId: string): Promise<WikiSettings> {
 
 async function updateWikiSettings(guildId: string, settings: Partial<WikiSettings>): Promise<WikiSettings> {
   return api.patch<WikiSettings>(`/guilds/${guildId}/wiki/settings`, settings);
+}
+
+// ADR-080: Available perspectives for wiki ingestion
+interface WikiAvailablePerspectives {
+  available: string[];
+  allowed: string[];
+  counts: Record<string, number>;
+}
+
+async function fetchAvailablePerspectives(guildId: string): Promise<WikiAvailablePerspectives> {
+  return api.get<WikiAvailablePerspectives>(`/guilds/${guildId}/wiki/available-perspectives`);
 }
 
 // ADR-064: Fetch filtered pages with facets
@@ -1372,6 +1385,44 @@ function PopulateWiki({ guildId }: { guildId: string }) {
     queryFn: () => fetchWikiStats(guildId),
   });
 
+  // ADR-080: Fetch available perspectives
+  const { data: perspectivesData } = useQuery({
+    queryKey: ["wiki-perspectives", guildId],
+    queryFn: () => fetchAvailablePerspectives(guildId),
+  });
+
+  // ADR-080: Fetch wiki settings for perspective management
+  const { data: wikiSettings } = useQuery({
+    queryKey: ["wiki-settings", guildId],
+    queryFn: () => fetchWikiSettings(guildId),
+  });
+
+  // ADR-080: Update settings mutation
+  const settingsMutation = useMutation({
+    mutationFn: (settings: Partial<WikiSettings>) => updateWikiSettings(guildId, settings),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["wiki-settings", guildId] });
+      toast({ title: "Settings saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save settings", variant: "destructive" });
+    },
+  });
+
+  // ADR-080: Toggle perspective
+  const togglePerspective = (perspective: string) => {
+    const current = wikiSettings?.wiki_allowed_perspectives || ["general"];
+    const newPerspectives = current.includes(perspective)
+      ? current.filter(p => p !== perspective)
+      : [...current, perspective];
+    // Don't allow empty list
+    if (newPerspectives.length === 0) {
+      toast({ title: "At least one perspective must be selected", variant: "destructive" });
+      return;
+    }
+    settingsMutation.mutate({ wiki_allowed_perspectives: newPerspectives });
+  };
+
   // ADR-068: Fetch backfill status (poll every 3s when active)
   const { data: backfillStatus, refetch: refetchBackfill } = useQuery({
     queryKey: ["wiki-backfill-status", guildId],
@@ -1500,6 +1551,82 @@ function PopulateWiki({ guildId }: { guildId: string }) {
             </div>
           ) : (
             <p className="text-muted-foreground">No wiki data yet</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ADR-080: Perspective Settings Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Eye className="h-5 w-5" />
+            Ingestion Perspectives
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Choose which summary perspectives are auto-ingested into the wiki.
+            By default, only "general" perspective summaries are included.
+          </p>
+
+          {/* Auto-ingest toggle */}
+          <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Auto-ingest new summaries</span>
+            </div>
+            <Switch
+              checked={wikiSettings?.wiki_auto_ingest ?? true}
+              onCheckedChange={(checked) => settingsMutation.mutate({ wiki_auto_ingest: checked })}
+              disabled={settingsMutation.isPending}
+            />
+          </div>
+
+          {/* Perspective selector */}
+          <div className="space-y-3">
+            <label className="text-sm font-medium">Allowed Perspectives</label>
+            {perspectivesData?.available && perspectivesData.available.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {perspectivesData.available.map((perspective) => {
+                  const isAllowed = wikiSettings?.wiki_allowed_perspectives?.includes(perspective) ?? (perspective === "general");
+                  const count = perspectivesData.counts[perspective] || 0;
+                  return (
+                    <Badge
+                      key={perspective}
+                      variant={isAllowed ? "default" : "outline"}
+                      className={`cursor-pointer transition-colors ${
+                        isAllowed ? "" : "hover:bg-primary/10"
+                      }`}
+                      onClick={() => togglePerspective(perspective)}
+                    >
+                      <span className="capitalize">{perspective}</span>
+                      <span className="ml-1.5 text-xs opacity-70">({count})</span>
+                    </Badge>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-sm text-muted-foreground p-3 bg-muted rounded-lg">
+                No summaries with perspective data found.
+                New summaries will be tagged with their perspective automatically.
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Click to toggle. Summaries with non-selected perspectives won't be ingested into the wiki.
+            </p>
+          </div>
+
+          {/* Current selection summary */}
+          {wikiSettings?.wiki_allowed_perspectives && wikiSettings.wiki_allowed_perspectives.length > 0 && (
+            <div className="text-sm p-3 bg-primary/5 rounded-lg border border-primary/20">
+              <span className="font-medium">Active: </span>
+              {wikiSettings.wiki_allowed_perspectives.map((p, i) => (
+                <span key={p}>
+                  <span className="capitalize">{p}</span>
+                  {i < wikiSettings.wiki_allowed_perspectives.length - 1 && ", "}
+                </span>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>

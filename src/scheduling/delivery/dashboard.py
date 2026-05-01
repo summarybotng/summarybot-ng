@@ -169,6 +169,36 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
                 logger.debug(f"Wiki auto-ingest disabled for guild {summary.guild_id}")
                 return
 
+            # ADR-080: Check perspective filtering
+            allowed_perspectives = ["general"]  # Default: only general
+            try:
+                factory = get_repository_factory()
+                conn = await factory.get_connection()
+                persp_row = await conn.fetch_one(
+                    "SELECT wiki_allowed_perspectives FROM guild_configs WHERE guild_id = ?",
+                    (summary.guild_id,)
+                )
+                if persp_row and persp_row.get('wiki_allowed_perspectives'):
+                    import json
+                    allowed_perspectives = json.loads(persp_row['wiki_allowed_perspectives'])
+            except Exception as e:
+                # Column may not exist yet, default to ["general"]
+                logger.debug(f"Could not check wiki_allowed_perspectives: {e}")
+
+            # Get summary's perspective from metadata
+            summary_perspective = "general"  # Default perspective
+            result = summary.summary_result
+            if result and result.metadata and result.metadata.get('perspective'):
+                summary_perspective = result.metadata['perspective']
+
+            # Skip if perspective not in allowed list
+            if summary_perspective not in allowed_perspectives:
+                logger.info(
+                    f"Skipping wiki ingest for summary {summary.id}: "
+                    f"perspective '{summary_perspective}' not in allowed list {allowed_perspectives}"
+                )
+                return
+
             # Get wiki repository
             wiki_repo = await get_wiki_repository()
             if not wiki_repo:

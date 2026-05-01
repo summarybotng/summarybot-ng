@@ -1447,26 +1447,37 @@ async def get_wiki_facets(
 
 
 # -------------------------------------------------------------------------
-# Wiki Settings (ADR-076)
+# Wiki Settings (ADR-076, ADR-080)
 # -------------------------------------------------------------------------
 
 class WikiSettingsResponse(BaseModel):
     """Wiki settings for a guild."""
     wiki_auto_ingest: bool = True
     wiki_auto_synthesis: bool = True
+    # ADR-080: Perspective filtering
+    wiki_allowed_perspectives: List[str] = ["general"]
 
 
 class WikiSettingsUpdateRequest(BaseModel):
     """Request to update wiki settings."""
     wiki_auto_ingest: Optional[bool] = None
     wiki_auto_synthesis: Optional[bool] = None
+    # ADR-080: Perspective filtering
+    wiki_allowed_perspectives: Optional[List[str]] = None
+
+
+class WikiAvailablePerspectivesResponse(BaseModel):
+    """Available perspectives in the guild's summaries (ADR-080)."""
+    available: List[str]
+    allowed: List[str]
+    counts: dict
 
 
 @router.get(
     "/guilds/{guild_id}/wiki/settings",
     response_model=WikiSettingsResponse,
     summary="Get wiki settings",
-    description="Get wiki settings for the guild (ADR-076).",
+    description="Get wiki settings for the guild (ADR-076, ADR-080).",
     responses={
         403: {"model": ErrorResponse, "description": "No permission"},
     },
@@ -1476,6 +1487,8 @@ async def get_wiki_settings(
     user: dict = Depends(get_current_user),
 ):
     """Get wiki settings for a guild."""
+    import json
+
     _check_guild_access(guild_id, user)
 
     from ...data.repositories import get_repository_factory
@@ -1484,14 +1497,23 @@ async def get_wiki_settings(
         factory = get_repository_factory()
         conn = await factory.get_connection()
         row = await conn.fetch_one(
-            "SELECT wiki_auto_ingest, wiki_auto_synthesis FROM guild_configs WHERE guild_id = ?",
+            "SELECT wiki_auto_ingest, wiki_auto_synthesis, wiki_allowed_perspectives FROM guild_configs WHERE guild_id = ?",
             (guild_id,)
         )
 
         if row:
+            # ADR-080: Parse allowed perspectives
+            allowed_perspectives = ["general"]
+            if row.get('wiki_allowed_perspectives'):
+                try:
+                    allowed_perspectives = json.loads(row['wiki_allowed_perspectives'])
+                except json.JSONDecodeError:
+                    pass
+
             return WikiSettingsResponse(
                 wiki_auto_ingest=row.get('wiki_auto_ingest', True) if row.get('wiki_auto_ingest') is not None else True,
                 wiki_auto_synthesis=row.get('wiki_auto_synthesis', True) if row.get('wiki_auto_synthesis') is not None else True,
+                wiki_allowed_perspectives=allowed_perspectives,
             )
         return WikiSettingsResponse()
     except Exception as e:
@@ -1504,7 +1526,7 @@ async def get_wiki_settings(
     "/guilds/{guild_id}/wiki/settings",
     response_model=WikiSettingsResponse,
     summary="Update wiki settings",
-    description="Update wiki settings for the guild (ADR-076).",
+    description="Update wiki settings for the guild (ADR-076, ADR-080).",
     responses={
         403: {"model": ErrorResponse, "description": "No permission"},
     },
@@ -1515,6 +1537,8 @@ async def update_wiki_settings(
     user: dict = Depends(get_current_user),
 ):
     """Update wiki settings for a guild."""
+    import json
+
     _check_guild_access(guild_id, user)
 
     from ...data.repositories import get_repository_factory
@@ -1532,6 +1556,10 @@ async def update_wiki_settings(
         if settings.wiki_auto_synthesis is not None:
             updates.append("wiki_auto_synthesis = ?")
             params.append(settings.wiki_auto_synthesis)
+        # ADR-080: Handle allowed perspectives
+        if settings.wiki_allowed_perspectives is not None:
+            updates.append("wiki_allowed_perspectives = ?")
+            params.append(json.dumps(settings.wiki_allowed_perspectives))
 
         if updates:
             params.append(guild_id)
@@ -1547,22 +1575,94 @@ async def update_wiki_settings(
 
         # Return updated settings
         row = await conn.fetch_one(
-            "SELECT wiki_auto_ingest, wiki_auto_synthesis FROM guild_configs WHERE guild_id = ?",
+            "SELECT wiki_auto_ingest, wiki_auto_synthesis, wiki_allowed_perspectives FROM guild_configs WHERE guild_id = ?",
             (guild_id,)
         )
+
+        # ADR-080: Parse allowed perspectives
+        allowed_perspectives = ["general"]
+        if row and row.get('wiki_allowed_perspectives'):
+            try:
+                allowed_perspectives = json.loads(row['wiki_allowed_perspectives'])
+            except json.JSONDecodeError:
+                pass
 
         await audit_log(
             "action.wiki.settings_update",
             user_id=user.get("id", "unknown"),
             guild_id=guild_id,
-            details={"auto_ingest": settings.wiki_auto_ingest, "auto_synthesis": settings.wiki_auto_synthesis},
+            details={
+                "auto_ingest": settings.wiki_auto_ingest,
+                "auto_synthesis": settings.wiki_auto_synthesis,
+                "allowed_perspectives": settings.wiki_allowed_perspectives,
+            },
         )
 
         return WikiSettingsResponse(
             wiki_auto_ingest=row.get('wiki_auto_ingest', True) if row and row.get('wiki_auto_ingest') is not None else True,
             wiki_auto_synthesis=row.get('wiki_auto_synthesis', True) if row and row.get('wiki_auto_synthesis') is not None else True,
+            wiki_allowed_perspectives=allowed_perspectives,
         )
 
     except Exception as e:
         logger.error(f"Failed to update wiki settings: {e}")
         raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": str(e)})
+
+
+@router.get(
+    "/guilds/{guild_id}/wiki/available-perspectives",
+    response_model=WikiAvailablePerspectivesResponse,
+    summary="Get available perspectives",
+    description="Get perspectives that have summaries in the guild, with counts (ADR-080).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def get_available_perspectives(
+    guild_id: str = Path(..., description="Guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Get available perspectives for wiki ingestion (ADR-080)."""
+    import json
+
+    _check_guild_access(guild_id, user)
+
+    from ...data.repositories import get_repository_factory, get_stored_summary_repository
+
+    # Get stored summaries and extract perspectives
+    stored_repo = await get_stored_summary_repository()
+    if not stored_repo:
+        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": "Summary repository unavailable"})
+
+    # Query summaries to find unique perspectives
+    summaries = await stored_repo.find_by_guild(guild_id=guild_id, limit=1000)
+
+    # Count perspectives
+    perspective_counts = {}
+    for summary in summaries:
+        perspective = "general"  # Default
+        if summary.summary_result and summary.summary_result.metadata:
+            perspective = summary.summary_result.metadata.get('perspective', 'general')
+        perspective_counts[perspective] = perspective_counts.get(perspective, 0) + 1
+
+    available = list(perspective_counts.keys())
+
+    # Get current allowed perspectives
+    allowed = ["general"]
+    try:
+        factory = get_repository_factory()
+        conn = await factory.get_connection()
+        row = await conn.fetch_one(
+            "SELECT wiki_allowed_perspectives FROM guild_configs WHERE guild_id = ?",
+            (guild_id,)
+        )
+        if row and row.get('wiki_allowed_perspectives'):
+            allowed = json.loads(row['wiki_allowed_perspectives'])
+    except Exception as e:
+        logger.debug(f"Could not get wiki_allowed_perspectives: {e}")
+
+    return WikiAvailablePerspectivesResponse(
+        available=available,
+        allowed=allowed,
+        counts=perspective_counts,
+    )

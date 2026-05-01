@@ -24,6 +24,7 @@ from ..sqlite import (
     SQLiteWikiRepository,
     SQLiteIssueRepository,
     SQLiteCoverageRepository,
+    SQLiteTenantRepository,
 )
 from ..sqlite.channel_settings_repository import SQLiteChannelSettingsRepository, ChannelSettings
 from .google_admin_groups import GoogleAdminGroupsRepository
@@ -248,6 +249,17 @@ class RepositoryFactory:
         else:
             raise ValueError(f"Unsupported backend: {self.backend}")
 
+    async def get_tenant_repository(self) -> SQLiteTenantRepository:
+        """Create and return a tenant repository instance (ADR-079)."""
+        connection = await self.get_connection()
+
+        if self.backend == "sqlite":
+            return SQLiteTenantRepository(connection)
+        elif self.backend == "postgresql":
+            raise NotImplementedError("PostgreSQL support is not yet implemented")
+        else:
+            raise ValueError(f"Unsupported backend: {self.backend}")
+
     async def close(self) -> None:
         """Close database connections."""
         if self._connection:
@@ -392,3 +404,9 @@ async def get_channel_settings_repository() -> SQLiteChannelSettingsRepository:
     """Get the default channel settings repository instance (ADR-073)."""
     factory = get_repository_factory()
     return await factory.get_channel_settings_repository()
+
+
+async def get_tenant_repository() -> SQLiteTenantRepository:
+    """Get the default tenant repository instance (ADR-079)."""
+    factory = get_repository_factory()
+    return await factory.get_tenant_repository()

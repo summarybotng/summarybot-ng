@@ -8,6 +8,7 @@ import { Header } from "@/components/layout/Header";
 import { GuildLayout } from "@/components/layout/GuildLayout";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { TimezoneProvider } from "@/contexts/TimezoneContext";
+import { TenantProvider } from "@/contexts/TenantContext";
 import { Landing } from "@/pages/Landing";
 import { Callback } from "@/pages/Callback";
 import { GoogleCallback } from "@/pages/GoogleCallback";
@@ -53,6 +54,7 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <TenantProvider>
     <TimezoneProvider>
     <TooltipProvider>
       <Toaster />
@@ -103,6 +105,7 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
     </TimezoneProvider>
+    </TenantProvider>
   </QueryClientProvider>
 );
 

@@ -518,3 +518,115 @@ export interface GoogleAdminGroup {
   created_at: string;
   created_by?: string;
 }
+
+// ADR-079: Tenant types for subdomain multi-tenancy
+export interface TenantBranding {
+  logo_url: string | null;
+  primary_color: string | null;
+  favicon_url: string | null;
+  app_name_override: string | null;
+  show_powered_by: boolean;
+}
+
+export interface Tenant {
+  id: string;
+  slug: string;
+  name: string;
+  subdomain: string | null;
+  custom_domain: string | null;
+  domain_verified: boolean;
+  branding: TenantBranding;
+  access_mode: "public" | "authenticated" | "members_only" | "workspace_members";
+  created_at: string | null;
+  updated_at: string | null;
+  created_by: string;
+}
+
+export interface TenantWorkspace {
+  workspace_id: string;
+  workspace_type: "discord" | "slack" | "whatsapp";
+  display_name: string | null;
+  display_order: number;
+  added_at: string | null;
+  added_by: string;
+}
+
+export interface CreateTenantRequest {
+  slug: string;
+  name: string;
+  subdomain?: string;
+  branding?: Partial<TenantBranding>;
+  access_mode?: string;
+}
+
+export interface UpdateTenantRequest {
+  name?: string;
+  subdomain?: string;
+  custom_domain?: string;
+  branding?: Partial<TenantBranding>;
+  access_mode?: string;
+}
+
+export interface LinkWorkspaceRequest {
+  workspace_id: string;
+  workspace_type: "discord" | "slack" | "whatsapp";
+  display_name?: string;
+  display_order?: number;
+}
+
+export interface CurrentTenantResponse {
+  tenant: Tenant | null;
+  workspaces: TenantWorkspace[];
+}
+
+// ADR-079 Phase 2: Member and Admin types
+export interface TenantMember {
+  user_id: string;
+  email: string | null;
+  access_level: "viewer" | "contributor" | "editor";
+  invited_at: string | null;
+  accepted_at: string | null;
+}
+
+export interface TenantAdmin {
+  user_id: string;
+  role: "owner" | "admin" | "editor";
+  added_at: string | null;
+}
+
+export interface InviteMemberRequest {
+  email: string;
+  access_level?: "viewer" | "contributor" | "editor";
+}
+
+export interface UpdateMemberRequest {
+  access_level: "viewer" | "contributor" | "editor";
+}
+
+export interface AddAdminRequest {
+  user_id: string;
+  role?: "owner" | "admin" | "editor";
+}
+
+// ADR-079 Phase 3: Domain verification types
+export interface DomainVerification {
+  custom_domain: string | null;
+  domain_verified: boolean;
+  verification_token: string | null;
+  dns_record_type: string;
+  dns_record_name: string;
+  dns_record_value: string | null;
+}
+
+export interface InitiateDomainVerificationRequest {
+  custom_domain: string;
+}
+
+// ADR-079 Phase 4: Branding types
+export interface UpdateBrandingRequest {
+  logo_url?: string | null;
+  primary_color?: string | null;
+  favicon_url?: string | null;
+  app_name_override?: string | null;
+  show_powered_by?: boolean;
+}

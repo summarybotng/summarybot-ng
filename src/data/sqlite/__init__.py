@@ -48,6 +48,7 @@ from .wiki_repository import SQLiteWikiRepository
 from .issue_repository import SQLiteIssueRepository
 from .coverage_repository import SQLiteCoverageRepository
 from .channel_settings_repository import SQLiteChannelSettingsRepository, ChannelSettings
+from .tenant_repository import SQLiteTenantRepository
 
 __all__ = [
     # Connection
@@ -73,4 +74,5 @@ __all__ = [
     'SQLiteCoverageRepository',
     'SQLiteChannelSettingsRepository',
     'ChannelSettings',
+    'SQLiteTenantRepository',
 ]

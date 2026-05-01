@@ -144,6 +144,15 @@ async def get_channel_settings_repository():
         return None
 
 
+async def get_tenant_repository():
+    """Get tenant repository instance (ADR-079)."""
+    try:
+        from ...data.repositories import get_tenant_repository as _get_repo
+        return await _get_repo()
+    except RuntimeError:
+        return None
+
+
 # Import routers
 from .auth import router as auth_router
 from .guilds import router as guilds_router
@@ -165,6 +174,7 @@ from .google_admin_groups import router as google_admin_groups_router  # ADR-050
 from .wiki import router as wiki_router  # ADR-056
 from .issues import router as issues_router  # ADR-070
 from .coverage import router as coverage_router  # ADR-072
+from .tenants import router as tenants_router  # ADR-079
 
 __all__ = [
     "auth_router",
@@ -187,6 +197,7 @@ __all__ = [
     "wiki_router",
     "issues_router",
     "coverage_router",
+    "tenants_router",
     "set_services",
     "get_discord_bot",
     "get_summarization_engine",

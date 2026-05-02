@@ -409,6 +409,13 @@ async def google_callback_get(
     }
     user_json = urllib.parse.quote(json.dumps(user_data))
 
+    # ADR-079: Redirect to tenant subdomain if return_to is set
+    if return_to:
+        # Redirect to tenant with token in URL fragment
+        return RedirectResponse(
+            url=f"{return_to}/guilds#token={jwt_token}"
+        )
+
     return RedirectResponse(
         url=f"/google-callback?token={jwt_token}&user={user_json}"
     )

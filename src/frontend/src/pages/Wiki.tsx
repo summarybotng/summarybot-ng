@@ -1433,11 +1433,13 @@ function PopulateWiki({ guildId }: { guildId: string }) {
     queryFn: () => getBackfillStatus(guildId),
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      return status === "running" || status === "pending" ? 3000 : false;
+      // Keep polling for active or paused jobs
+      return status === "running" || status === "pending" || status === "paused" ? 3000 : false;
     },
   });
 
   const isBackfillActive = backfillStatus?.status === "running" || backfillStatus?.status === "pending";
+  const isBackfillPaused = backfillStatus?.status === "paused";
 
   // ADR-068: Start backfill mutation
   const startBackfillMutation = useMutation({
@@ -1688,6 +1690,48 @@ function PopulateWiki({ guildId }: { guildId: string }) {
             </div>
           )}
 
+          {/* Paused backfill status */}
+          {isBackfillPaused && backfillStatus && (
+            <div className="space-y-3 p-4 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+              <div className="flex items-center justify-between">
+                <span className="font-medium flex items-center gap-2 text-yellow-800 dark:text-yellow-200">
+                  <AlertTriangle className="h-4 w-4" />
+                  Backfill paused
+                </span>
+                <Badge variant="outline" className="border-yellow-500 text-yellow-700 dark:text-yellow-300">{backfillPercent}%</Badge>
+              </div>
+              <div className="w-full bg-background rounded-full h-2">
+                <div
+                  className="bg-yellow-500 h-2 rounded-full"
+                  style={{ width: `${backfillPercent}%` }}
+                />
+              </div>
+              <div className="text-sm text-yellow-700 dark:text-yellow-300">
+                {backfillStatus.progress_message || `${backfillStatus.progress_current} / ${backfillStatus.progress_total} summaries`}
+              </div>
+              {backfillStatus.stats && (
+                <div className="flex gap-4 text-xs">
+                  <span className="text-green-600">✓ {backfillStatus.stats.ingested} ingested</span>
+                  <span className="text-yellow-600">○ {backfillStatus.stats.skipped} skipped</span>
+                  <span className="text-red-600">✕ {backfillStatus.stats.failed} failed</span>
+                </div>
+              )}
+              <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                This job was paused (likely due to server restart). Start a new backfill with "Only un-processed summaries" to continue from where it left off.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => cancelBackfillMutation.mutate()}
+                disabled={cancelBackfillMutation.isPending}
+                className="border-yellow-500 text-yellow-700 hover:bg-yellow-100 dark:text-yellow-300 dark:hover:bg-yellow-900"
+              >
+                <X className="h-3 w-3 mr-1" />
+                Dismiss
+              </Button>
+            </div>
+          )}
+
           {/* Completed backfill status */}
           {backfillStatus?.status === "completed" && (
             <Alert>
@@ -1704,7 +1748,7 @@ function PopulateWiki({ guildId }: { guildId: string }) {
             </Alert>
           )}
 
-          {/* Start backfill controls */}
+          {/* Start backfill controls - show when no active job (includes paused state) */}
           {!isBackfillActive && (
             <div className="space-y-3">
               <div className="flex items-center gap-4">

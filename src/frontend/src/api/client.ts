@@ -71,6 +71,21 @@ class ApiClient {
     });
     return this.handleResponse<T>(response);
   }
+
+  async upload<T>(path: string, formData: FormData): Promise<T> {
+    const token = useAuthStore.getState().token;
+    const headers: HeadersInit = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    // Don't set Content-Type - browser will set it with boundary for FormData
+    const response = await fetch(`${BASE_URL}${path}`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+    return this.handleResponse<T>(response);
+  }
 }
 
 export const api = new ApiClient();

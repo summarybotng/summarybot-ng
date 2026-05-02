@@ -36,6 +36,7 @@ const Archive = lazy(() => import("@/pages/Archive").then(m => ({ default: m.Arc
 const Wiki = lazy(() => import("@/pages/Wiki").then(m => ({ default: m.Wiki })));
 const Coverage = lazy(() => import("@/pages/Coverage").then(m => ({ default: m.Coverage })));
 const Tenants = lazy(() => import("@/pages/Tenants").then(m => ({ default: m.Tenants })));
+const WhatsAppImports = lazy(() => import("@/pages/WhatsAppImports").then(m => ({ default: m.WhatsAppImports })));
 
 // Loading fallback for lazy-loaded pages
 function PageLoader() {
@@ -99,6 +100,7 @@ const App = () => (
               <Route path="archive" element={<Suspense fallback={<PageLoader />}><Archive /></Suspense>} />
               <Route path="wiki/*" element={<Suspense fallback={<PageLoader />}><Wiki /></Suspense>} />
               <Route path="coverage" element={<Suspense fallback={<PageLoader />}><Coverage /></Suspense>} />
+              <Route path="whatsapp" element={<Suspense fallback={<PageLoader />}><WhatsAppImports /></Suspense>} />
             </Route>
           </Route>
 

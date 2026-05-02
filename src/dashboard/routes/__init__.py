@@ -135,6 +135,17 @@ async def get_wiki_repository():
         return None
 
 
+async def get_database_connection():
+    """Get raw database connection for repositories (ADR-081)."""
+    try:
+        from ...data.repositories import _repository_manager
+        if _repository_manager:
+            return await _repository_manager.get_connection()
+        return None
+    except RuntimeError:
+        return None
+
+
 async def get_channel_settings_repository():
     """Get channel settings repository instance (ADR-073)."""
     try:
@@ -175,6 +186,7 @@ from .wiki import router as wiki_router  # ADR-056
 from .issues import router as issues_router  # ADR-070
 from .coverage import router as coverage_router  # ADR-072
 from .tenants import router as tenants_router  # ADR-079
+from .whatsapp_imports import router as whatsapp_imports_router  # ADR-081
 
 __all__ = [
     "auth_router",
@@ -198,6 +210,7 @@ __all__ = [
     "issues_router",
     "coverage_router",
     "tenants_router",
+    "whatsapp_imports_router",
     "set_services",
     "get_discord_bot",
     "get_summarization_engine",

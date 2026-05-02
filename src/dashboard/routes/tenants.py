@@ -245,7 +245,7 @@ async def check_tenant_access(tenant: Tenant, user: Optional[dict], repo) -> boo
     if not user:
         return False
 
-    user_id = user.get("id")
+    user_id = user.get("sub")
     user_email = user.get("email")
 
     # Admins always have access
@@ -361,7 +361,7 @@ async def list_tenants(
 ):
     """List tenants user can manage."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenants = await repo.list_tenants_for_user(user_id, limit=limit, offset=offset)
 
@@ -382,7 +382,7 @@ async def create_tenant(
 ):
     """Create a new tenant."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     # Check if slug is already taken
     existing = await repo.get_tenant_by_slug(body.slug)
@@ -446,7 +446,7 @@ async def get_tenant(
 ):
     """Get tenant details."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -482,7 +482,7 @@ async def update_tenant(
 ):
     """Update tenant settings."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -552,7 +552,7 @@ async def delete_tenant(
 ):
     """Delete a tenant."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -587,7 +587,7 @@ async def list_tenant_workspaces(
 ):
     """List workspaces linked to a tenant."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -615,7 +615,7 @@ async def link_workspace(
 ):
     """Link a workspace to a tenant."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -679,7 +679,7 @@ async def unlink_workspace(
 ):
     """Unlink a workspace from a tenant."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -718,7 +718,7 @@ async def list_tenant_members(
 ):
     """List members of a tenant."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -746,7 +746,7 @@ async def invite_member(
 ):
     """Invite a member to the tenant."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -800,7 +800,7 @@ async def update_member(
 ):
     """Update a member's access level."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -852,7 +852,7 @@ async def remove_member(
 ):
     """Remove a member from the tenant."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -887,7 +887,7 @@ async def list_tenant_admins(
 ):
     """List admins of a tenant."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -915,7 +915,7 @@ async def add_admin(
 ):
     """Add an admin to the tenant."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -960,7 +960,7 @@ async def remove_admin(
 ):
     """Remove an admin from the tenant."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -1015,7 +1015,7 @@ async def initiate_domain_verification(
 ):
     """Initiate custom domain verification."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -1068,7 +1068,7 @@ async def check_domain_verification(
 ):
     """Check custom domain verification status."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -1139,7 +1139,7 @@ async def remove_custom_domain(
 ):
     """Remove custom domain from tenant."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:
@@ -1178,7 +1178,7 @@ async def update_branding(
 ):
     """Update tenant branding."""
     repo = await get_tenant_repository()
-    user_id = user.get("id")
+    user_id = user.get("sub")
 
     tenant = await repo.get_tenant_by_slug(slug)
     if not tenant:

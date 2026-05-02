@@ -232,7 +232,8 @@ async function updateBranding(
 }
 
 async function fetchGuilds(): Promise<Guild[]> {
-  return api.get<Guild[]>("/guilds");
+  const response = await api.get<{ guilds: Guild[] }>("/guilds");
+  return response.guilds;
 }
 
 // =============================================================================

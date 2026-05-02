@@ -43,6 +43,7 @@ class GoogleCallbackResponse(BaseModel):
     """Google OAuth callback response."""
     token: str
     user: dict
+    return_to: Optional[str] = None  # ADR-079: Tenant-aware OAuth redirect
 
 
 class AuthProvidersResponse(BaseModel):
@@ -118,18 +119,23 @@ async def get_providers():
 )
 async def google_login(
     request: Request,
+    return_to: Optional[str] = None,
     auth: GoogleAuth = Depends(_require_google_auth),
 ):
     """Initiate Google OAuth login flow.
 
+    Args:
+        return_to: Optional URL to redirect to after auth (ADR-079: tenant-aware OAuth)
+
     SECURITY: Rate limited to 10/minute per IP.
     """
-    state, oauth_url = auth.create_oauth_state()
+    state, oauth_url = auth.create_oauth_state(return_to=return_to)
 
     await _audit_google_auth_event(
         "auth.google.login_initiated",
         request,
         success=True,
+        details={"return_to": return_to} if return_to else None,
     )
 
     return GoogleLoginResponse(redirect_url=oauth_url, state=state)
@@ -171,7 +177,8 @@ async def google_callback(
             detail={"code": "AUTH_FAILED", "message": GENERIC_AUTH_ERROR},
         )
 
-    nonce, code_verifier = state_data
+    # ADR-079: Extract return_to from state data
+    nonce, code_verifier, return_to = state_data
 
     # Exchange code for tokens (with PKCE)
     try:
@@ -270,6 +277,7 @@ async def google_callback(
             "domain": domain,
             "guilds": guild_ids,
         },
+        return_to=return_to,  # ADR-079: Tenant-aware OAuth redirect
     )
 
 
@@ -303,7 +311,8 @@ async def google_callback_get(
         )
         return RedirectResponse(url="/?error=invalid_state")
 
-    nonce, code_verifier = state_data
+    # ADR-079: Extract return_to from state data
+    nonce, code_verifier, return_to = state_data
 
     # Exchange code for tokens (with PKCE)
     try:

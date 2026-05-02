@@ -118,7 +118,9 @@ export function Landing() {
 
   const handleGoogleLogin = async () => {
     try {
-      const data = await api.get<{ redirect_url: string; state: string }>("/auth/google/login");
+      // ADR-079: Pass current origin for tenant-aware OAuth redirect
+      const returnTo = encodeURIComponent(window.location.origin);
+      const data = await api.get<{ redirect_url: string; state: string }>(`/auth/google/login?return_to=${returnTo}`);
       // Store OAuth state for CSRF validation in callback
       sessionStorage.setItem("oauth_state", data.state);
       sessionStorage.setItem("oauth_provider", "google");

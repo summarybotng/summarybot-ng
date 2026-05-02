@@ -17,6 +17,7 @@ interface DiscordCallbackResponse {
 interface GoogleCallbackResponse {
   token: string;
   user: User & { guilds?: string[] };
+  return_to?: string; // ADR-079: Tenant-aware OAuth redirect
 }
 
 export function Callback() {
@@ -58,6 +59,12 @@ export function Callback() {
             permissions: "0",
           }));
           setAuth(response.token, response.user, guilds);
+
+          // ADR-079: Tenant-aware OAuth - redirect to original subdomain if different
+          if (response.return_to && response.return_to !== window.location.origin) {
+            window.location.href = `${response.return_to}/guilds#token=${response.token}`;
+            return;
+          }
         } else {
           // Handle Discord OAuth callback
           const response = await api.post<DiscordCallbackResponse>("/auth/callback", { code, state });

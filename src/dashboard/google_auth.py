@@ -181,8 +181,11 @@ class GoogleAuth:
     # OAuth Flow
     # =========================================================================
 
-    def create_oauth_state(self) -> Tuple[str, str]:
+    def create_oauth_state(self, return_to: Optional[str] = None) -> Tuple[str, str]:
         """Create OAuth state with PKCE and nonce.
+
+        Args:
+            return_to: Optional URL to redirect to after auth (ADR-079: tenant-aware OAuth)
 
         Returns:
             Tuple of (state, oauth_url)
@@ -200,7 +203,8 @@ class GoogleAuth:
                 if v[2] > cutoff
             }
 
-            self._pending_states[state] = (nonce, code_verifier, utc_now_naive())
+            # ADR-079: Include return_to in state data
+            self._pending_states[state] = (nonce, code_verifier, utc_now_naive(), return_to)
 
         # Build OAuth URL
         params = {
@@ -219,13 +223,13 @@ class GoogleAuth:
         oauth_url = f"{GOOGLE_OAUTH_AUTHORIZE}?{urlencode(params)}"
         return state, oauth_url
 
-    def validate_state_atomic(self, state: str) -> Optional[Tuple[str, str]]:
+    def validate_state_atomic(self, state: str) -> Optional[Tuple[str, str, Optional[str]]]:
         """Atomically validate and consume state token.
 
         SECURITY: Prevents race condition attacks.
 
         Returns:
-            Tuple of (nonce, code_verifier) if valid, None otherwise
+            Tuple of (nonce, code_verifier, return_to) if valid, None otherwise
         """
         with self._state_lock:
             state_data = self._pending_states.pop(state, None)
@@ -233,13 +237,14 @@ class GoogleAuth:
             if state_data is None:
                 return None
 
-            nonce, code_verifier, created_at = state_data
+            # ADR-079: State data now includes return_to
+            nonce, code_verifier, created_at, return_to = state_data
 
             # Check expiration (5 minutes)
             if utc_now_naive() - created_at > timedelta(minutes=5):
                 return None
 
-            return nonce, code_verifier
+            return nonce, code_verifier, return_to
 
     async def exchange_code(self, code: str, code_verifier: str) -> Dict:
         """Exchange authorization code for tokens.

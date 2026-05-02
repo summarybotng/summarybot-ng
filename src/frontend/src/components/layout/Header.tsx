@@ -16,7 +16,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { LogOut, User, Shield, Slack, MessageSquare } from "lucide-react";
+import { LogOut, User, Shield, Slack, MessageSquare, Building2 } from "lucide-react";
 import { ReportIssueButton } from "@/components/issues";
 
 // Build info injected at build time
@@ -96,6 +96,13 @@ export function Header() {
                   Slack Workspaces
                 </Link>
               </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/tenants" className="cursor-pointer">
+                  <Building2 className="mr-2 h-4 w-4" />
+                  Tenants
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
                 <Link to="/admin/audit" className="cursor-pointer">
                   <Shield className="mr-2 h-4 w-4" />

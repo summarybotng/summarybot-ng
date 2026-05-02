@@ -35,6 +35,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 const Archive = lazy(() => import("@/pages/Archive").then(m => ({ default: m.Archive })));
 const Wiki = lazy(() => import("@/pages/Wiki").then(m => ({ default: m.Wiki })));
 const Coverage = lazy(() => import("@/pages/Coverage").then(m => ({ default: m.Coverage })));
+const Tenants = lazy(() => import("@/pages/Tenants").then(m => ({ default: m.Tenants })));
 
 // Loading fallback for lazy-loaded pages
 function PageLoader() {
@@ -70,6 +71,7 @@ const App = () => (
           <Route element={<ProtectedRoute />}>
             <Route path="/guilds" element={<><Header /><Guilds /></>} />
             <Route path="/slack" element={<><Header /><SlackWorkspaces /></>} />
+            <Route path="/tenants" element={<><Header /><Suspense fallback={<PageLoader />}><Tenants /></Suspense></>} />
             <Route path="/admin/audit" element={<><Header /><AdminAudit /></>} />
             <Route path="/admin/issues" element={<><Header /><AdminIssues /></>} />
             <Route

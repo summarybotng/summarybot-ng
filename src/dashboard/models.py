@@ -138,6 +138,7 @@ class AuthCallbackResponse(BaseModel):
     token: str
     user: UserResponse
     guilds: List[GuildBriefResponse]
+    return_to: Optional[str] = None  # ADR-079: Tenant-aware OAuth redirect
 
 
 class AuthRefreshResponse(BaseModel):

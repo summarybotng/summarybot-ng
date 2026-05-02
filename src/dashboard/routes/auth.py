@@ -72,10 +72,22 @@ router = APIRouter()
     summary="Initiate Discord OAuth login",
     description="Returns the Discord OAuth authorization URL to redirect the user to.",
 )
-async def login():
-    """Get Discord OAuth authorization URL."""
+async def login(return_to: Optional[str] = None):
+    """Get Discord OAuth authorization URL.
+
+    Args:
+        return_to: Optional URL to redirect to after authentication (for tenant subdomains)
+    """
     auth = get_auth()
-    state = auth.create_oauth_state()
+    # Encode return_to in state if provided (for tenant-aware OAuth)
+    base_state = auth.create_oauth_state()
+    if return_to:
+        # Encode as state:return_to
+        import base64
+        encoded_return = base64.urlsafe_b64encode(return_to.encode()).decode()
+        state = f"{base_state}:{encoded_return}"
+    else:
+        state = base_state
     redirect_url = auth.get_oauth_url(state=state)
     return AuthLoginResponse(redirect_url=redirect_url, state=state)
 
@@ -92,10 +104,32 @@ async def login():
 )
 async def callback(request: Request, body: AuthCallbackRequest):
     """Handle Discord OAuth callback."""
+    import base64
     auth = get_auth()
 
+    # Extract return_to from state if present (ADR-079: Tenant-aware OAuth)
+    return_to = None
+    csrf_state = body.state
+    if ":" in body.state:
+        csrf_state, encoded_return = body.state.split(":", 1)
+        try:
+            return_to = base64.urlsafe_b64decode(encoded_return.encode()).decode()
+            # Validate return_to is a safe URL (same domain)
+            from urllib.parse import urlparse
+            parsed = urlparse(return_to)
+            if parsed.netloc and not (
+                parsed.netloc.endswith(".summarybot.app") or
+                parsed.netloc == "summarybot.app" or
+                parsed.netloc.endswith(".fly.dev")
+            ):
+                logger.warning(f"Invalid return_to domain: {parsed.netloc}")
+                return_to = None
+        except Exception as e:
+            logger.warning(f"Failed to decode return_to: {e}")
+            return_to = None
+
     # Validate CSRF state
-    if not auth.validate_oauth_state(body.state):
+    if not auth.validate_oauth_state(csrf_state):
         # Log failed auth attempt (ADR-045)
         await _audit_auth_event(
             "auth.login.failed",
@@ -177,6 +211,7 @@ async def callback(request: Request, body: AuthCallbackRequest):
             email=user.email,  # ADR-070: Include email for issue tracker pre-fill
         ),
         guilds=guild_responses,
+        return_to=return_to,  # ADR-079: Tenant-aware OAuth redirect
     )
 
 

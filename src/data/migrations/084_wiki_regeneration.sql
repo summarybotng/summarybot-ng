@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS wiki_regeneration_jobs (
     summary_ids TEXT,  -- JSON array of summary IDs for scope='selected'
     start_date TEXT,  -- For scope='date_range'
     end_date TEXT,  -- For scope='date_range'
+    min_sources INTEGER NOT NULL DEFAULT 2,  -- Only regenerate pages with N+ sources
     page_count INTEGER NOT NULL DEFAULT 0,
     processed_count INTEGER NOT NULL DEFAULT 0,
     started_at TIMESTAMP,

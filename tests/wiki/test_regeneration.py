@@ -59,7 +59,24 @@ class TestRegenerationService:
         assert job.scope == RegenerationScope.FULL
         assert job.status == RegenerationStatus.PENDING
         assert job.page_count == 25
+        assert job.min_sources == 2  # Default
         assert job.created_by == "user_abc"
+
+    @pytest.mark.asyncio
+    async def test_create_job_with_min_sources(self, service, mock_wiki_repo):
+        """Test creating a job with custom min_sources."""
+        mock_wiki_repo.connection.fetch_one = AsyncMock(
+            return_value={"count": 10}
+        )
+
+        job = await service.create_job(
+            guild_id="guild_123",
+            scope=RegenerationScope.FULL,
+            min_sources=3,
+            created_by="user_abc",
+        )
+
+        assert job.min_sources == 3
 
     @pytest.mark.asyncio
     async def test_create_job_selected_scope(self, service, mock_wiki_repo):
@@ -180,6 +197,7 @@ class TestRegenerationJob:
         assert job.status == RegenerationStatus.PENDING
         assert job.page_count == 10
         assert job.processed_count == 0
+        assert job.min_sources == 2  # Default
 
 
 class TestRegenerationScopes:

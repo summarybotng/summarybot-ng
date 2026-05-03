@@ -1727,6 +1727,12 @@ class RegenerateRequest(BaseModel):
         None,
         description="End date for scope='date_range' (YYYY-MM-DD)"
     )
+    min_sources: int = Field(
+        2,
+        ge=1,
+        le=100,
+        description="Minimum sources for a page to be regenerated (default 2, set to 1 for all pages)"
+    )
 
 
 class RegenerationJobResponse(BaseModel):
@@ -1735,6 +1741,7 @@ class RegenerationJobResponse(BaseModel):
     guild_id: str
     scope: str
     status: str
+    min_sources: int = 2
     page_count: int
     processed_count: int
     started_at: Optional[str] = None
@@ -1832,6 +1839,7 @@ async def regenerate_wiki(
         summary_ids=request.summary_ids,
         start_date=request.start_date,
         end_date=request.end_date,
+        min_sources=request.min_sources,
         created_by=user.get("sub"),
     )
 
@@ -1910,6 +1918,7 @@ async def list_regeneration_jobs(
             guild_id=job.guild_id,
             scope=job.scope.value if hasattr(job.scope, 'value') else job.scope,
             status=job.status.value if hasattr(job.status, 'value') else job.status,
+            min_sources=job.min_sources,
             page_count=job.page_count,
             processed_count=job.processed_count,
             started_at=job.started_at.isoformat() if job.started_at else None,
@@ -1965,6 +1974,7 @@ async def get_regeneration_job(
         guild_id=job.guild_id,
         scope=job.scope.value if hasattr(job.scope, 'value') else job.scope,
         status=job.status.value if hasattr(job.status, 'value') else job.status,
+        min_sources=job.min_sources,
         page_count=job.page_count,
         processed_count=job.processed_count,
         started_at=job.started_at.isoformat() if job.started_at else None,

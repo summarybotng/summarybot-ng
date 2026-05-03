@@ -53,6 +53,7 @@ class RegenerationJob:
     summary_ids: Optional[List[str]] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    min_sources: int = 2  # Only regenerate pages with 2+ sources by default
     page_count: int = 0
     processed_count: int = 0
     started_at: Optional[datetime] = None
@@ -97,6 +98,7 @@ class WikiRegenerationService:
         summary_ids: Optional[List[str]] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        min_sources: int = 2,
         created_by: Optional[str] = None,
     ) -> RegenerationJob:
         """
@@ -108,6 +110,7 @@ class WikiRegenerationService:
             summary_ids: For SELECTED scope, list of summary IDs
             start_date: For DATE_RANGE scope, start date
             end_date: For DATE_RANGE scope, end date
+            min_sources: Minimum number of sources for a page to be regenerated (default 2)
             created_by: User ID who created the job
 
         Returns:
@@ -117,7 +120,7 @@ class WikiRegenerationService:
 
         # Calculate page count based on scope
         page_count = await self._estimate_page_count(
-            guild_id, scope, summary_ids, start_date, end_date
+            guild_id, scope, summary_ids, start_date, end_date, min_sources
         )
 
         job = RegenerationJob(
@@ -128,6 +131,7 @@ class WikiRegenerationService:
             summary_ids=summary_ids,
             start_date=start_date,
             end_date=end_date,
+            min_sources=min_sources,
             page_count=page_count,
             created_by=created_by,
         )
@@ -286,32 +290,40 @@ class WikiRegenerationService:
         summary_ids: Optional[List[str]],
         start_date: Optional[str],
         end_date: Optional[str],
+        min_sources: int = 2,
     ) -> int:
         """Estimate number of pages to regenerate."""
+        # Build min_sources filter using JSON array length
+        # source_refs is stored as JSON array like '["summary-abc", "summary-def"]'
+        source_filter = ""
+        if min_sources > 1:
+            # Count commas + 1 gives array length for non-empty arrays
+            # JSON array with N items has N-1 commas
+            source_filter = f" AND (LENGTH(source_refs) - LENGTH(REPLACE(source_refs, ',', '')) + 1) >= {min_sources}"
+
         if scope == RegenerationScope.FULL:
             row = await self.wiki_repo.connection.fetch_one(
-                "SELECT COUNT(*) as count FROM wiki_pages WHERE guild_id = ?",
+                f"SELECT COUNT(*) as count FROM wiki_pages WHERE guild_id = ?{source_filter}",
                 (guild_id,)
             )
             return row["count"] if row else 0
 
         elif scope == RegenerationScope.SELECTED and summary_ids:
             # Count pages that reference these summaries
-            placeholders = ",".join("?" * len(summary_ids))
             source_refs = [f"summary-{sid}" for sid in summary_ids]
             row = await self.wiki_repo.connection.fetch_one(
                 f"""SELECT COUNT(DISTINCT id) as count FROM wiki_pages
                     WHERE guild_id = ? AND (
                         {" OR ".join(f"source_refs LIKE ?" for _ in source_refs)}
-                    )""",
+                    ){source_filter}""",
                 (guild_id, *[f"%{ref}%" for ref in source_refs])
             )
             return row["count"] if row else 0
 
         elif scope == RegenerationScope.DATE_RANGE and start_date and end_date:
             row = await self.wiki_repo.connection.fetch_one(
-                """SELECT COUNT(*) as count FROM wiki_pages
-                   WHERE guild_id = ? AND updated_at >= ? AND updated_at <= ?""",
+                f"""SELECT COUNT(*) as count FROM wiki_pages
+                   WHERE guild_id = ? AND updated_at >= ? AND updated_at <= ?{source_filter}""",
                 (guild_id, start_date, end_date)
             )
             return row["count"] if row else 0
@@ -320,9 +332,14 @@ class WikiRegenerationService:
 
     async def _get_pages_for_scope(self, job: RegenerationJob) -> List:
         """Get pages to regenerate based on job scope."""
+        # Build min_sources filter
+        source_filter = ""
+        if job.min_sources > 1:
+            source_filter = f" AND (LENGTH(source_refs) - LENGTH(REPLACE(source_refs, ',', '')) + 1) >= {job.min_sources}"
+
         if job.scope == RegenerationScope.FULL:
             rows = await self.wiki_repo.connection.fetch_all(
-                "SELECT * FROM wiki_pages WHERE guild_id = ?",
+                f"SELECT * FROM wiki_pages WHERE guild_id = ?{source_filter}",
                 (job.guild_id,)
             )
 
@@ -331,14 +348,14 @@ class WikiRegenerationService:
             conditions = " OR ".join(f"source_refs LIKE ?" for _ in source_refs)
             rows = await self.wiki_repo.connection.fetch_all(
                 f"""SELECT DISTINCT * FROM wiki_pages
-                    WHERE guild_id = ? AND ({conditions})""",
+                    WHERE guild_id = ? AND ({conditions}){source_filter}""",
                 (job.guild_id, *[f"%{ref}%" for ref in source_refs])
             )
 
         elif job.scope == RegenerationScope.DATE_RANGE:
             rows = await self.wiki_repo.connection.fetch_all(
-                """SELECT * FROM wiki_pages
-                   WHERE guild_id = ? AND updated_at >= ? AND updated_at <= ?""",
+                f"""SELECT * FROM wiki_pages
+                   WHERE guild_id = ? AND updated_at >= ? AND updated_at <= ?{source_filter}""",
                 (job.guild_id, job.start_date, job.end_date)
             )
         else:
@@ -385,14 +402,14 @@ class WikiRegenerationService:
         await self.wiki_repo.connection.execute(
             """INSERT OR REPLACE INTO wiki_regeneration_jobs
                (id, guild_id, scope, status, summary_ids, start_date, end_date,
-                page_count, processed_count, started_at, completed_at,
+                min_sources, page_count, processed_count, started_at, completed_at,
                 error_message, created_at, created_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?)""",
             (
                 job.id, job.guild_id, job.scope.value if isinstance(job.scope, RegenerationScope) else job.scope,
                 job.status.value if isinstance(job.status, RegenerationStatus) else job.status,
                 summary_ids_json, job.start_date, job.end_date,
-                job.page_count, job.processed_count,
+                job.min_sources, job.page_count, job.processed_count,
                 job.started_at.isoformat() if job.started_at else None,
                 job.completed_at.isoformat() if job.completed_at else None,
                 job.error_message,
@@ -418,6 +435,7 @@ class WikiRegenerationService:
             summary_ids=summary_ids,
             start_date=row["start_date"],
             end_date=row["end_date"],
+            min_sources=row.get("min_sources", 2),
             page_count=row["page_count"],
             processed_count=row["processed_count"],
             started_at=datetime.fromisoformat(row["started_at"]) if row["started_at"] else None,

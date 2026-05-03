@@ -10,10 +10,28 @@
     <meta property="og:title" content="SummaryBot Dashboard" />
     <meta property="og:description" content="AI-powered Discord channel summarization dashboard" />
     <meta property="og:type" content="website" />
+
+    <!-- PWA manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#3b82f6" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SummaryBot" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   </head>
 
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Register service worker for PWA share target
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('[PWA] Service worker registered:', reg.scope))
+            .catch(err => console.error('[PWA] Service worker registration failed:', err));
+        });
+      }
+    </script>
   </body>
 </html>

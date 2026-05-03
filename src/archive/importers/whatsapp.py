@@ -152,6 +152,70 @@ class WhatsAppImporter:
         # Create anonymizer using group_id as fallback salt
         return create_guild_anonymizer(self.guild_id or group_id)
 
+    def parse_txt_file(self, file_path: Path) -> Tuple[List[WhatsAppMessage], List[str]]:
+        """
+        Parse a WhatsApp text export file without saving.
+
+        Args:
+            file_path: Path to the .txt export file
+
+        Returns:
+            Tuple of (messages, errors)
+        """
+        messages: List[WhatsAppMessage] = []
+        errors: List[str] = []
+
+        try:
+            content = file_path.read_text(encoding='utf-8')
+        except UnicodeDecodeError:
+            content = file_path.read_text(encoding='utf-8-sig')
+
+        lines = content.split('\n')
+        current_message = None
+        msg_counter = 0
+
+        for line_num, line in enumerate(lines, 1):
+            line = line.strip()
+            if not line:
+                continue
+
+            # Try to parse as new message
+            parsed = self._parse_message_line(line, msg_counter)
+
+            if parsed:
+                # Save previous message
+                if current_message:
+                    messages.append(current_message)
+
+                timestamp, sender, text = parsed
+                msg_counter += 1
+
+                # Check if system message
+                is_system = any(re.search(p, text, re.IGNORECASE) for p in self.SYSTEM_PATTERNS)
+
+                current_message = WhatsAppMessage(
+                    message_id=f"wa_{msg_counter}",
+                    timestamp=timestamp,
+                    sender=sender,
+                    content=text,
+                    is_system=is_system,
+                )
+
+            elif current_message:
+                # Continuation of previous message
+                current_message.content += f"\n{line}"
+
+            else:
+                # Orphan line at start
+                if line and not any(p in line.lower() for p in ["end-to-end encrypted"]):
+                    errors.append(f"Line {line_num}: Could not parse: {line[:50]}...")
+
+        # Don't forget last message
+        if current_message:
+            messages.append(current_message)
+
+        return messages, errors
+
     async def import_txt_export(
         self,
         file_path: Path,

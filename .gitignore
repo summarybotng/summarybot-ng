@@ -203,3 +203,6 @@ screenshots/.credentials.json
 .agentic-qe/
 .roo/
 .coverage
+
+google-service-account.json
+google-service-account-key.json

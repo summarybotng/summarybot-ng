@@ -37,6 +37,7 @@ const Wiki = lazy(() => import("@/pages/Wiki").then(m => ({ default: m.Wiki })))
 const Coverage = lazy(() => import("@/pages/Coverage").then(m => ({ default: m.Coverage })));
 const Tenants = lazy(() => import("@/pages/Tenants").then(m => ({ default: m.Tenants })));
 const WhatsAppImports = lazy(() => import("@/pages/WhatsAppImports").then(m => ({ default: m.WhatsAppImports })));
+const ShareReceived = lazy(() => import("@/pages/ShareReceived"));
 
 // Loading fallback for lazy-loaded pages
 function PageLoader() {
@@ -67,6 +68,7 @@ const App = () => (
           <Route path="/" element={<Landing />} />
           <Route path="/callback" element={<Callback />} />
           <Route path="/google-callback" element={<GoogleCallback />} />
+          <Route path="/share-received" element={<Suspense fallback={<PageLoader />}><ShareReceived /></Suspense>} />
 
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>

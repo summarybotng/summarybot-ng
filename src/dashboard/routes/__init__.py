@@ -138,11 +138,11 @@ async def get_wiki_repository():
 async def get_database_connection():
     """Get raw database connection for repositories (ADR-081)."""
     try:
-        from ...data.repositories import _repository_manager
-        if _repository_manager:
-            return await _repository_manager.get_connection()
+        from ...data.repositories import _default_factory
+        if _default_factory:
+            return await _default_factory.get_connection()
         return None
-    except RuntimeError:
+    except (RuntimeError, ImportError):
         return None
 
 

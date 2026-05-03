@@ -138,6 +138,95 @@ class SQLiteWhatsAppImportRepository:
 
         return [self._row_to_import(row) for row in rows], total
 
+    async def migrate_legacy_imports(self, guild_id: str) -> int:
+        """
+        One-time migration: Create import records from stored summaries.
+
+        WhatsApp data may exist as stored summaries with archive_source_key
+        like 'whatsapp:chat-name'. This creates import records to track them.
+
+        Returns the number of imports created.
+        """
+        # First try ingest_batches (original approach)
+        query = """
+        SELECT * FROM ingest_batches
+        WHERE source_type = 'whatsapp'
+        """
+        rows = await self.connection.fetch_all(query, ())
+
+        migrated = 0
+        for row in rows:
+            check_query = "SELECT 1 FROM whatsapp_imports WHERE id = ?"
+            exists = await self.connection.fetch_one(check_query, (row["id"],))
+            if exists:
+                continue
+
+            import_record = self._legacy_row_to_import(row, guild_id)
+            await self.create_import(import_record)
+            migrated += 1
+            logger.info(f"Migrated legacy batch {row['id']} to whatsapp_imports")
+
+        # Also check stored_summaries for whatsapp source keys
+        summary_query = """
+        SELECT
+            archive_source_key,
+            MIN(summary_json) as first_summary,
+            MIN(created_at) as earliest,
+            MAX(created_at) as latest,
+            COUNT(*) as summary_count
+        FROM stored_summaries
+        WHERE archive_source_key LIKE 'whatsapp:%'
+        AND guild_id = ?
+        GROUP BY archive_source_key
+        """
+        summary_rows = await self.connection.fetch_all(summary_query, (guild_id,))
+
+        for row in summary_rows:
+            source_key = row["archive_source_key"]
+            chat_id = source_key.replace("whatsapp:", "")
+
+            # Check if import already exists for this chat
+            check_query = "SELECT 1 FROM whatsapp_imports WHERE guild_id = ? AND chat_id = ? LIMIT 1"
+            exists = await self.connection.fetch_one(check_query, (guild_id, chat_id))
+            if exists:
+                continue
+
+            # Create import record from summary data
+            import_id = f"legacy_{chat_id}_{guild_id}"
+            earliest = datetime.fromisoformat(row["earliest"]) if row["earliest"] else datetime.now()
+            latest = datetime.fromisoformat(row["latest"]) if row["latest"] else datetime.now()
+
+            import_record = WhatsAppImport(
+                id=import_id,
+                guild_id=guild_id,
+                chat_id=chat_id,
+                chat_name=chat_id.replace("-", " ").title(),
+                imported_by="system",
+                imported_at=earliest,
+                original_filename=f"legacy_{chat_id}.txt",
+                file_hash="",
+                file_size_bytes=0,
+                format="whatsapp_txt",
+                date_range_start=earliest,
+                date_range_end=latest,
+                message_count=0,  # Unknown for legacy
+                participant_count=0,
+                status=ImportStatus.COMPLETED,
+                error_message=None,
+                processed_at=earliest,
+                anonymization_version=1,
+                participants_json=None,
+                deleted_at=None,
+                deleted_by=None,
+                created_at=earliest,
+            )
+
+            await self.create_import(import_record)
+            migrated += 1
+            logger.info(f"Created import record for {source_key} ({row['summary_count']} summaries)")
+
+        return migrated
+
     async def update_import_status(
         self,
         import_id: str,
@@ -715,6 +804,42 @@ class SQLiteWhatsAppImportRepository:
         return messages, total
 
     # ==================== Helper Methods ====================
+
+    def _legacy_row_to_import(self, row: Dict[str, Any], guild_id: str) -> WhatsAppImport:
+        """Convert a legacy ingest_batches row to WhatsAppImport."""
+        # Parse raw_payload for additional details
+        participants_json = None
+        try:
+            raw_payload = json.loads(row.get("raw_payload") or "{}")
+            participants = raw_payload.get("participants", [])
+            participants_json = json.dumps(participants)
+        except json.JSONDecodeError:
+            pass
+
+        return WhatsAppImport(
+            id=row["id"],
+            guild_id=guild_id,
+            chat_id=row["channel_id"],
+            chat_name=row.get("channel_name") or row["channel_id"],
+            imported_by="system",  # Legacy imports don't track importer
+            imported_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else datetime.now(),
+            original_filename=f"legacy_import_{row['id']}.txt",
+            file_hash="",
+            file_size_bytes=0,
+            format="whatsapp_txt",
+            date_range_start=datetime.fromisoformat(row["time_range_start"]) if row.get("time_range_start") else datetime.now(),
+            date_range_end=datetime.fromisoformat(row["time_range_end"]) if row.get("time_range_end") else datetime.now(),
+            message_count=row.get("message_count") or 0,
+            participant_count=0,
+            status=ImportStatus.COMPLETED if row.get("processed") else ImportStatus.PROCESSING,
+            error_message=None,
+            processed_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else None,
+            anonymization_version=1,
+            participants_json=participants_json,
+            deleted_at=None,
+            deleted_by=None,
+            created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else None,
+        )
 
     def _row_to_import(self, row: Dict[str, Any]) -> WhatsAppImport:
         """Convert a database row to WhatsAppImport."""

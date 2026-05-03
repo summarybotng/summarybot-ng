@@ -11,6 +11,7 @@ from .base import PlatformFetcher
 from .types import FetchResult, PlatformContext, ChannelInfo, UserInfo
 from .discord_fetcher import DiscordFetcher
 from .slack_fetcher import SlackFetcher
+from .whatsapp_fetcher import WhatsAppFetcher
 
 
 class Platform(str, Enum):
@@ -19,13 +20,14 @@ class Platform(str, Enum):
 
     Using str, Enum for backward compatibility with string comparisons.
 
-    Note: Only DISCORD and SLACK have fetchers for scheduled summaries.
-    WHATSAPP is used for archive display (detect_platform) only - it returns
-    None from get_platform_fetcher since no WhatsAppFetcher exists.
+    All platforms have fetchers for manual summaries:
+    - DISCORD: Live message fetching from Discord API
+    - SLACK: Live message fetching from Slack API
+    - WHATSAPP: Reads from imported messages in database (ADR-081)
     """
     DISCORD = "discord"
     SLACK = "slack"
-    WHATSAPP = "whatsapp"  # Archive display only - no fetcher for schedules
+    WHATSAPP = "whatsapp"
 
     @classmethod
     def from_string(cls, value: str) -> "Platform":
@@ -155,6 +157,19 @@ async def get_platform_fetcher(
 
         return DiscordFetcher(guild, bot.client)
 
+    elif platform == Platform.WHATSAPP:
+        # WhatsApp fetcher reads from imported messages in database
+        from src.data.repositories import get_whatsapp_import_repository
+        try:
+            repo = await get_whatsapp_import_repository()
+            # Check if guild has any WhatsApp imports
+            chats = await repo.get_chats_for_guild(guild_id)
+            if not chats:
+                return None
+            return WhatsAppFetcher(guild_id, repo.connection)
+        except Exception:
+            return None
+
     return None
 
 
@@ -230,6 +245,7 @@ __all__ = [
     # Implementations
     "DiscordFetcher",
     "SlackFetcher",
+    "WhatsAppFetcher",
     # Factory functions
     "get_platform_fetcher",
     "get_fetcher_for_summary",

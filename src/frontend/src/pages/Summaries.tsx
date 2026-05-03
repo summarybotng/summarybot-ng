@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useGenerateSummary, useTaskStatus } from "@/hooks/useSummaries";
 import { useGuild } from "@/hooks/useGuilds";
 import { usePromptTemplates } from "@/hooks/usePromptTemplates";
+import { useWhatsAppChats } from "@/hooks/useWhatsApp";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +46,7 @@ export function Summaries() {
   const [searchParams] = useSearchParams();
   const { data: guild } = useGuild(id || "");
   const { data: promptTemplates = [] } = usePromptTemplates(id || "");
+  const { data: whatsappChats = [] } = useWhatsAppChats(id || "");
   const generateSummary = useGenerateSummary(id || "");
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -59,7 +61,7 @@ export function Summaries() {
   const [activeTab, setActiveTab] = useState("all");
 
   const [generateOpen, setGenerateOpen] = useState(false);
-  const [platform, setPlatform] = useState<"discord" | "slack">("discord");
+  const [platform, setPlatform] = useState<"discord" | "slack" | "whatsapp">("discord");
   const [scope, setScope] = useState<"channel" | "category" | "guild">("channel");
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("");
@@ -96,12 +98,15 @@ export function Summaries() {
     }
   }, [activeTaskId, taskStartTime]);
 
-  // ADR-043: Reset scope when switching to Slack if category was selected
+  // ADR-043: Reset scope and clear selections when switching platforms
   useEffect(() => {
-    if (platform === "slack" && scope === "category") {
+    if ((platform === "slack" || platform === "whatsapp") && scope === "category") {
       setScope("channel");
     }
-  }, [platform, scope]);
+    // Clear channel selections when switching platforms
+    setSelectedChannels([]);
+    setChannelSearch("");
+  }, [platform]);
 
   // Handle task completion
   useEffect(() => {
@@ -197,7 +202,16 @@ export function Summaries() {
 
       // Add scope-specific fields
       if (scope === "channel") {
-        request.channel_ids = selectedChannels.length > 0 ? selectedChannels : guild?.config.enabled_channels || [];
+        if (selectedChannels.length > 0) {
+          request.channel_ids = selectedChannels;
+        } else if (platform === "discord") {
+          // Default to enabled Discord channels
+          request.channel_ids = guild?.config.enabled_channels || [];
+        } else if (platform === "whatsapp") {
+          // Default to all imported WhatsApp chats (backend resolves this)
+          request.channel_ids = whatsappChats.map(c => c.chat_id);
+        }
+        // For Slack, backend handles channel resolution
       } else if (scope === "category") {
         request.category_id = selectedCategory;
       }
@@ -216,10 +230,10 @@ export function Summaries() {
         ? `${format(customStartDate, "MMM d")} - ${format(customEndDate, "MMM d")}`
         : timeRange;
       const channelCount = scope === "channel"
-        ? (selectedChannels.length || guild?.config.enabled_channels?.length || 0)
+        ? (selectedChannels.length || (platform === "whatsapp" ? whatsappChats.length : guild?.config.enabled_channels?.length) || 0)
         : scope === "category"
         ? (guild?.categories.find(c => c.id === selectedCategory)?.channel_count || 0)
-        : (guild?.channels?.filter(c => c.type === "text").length || 0);
+        : (platform === "whatsapp" ? whatsappChats.length : guild?.channels?.filter(c => c.type === "text").length || 0);
 
       setGenerationParams({
         scope,
@@ -273,7 +287,7 @@ export function Summaries() {
               {/* Platform Selector - ADR-043 */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">Platform</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <Button
                     type="button"
                     variant={platform === "discord" ? "default" : "outline"}
@@ -293,6 +307,16 @@ export function Summaries() {
                   >
                     <Hash className="mr-1.5 h-3.5 w-3.5" />
                     Slack
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={platform === "whatsapp" ? "default" : "outline"}
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setPlatform("whatsapp")}
+                  >
+                    <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+                    WhatsApp
                   </Button>
                 </div>
               </div>
@@ -317,8 +341,8 @@ export function Summaries() {
                     size="sm"
                     className="w-full"
                     onClick={() => setScope("category")}
-                    disabled={platform === "slack"}
-                    title={platform === "slack" ? "Slack doesn't have categories" : undefined}
+                    disabled={platform === "slack" || platform === "whatsapp"}
+                    title={platform !== "discord" ? `${platform === "slack" ? "Slack" : "WhatsApp"} doesn't have categories` : undefined}
                   >
                     <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
                     Category
@@ -336,13 +360,78 @@ export function Summaries() {
                 </div>
               </div>
 
-              {/* Channel Selection - only shown when scope is "channel" for Discord */}
+              {/* Channel Selection - only shown when scope is "channel" */}
               {scope === "channel" && platform === "slack" && (
                 <div className="rounded-md border border-purple-500/20 bg-purple-500/5 p-3">
                   <p className="text-sm text-muted-foreground">
                     All public Slack channels will be summarized.
                     Channel selection for Slack coming soon.
                   </p>
+                </div>
+              )}
+              {scope === "channel" && platform === "whatsapp" && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">WhatsApp Chats</label>
+                  {whatsappChats.length > 0 ? (
+                    <>
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Search chats..."
+                          value={channelSearch}
+                          onChange={(e) => setChannelSearch(e.target.value)}
+                          className="pl-8"
+                        />
+                      </div>
+                      <div className="max-h-40 space-y-2 overflow-y-auto rounded-md border p-3">
+                        {whatsappChats
+                          .filter(c => c.chat_name.toLowerCase().includes(channelSearch.toLowerCase()))
+                          .map((chat) => (
+                            <div key={chat.chat_id} className="flex items-center space-x-2">
+                              <Checkbox
+                                id={chat.chat_id}
+                                checked={selectedChannels.includes(chat.chat_id)}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setSelectedChannels([...selectedChannels, chat.chat_id]);
+                                  } else {
+                                    setSelectedChannels(selectedChannels.filter(id => id !== chat.chat_id));
+                                  }
+                                }}
+                              />
+                              <label htmlFor={chat.chat_id} className="text-sm cursor-pointer flex-1">
+                                {chat.chat_name}
+                                <span className="text-muted-foreground ml-2">
+                                  ({chat.total_messages} msgs)
+                                </span>
+                              </label>
+                            </div>
+                          ))}
+                        {whatsappChats
+                          .filter(c => c.chat_name.toLowerCase().includes(channelSearch.toLowerCase()))
+                          .length === 0 && (
+                          <p className="text-sm text-muted-foreground py-2 text-center">
+                            No chats match "{channelSearch}"
+                          </p>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedChannels.length === 0
+                          ? "All imported chats will be included"
+                          : `${selectedChannels.length} chat(s) selected`}
+                      </p>
+                    </>
+                  ) : (
+                    <div className="rounded-md border border-yellow-500/20 bg-yellow-500/5 p-3">
+                      <p className="text-sm text-muted-foreground">
+                        No WhatsApp chats imported yet. Go to{" "}
+                        <a href={`/guilds/${id}/whatsapp`} className="text-primary hover:underline">
+                          WhatsApp Imports
+                        </a>{" "}
+                        to upload chat exports.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
               {scope === "channel" && platform === "discord" && guild?.channels && (

@@ -70,7 +70,8 @@ const platformConfig = {
 export function Sources() {
   const { id: guildId } = useParams<{ id: string }>();
   const { data: guild, isLoading: guildLoading } = useGuild(guildId || "");
-  const { data: archiveSources, isLoading: archiveLoading } = useArchiveSources(guildId || "");
+  // Don't pass guildId - useArchiveSources expects sourceType filter, not guild
+  const { data: archiveSources, isLoading: archiveLoading } = useArchiveSources();
 
   const [platformFilter, setPlatformFilter] = useState<Platform>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -95,15 +96,26 @@ export function Sources() {
       });
     }
 
-    // Add WhatsApp imports from archive sources
-    if (archiveSources) {
+    // Add WhatsApp and Slack sources from archive
+    if (archiveSources && guildId) {
       archiveSources.forEach((source: ArchiveSource) => {
-        // Only show WhatsApp sources
+        // WhatsApp sources - show for the primary guild (where WhatsApp data is stored)
         if (source.source_key.startsWith("whatsapp:")) {
           sources.push({
             id: `whatsapp-${source.source_key}`,
             name: source.source_key.replace("whatsapp:", "").replace(/_/g, " "),
             platform: "whatsapp",
+            enabled: true,
+            lastActivity: source.date_range?.end,
+            isArchived: true,
+          });
+        }
+        // Slack sources - show if server_id matches guild or linked workspace
+        if (source.source_key.startsWith("slack:") && source.server_id === guildId) {
+          sources.push({
+            id: `slack-${source.source_key}`,
+            name: source.server_name || source.source_key.replace("slack:", ""),
+            platform: "slack",
             enabled: true,
             lastActivity: source.date_range?.end,
             isArchived: true,

@@ -14,6 +14,7 @@ import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "framer-motion";
+import { DriveUploadButton } from "@/components/GoogleDrivePicker";
 import { useToast } from "@/hooks/use-toast";
 import { format, formatDistanceToNow } from "date-fns";
 import {
@@ -321,16 +322,16 @@ function UploadDropzone({
 }
 
 function ImportCard({
-  import_: WhatsAppImport,
+  importData,
   onView,
   onDelete,
 }: {
-  import_: WhatsAppImport;
+  importData: WhatsAppImport;
   onView: () => void;
   onDelete: () => void;
 }) {
-  const dateRange = `${format(new Date(import_.date_range.start), "MMM d")} - ${format(
-    new Date(import_.date_range.end),
+  const dateRange = `${format(new Date(importData.date_range.start), "MMM d")} - ${format(
+    new Date(importData.date_range.end),
     "MMM d, yyyy"
   )}`;
 
@@ -344,18 +345,18 @@ function ImportCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-            <span className="font-medium truncate">{import_.original_filename}</span>
-            <StatusBadge status={import_.status} />
+            <span className="font-medium truncate">{importData.original_filename}</span>
+            <StatusBadge status={importData.status} />
           </div>
           <div className="text-sm text-muted-foreground space-y-1">
             <div className="flex items-center gap-4">
               <span className="flex items-center gap-1">
                 <MessageSquare className="h-3.5 w-3.5" />
-                {import_.message_count.toLocaleString()} messages
+                {importData.message_count.toLocaleString()} messages
               </span>
               <span className="flex items-center gap-1">
                 <Users className="h-3.5 w-3.5" />
-                {import_.participant_count} participants
+                {importData.participant_count} participants
               </span>
             </div>
             <div className="flex items-center gap-4">
@@ -364,15 +365,15 @@ function ImportCard({
                 {dateRange}
               </span>
               <span>
-                Imported by {import_.imported_by.name}{" "}
-                {formatDistanceToNow(new Date(import_.imported_at), { addSuffix: true })}
+                Imported by {importData.imported_by.name}{" "}
+                {formatDistanceToNow(new Date(importData.imported_at), { addSuffix: true })}
               </span>
             </div>
           </div>
-          {import_.error_message && (
+          {importData.error_message && (
             <Alert variant="destructive" className="mt-2 py-2">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{import_.error_message}</AlertDescription>
+              <AlertDescription>{importData.error_message}</AlertDescription>
             </Alert>
           )}
         </div>
@@ -680,7 +681,7 @@ function ParticipantList({
 // =============================================================================
 
 export function WhatsAppImports() {
-  const { guildId } = useParams<{ guildId: string }>();
+  const { id: guildId } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -808,6 +809,25 @@ export function WhatsAppImports() {
           </CardHeader>
           <CardContent>
             <UploadDropzone onUpload={handleUpload} isUploading={isUploading} />
+            {/* Google Drive Import (ADR-082) */}
+            {guildId && (
+              <DriveUploadButton
+                guildId={guildId}
+                onUploadInitiated={() => {
+                  toast({
+                    title: "Upload folder opened",
+                    description: "Drop files there then click 'Scan Now' to import",
+                  });
+                }}
+                onImportComplete={() => {
+                  refetch();
+                  toast({
+                    title: "Import complete",
+                    description: "Files imported from Google Drive",
+                  });
+                }}
+              />
+            )}
           </CardContent>
         </Card>
 
@@ -831,7 +851,7 @@ export function WhatsAppImports() {
                 {data.imports.map((imp) => (
                   <ImportCard
                     key={imp.id}
-                    import_={imp}
+                    importData={imp}
                     onView={() => setViewingImport(imp.id)}
                     onDelete={() => setDeleteConfirm(imp.id)}
                   />

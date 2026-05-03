@@ -33,6 +33,9 @@ class LocalIssue:
     admin_notes: Optional[str]
     created_at: datetime
     updated_at: datetime
+    # ADR-070 Phase 3: Activity context
+    activity_context: Optional[str] = None
+    error_context: Optional[str] = None  # JSON string
 
 
 class SQLiteIssueRepository:
@@ -56,6 +59,8 @@ class SQLiteIssueRepository:
         page_url: Optional[str] = None,
         browser_info: Optional[str] = None,
         app_version: Optional[str] = None,
+        activity_context: Optional[str] = None,
+        error_context: Optional[str] = None,
     ) -> LocalIssue:
         """Create a new local issue."""
         issue_id = self._generate_id()
@@ -66,13 +71,15 @@ class SQLiteIssueRepository:
                 id, guild_id, title, description, issue_type,
                 reporter_email, reporter_discord_id,
                 page_url, browser_info, app_version,
+                activity_context, error_context,
                 status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
         """
         params = (
             issue_id, guild_id, title, description, issue_type,
             reporter_email, reporter_discord_id,
             page_url, browser_info, app_version,
+            activity_context, error_context,
             now, now
         )
 
@@ -96,6 +103,8 @@ class SQLiteIssueRepository:
             admin_notes=None,
             created_at=datetime.fromisoformat(now),
             updated_at=datetime.fromisoformat(now),
+            activity_context=activity_context,
+            error_context=error_context,
         )
 
     async def get_issue(self, issue_id: str) -> Optional[LocalIssue]:
@@ -208,4 +217,6 @@ class SQLiteIssueRepository:
             admin_notes=row["admin_notes"],
             created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
             updated_at=datetime.fromisoformat(row["updated_at"]) if row["updated_at"] else None,
+            activity_context=row.get("activity_context"),
+            error_context=row.get("error_context"),
         )

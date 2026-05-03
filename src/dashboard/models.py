@@ -1243,6 +1243,9 @@ class CreateIssueRequest(BaseModel):
     page_url: Optional[str] = None
     browser_info: Optional[str] = None
     app_version: Optional[str] = None
+    # ADR-070 Phase 3: Activity context
+    activity_context: Optional[str] = Field(None, max_length=10000, description="User's recent activity log")
+    error_context: Optional[Dict[str, Any]] = Field(None, description="Error details when reported from Errors page")
 
 
 class IssueResponse(BaseModel):
@@ -1259,6 +1262,9 @@ class IssueResponse(BaseModel):
     status: str
     github_issue_url: Optional[str] = None
     created_at: datetime
+    # ADR-070 Phase 3: Activity context (admin view only)
+    activity_context: Optional[str] = None
+    error_context: Optional[Dict[str, Any]] = None
 
 
 class CreateIssueResponse(BaseModel):
@@ -1280,3 +1286,20 @@ class IssueConfigResponse(BaseModel):
     enabled: bool
     github_url: str
     allow_local: bool
+
+
+class ActivityItem(BaseModel):
+    """Single activity item for issue context."""
+    timestamp: str
+    event_type: str
+    resource_type: Optional[str] = None
+    resource_name: Optional[str] = None
+    success: bool = True
+    error_message: Optional[str] = None
+    duration_ms: Optional[int] = None
+
+
+class RecentActivityResponse(BaseModel):
+    """User's recent activity for issue context."""
+    activities: List[ActivityItem]
+    formatted: str  # Human-readable summary for issue body

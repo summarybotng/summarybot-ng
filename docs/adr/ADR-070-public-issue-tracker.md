@@ -1,7 +1,7 @@
 # ADR-070: Public Issue Tracker
 
 ## Status
-Proposed (2026-04-27)
+Accepted (2026-05-03) - Phase 3 (Activity Context) implemented
 
 ## Context
 
@@ -184,11 +184,56 @@ Add an "Issues" tab to the admin section:
 2. **API**: POST replicate endpoint (uses GitHub API)
 3. **Frontend**: Admin issues list and detail views
 
-### Phase 3: Enhanced Context
+### Phase 3: Enhanced Context (This PR)
 
-1. Auto-capture error context when reporting from error states
-2. Screenshot attachment support
-3. Issue templates per type
+1. **Activity Log Attachment**: Include user's recent audit logs for debugging context
+2. **Report from Errors Page**: "Report Issue" button in error detail view pre-fills context
+3. Auto-capture error context when reporting from error states
+
+### Activity Context Feature
+
+When reporting an issue, users can optionally include their recent activity logs. This provides maintainers with valuable debugging context without requiring users to manually describe their steps.
+
+**Privacy Design:**
+- Users see exactly what logs will be included before submitting
+- Activity logs are **self-scoped** - users can only see/include their own logs
+- Logs are limited to last 15 minutes by default
+- Sensitive fields (IP address) are excluded from issue context
+
+**API Endpoint:**
+```
+GET /api/v1/me/recent-activity?guild_id={guild_id}&minutes=15&limit=20
+```
+
+Returns the current user's recent audit logs for inclusion in issue reports:
+```json
+{
+  "activities": [
+    {
+      "timestamp": "2026-05-03T12:34:56Z",
+      "event_type": "action.summary.generate",
+      "resource_type": "summary",
+      "success": true,
+      "duration_ms": 1234
+    }
+  ],
+  "formatted": "12:34:56 - Generated summary (1.2s)\n12:33:12 - Viewed wiki page"
+}
+```
+
+**Updated Issue Schema:**
+```sql
+-- Add to local_issues table
+activity_context TEXT,  -- Formatted activity log (user-approved)
+error_context TEXT,     -- Error details when reported from Errors page
+```
+
+**Report from Error:**
+The ErrorDetailDrawer gains a "Report Issue" button that:
+1. Pre-fills issue title with error type and code
+2. Pre-fills description with error message and stack trace
+3. Fetches recent activity automatically
+4. Opens ReportIssueDialog with all context ready
 
 ---
 

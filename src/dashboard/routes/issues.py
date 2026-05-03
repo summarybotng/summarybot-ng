@@ -5,9 +5,11 @@ Public issue submission for users to report bugs, features, and questions.
 Integrated with audit logging (ADR-045).
 """
 
+import json
 import logging
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Request, Query
+from datetime import datetime, timedelta
+from fastapi import APIRouter, HTTPException, Request, Query, Depends
 
 from ..models import (
     CreateIssueRequest,
@@ -15,7 +17,10 @@ from ..models import (
     IssueResponse,
     IssueListResponse,
     IssueConfigResponse,
+    ActivityItem,
+    RecentActivityResponse,
 )
+from ..auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +112,11 @@ async def create_issue(
         raise HTTPException(status_code=503, detail="Issue tracker unavailable")
 
     try:
+        # Serialize error_context to JSON if provided
+        error_context_json = None
+        if body.error_context:
+            error_context_json = json.dumps(body.error_context)
+
         issue = await repo.create_issue(
             title=body.title,
             description=body.description,
@@ -117,6 +127,8 @@ async def create_issue(
             page_url=body.page_url,
             browser_info=body.browser_info,
             app_version=body.app_version,
+            activity_context=body.activity_context,
+            error_context=error_context_json,
         )
 
         logger.info(f"Issue {issue.id} created: {body.issue_type.value} - {body.title[:50]}")
@@ -253,3 +265,116 @@ async def get_github_issue_url(
     github_url = f"{ISSUE_TRACKER_URL}/new?{urlencode(params)}"
 
     return {"url": github_url}
+
+
+@router.get("/my-activity", response_model=RecentActivityResponse)
+async def get_my_recent_activity(
+    request: Request,
+    guild_id: Optional[str] = Query(None, description="Filter to specific guild"),
+    minutes: int = Query(15, ge=1, le=60, description="Minutes of history to include"),
+    limit: int = Query(20, ge=1, le=50, description="Max number of activities"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Get the current user's recent activity for issue context.
+
+    This endpoint returns only the authenticated user's own activity logs,
+    ensuring privacy while providing debugging context for issue reports.
+    IP addresses are excluded from the response.
+    """
+    user_id = user.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID not found in token")
+
+    try:
+        from ...data import get_audit_repository
+        repo = await get_audit_repository()
+    except RuntimeError:
+        # Audit repository not available - return empty
+        return RecentActivityResponse(activities=[], formatted="No activity logs available")
+
+    # Calculate time range
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(minutes=minutes)
+
+    # Query only this user's logs
+    logs = await repo.find(
+        user_id=user_id,
+        guild_id=guild_id,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+        offset=0,
+    )
+
+    # Convert to activity items (excluding sensitive fields)
+    activities = []
+    formatted_lines = []
+
+    for log in logs:
+        timestamp_str = log.timestamp.strftime("%H:%M:%S") if log.timestamp else ""
+
+        # Build human-readable description
+        description = _format_activity_description(log)
+
+        activities.append(ActivityItem(
+            timestamp=log.timestamp.isoformat() if log.timestamp else "",
+            event_type=log.event_type,
+            resource_type=log.resource_type,
+            resource_name=log.resource_name,
+            success=log.success,
+            error_message=log.error_message if not log.success else None,
+            duration_ms=log.duration_ms,
+        ))
+
+        # Build formatted line
+        status = "✓" if log.success else "✗"
+        duration = f" ({log.duration_ms}ms)" if log.duration_ms else ""
+        formatted_lines.append(f"{timestamp_str} {status} {description}{duration}")
+
+    # Reverse to show oldest first for readability
+    formatted_lines.reverse()
+    formatted = "\n".join(formatted_lines) if formatted_lines else "No recent activity"
+
+    return RecentActivityResponse(
+        activities=activities,
+        formatted=formatted,
+    )
+
+
+def _format_activity_description(log) -> str:
+    """Format an audit log entry as a human-readable description."""
+    event_type = log.event_type
+
+    # Common event type mappings
+    event_descriptions = {
+        "action.summary.generate": "Generated summary",
+        "action.summary.view": "Viewed summary",
+        "action.schedule.create": "Created schedule",
+        "action.schedule.update": "Updated schedule",
+        "action.schedule.delete": "Deleted schedule",
+        "action.wiki.synthesize": "Synthesized wiki page",
+        "action.wiki.view": "Viewed wiki page",
+        "auth.login.success": "Logged in",
+        "auth.logout": "Logged out",
+        "access.guild.view": "Accessed guild",
+        "issue.created": "Created issue report",
+    }
+
+    if event_type in event_descriptions:
+        desc = event_descriptions[event_type]
+    else:
+        # Fall back to parsing the event type
+        parts = event_type.split(".")
+        if len(parts) >= 2:
+            desc = f"{parts[-1].replace('_', ' ').title()} {parts[-2]}"
+        else:
+            desc = event_type.replace(".", " ").replace("_", " ").title()
+
+    # Add resource name if available
+    if log.resource_name:
+        desc = f"{desc}: {log.resource_name[:30]}"
+    elif log.resource_type and log.resource_id:
+        desc = f"{desc} ({log.resource_type})"
+
+    return desc

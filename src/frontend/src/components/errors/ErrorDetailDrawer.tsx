@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useTimezone, formatRelativeTime } from "@/contexts/TimezoneContext";
+import { ReportIssueDialog } from "@/components/issues/ReportIssueDialog";
 import {
   Drawer,
   DrawerContent,
@@ -32,6 +34,7 @@ import {
   Loader2,
   Clock,
   Code,
+  Bug,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { ErrorLogItem, ErrorSeverity, ErrorType } from "@/types/errors";
@@ -75,7 +78,9 @@ export function ErrorDetailDrawer({
 }: ErrorDetailDrawerProps) {
   const isMobile = useIsMobile();
   const { formatDateTime } = useTimezone();
+  const { id: guildId } = useParams<{ id: string }>();
   const [showResolveDialog, setShowResolveDialog] = useState(false);
+  const [showReportDialog, setShowReportDialog] = useState(false);
   const [notes, setNotes] = useState("");
 
   if (!error) return null;
@@ -211,11 +216,23 @@ export function ErrorDetailDrawer({
     </div>
   );
 
-  const footer = !error.is_resolved && (
-    <Button onClick={() => setShowResolveDialog(true)} className="w-full">
-      <CheckCircle className="mr-2 h-4 w-4" />
-      Mark as Resolved
-    </Button>
+  const footer = (
+    <div className="flex gap-2 w-full">
+      <Button
+        variant="outline"
+        onClick={() => setShowReportDialog(true)}
+        className="flex-1"
+      >
+        <Bug className="mr-2 h-4 w-4" />
+        Report Issue
+      </Button>
+      {!error.is_resolved && (
+        <Button onClick={() => setShowResolveDialog(true)} className="flex-1">
+          <CheckCircle className="mr-2 h-4 w-4" />
+          Mark as Resolved
+        </Button>
+      )}
+    </div>
   );
 
   // Resolve confirmation dialog
@@ -253,6 +270,26 @@ export function ErrorDetailDrawer({
     </Dialog>
   );
 
+  // Report Issue Dialog with error context
+  const reportDialog = (
+    <ReportIssueDialog
+      open={showReportDialog}
+      onClose={() => setShowReportDialog(false)}
+      guildId={guildId}
+      errorContext={{
+        id: error.id,
+        error_type: error.error_type,
+        error_code: error.error_code,
+        message: error.message,
+        operation: error.operation,
+        severity: error.severity,
+        stack_trace: error.stack_trace,
+        details: error.details,
+      }}
+      prefillTitle={`[${error.error_type}] ${error.error_code || error.operation}`}
+    />
+  );
+
   if (isMobile) {
     return (
       <>
@@ -265,10 +302,11 @@ export function ErrorDetailDrawer({
               </DrawerDescription>
             </DrawerHeader>
             <div className="px-4 pb-4">{content}</div>
-            {footer && <DrawerFooter>{footer}</DrawerFooter>}
+            <DrawerFooter>{footer}</DrawerFooter>
           </DrawerContent>
         </Drawer>
         {resolveDialog}
+        {reportDialog}
       </>
     );
   }
@@ -284,10 +322,11 @@ export function ErrorDetailDrawer({
             </DialogDescription>
           </DialogHeader>
           {content}
-          {footer && <DialogFooter>{footer}</DialogFooter>}
+          <DialogFooter>{footer}</DialogFooter>
         </DialogContent>
       </Dialog>
       {resolveDialog}
+      {reportDialog}
     </>
   );
 }

@@ -8,7 +8,7 @@
 
 import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Bug, Lightbulb, HelpCircle, Github, Mail, ExternalLink, Loader2, Check } from "lucide-react";
+import { Bug, Lightbulb, HelpCircle, Github, Mail, ExternalLink, Loader2, Check, History } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Switch } from "@/components/ui/switch";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/api/client";
 import { useAuthStore } from "@/stores/authStore";
@@ -30,11 +32,26 @@ const GITHUB_ISSUES_URL = "https://github.com/summarybotng/summarybot-ng/issues"
 
 type IssueType = "bug" | "feature" | "question";
 
+interface ErrorContext {
+  id: string;
+  error_type: string;
+  error_code?: string;
+  message: string;
+  operation: string;
+  severity: string;
+  stack_trace?: string;
+  details?: Record<string, unknown>;
+}
+
 interface ReportIssueDialogProps {
   open: boolean;
   onClose: () => void;
   pageUrl?: string;
   guildId?: string;
+  // ADR-070 Phase 3: Pre-filled context from Errors page
+  errorContext?: ErrorContext;
+  prefillTitle?: string;
+  prefillDescription?: string;
 }
 
 interface CreateIssueRequest {
@@ -45,6 +62,9 @@ interface CreateIssueRequest {
   page_url?: string;
   browser_info?: string;
   app_version?: string;
+  // ADR-070 Phase 3: Activity context
+  activity_context?: string;
+  error_context?: ErrorContext;
 }
 
 interface CreateIssueResponse {
@@ -88,21 +108,96 @@ function buildGitHubUrl(type: IssueType, title: string, pageUrl?: string): strin
   return `${GITHUB_ISSUES_URL}/new?${params.toString()}`;
 }
 
-export function ReportIssueDialog({ open, onClose, pageUrl, guildId }: ReportIssueDialogProps) {
+interface RecentActivityResponse {
+  activities: Array<{
+    timestamp: string;
+    event_type: string;
+    success: boolean;
+    duration_ms?: number;
+  }>;
+  formatted: string;
+}
+
+export function ReportIssueDialog({
+  open,
+  onClose,
+  pageUrl,
+  guildId,
+  errorContext,
+  prefillTitle,
+  prefillDescription,
+}: ReportIssueDialogProps) {
   const [step, setStep] = useState<"choose" | "form" | "success">("choose");
   const [issueType, setIssueType] = useState<IssueType>("bug");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [email, setEmail] = useState("");
+  const [activityContext, setActivityContext] = useState<string>("");
+  const [includeActivity, setIncludeActivity] = useState(true);
+  const [isLoadingActivity, setIsLoadingActivity] = useState(false);
   const { toast } = useToast();
   const user = useAuthStore((state) => state.user);
 
-  // Pre-fill email from user context when dialog opens (ADR-070)
+  // Pre-fill email and context when dialog opens (ADR-070)
   useEffect(() => {
-    if (open && user?.email) {
-      setEmail(user.email);
+    if (open) {
+      // Email
+      if (user?.email) {
+        setEmail(user.email);
+      }
+      // Pre-fill from error context
+      if (errorContext) {
+        setIssueType("bug");
+        setTitle(prefillTitle || `${errorContext.error_type}: ${errorContext.error_code || "Error"}`);
+        setDescription(prefillDescription || buildErrorDescription(errorContext));
+      } else if (prefillTitle) {
+        setTitle(prefillTitle);
+      }
+      if (prefillDescription && !errorContext) {
+        setDescription(prefillDescription);
+      }
+      // Fetch recent activity
+      fetchRecentActivity();
     }
-  }, [open, user?.email]);
+  }, [open, user?.email, errorContext, prefillTitle, prefillDescription]);
+
+  const fetchRecentActivity = async () => {
+    setIsLoadingActivity(true);
+    try {
+      const params = guildId ? `?guild_id=${guildId}&minutes=15` : "?minutes=15";
+      const response = await api.get<RecentActivityResponse>(`/issues/my-activity${params}`);
+      setActivityContext(response.formatted);
+    } catch {
+      // Activity not available, continue without it
+      setActivityContext("");
+    } finally {
+      setIsLoadingActivity(false);
+    }
+  };
+
+  // Build description from error context
+  function buildErrorDescription(error: ErrorContext): string {
+    const parts: string[] = [];
+    parts.push(`**Error:** ${error.message}`);
+    parts.push(`**Type:** ${error.error_type}`);
+    parts.push(`**Operation:** ${error.operation}`);
+    parts.push(`**Severity:** ${error.severity}`);
+    if (error.error_code) {
+      parts.push(`**Code:** ${error.error_code}`);
+    }
+    if (error.stack_trace) {
+      parts.push("");
+      parts.push("**Stack Trace:**");
+      parts.push("```");
+      parts.push(error.stack_trace.slice(0, 1000));
+      parts.push("```");
+    }
+    parts.push("");
+    parts.push("---");
+    parts.push("");
+    parts.push("*Additional context:*");
+    return parts.join("\n");
+  }
 
   // Submit local issue
   const submitMutation = useMutation({
@@ -162,6 +257,9 @@ export function ReportIssueDialog({ open, onClose, pageUrl, guildId }: ReportIss
       email: email.trim() || undefined,
       page_url: pageUrl || window.location.href,
       browser_info: getBrowserInfo(),
+      // ADR-070 Phase 3: Include activity and error context
+      activity_context: includeActivity && activityContext ? activityContext : undefined,
+      error_context: errorContext,
     });
   };
 
@@ -172,6 +270,8 @@ export function ReportIssueDialog({ open, onClose, pageUrl, guildId }: ReportIss
     setTitle("");
     setDescription("");
     setEmail("");
+    setActivityContext("");
+    setIncludeActivity(true);
     onClose();
   };
 
@@ -321,6 +421,43 @@ export function ReportIssueDialog({ open, onClose, pageUrl, guildId }: ReportIss
                 Enter your email if you'd like updates on this issue.
               </p>
             </div>
+
+            {/* Activity Context (ADR-070 Phase 3) */}
+            {activityContext && (
+              <div className="space-y-2 rounded-lg border p-3 bg-muted/30">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <History className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="include-activity" className="text-sm font-medium">
+                      Include recent activity
+                    </Label>
+                  </div>
+                  <Switch
+                    id="include-activity"
+                    checked={includeActivity}
+                    onCheckedChange={setIncludeActivity}
+                  />
+                </div>
+                {includeActivity && (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      This helps us understand what led to the issue.
+                    </p>
+                    <ScrollArea className="h-24 rounded border bg-background p-2">
+                      <pre className="text-xs font-mono whitespace-pre-wrap text-muted-foreground">
+                        {activityContext}
+                      </pre>
+                    </ScrollArea>
+                  </>
+                )}
+              </div>
+            )}
+            {isLoadingActivity && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Loading recent activity...
+              </div>
+            )}
 
             {/* Actions */}
             <div className="flex gap-2 pt-2">

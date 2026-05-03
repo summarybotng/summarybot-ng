@@ -240,6 +240,47 @@ async function fetchAvailablePerspectives(guildId: string): Promise<WikiAvailabl
   return api.get<WikiAvailablePerspectives>(`/guilds/${guildId}/wiki/available-perspectives`);
 }
 
+// ADR-084: Wiki regeneration
+interface RegenerationJob {
+  id: string;
+  guild_id: string;
+  scope: string;
+  status: string;
+  page_count: number;
+  processed_count: number;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+  created_at: string | null;
+}
+
+interface RegenerationJobsResponse {
+  jobs: RegenerationJob[];
+  active_job: RegenerationJob | null;
+}
+
+interface RegenerateRequest {
+  scope: "selected" | "date_range" | "full";
+  summary_ids?: string[];
+  start_date?: string;
+  end_date?: string;
+}
+
+interface RegenerateResponse {
+  job_id: string;
+  status: string;
+  pages_queued: number;
+  message: string;
+}
+
+async function fetchRegenerationJobs(guildId: string): Promise<RegenerationJobsResponse> {
+  return api.get<RegenerationJobsResponse>(`/guilds/${guildId}/wiki/regeneration/jobs`);
+}
+
+async function startRegeneration(guildId: string, request: RegenerateRequest): Promise<RegenerateResponse> {
+  return api.post<RegenerateResponse>(`/guilds/${guildId}/wiki/regenerate`, request);
+}
+
 // ADR-064: Fetch filtered pages with facets
 async function fetchWikiPages(
   guildId: string,
@@ -2000,6 +2041,32 @@ export function Wiki() {
     },
   });
 
+  // ADR-084: Wiki regeneration
+  const { data: regenJobs, refetch: refetchRegenJobs } = useQuery({
+    queryKey: ["wiki-regen-jobs", guildId],
+    queryFn: () => fetchRegenerationJobs(guildId!),
+    enabled: !!guildId,
+    refetchInterval: (query) => {
+      // Poll every 3s while job is active
+      const data = query.state.data as RegenerationJobsResponse | undefined;
+      return data?.active_job ? 3000 : false;
+    },
+  });
+
+  const regenerateMutation = useMutation({
+    mutationFn: (request: RegenerateRequest) => startRegeneration(guildId!, request),
+    onSuccess: (data) => {
+      toast({ title: "Regeneration started", description: data.message });
+      refetchRegenJobs();
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.detail?.message || "Failed to start regeneration";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    },
+  });
+
+  const activeJob = regenJobs?.active_job;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -2013,6 +2080,37 @@ export function Wiki() {
           <h1 className="text-2xl font-bold">Wiki</h1>
         </div>
         <div className="flex items-center gap-4">
+          {/* ADR-084: Regeneration button */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {activeJob ? (
+                  <Button variant="outline" size="sm" disabled>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    {activeJob.processed_count}/{activeJob.page_count}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => regenerateMutation.mutate({ scope: "full" })}
+                    disabled={regenerateMutation.isPending}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Regenerate Wiki
+                  </Button>
+                )}
+              </TooltipTrigger>
+              <TooltipContent>
+                {activeJob ? (
+                  <p>Regenerating {activeJob.processed_count} of {activeJob.page_count} pages...</p>
+                ) : (
+                  <p>Re-synthesize all wiki pages with latest content</p>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
           {/* ADR-076: Auto-synthesis toggle */}
           <TooltipProvider>
             <Tooltip>

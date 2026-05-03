@@ -1702,3 +1702,273 @@ async def get_available_perspectives(
         allowed=allowed,
         counts=perspective_counts,
     )
+
+
+# -------------------------------------------------------------------------
+# Wiki Regeneration (ADR-084)
+# -------------------------------------------------------------------------
+
+class RegenerateRequest(BaseModel):
+    """Request to regenerate wiki pages."""
+    scope: str = Field(
+        ...,
+        description="Scope: 'selected', 'date_range', or 'full'",
+        pattern="^(selected|date_range|full)$"
+    )
+    summary_ids: Optional[List[str]] = Field(
+        None,
+        description="Summary IDs for scope='selected'"
+    )
+    start_date: Optional[str] = Field(
+        None,
+        description="Start date for scope='date_range' (YYYY-MM-DD)"
+    )
+    end_date: Optional[str] = Field(
+        None,
+        description="End date for scope='date_range' (YYYY-MM-DD)"
+    )
+
+
+class RegenerationJobResponse(BaseModel):
+    """Response for a regeneration job."""
+    id: str
+    guild_id: str
+    scope: str
+    status: str
+    page_count: int
+    processed_count: int
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class RegenerateResponse(BaseModel):
+    """Response after starting regeneration."""
+    job_id: str
+    status: str
+    pages_queued: int
+    message: str
+
+
+class RegenerationJobsResponse(BaseModel):
+    """List of regeneration jobs."""
+    jobs: List[RegenerationJobResponse]
+    active_job: Optional[RegenerationJobResponse] = None
+
+
+@router.post(
+    "/guilds/{guild_id}/wiki/regenerate",
+    response_model=RegenerateResponse,
+    summary="Regenerate wiki pages",
+    description="Start a bulk wiki regeneration job (ADR-084).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        409: {"model": ErrorResponse, "description": "Job already running"},
+    },
+)
+async def regenerate_wiki(
+    guild_id: str = Path(..., description="Guild ID"),
+    request: RegenerateRequest = None,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Start a wiki regeneration job.
+
+    Regenerates synthesis for wiki pages based on scope:
+    - 'selected': Regenerate pages referencing specific summaries
+    - 'date_range': Regenerate pages updated in date range
+    - 'full': Regenerate all pages (limited to once per hour)
+    """
+    import os
+    from ...wiki.regeneration import (
+        WikiRegenerationService,
+        RegenerationScope,
+    )
+    from ...summarization.claude_client import ClaudeClient
+
+    _check_guild_access(guild_id, user)
+
+    repo = await get_wiki_repository()
+    if not repo:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "SERVICE_UNAVAILABLE", "message": "Wiki service unavailable"}
+        )
+
+    # Get Claude client
+    claude_client = None
+    engine = get_summarization_engine()
+    if engine and hasattr(engine, 'claude_client') and engine.claude_client:
+        claude_client = engine.claude_client
+    else:
+        openrouter_key = os.getenv('OPENROUTER_API_KEY')
+        if openrouter_key:
+            claude_client = ClaudeClient(
+                api_key=openrouter_key,
+                base_url='https://openrouter.ai/api',
+                max_retries=3,
+            )
+
+    service = WikiRegenerationService(repo, claude_client)
+
+    # Check for active job
+    active = await service.get_active_job(guild_id)
+    if active:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "JOB_RUNNING",
+                "message": f"Regeneration job {active.id} already running",
+                "job_id": active.id,
+            }
+        )
+
+    # Create job
+    scope = RegenerationScope(request.scope)
+    job = await service.create_job(
+        guild_id=guild_id,
+        scope=scope,
+        summary_ids=request.summary_ids,
+        start_date=request.start_date,
+        end_date=request.end_date,
+        created_by=user.get("sub"),
+    )
+
+    # Process job asynchronously (in background)
+    import asyncio
+    asyncio.create_task(_process_regeneration_job(service, job.id, guild_id, user))
+
+    await audit_log(
+        "action.wiki.regenerate",
+        user_id=user.get("sub"),
+        user_name=user.get("username"),
+        guild_id=guild_id,
+        resource_type="wiki",
+        action="regenerate",
+        details={
+            "job_id": job.id,
+            "scope": request.scope,
+            "page_count": job.page_count,
+        },
+    )
+
+    return RegenerateResponse(
+        job_id=job.id,
+        status="processing",
+        pages_queued=job.page_count,
+        message=f"Started regeneration of {job.page_count} pages",
+    )
+
+
+async def _process_regeneration_job(service, job_id: str, guild_id: str, user: dict):
+    """Background task to process regeneration job."""
+    try:
+        result = await service.process_job(job_id)
+        logger.info(
+            f"Regeneration job {job_id} completed: "
+            f"{result.pages_regenerated} pages in {result.duration_seconds:.1f}s"
+        )
+    except Exception as e:
+        logger.exception(f"Regeneration job {job_id} failed: {e}")
+
+
+@router.get(
+    "/guilds/{guild_id}/wiki/regeneration/jobs",
+    response_model=RegenerationJobsResponse,
+    summary="List regeneration jobs",
+    description="Get recent wiki regeneration jobs (ADR-084).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def list_regeneration_jobs(
+    guild_id: str = Path(..., description="Guild ID"),
+    limit: int = Query(10, ge=1, le=50),
+    user: dict = Depends(get_current_user),
+):
+    """List recent regeneration jobs for the guild."""
+    from ...wiki.regeneration import WikiRegenerationService
+
+    _check_guild_access(guild_id, user)
+
+    repo = await get_wiki_repository()
+    if not repo:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "SERVICE_UNAVAILABLE", "message": "Wiki service unavailable"}
+        )
+
+    service = WikiRegenerationService(repo)
+
+    jobs = await service.get_recent_jobs(guild_id, limit=limit)
+    active = await service.get_active_job(guild_id)
+
+    def job_to_response(job) -> RegenerationJobResponse:
+        return RegenerationJobResponse(
+            id=job.id,
+            guild_id=job.guild_id,
+            scope=job.scope.value if hasattr(job.scope, 'value') else job.scope,
+            status=job.status.value if hasattr(job.status, 'value') else job.status,
+            page_count=job.page_count,
+            processed_count=job.processed_count,
+            started_at=job.started_at.isoformat() if job.started_at else None,
+            completed_at=job.completed_at.isoformat() if job.completed_at else None,
+            error_message=job.error_message,
+            created_at=job.created_at.isoformat() if job.created_at else None,
+        )
+
+    return RegenerationJobsResponse(
+        jobs=[job_to_response(j) for j in jobs],
+        active_job=job_to_response(active) if active else None,
+    )
+
+
+@router.get(
+    "/guilds/{guild_id}/wiki/regeneration/jobs/{job_id}",
+    response_model=RegenerationJobResponse,
+    summary="Get regeneration job",
+    description="Get status of a specific regeneration job (ADR-084).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Job not found"},
+    },
+)
+async def get_regeneration_job(
+    guild_id: str = Path(..., description="Guild ID"),
+    job_id: str = Path(..., description="Job ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Get status of a regeneration job."""
+    from ...wiki.regeneration import WikiRegenerationService
+
+    _check_guild_access(guild_id, user)
+
+    repo = await get_wiki_repository()
+    if not repo:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "SERVICE_UNAVAILABLE", "message": "Wiki service unavailable"}
+        )
+
+    service = WikiRegenerationService(repo)
+    job = await service.get_job(job_id)
+
+    if not job or job.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Job not found"}
+        )
+
+    return RegenerationJobResponse(
+        id=job.id,
+        guild_id=job.guild_id,
+        scope=job.scope.value if hasattr(job.scope, 'value') else job.scope,
+        status=job.status.value if hasattr(job.status, 'value') else job.status,
+        page_count=job.page_count,
+        processed_count=job.processed_count,
+        started_at=job.started_at.isoformat() if job.started_at else None,
+        completed_at=job.completed_at.isoformat() if job.completed_at else None,
+        error_message=job.error_message,
+        created_at=job.created_at.isoformat() if job.created_at else None,
+    )

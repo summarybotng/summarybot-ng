@@ -149,7 +149,7 @@ class WhatsAppFetcher(PlatformFetcher):
                         author_name=sender_name or "Unknown",
                         content=row["content"] or "",
                         timestamp=msg_time,
-                        message_type=MessageType.REGULAR,
+                        message_type=MessageType.WHATSAPP_TEXT,
                         source_type=SourceType.WHATSAPP,
                         reply_to_id=row["reply_to_id"],
                         has_attachments=bool(row["has_attachments"]),

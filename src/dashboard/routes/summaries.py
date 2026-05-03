@@ -525,11 +525,12 @@ async def generate_summary(
 
     # Check platform
     is_slack = body.platform == "slack"
+    is_whatsapp = body.platform == "whatsapp"
 
     # For Discord, validate guild exists
     guild = None
     bot = None
-    if not is_slack:
+    if not is_slack and not is_whatsapp:
         guild = _get_guild_or_404(guild_id)
         bot = get_discord_bot()
 
@@ -582,6 +583,25 @@ async def generate_summary(
             finally:
                 await slack_client.close()
                 slack_client = None
+
+    elif is_whatsapp:
+        # WhatsApp channel resolution (ADR-083)
+        from ...data.repositories import get_whatsapp_import_repository
+        whatsapp_repo = await get_whatsapp_import_repository()
+
+        if body.scope == SummaryScope.CHANNEL and body.channel_ids:
+            # Use provided WhatsApp chat IDs
+            channel_ids = body.channel_ids
+        else:
+            # Get all imported chats for guild scope
+            chats = await whatsapp_repo.get_chats_for_guild(guild_id)
+            if not chats:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"code": "NO_WHATSAPP_CHATS", "message": "No WhatsApp chats imported for this guild"},
+                )
+            channel_ids = [chat.chat_id for chat in chats]
+
     else:
         # Discord channel resolution
         if body.scope == SummaryScope.CHANNEL:
@@ -628,8 +648,8 @@ async def generate_summary(
         else:
             channel_ids = [str(c.id) for c in guild.text_channels]
 
-    # Validate channels exist in guild (Discord only - Slack channels validated via API)
-    if not is_slack:
+    # Validate channels exist in guild (Discord only - Slack/WhatsApp validated via their APIs)
+    if not is_slack and not is_whatsapp:
         guild_channels = {str(c.id) for c in guild.text_channels}
         invalid_channels = set(channel_ids) - guild_channels
         if invalid_channels:

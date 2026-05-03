@@ -26,11 +26,18 @@ self.addEventListener('fetch', (event) => {
   }
 
   // For other requests, use network-first strategy
-  event.respondWith(
-    fetch(event.request).catch(() => {
-      return caches.match(event.request);
-    })
-  );
+  // Only intercept same-origin navigation requests
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(async () => {
+        const cached = await caches.match(event.request);
+        return cached || new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
+      })
+    );
+    return;
+  }
+
+  // Don't intercept other requests - let browser handle them normally
 });
 
 async function handleShareTarget(request) {

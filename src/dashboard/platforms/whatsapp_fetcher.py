@@ -152,7 +152,7 @@ class WhatsAppFetcher(PlatformFetcher):
                         message_type=MessageType.WHATSAPP_TEXT,
                         source_type=SourceType.WHATSAPP,
                         reply_to_id=row["reply_to_id"],
-                        has_attachments=bool(row["has_attachments"]),
+                        # Note: attachments field uses List[AttachmentInfo], not boolean
                     )
                     messages.append(msg)
 

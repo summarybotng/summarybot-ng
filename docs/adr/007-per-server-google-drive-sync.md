@@ -1,8 +1,9 @@
 # ADR-007: Per-Server Google Drive Sync with Fallback
 
-**Status:** Proposed
+**Status:** Proposed (Partially Implemented)
 **Date:** 2026-02-15
 **Depends on:** ADR-006 (Retrospective Summary Archive)
+**Related:** ADR-082 (Google Drive Import - opposite direction)
 **Repository:** [summarybotng/summarybot-ng](https://github.com/summarybotng/summarybot-ng)
 
 ---
@@ -388,9 +389,24 @@ ARCHIVE_REQUIRE_ADMIN_APPROVAL=false
 
 ---
 
-## 6. References
+## 6. Relationship to ADR-082
+
+This ADR handles **sync OUT** (exporting summaries to Google Drive).
+ADR-082 handles **import IN** (importing WhatsApp exports from Google Drive).
+
+| ADR | Direction | Purpose |
+|-----|-----------|---------|
+| ADR-007 | Sync OUT | Export generated summaries to user's Drive |
+| ADR-082 | Import IN | Import WhatsApp chat exports from shared folder |
+
+Both use the same service account credentials (`GOOGLE_SERVICE_ACCOUNT_KEY`) but for different purposes.
+
+---
+
+## 7. References
 
 - [Google Drive API - OAuth 2.0](https://developers.google.com/drive/api/guides/about-auth)
 - [Google Drive API - Manage Files](https://developers.google.com/drive/api/guides/manage-uploads)
 - [ADR-006: Retrospective Summary Archive](./006-retrospective-summary-archive.md)
+- [ADR-082: Google Drive Import](./ADR-082-google-drive-import.md)
 - [OAuth 2.0 Security Best Practices](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics)

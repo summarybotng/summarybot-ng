@@ -310,9 +310,24 @@ DRIVE_UPLOAD_ROOT_FOLDER=SummaryBot Uploads
 - Users without Google accounts unaffected (direct file upload still works)
 - Processed files stay in Drive (in /processed folder) for reference
 
+## Relationship to ADR-007
+
+**ADR-007** (Per-Server Google Drive Sync) handles the **opposite direction**:
+
+| ADR | Direction | Use Case |
+|-----|-----------|----------|
+| ADR-007 | Sync OUT | Export summaries to user's Google Drive |
+| ADR-082 | Import IN | Import WhatsApp exports from Google Drive |
+
+Both use the same service account credentials but for different purposes:
+- ADR-007: Writes summary files to user-configured or fallback Drive folders
+- ADR-082: Reads uploaded WhatsApp exports from shared upload folders
+
+The service account from ADR-007 is reused here for consistency.
+
 ## References
 
 - [Google Drive API v3](https://developers.google.com/drive/api/v3/reference)
 - [Google Drive Sharing](https://developers.google.com/drive/api/guides/manage-sharing)
-- [ADR-007: Google Drive Sync](./ADR-007-archive-sync.md)
+- [ADR-007: Per-Server Google Drive Sync](./007-per-server-google-drive-sync.md) - Sync OUT to Drive
 - [ADR-081: WhatsApp Import Management](./ADR-081-whatsapp-import-management.md)

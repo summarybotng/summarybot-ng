@@ -1,7 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useGuild, useUpdateConfig, useSyncChannels } from "@/hooks/useGuilds";
+import { useSlackGuildLinks } from "@/hooks/useSlack";
+import { useSlackChannels } from "@/hooks/useSlack";
+import { useArchiveSources } from "@/hooks/useArchive";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -12,7 +15,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Hash, Volume2, MessageSquare, RefreshCw, ChevronDown, Check, Lock, AlertTriangle, Eye } from "lucide-react";
+import { Hash, Volume2, MessageSquare, RefreshCw, ChevronDown, Check, Lock, AlertTriangle, Eye, Slack, Gamepad2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import type { Channel } from "@/types";
@@ -29,7 +32,20 @@ export function Channels() {
   const updateConfig = useUpdateConfig(id || "");
   const syncChannels = useSyncChannels(id || "");
   const { toast } = useToast();
-  
+
+  // ADR-085: Multi-platform channel sources
+  const { data: slackLinksData } = useSlackGuildLinks(id || "");
+  const { data: archiveSources } = useArchiveSources();
+  const slackWorkspaces = slackLinksData?.workspaces || [];
+
+  // Get WhatsApp imports for this guild
+  const whatsappSources = useMemo(() => {
+    if (!archiveSources || !id) return [];
+    return archiveSources.filter(
+      (s) => s.source_key.startsWith("whatsapp:") && s.guild_id === id
+    );
+  }, [archiveSources, id]);
+
   const [openCategories, setOpenCategories] = useState<Set<string>>(new Set(["uncategorized"]));
   const [enabledChannels, setEnabledChannels] = useState<Set<string>>(new Set());
   const [hasChanges, setHasChanges] = useState(false);
@@ -342,7 +358,159 @@ export function Channels() {
           );
         })}
       </div>
+
+      {/* Slack Channels Section (ADR-085) */}
+      {slackWorkspaces.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Slack className="h-5 w-5 text-purple-500" />
+            <h2 className="text-lg font-semibold">Slack Channels</h2>
+            <Badge variant="outline" className="text-purple-600">
+              {slackWorkspaces.length} workspace{slackWorkspaces.length > 1 ? "s" : ""}
+            </Badge>
+          </div>
+          {slackWorkspaces.map((workspace) => (
+            <SlackWorkspaceChannels
+              key={workspace.workspace_id}
+              workspaceId={workspace.workspace_id}
+              workspaceName={workspace.workspace_name}
+              isPrimary={workspace.is_primary}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* WhatsApp Chats Section */}
+      {whatsappSources.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-green-500" />
+            <h2 className="text-lg font-semibold">WhatsApp Chats</h2>
+            <Badge variant="outline" className="text-green-600">
+              {whatsappSources.length} import{whatsappSources.length > 1 ? "s" : ""}
+            </Badge>
+          </div>
+          <Card className="border-border/50">
+            <CardContent className="pt-4">
+              <div className="space-y-2">
+                {whatsappSources.map((source) => (
+                  <div
+                    key={source.source_key}
+                    className="flex items-center justify-between rounded-lg border border-green-500/20 bg-green-500/5 px-4 py-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <MessageSquare className="h-4 w-4 text-green-500" />
+                      <span className="font-medium">
+                        {source.server_name || source.source_key.replace("whatsapp:", "").replace(/_/g, " ")}
+                      </span>
+                      {source.summary_count > 0 && (
+                        <Badge variant="secondary" className="text-xs">
+                          {source.summary_count} summaries
+                        </Badge>
+                      )}
+                    </div>
+                    <Badge variant="outline" className="text-green-600">
+                      Imported
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Link to Sources page for full management */}
+      {(slackWorkspaces.length > 0 || whatsappSources.length > 0) && (
+        <div className="text-center text-sm text-muted-foreground">
+          <Link
+            to={`/guilds/${id}/sources`}
+            className="text-primary hover:underline"
+          >
+            View all sources →
+          </Link>
+        </div>
+      )}
     </div>
+  );
+}
+
+// Slack workspace channels component
+function SlackWorkspaceChannels({
+  workspaceId,
+  workspaceName,
+  isPrimary,
+}: {
+  workspaceId: string;
+  workspaceName: string;
+  isPrimary: boolean;
+}) {
+  const { data: channels, isLoading } = useSlackChannels(workspaceId);
+
+  if (isLoading) {
+    return (
+      <Card className="border-border/50">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Slack className="h-4 w-4 text-purple-500" />
+            {workspaceName}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-12 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const channelList = channels || [];
+
+  return (
+    <Card className="border-border/50">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Slack className="h-4 w-4 text-purple-500" />
+          {workspaceName}
+          {isPrimary && (
+            <Badge variant="outline" className="text-xs">Primary</Badge>
+          )}
+          <Badge variant="secondary" className="ml-auto text-xs">
+            {channelList.length} channels
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {channelList.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">
+            No channels synced yet
+          </p>
+        ) : (
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {channelList.slice(0, 20).map((channel) => (
+              <div
+                key={channel.channel_id}
+                className="flex items-center justify-between rounded-lg border border-purple-500/20 bg-purple-500/5 px-4 py-2"
+              >
+                <div className="flex items-center gap-3">
+                  <Hash className="h-4 w-4 text-purple-500" />
+                  <span className="font-medium">{channel.channel_name}</span>
+                </div>
+                {channel.auto_summarize && (
+                  <Badge variant="outline" className="text-purple-600 text-xs">
+                    Auto-summarize
+                  </Badge>
+                )}
+              </div>
+            ))}
+            {channelList.length > 20 && (
+              <p className="text-xs text-muted-foreground text-center pt-2">
+                +{channelList.length - 20} more channels
+              </p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

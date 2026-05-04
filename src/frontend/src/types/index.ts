@@ -375,6 +375,9 @@ export interface StoredSummary {
   split_from?: string;           // Original summary ID this was split from
   split_private_id?: string;     // Reference to private portion (on public summary)
   split_public_id?: string;      // Reference to public portion (on private summary)
+  // ADR-086: Wiki ingestion status
+  wiki_ingested?: boolean;
+  wiki_ingested_at?: string;
 }
 
 // ADR-020: Navigation for prev/next summary

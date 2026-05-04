@@ -3673,3 +3673,46 @@ async def retry_job(
         new_job_id=new_job_id,
         message="Retry job created and execution started.",
     )
+
+
+# ============================================================================
+# ADR-086: Summary-Wiki Navigation
+# ============================================================================
+
+
+@router.get(
+    "/guilds/{guild_id}/stored-summaries/{summary_id}/wiki-pages",
+    summary="Get wiki pages referencing a summary",
+    description="ADR-086: Find all wiki pages that cite this summary as a source",
+)
+async def get_summary_wiki_pages(
+    guild_id: str = Path(..., description="Guild ID"),
+    summary_id: str = Path(..., description="Summary ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Get wiki pages that reference this summary."""
+    if guild_id not in user.get("guilds", []):
+        raise HTTPException(status_code=403, detail="Not a member of this guild")
+
+    # Get wiki repository
+    from ...data.repositories import get_wiki_repository
+    wiki_repo = await get_wiki_repository()
+    if not wiki_repo:
+        return {"summary_id": summary_id, "wiki_pages": [], "total_pages": 0}
+
+    # Find pages by source ID
+    source_id = f"summary-{summary_id}"
+    pages = await wiki_repo.find_pages_by_source(guild_id, source_id)
+
+    return {
+        "summary_id": summary_id,
+        "wiki_pages": [
+            {
+                "path": p.path,
+                "title": p.title,
+                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+            }
+            for p in pages
+        ],
+        "total_pages": len(pages),
+    }

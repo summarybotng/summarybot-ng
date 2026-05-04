@@ -57,6 +57,28 @@ export function useSummaryPrompt(guildId: string, summaryId: string, enabled: bo
   });
 }
 
+// ADR-086: Summary to Wiki navigation
+export interface SummaryWikiPage {
+  path: string;
+  title: string;
+  updated_at?: string;
+}
+
+export interface SummaryWikiPagesResponse {
+  summary_id: string;
+  wiki_pages: SummaryWikiPage[];
+  total_pages: number;
+}
+
+export function useSummaryWikiPages(guildId: string, summaryId: string, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ["summary-wiki-pages", guildId, summaryId],
+    queryFn: () =>
+      api.get<SummaryWikiPagesResponse>(`/guilds/${guildId}/stored-summaries/${summaryId}/wiki-pages`),
+    enabled: !!guildId && !!summaryId && enabled,
+  });
+}
+
 export function useGenerateSummary(guildId: string) {
   return useMutation({
     mutationFn: (request: GenerateRequest) =>

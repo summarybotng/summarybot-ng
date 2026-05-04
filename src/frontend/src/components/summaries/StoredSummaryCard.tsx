@@ -23,6 +23,7 @@ import {
   Sparkles,
   Settings2,
   AlertTriangle,
+  BookOpen,
 } from "lucide-react";
 import { SummaryActions } from "./SummaryActions";
 import type { StoredSummary, SummarySourceType } from "@/types";
@@ -230,6 +231,13 @@ export function StoredSummaryCard({
               <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
                 <AlertTriangle className="mr-1 h-3 w-3" />
                 Partial Access {summary.access_coverage_percent !== undefined && `(${Math.round(summary.access_coverage_percent)}%)`}
+              </Badge>
+            )}
+            {/* ADR-086: Wiki ingested indicator */}
+            {summary.wiki_ingested && (
+              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                <BookOpen className="mr-1 h-3 w-3" />
+                Wiki
               </Badge>
             )}
           </div>

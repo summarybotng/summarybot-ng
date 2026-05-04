@@ -5,7 +5,7 @@
  * and uploads them to the WhatsApp import API.
  */
 
-import { useEffect, useState } from "react";
+import { Component, useEffect, useState, type ReactNode, type ErrorInfo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, CheckCircle2, AlertCircle, Upload, FileText } from "lucide-react";
@@ -21,6 +21,54 @@ import {
 } from "@/components/ui/select";
 import { api } from "@/api/client";
 import { useAuthStore } from "@/stores/authStore";
+
+// Error boundary to catch crashes
+class ShareErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("[ShareReceived] Error caught by boundary:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          minHeight: '100vh',
+          padding: '20px',
+          backgroundColor: '#ff0000',
+          color: 'white',
+          fontFamily: 'monospace'
+        }}>
+          <h1>Share Import Crashed</h1>
+          <p><strong>Error:</strong> {this.state.error?.message}</p>
+          <pre style={{
+            backgroundColor: '#800000',
+            padding: '10px',
+            overflow: 'auto',
+            fontSize: '12px'
+          }}>
+            {this.state.error?.stack}
+          </pre>
+          <button
+            onClick={() => window.location.href = '/'}
+            style={{ marginTop: '20px', padding: '10px 20px' }}
+          >
+            Go to Dashboard
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface SharedFile {
   id: string;
@@ -39,10 +87,19 @@ interface Guild {
 
 type UploadState = "loading" | "select-guild" | "uploading" | "success" | "error" | "no-file" | "not-authenticated";
 
+// Wrapped export with error boundary
 export default function ShareReceived() {
+  return (
+    <ShareErrorBoundary>
+      <ShareReceivedInner />
+    </ShareErrorBoundary>
+  );
+}
+
+function ShareReceivedInner() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { isAuthenticated } = useAuthStore();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated());
 
   const [state, setState] = useState<UploadState>("loading");
   const [sharedFile, setSharedFile] = useState<SharedFile | null>(null);
@@ -51,11 +108,12 @@ export default function ShareReceived() {
   const [uploadResult, setUploadResult] = useState<{ messageCount: number; importId: string } | null>(null);
 
   // Fetch user's guilds
-  const { data: guilds } = useQuery({
+  const { data: guildsData } = useQuery({
     queryKey: ["guilds"],
-    queryFn: () => api.get<Guild[]>("/guilds"),
+    queryFn: () => api.get<{ guilds: Guild[] }>("/guilds"),
     enabled: isAuthenticated && state === "select-guild",
   });
+  const guilds = guildsData?.guilds || [];
 
   // Check for error in URL
   useEffect(() => {
@@ -77,37 +135,42 @@ export default function ShareReceived() {
     if (!isAuthenticated) return;
 
     async function loadSharedFile() {
+      console.log("[ShareReceived] Starting to load shared file...");
       try {
         const db = await openDB();
+        console.log("[ShareReceived] IndexedDB opened successfully");
         const tx = db.transaction("sharedFiles", "readonly");
         const store = tx.objectStore("sharedFiles");
         const request = store.get("pending");
 
         request.onsuccess = () => {
           const file = request.result as SharedFile | undefined;
+          console.log("[ShareReceived] IndexedDB get result:", file ? `Found: ${file.name}` : "No file");
           if (file) {
-            console.log("[ShareReceived] Found shared file:", file.name);
+            console.log("[ShareReceived] Found shared file:", file.name, "size:", file.size);
             setSharedFile(file);
             setState("select-guild");
           } else {
-            console.log("[ShareReceived] No shared file found");
+            console.log("[ShareReceived] No shared file found in IndexedDB");
             setState("no-file");
           }
         };
 
         request.onerror = () => {
-          console.error("[ShareReceived] IndexedDB error:", request.error);
+          console.error("[ShareReceived] IndexedDB get error:", request.error);
           setState("error");
-          setError("Failed to load shared file");
+          setError("Failed to load shared file: " + (request.error?.message || "Unknown error"));
         };
       } catch (err) {
-        console.error("[ShareReceived] Error:", err);
+        console.error("[ShareReceived] Error opening IndexedDB:", err);
         setState("error");
-        setError("Failed to access shared file storage");
+        setError("Failed to access shared file storage: " + (err instanceof Error ? err.message : String(err)));
       }
     }
 
-    loadSharedFile();
+    // Small delay to ensure service worker has finished storing
+    const timer = setTimeout(loadSharedFile, 500);
+    return () => clearTimeout(timer);
   }, [isAuthenticated]);
 
   // Handle upload
@@ -155,7 +218,7 @@ export default function ShareReceived() {
 
   // Render based on state
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-background">
+    <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="flex items-center justify-center gap-2">
@@ -214,7 +277,7 @@ export default function ShareReceived() {
                     <SelectValue placeholder="Choose a workspace..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {guilds?.map((guild) => (
+                    {guilds.map((guild) => (
                       <SelectItem key={guild.id} value={guild.id}>
                         {guild.name}
                       </SelectItem>
@@ -267,6 +330,7 @@ export default function ShareReceived() {
               </Button>
             </div>
           )}
+
         </CardContent>
       </Card>
     </div>

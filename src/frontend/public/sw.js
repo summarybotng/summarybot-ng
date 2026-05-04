@@ -1,7 +1,9 @@
 // Service Worker for SummaryBot PWA
 // Handles share target functionality
+// Version: 2 - Fixed IndexedDB handling
 
-const CACHE_NAME = 'summarybot-v1';
+const CACHE_NAME = 'summarybot-v2';
+const SW_VERSION = '4.0.0';
 
 // Install event - cache essential assets
 self.addEventListener('install', (event) => {
@@ -41,6 +43,7 @@ self.addEventListener('fetch', (event) => {
 });
 
 async function handleShareTarget(request) {
+  console.log('[SW v' + SW_VERSION + '] handleShareTarget called');
   try {
     const formData = await request.formData();
     const file = formData.get('file');
@@ -50,20 +53,27 @@ async function handleShareTarget(request) {
     console.log('[SW] Share target received:', {
       hasFile: !!file,
       fileName: file?.name,
+      fileSize: file?.size,
+      fileType: file?.type,
       title,
       text
     });
 
     // Store the shared file in IndexedDB for the page to pick up
     if (file) {
+      console.log('[SW] Storing file to IndexedDB...');
       await storeSharedFile(file);
+      console.log('[SW] File stored successfully, redirecting...');
+    } else {
+      console.log('[SW] No file received in share target');
     }
 
     // Redirect to the share handler page
     return Response.redirect('/share-received', 303);
   } catch (error) {
     console.error('[SW] Share target error:', error);
-    return Response.redirect('/share-received?error=failed', 303);
+    console.error('[SW] Error stack:', error.stack);
+    return Response.redirect('/share-received?error=' + encodeURIComponent(error.message), 303);
   }
 }
 
@@ -74,20 +84,39 @@ async function storeSharedFile(file) {
   // Read file as ArrayBuffer
   const buffer = await file.arrayBuffer();
 
-  // Store in IndexedDB
-  const tx = db.transaction('sharedFiles', 'readwrite');
-  const store = tx.objectStore('sharedFiles');
+  // Store in IndexedDB with proper promise handling
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('sharedFiles', 'readwrite');
+    const store = tx.objectStore('sharedFiles');
 
-  await store.put({
-    id: 'pending',
-    name: file.name,
-    type: file.type,
-    size: file.size,
-    data: buffer,
-    timestamp: Date.now()
+    const request = store.put({
+      id: 'pending',
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      data: buffer,
+      timestamp: Date.now()
+    });
+
+    request.onsuccess = () => {
+      console.log('[SW] Stored shared file:', file.name);
+      resolve();
+    };
+
+    request.onerror = () => {
+      console.error('[SW] Failed to store shared file:', request.error);
+      reject(request.error);
+    };
+
+    tx.oncomplete = () => {
+      console.log('[SW] IndexedDB transaction complete');
+    };
+
+    tx.onerror = () => {
+      console.error('[SW] IndexedDB transaction error:', tx.error);
+      reject(tx.error);
+    };
   });
-
-  console.log('[SW] Stored shared file:', file.name);
 }
 
 function openDB() {

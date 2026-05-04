@@ -532,3 +532,154 @@ async def get_status():
             "full": slack_auth.get_scopes_for_tier(SlackScopeTier.FULL) if slack_auth else [],
         },
     }
+
+
+# ============================================================================
+# Guild Links (ADR-085: Multi-Guild Slack Access)
+# ============================================================================
+
+class GuildLinkRequest(BaseModel):
+    """Request to link a Slack workspace to a Discord guild."""
+    workspace_id: str = Field(..., description="Slack workspace ID to link")
+    can_view: bool = Field(True, description="Whether guild members can view Slack content")
+    can_summarize: bool = Field(False, description="Whether guild can generate summaries")
+
+
+class GuildLinkResponse(BaseModel):
+    """Response for guild link operations."""
+    workspace_id: str
+    workspace_name: str
+    guild_id: str
+    can_view: bool
+    can_summarize: bool
+    linked_at: str
+
+
+@router.post(
+    "/guilds/{guild_id}/links",
+    response_model=GuildLinkResponse,
+    summary="Link Slack workspace to guild",
+    description="ADR-085: Enable a Discord guild to access a Slack workspace",
+)
+async def add_guild_link(
+    guild_id: str,
+    request: GuildLinkRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Link a Slack workspace to a Discord guild for multi-guild access."""
+    require_guild_admin(guild_id, user)
+
+    from . import get_slack_repository
+    repo = await get_slack_repository()
+    if not repo:
+        raise HTTPException(status_code=500, detail="Database not available")
+
+    # Verify workspace exists
+    workspace = await repo.get_workspace(request.workspace_id)
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    # User must have access to the workspace's primary guild to add links
+    if workspace.linked_guild_id and workspace.linked_guild_id not in user.get("guilds", []):
+        raise HTTPException(
+            status_code=403,
+            detail="You must be a member of the workspace's primary guild to add links"
+        )
+
+    # Add the link
+    success = await repo.add_guild_link(
+        workspace_id=request.workspace_id,
+        guild_id=guild_id,
+        linked_by=user.get("sub", "unknown"),
+        can_view=request.can_view,
+        can_summarize=request.can_summarize,
+    )
+
+    if not success:
+        # Link already exists - that's fine
+        pass
+
+    logger.info(f"Linked Slack workspace {request.workspace_id} to guild {guild_id}")
+
+    return GuildLinkResponse(
+        workspace_id=workspace.workspace_id,
+        workspace_name=workspace.workspace_name,
+        guild_id=guild_id,
+        can_view=request.can_view,
+        can_summarize=request.can_summarize,
+        linked_at=datetime.utcnow().isoformat(),
+    )
+
+
+@router.delete(
+    "/guilds/{guild_id}/links/{workspace_id}",
+    summary="Remove Slack workspace link",
+    description="ADR-085: Remove a Discord guild's access to a Slack workspace",
+)
+async def remove_guild_link(
+    guild_id: str,
+    workspace_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Remove a Slack workspace link from a Discord guild."""
+    require_guild_admin(guild_id, user)
+
+    from . import get_slack_repository
+    repo = await get_slack_repository()
+    if not repo:
+        raise HTTPException(status_code=500, detail="Database not available")
+
+    # Verify workspace exists
+    workspace = await repo.get_workspace(workspace_id)
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    # Cannot unlink the primary guild
+    if workspace.linked_guild_id == guild_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot unlink the primary guild. Use workspace disconnect instead."
+        )
+
+    # Remove the link
+    success = await repo.remove_guild_link(workspace_id, guild_id)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Link not found")
+
+    logger.info(f"Unlinked Slack workspace {workspace_id} from guild {guild_id}")
+
+    return {"status": "success", "message": "Workspace unlinked from guild"}
+
+
+@router.get(
+    "/guilds/{guild_id}/links",
+    summary="List linked Slack workspaces",
+    description="ADR-085: Get all Slack workspaces linked to a Discord guild",
+)
+async def list_guild_links(
+    guild_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """List all Slack workspaces accessible to a Discord guild."""
+    if guild_id not in user.get("guilds", []):
+        raise HTTPException(status_code=403, detail="Not a member of this guild")
+
+    from . import get_slack_repository
+    repo = await get_slack_repository()
+    if not repo:
+        return {"workspaces": []}
+
+    workspaces = await repo.get_workspaces_for_guild(guild_id)
+
+    return {
+        "workspaces": [
+            {
+                "workspace_id": ws.workspace_id,
+                "workspace_name": ws.workspace_name,
+                "workspace_domain": ws.workspace_domain,
+                "is_primary": ws.linked_guild_id == guild_id,
+            }
+            for ws in workspaces
+        ]
+    }

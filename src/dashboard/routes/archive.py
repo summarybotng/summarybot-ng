@@ -86,6 +86,13 @@ class BackfillReportRequest(BaseModel):
     current_prompt_version: Optional[str] = None
 
 
+class SourceChannelInfo(BaseModel):
+    """Channel information within a source (for Slack)."""
+    channel_id: str
+    channel_name: str
+    summary_count: int = 0
+
+
 class SourceResponse(BaseModel):
     source_key: str
     source_type: str
@@ -95,6 +102,9 @@ class SourceResponse(BaseModel):
     channel_name: Optional[str] = None
     summary_count: int = 0
     date_range: Optional[Dict[str, str]] = None
+    guild_id: Optional[str] = None  # For WhatsApp imports - the Discord guild they belong to
+    linked_guilds: Optional[List[str]] = None  # For Slack - list of guild IDs with access
+    channels: Optional[List[SourceChannelInfo]] = None  # For Slack - channel breakdown
 
 
 class ScanResultResponse(BaseModel):
@@ -363,7 +373,9 @@ def create_whatsapp_message_fetcher(archive_root: Path, group_id: str):
     """
     Create a message fetcher callback for WhatsApp sources.
 
-    This fetches messages from imported WhatsApp chat files.
+    This fetches messages from:
+    1. File-based archive (legacy WhatsApp imports)
+    2. Database imports (ADR-081 ingest_messages table)
     """
     from src.archive.importers.whatsapp import WhatsAppImporter
 
@@ -371,11 +383,56 @@ def create_whatsapp_message_fetcher(archive_root: Path, group_id: str):
 
     async def fetch_messages(source, start_time, end_time):
         """Fetch messages for a period from imported WhatsApp data."""
+        # Try file-based archive first
         messages = await importer.get_messages_for_period(
             group_id=group_id,
             start=start_time,
             end=end_time,
         )
+
+        # ADR-081: If no messages from file archive, try database imports
+        if not messages:
+            try:
+                from ...data.repositories import get_repository_factory
+                factory = get_repository_factory()
+                conn = await factory.get_connection()
+                if conn:
+                    # Query ingest_messages via whatsapp_imports
+                    start_iso = start_time.isoformat() if hasattr(start_time, 'isoformat') else str(start_time)
+                    end_iso = end_time.isoformat() if hasattr(end_time, 'isoformat') else str(end_time)
+
+                    rows = await conn.fetch_all(
+                        """
+                        SELECT
+                            m.id,
+                            m.sender_id,
+                            m.sender_name,
+                            m.timestamp,
+                            m.content
+                        FROM ingest_messages m
+                        JOIN whatsapp_imports wi ON m.batch_id = wi.id
+                        WHERE wi.chat_id = ?
+                          AND m.timestamp >= ?
+                          AND m.timestamp <= ?
+                          AND m.content IS NOT NULL
+                          AND m.content != ''
+                        ORDER BY m.timestamp ASC
+                        """,
+                        (group_id, start_iso, end_iso)
+                    )
+
+                    # Convert to archive message format
+                    for row in rows:
+                        messages.append({
+                            "id": row["id"],
+                            "author": row["sender_name"] or "Unknown",
+                            "author_name": row["sender_name"] or "Unknown",  # SummarizationAdapter uses this
+                            "author_id": row["sender_id"] or "unknown",
+                            "content": row["content"],
+                            "timestamp": row["timestamp"],
+                        })
+            except Exception as e:
+                logger.warning(f"Failed to fetch WhatsApp messages from database: {e}")
 
         logger.info(
             f"Fetched {len(messages)} WhatsApp messages for {group_id} "
@@ -620,6 +677,65 @@ async def list_sources(
     registry = get_source_registry()
     registry.discover_sources()
 
+    # ADR-081: Also include WhatsApp imports from database
+    # Track guild_id for each WhatsApp source
+    whatsapp_guild_map: Dict[str, str] = {}  # source_key -> guild_id
+    try:
+        from ...data.repositories import get_whatsapp_import_repository
+        whatsapp_repo = await get_whatsapp_import_repository()
+        if whatsapp_repo:
+            # Get all completed imports across all guilds
+            all_imports = await whatsapp_repo.list_all_completed_imports()
+            for imp in all_imports:
+                # Create source key matching the format used in summaries
+                source_key = f"whatsapp:{imp.chat_id}"
+                whatsapp_guild_map[source_key] = imp.guild_id
+                if source_key not in registry._sources:
+                    registry.create_source_from_whatsapp(
+                        group_id=imp.chat_id,
+                        group_name=imp.chat_name or imp.chat_id
+                    )
+    except Exception as e:
+        logger.warning(f"Failed to load WhatsApp imports for archive sources: {e}")
+
+    # ADR-085: Load Slack workspaces with channels and guild links
+    slack_workspace_data: Dict[str, Dict[str, Any]] = {}  # workspace_id -> {channels, linked_guilds}
+    try:
+        from ...data.repositories import get_slack_repository
+        slack_repo = await get_slack_repository()
+        if slack_repo:
+            workspaces = await slack_repo.list_workspaces(enabled_only=True)
+            for ws in workspaces:
+                # Get channels for this workspace
+                channels = await slack_repo.list_channels(ws.workspace_id, include_archived=False)
+                channel_info = [
+                    SourceChannelInfo(
+                        channel_id=ch.channel_id,
+                        channel_name=ch.channel_name,
+                        summary_count=0,  # Will be populated from archive
+                    )
+                    for ch in channels
+                ]
+
+                # Get linked guilds
+                linked_guilds = await slack_repo.get_workspace_guild_links(ws.workspace_id)
+
+                slack_workspace_data[ws.workspace_id] = {
+                    "channels": channel_info,
+                    "linked_guilds": linked_guilds,
+                    "workspace_name": ws.workspace_name,
+                }
+
+                # Register workspace as source if not already discovered
+                source_key = f"slack:{ws.workspace_id}"
+                if source_key not in registry._sources:
+                    registry.create_source_from_slack(
+                        workspace_id=ws.workspace_id,
+                        workspace_name=ws.workspace_name,
+                    )
+    except Exception as e:
+        logger.warning(f"Failed to load Slack workspaces for archive sources: {e}")
+
     sources = registry.list_sources()
     if source_type:
         from src.archive.models import SourceType
@@ -659,6 +775,18 @@ async def list_sources(
                         "end": max(dates).isoformat(),
                     }
 
+        # Get guild_id for WhatsApp sources
+        guild_id = whatsapp_guild_map.get(s.source_key) if s.source_key.startswith("whatsapp:") else None
+
+        # Get Slack-specific data (channels and linked guilds)
+        linked_guilds = None
+        channels = None
+        if s.source_key.startswith("slack:"):
+            workspace_id = s.source_key.replace("slack:", "")
+            slack_data = slack_workspace_data.get(workspace_id, {})
+            linked_guilds = slack_data.get("linked_guilds")
+            channels = slack_data.get("channels")
+
         results.append(SourceResponse(
             source_key=s.source_key,
             source_type=s.source_type.value,
@@ -668,6 +796,9 @@ async def list_sources(
             channel_name=s.channel_name,
             summary_count=summary_count,
             date_range=date_range,
+            guild_id=guild_id,
+            linked_guilds=linked_guilds,
+            channels=channels,
         ))
 
     return results

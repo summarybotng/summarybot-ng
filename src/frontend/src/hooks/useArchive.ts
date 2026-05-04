@@ -2,6 +2,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 
 // Types
+export interface SourceChannelInfo {
+  channel_id: string;
+  channel_name: string;
+  summary_count: number;
+}
+
 export interface ArchiveSource {
   source_key: string;
   source_type: string;
@@ -14,6 +20,9 @@ export interface ArchiveSource {
     start: string;
     end: string;
   };
+  guild_id?: string;  // For WhatsApp imports - the Discord guild they belong to
+  linked_guilds?: string[];  // For Slack - list of guild IDs with access
+  channels?: SourceChannelInfo[];  // For Slack - channel breakdown
 }
 
 export interface GapInfo {

@@ -102,17 +102,21 @@ interface BackfillRequest {
   rate_limit: number;
 }
 
+// Platform type for coverage filtering
+type CoveragePlatform = "discord" | "whatsapp" | "slack";
+
 // API functions
-async function fetchCoverage(guildId: string): Promise<CoverageReport> {
-  return api.get<CoverageReport>(`/guilds/${guildId}/coverage`);
+async function fetchCoverage(guildId: string, platform: CoveragePlatform = "discord"): Promise<CoverageReport> {
+  return api.get<CoverageReport>(`/guilds/${guildId}/coverage?platform=${platform}`);
 }
 
-async function refreshCoverage(guildId: string, includeInventory: boolean): Promise<CoverageReport> {
-  return api.post<CoverageReport>(`/guilds/${guildId}/coverage/refresh?include_inventory=${includeInventory}`, {});
+async function refreshCoverage(guildId: string, includeInventory: boolean, platform: CoveragePlatform = "discord"): Promise<CoverageReport> {
+  return api.post<CoverageReport>(`/guilds/${guildId}/coverage/refresh?include_inventory=${includeInventory}&platform=${platform}`, {});
 }
 
-async function fetchGaps(guildId: string, status?: string): Promise<GapsListResponse> {
+async function fetchGaps(guildId: string, status?: string, platform: CoveragePlatform = "discord"): Promise<GapsListResponse> {
   const params = new URLSearchParams();
+  params.append("platform", platform);
   if (status) params.append("status", status);
   params.append("limit", "100");
   return api.get<GapsListResponse>(`/guilds/${guildId}/coverage/gaps?${params.toString()}`);
@@ -522,26 +526,27 @@ export function Coverage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [gapFilter, setGapFilter] = useState<string | undefined>(undefined);
+  const [platform, setPlatform] = useState<CoveragePlatform>("discord");
 
   // Fetch coverage report
   const { data: report, isLoading: reportLoading } = useQuery({
-    queryKey: ["coverage", guildId],
-    queryFn: () => fetchCoverage(guildId!),
+    queryKey: ["coverage", guildId, platform],
+    queryFn: () => fetchCoverage(guildId!, platform),
     enabled: !!guildId,
   });
 
   // Fetch gaps
   const { data: gapsData, isLoading: gapsLoading } = useQuery({
-    queryKey: ["coverage-gaps", guildId, gapFilter],
-    queryFn: () => fetchGaps(guildId!, gapFilter),
+    queryKey: ["coverage-gaps", guildId, gapFilter, platform],
+    queryFn: () => fetchGaps(guildId!, gapFilter, platform),
     enabled: !!guildId,
   });
 
   // Refresh mutation
   const refreshMutation = useMutation({
-    mutationFn: (includeInventory: boolean) => refreshCoverage(guildId!, includeInventory),
+    mutationFn: (includeInventory: boolean) => refreshCoverage(guildId!, includeInventory, platform),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["coverage", guildId] });
+      queryClient.invalidateQueries({ queryKey: ["coverage", guildId, platform] });
       queryClient.invalidateQueries({ queryKey: ["coverage-gaps", guildId] });
       toast({ title: "Coverage refreshed" });
     },
@@ -572,7 +577,17 @@ export function Coverage() {
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <Select value={platform} onValueChange={(v) => setPlatform(v as CoveragePlatform)}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Platform" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="discord">Discord</SelectItem>
+              <SelectItem value="whatsapp">WhatsApp</SelectItem>
+              <SelectItem value="slack">Slack</SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             variant="outline"
             onClick={() => refreshMutation.mutate(false)}

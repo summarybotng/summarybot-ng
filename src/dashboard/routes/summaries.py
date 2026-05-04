@@ -146,9 +146,13 @@ async def list_summaries(
         channel_name = None
         if summary.context and summary.context.channel_name:
             channel_name = summary.context.channel_name
-        elif summary.channel_id:
-            channel = guild.get_channel(int(summary.channel_id))
-            channel_name = channel.name if channel else None
+        elif summary.channel_id and guild:
+            try:
+                channel = guild.get_channel(int(summary.channel_id))
+                channel_name = channel.name if channel else None
+            except (ValueError, TypeError):
+                # Non-integer channel IDs (e.g., WhatsApp chat IDs) can't be Discord channels
+                channel_name = None
 
         # Get summary_length from metadata if available
         summary_length = "detailed"
@@ -215,9 +219,13 @@ async def get_summary(
     channel_name = None
     if summary.context and summary.context.channel_name:
         channel_name = summary.context.channel_name
-    elif summary.channel_id:
-        channel = guild.get_channel(int(summary.channel_id))
-        channel_name = channel.name if channel else None
+    elif summary.channel_id and guild:
+        try:
+            channel = guild.get_channel(int(summary.channel_id))
+            channel_name = channel.name if channel else None
+        except (ValueError, TypeError):
+            # Non-integer channel IDs (e.g., WhatsApp chat IDs) can't be Discord channels
+            channel_name = None
 
     # Convert action items
     action_items = [
@@ -948,6 +956,14 @@ async def generate_summary(
                     if len(channel_ids) > 3:
                         channel_names.append(f"+{len(channel_ids) - 3} more")
                     title = f"Slack: {', '.join(channel_names) or 'Summary'} — {utc_now_naive().strftime('%b %d, %H:%M')}"
+                elif is_whatsapp:
+                    # For WhatsApp, use chat names from fetcher (ADR-081)
+                    for cid in channel_ids[:3]:
+                        chat_name = channel_name_map.get(cid, cid[:8])
+                        channel_names.append(chat_name)
+                    if len(channel_ids) > 3:
+                        channel_names.append(f"+{len(channel_ids) - 3} more")
+                    title = f"WhatsApp: {', '.join(channel_names) or 'Summary'} — {utc_now_naive().strftime('%b %d, %H:%M')}"
                 else:
                     for cid in channel_ids[:3]:  # Limit to 3 channels in title
                         ch = guild.get_channel(int(cid))
@@ -966,7 +982,8 @@ async def generate_summary(
                     title=title,
                     source=SummarySource.MANUAL,  # From Generate button
                     created_at=utc_now_naive(),
-                    archive_source_key=f"{platform}:{guild_id}",
+                    # WhatsApp uses chat_id for archive key, others use guild_id
+                    archive_source_key=f"{platform}:{channel_ids[0]}" if is_whatsapp and channel_ids else f"{platform}:{guild_id}",
                 )
 
                 logger.info(f"[{job_id}] Saving to stored_summaries...")

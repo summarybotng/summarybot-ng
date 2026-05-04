@@ -57,6 +57,28 @@ class SQLiteWhatsAppImportRepository:
 
     async def create_import(self, import_record: WhatsAppImport) -> str:
         """Create a new import record."""
+        # First create ingest_batches record (foreign key target for ingest_messages)
+        batch_query = """
+        INSERT OR IGNORE INTO ingest_batches (
+            id, source_type, channel_id, channel_name, channel_type,
+            message_count, time_range_start, time_range_end, raw_payload, processed
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        batch_params = (
+            import_record.id,
+            "whatsapp",
+            import_record.chat_id,
+            import_record.chat_name,
+            "group",  # Default channel type
+            import_record.message_count,
+            import_record.date_range_start.isoformat(),
+            import_record.date_range_end.isoformat(),
+            "{}",  # Empty raw_payload - actual data stored elsewhere
+            1,  # processed = true
+        )
+        await self.connection.execute(batch_query, batch_params)
+
+        # Then create the whatsapp_imports record
         query = """
         INSERT INTO whatsapp_imports (
             id, guild_id, chat_id, chat_name,
@@ -137,6 +159,19 @@ class SQLiteWhatsAppImportRepository:
         rows = await self.connection.fetch_all(query, tuple(params))
 
         return [self._row_to_import(row) for row in rows], total
+
+    async def list_all_completed_imports(self) -> List[WhatsAppImport]:
+        """List all completed imports across all guilds (for archive discovery)."""
+        rows = await self.connection.fetch_all(
+            """
+            SELECT * FROM whatsapp_imports
+            WHERE status = 'completed'
+              AND deleted_at IS NULL
+              AND message_count > 0
+            ORDER BY imported_at DESC
+            """
+        )
+        return [self._row_to_import(row) for row in rows]
 
     async def migrate_legacy_imports(self, guild_id: str) -> int:
         """

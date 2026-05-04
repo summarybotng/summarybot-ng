@@ -291,21 +291,27 @@ async def _maybe_synthesize_on_access(guild_id: str, page, repo) -> any:
 
 def _page_to_summary_response(page) -> WikiPageSummaryResponse:
     """Convert WikiPageSummary to response model."""
+    # Explicit int conversion to handle float values from database aggregations
+    inbound_links = page.inbound_links
+    confidence = page.confidence
+    source_count = getattr(page, 'source_count', 0)
+    rating_count = getattr(page, 'rating_count', 0)
+
     return WikiPageSummaryResponse(
         id=page.id,
         path=page.path,
         title=page.title,
         topics=page.topics,
         updated_at=page.updated_at.isoformat() if page.updated_at else None,
-        inbound_links=page.inbound_links,
-        confidence=page.confidence,
+        inbound_links=int(inbound_links) if inbound_links is not None else 0,
+        confidence=int(confidence) if confidence is not None else 100,
         # ADR-064: Filter fields
         created_at=page.created_at.isoformat() if getattr(page, 'created_at', None) else None,
-        source_count=getattr(page, 'source_count', 0),
+        source_count=int(source_count) if source_count is not None else 0,
         has_synthesis=getattr(page, 'has_synthesis', False),
         synthesis_model=getattr(page, 'synthesis_model', None),
         average_rating=getattr(page, 'average_rating', None),
-        rating_count=getattr(page, 'rating_count', 0),
+        rating_count=int(rating_count) if rating_count is not None else 0,
     )
 
 
@@ -316,6 +322,13 @@ def _page_to_detail_response(
     linked_pages_to: List[LinkedPage] = None,
 ) -> WikiPageDetailResponse:
     """Convert WikiPage to response model."""
+    # Explicit int conversion to handle float values from database aggregations
+    inbound_links = page.inbound_links
+    outbound_links = page.outbound_links
+    confidence = page.confidence
+    synthesis_source_count = getattr(page, 'synthesis_source_count', 0)
+    rating_count = getattr(page, 'rating_count', 0)
+
     return WikiPageDetailResponse(
         id=page.id,
         path=page.path,
@@ -324,22 +337,22 @@ def _page_to_detail_response(
         topics=page.topics,
         source_refs=page.source_refs,
         source_metadata=source_metadata or [],
-        inbound_links=page.inbound_links,
-        outbound_links=page.outbound_links,
+        inbound_links=int(inbound_links) if inbound_links is not None else 0,
+        outbound_links=int(outbound_links) if outbound_links is not None else 0,
         linked_pages_from=linked_pages_from or [],
         linked_pages_to=linked_pages_to or [],
-        confidence=page.confidence,
+        confidence=int(confidence) if confidence is not None else 100,
         created_at=page.created_at.isoformat() if page.created_at else None,
         updated_at=page.updated_at.isoformat() if page.updated_at else None,
         category=page.category,
         # ADR-063: Synthesis fields
         synthesis=getattr(page, 'synthesis', None),
         synthesis_updated_at=page.synthesis_updated_at.isoformat() if getattr(page, 'synthesis_updated_at', None) else None,
-        synthesis_source_count=getattr(page, 'synthesis_source_count', 0),
+        synthesis_source_count=int(synthesis_source_count) if synthesis_source_count is not None else 0,
         # ADR-064/065: Rating and model tracking
         synthesis_model=getattr(page, 'synthesis_model', None),
         average_rating=page.average_rating if hasattr(page, 'average_rating') else None,
-        rating_count=getattr(page, 'rating_count', 0),
+        rating_count=int(rating_count) if rating_count is not None else 0,
         # ADR-076: Auto-synthesis indicator
         auto_synthesized=getattr(page, '_auto_synthesized', False),
     )

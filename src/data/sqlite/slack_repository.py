@@ -177,6 +177,105 @@ class SQLiteSlackRepository:
         cursor = await self.connection.execute(query, (guild_id, workspace_id))
         return cursor.rowcount > 0
 
+    async def get_workspace_guild_links(self, workspace_id: str) -> List[str]:
+        """Get all Discord guild IDs linked to a Slack workspace.
+
+        ADR-085: Supports many-to-many Slack-to-guild relationships.
+
+        Args:
+            workspace_id: Slack workspace ID
+
+        Returns:
+            List of guild IDs with access to this workspace
+        """
+        # First check the new slack_guild_links table
+        query = """
+        SELECT guild_id FROM slack_guild_links
+        WHERE workspace_id = ?
+        ORDER BY linked_at ASC
+        """
+        rows = await self.connection.fetch_all(query, (workspace_id,))
+        guild_ids = [row["guild_id"] for row in rows]
+
+        # Also include the primary linked_guild_id from slack_workspaces
+        # (for backward compatibility - may already be in slack_guild_links)
+        workspace = await self.get_workspace(workspace_id)
+        if workspace and workspace.linked_guild_id:
+            if workspace.linked_guild_id not in guild_ids:
+                guild_ids.insert(0, workspace.linked_guild_id)
+
+        return guild_ids
+
+    async def get_workspaces_for_guild(self, guild_id: str) -> List["SlackWorkspace"]:
+        """Get all Slack workspaces linked to a Discord guild.
+
+        ADR-085: Checks both primary linked_guild_id and slack_guild_links table.
+
+        Args:
+            guild_id: Discord guild ID
+
+        Returns:
+            List of SlackWorkspace objects accessible to this guild
+        """
+        # Get workspaces from slack_guild_links
+        query = """
+        SELECT DISTINCT sw.* FROM slack_workspaces sw
+        LEFT JOIN slack_guild_links sgl ON sw.workspace_id = sgl.workspace_id
+        WHERE sw.linked_guild_id = ? OR sgl.guild_id = ?
+        AND sw.enabled = TRUE
+        """
+        rows = await self.connection.fetch_all(query, (guild_id, guild_id))
+        return [self._row_to_workspace(row) for row in rows]
+
+    async def add_guild_link(
+        self,
+        workspace_id: str,
+        guild_id: str,
+        linked_by: str,
+        can_view: bool = True,
+        can_summarize: bool = False,
+    ) -> bool:
+        """Add a guild link to a Slack workspace.
+
+        ADR-085: Enables many-to-many Slack-to-guild relationships.
+
+        Args:
+            workspace_id: Slack workspace ID
+            guild_id: Discord guild ID to add access for
+            linked_by: Discord user ID who created the link
+            can_view: Whether guild members can view Slack content
+            can_summarize: Whether guild can generate summaries
+
+        Returns:
+            True if added, False if already exists
+        """
+        query = """
+        INSERT OR IGNORE INTO slack_guild_links (
+            workspace_id, guild_id, linked_by, can_view, can_summarize
+        ) VALUES (?, ?, ?, ?, ?)
+        """
+        cursor = await self.connection.execute(
+            query, (workspace_id, guild_id, linked_by, can_view, can_summarize)
+        )
+        return cursor.rowcount > 0
+
+    async def remove_guild_link(self, workspace_id: str, guild_id: str) -> bool:
+        """Remove a guild link from a Slack workspace.
+
+        Args:
+            workspace_id: Slack workspace ID
+            guild_id: Discord guild ID to remove access for
+
+        Returns:
+            True if removed, False if not found
+        """
+        query = """
+        DELETE FROM slack_guild_links
+        WHERE workspace_id = ? AND guild_id = ?
+        """
+        cursor = await self.connection.execute(query, (workspace_id, guild_id))
+        return cursor.rowcount > 0
+
     # =========================================================================
     # Channel Operations
     # =========================================================================

@@ -134,7 +134,7 @@ export function useUpdateSlackChannel(workspaceId: string) {
 }
 
 /**
- * Link a Slack workspace to a Discord guild
+ * Link a Slack workspace to a Discord guild (legacy - uses old endpoint)
  */
 export function useLinkSlackWorkspace() {
   const queryClient = useQueryClient();
@@ -152,6 +152,86 @@ export function useLinkSlackWorkspace() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["slack", "workspaces"] });
+    },
+  });
+}
+
+// ============================================================================
+// Guild Link Hooks (ADR-085: Multi-Guild Slack Access)
+// ============================================================================
+
+export interface LinkedSlackWorkspace {
+  workspace_id: string;
+  workspace_name: string;
+  workspace_domain?: string;
+  is_primary: boolean;
+}
+
+/**
+ * Fetch Slack workspaces linked to a guild
+ */
+export function useSlackGuildLinks(guildId: string) {
+  return useQuery({
+    queryKey: ["slack", "guild-links", guildId],
+    queryFn: () =>
+      api.get<{ workspaces: LinkedSlackWorkspace[] }>(
+        `/slack/guilds/${guildId}/links`
+      ),
+    enabled: !!guildId,
+  });
+}
+
+/**
+ * Add a Slack workspace link to a guild
+ */
+export function useAddSlackGuildLink() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      guildId,
+      workspaceId,
+      canView = true,
+      canSummarize = false,
+    }: {
+      guildId: string;
+      workspaceId: string;
+      canView?: boolean;
+      canSummarize?: boolean;
+    }) =>
+      api.post(`/slack/guilds/${guildId}/links`, {
+        workspace_id: workspaceId,
+        can_view: canView,
+        can_summarize: canSummarize,
+      }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["slack", "guild-links", variables.guildId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["archive", "sources"] });
+    },
+  });
+}
+
+/**
+ * Remove a Slack workspace link from a guild
+ */
+export function useRemoveSlackGuildLink() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      guildId,
+      workspaceId,
+    }: {
+      guildId: string;
+      workspaceId: string;
+    }) => api.delete(`/slack/guilds/${guildId}/links/${workspaceId}`),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["slack", "guild-links", variables.guildId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["archive", "sources"] });
     },
   });
 }

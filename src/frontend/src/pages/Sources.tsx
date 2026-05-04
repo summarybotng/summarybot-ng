@@ -29,6 +29,7 @@ import {
   Layers,
 } from "lucide-react";
 import type { Channel } from "@/types";
+import { SlackLinkManager } from "@/components/sources/SlackLinkManager";
 
 type Platform = "all" | "discord" | "whatsapp" | "slack";
 
@@ -99,33 +100,49 @@ export function Sources() {
     // Add WhatsApp and Slack sources from archive
     if (archiveSources && guildId) {
       archiveSources.forEach((source: ArchiveSource) => {
-        // WhatsApp sources - show for the primary guild (where WhatsApp data is stored)
-        if (source.source_key.startsWith("whatsapp:")) {
+        // WhatsApp sources - only show for the guild that owns the import
+        if (source.source_key.startsWith("whatsapp:") && source.guild_id === guildId) {
           sources.push({
             id: `whatsapp-${source.source_key}`,
-            name: source.source_key.replace("whatsapp:", "").replace(/_/g, " "),
+            name: source.server_name || source.source_key.replace("whatsapp:", "").replace(/_/g, " "),
             platform: "whatsapp",
             enabled: true,
             lastActivity: source.date_range?.end,
             isArchived: true,
           });
         }
-        // Slack sources - show if server_id matches guild or linked workspace
-        if (source.source_key.startsWith("slack:") && source.server_id === guildId) {
-          sources.push({
-            id: `slack-${source.source_key}`,
-            name: source.server_name || source.source_key.replace("slack:", ""),
-            platform: "slack",
-            enabled: true,
-            lastActivity: source.date_range?.end,
-            isArchived: true,
-          });
+        // Slack sources - show if guild is in linked_guilds (ADR-085)
+        if (source.source_key.startsWith("slack:") && source.linked_guilds?.includes(guildId)) {
+          // If we have channel breakdown, show individual channels
+          if (source.channels && source.channels.length > 0) {
+            source.channels.forEach((channel) => {
+              sources.push({
+                id: `slack-${source.source_key}-${channel.channel_id}`,
+                name: `#${channel.channel_name}`,
+                platform: "slack",
+                enabled: true,
+                lastActivity: source.date_range?.end,
+                isArchived: false,
+                type: source.server_name,  // Show workspace name as type
+              });
+            });
+          } else {
+            // Fallback: show workspace level
+            sources.push({
+              id: `slack-${source.source_key}`,
+              name: source.server_name || source.source_key.replace("slack:", ""),
+              platform: "slack",
+              enabled: true,
+              lastActivity: source.date_range?.end,
+              isArchived: false,
+            });
+          }
         }
       });
     }
 
     return sources;
-  }, [guild, archiveSources]);
+  }, [guild, archiveSources, guildId]);
 
   // Apply filters and sorting
   const filteredSources = useMemo(() => {
@@ -189,12 +206,15 @@ export function Sources() {
             All channels and imports across platforms
           </p>
         </div>
-        <Button asChild variant="outline">
-          <Link to={`/guilds/${guildId}/archive`}>
-            <Upload className="mr-2 h-4 w-4" />
-            Import WhatsApp
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <SlackLinkManager guildId={guildId || ""} guildName={guild?.name} />
+          <Button asChild variant="outline">
+            <Link to={`/guilds/${guildId}/archive`}>
+              <Upload className="mr-2 h-4 w-4" />
+              Import WhatsApp
+            </Link>
+          </Button>
+        </div>
       </motion.div>
 
       {/* Platform filter buttons */}
@@ -303,8 +323,8 @@ export function Sources() {
                     <div className="flex items-center gap-3">
                       {source.isArchived && (
                         <Badge variant="secondary" className="text-xs">
-                          <Calendar className="mr-1 h-3 w-3" />
-                          Archived
+                          <Upload className="mr-1 h-3 w-3" />
+                          Imported
                         </Badge>
                       )}
                       {source.schedule && (

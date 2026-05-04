@@ -225,6 +225,7 @@ async def upload_import(
     original_filename = file.filename or "upload.txt"
 
     # Check for duplicate file
+    duplicate_id = None
     if chat_id:
         duplicate_id = await repo.check_duplicate_file(file_hash, guild_id, chat_id)
         if duplicate_id:

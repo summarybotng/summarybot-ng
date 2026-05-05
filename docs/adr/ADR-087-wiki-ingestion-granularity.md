@@ -5,9 +5,12 @@ Proposed
 
 ## Decision
 
-**Implement RuVector as the primary knowledge store. Wiki pages become rendered views.**
+**Implement RuVector as the primary knowledge store. Ingest from raw chat with channel continuity. Wiki pages become rendered views.**
 
-This supersedes the original question (daily per-channel vs cross-channel vs weekly) because ingestion granularity becomes a render-time choice, not an ingest-time decision.
+This supersedes the original question (daily per-channel vs cross-channel vs weekly):
+1. **Ingestion granularity** becomes a render-time choice, not ingest-time
+2. **Channel continuity** (longitudinal with weekly checkpoints) beats daily cross-channel stitching
+3. **Raw messages** are the preferred source; summaries are fallback for older content
 
 ## Context
 
@@ -510,60 +513,93 @@ If RuVector is primary:
 
 ## Recommendation
 
-**Implement RuVector-primary architecture. Abandon layered pre-synthesis.**
+**Implement RuVector-primary architecture. Ingest from raw chat content with channel continuity.**
 
-### Current State Assessment
+### Reframing the Question
 
-| Component | Status |
-|-----------|--------|
-| Wiki infrastructure | Implemented (models, repository, 3 agents) |
-| RuVector/ADR-057 | **Not implemented** - still proposed |
-| Vector search | Not implemented - using SQLite FTS5 |
+The original framing compared:
+- Daily per-channel summaries
+- Daily cross-channel summaries
+- Weekly same-channel summaries
 
-Since RuVector doesn't exist yet, there's no competing implementation to maintain. This is the right time to make it the foundation.
+But this comparison is unfair. **Daily cross-channel stitching** is the wrong approach to compare against. The better comparison is:
 
-### The Path Forward
+| Approach | What it does | Problem |
+|----------|--------------|---------|
+| Daily cross-channel | Horizontal stitching across channels each day | Loses thread continuity |
+| **Channel continuity** | Follow conversations longitudinally with periodic checkpoints | ✅ Preserves context |
+
+### The Channel Continuity Model
 
 ```
-Phase 1: Implement RuVector as knowledge store
-         └─ Summaries → Knowledge units → Vector embeddings + GNN
-
-Phase 2: Make wiki pages rendered views
-         └─ Query RuVector → Generate markdown on demand
-
-Phase 3: Keep markdown as cache layer
-         └─ Git history, offline access, human edit feedback
+Week 1                          Week 2                          Week 3
+┌─────────────────────┐        ┌─────────────────────┐        ┌─────────────────────┐
+│ #engineering        │        │ #engineering        │        │ #engineering        │
+│                     │        │                     │        │                     │
+│ Mon: API discussion │        │ Mon: (continues)    │        │ Mon: (continues)    │
+│ Tue: Auth debate    │───────▶│ Tue: Auth resolved  │───────▶│ Tue: Auth shipped   │
+│ ...                 │        │ ...                 │        │ ...                 │
+│                     │        │                     │        │                     │
+│ ┌─────────────────┐ │        │ ┌─────────────────┐ │        │                     │
+│ │ Week 1 Summary  │─┼────────┼▶│ Context carried │ │        │                     │
+│ │ (checkpoint)    │ │        │ │ forward         │ │        │                     │
+│ └─────────────────┘ │        │ └─────────────────┘ │        │                     │
+└─────────────────────┘        └─────────────────────┘        └─────────────────────┘
 ```
 
-### Why NOT "Implement Both and See"
+The **end-of-week summary** acts as a continuity checkpoint:
+- Carries context forward to next week
+- No need to re-read all historical messages
+- Topics spanning weeks maintain coherence
+- Avoids artificial daily boundaries
 
-1. **Layered synthesis (Layers 2-4) becomes unnecessary** - query-time aggregation handles cross-channel and temporal views
-2. **Maintaining two approaches doubles complexity** - storage, sync, consistency
-3. **The current wiki structure is compatible** - `WikiPage.source_refs`, `topics`, categories map cleanly to RuVector
+### Why Ingest from Raw Chat Content
 
-### What Changes
+| Factor | From Summaries | From Raw Chat |
+|--------|---------------|---------------|
+| Signal fidelity | Lossy (summarized) | Full context |
+| Thread continuity | Fragmented by daily cuts | Natural conversation flow |
+| Cross-references | Lost ("as John said...") | Preserved |
+| Semantic clustering | Topics split by days | Topics cluster naturally |
 
-| Current (ADR-067) | RuVector-Primary |
-|-------------------|------------------|
-| Ingest summary → Update markdown pages | Ingest summary → Store knowledge units |
-| Pre-generate cross-channel synthesis | Generate cross-channel view on query |
-| Schedule weekly rollups | Generate weekly view on request |
-| Markdown is source of truth | RuVector is source of truth |
+**Summaries become a fallback** for content beyond API retention, not the primary source.
+
+### Ingestion Priority
+
+```
+1. Raw messages (where available)
+   └─ Discord: ~90 days via API
+   └─ Slack: varies by plan
+   └─ WhatsApp: full archives imported
+
+2. End-of-week continuity checkpoints
+   └─ Carry context forward without infinite history
+   └─ Enable longitudinal coherence
+
+3. Stored summaries (fallback)
+   └─ For content beyond API retention
+   └─ Better than nothing
+```
+
+### What Changes from ADR-067
+
+| ADR-067 (Current) | RuVector-Primary + Continuity |
+|-------------------|-------------------------------|
+| Daily summaries → Wiki pages | Raw messages → Knowledge units |
+| Daily boundaries | Conversation/thread boundaries |
+| Cross-channel synthesis jobs | Query-time aggregation |
 | FTS5 keyword search | HNSW semantic search |
-
-### What Stays the Same
-
-- Summary generation (per-channel, daily)
-- Wiki page structure (topics, decisions, experts, etc.)
-- Frontend wiki UI
-- Git-backed markdown (as cache/export)
+| Markdown source of truth | RuVector source of truth |
+| No continuity mechanism | Weekly checkpoints carry context |
 
 ### Migration Path
 
-1. **Add vector embeddings to existing ingest** - `WikiIngestAgent` stores to RuVector alongside SQLite
-2. **Build query-time renderers** - `render_topic_page()`, `render_daily_digest()`, etc.
-3. **Deprecate pre-synthesis** - Remove scheduled cross-channel jobs
-4. **Flip source of truth** - RuVector primary, SQLite/markdown as cache
+1. **Implement RuVector foundation** (ADR-057)
+2. **Ingest WhatsApp archives** (full longitudinal history available)
+3. **Fetch Discord/Slack recent history** (API limits apply)
+4. **Use summaries as fallback** for older content
+5. **Add weekly continuity checkpoints** for ongoing ingestion
+6. **Build view renderers** for wiki pages on demand
 
 ---
 

@@ -330,6 +330,200 @@ Wiki ingestions: 300 + 30 + 4 = 334/month
 
 ---
 
+## Alternative Architecture: RuVector as Primary, Wiki as View
+
+### The Inversion
+
+Current architecture (ADR-067):
+```
+Summaries → Wiki pages (markdown) → RuVector indexes wiki
+                    ↑
+              Source of truth
+```
+
+Proposed inversion:
+```
+Summaries → RuVector Brain → Wiki pages generated as views
+                  ↑
+            Source of truth
+```
+
+### How It Would Work
+
+```python
+class RuVectorPrimaryStore:
+    """
+    RuVector holds all knowledge. Wiki pages are rendered views.
+    """
+
+    async def ingest_summary(self, summary: Summary):
+        """Ingest directly to RuVector, not to markdown."""
+        # 1. Extract knowledge units (claims, decisions, Q&A, etc.)
+        units = await self.extract_knowledge_units(summary)
+
+        # 2. Store each unit with full provenance
+        for unit in units:
+            await self.ruvector.store(
+                content=unit.content,
+                type=unit.type,  # claim, decision, question, action_item
+                source_id=summary.id,
+                source_channel=summary.channel_name,
+                source_date=summary.created_at,
+                embedding=await self.embed(unit.content),
+            )
+
+        # 3. GNN automatically builds relationships
+        await self.ruvector.rebuild_edges()
+
+    async def render_wiki_page(
+        self,
+        page_type: str,  # "topic", "daily_digest", "weekly_rollup", "decisions"
+        params: dict,
+    ) -> str:
+        """Generate wiki page on-demand from RuVector."""
+
+        if page_type == "topic":
+            # Semantic query for all units related to topic
+            units = await self.ruvector.search(
+                query=params["topic"],
+                limit=50,
+                threshold=0.7,
+            )
+            return self.render_topic_page(params["topic"], units)
+
+        elif page_type == "daily_digest":
+            # Query by date, aggregate across channels
+            units = await self.ruvector.query(
+                filter={"source_date": params["date"]},
+                group_by="source_channel",
+            )
+            return self.render_daily_digest(params["date"], units)
+
+        elif page_type == "weekly_rollup":
+            # Query date range, find patterns
+            units = await self.ruvector.query(
+                filter={"source_date": {"$gte": params["week_start"], "$lt": params["week_end"]}},
+            )
+            themes = await self.ruvector.cluster(units)
+            return self.render_weekly_rollup(themes)
+
+        elif page_type == "decisions":
+            # Query by type
+            units = await self.ruvector.query(
+                filter={"type": "decision"},
+                order_by="source_date",
+            )
+            return self.render_decisions_log(units)
+```
+
+### Multiple Views from Same Data
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         RUVECTOR BRAIN                                   │
+│                     (Primary Knowledge Store)                            │
+│                                                                          │
+│   ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
+│   │ Summary  │  │ Summary  │  │ Summary  │  │ Summary  │               │
+│   │ #general │  │ #eng     │  │ #product │  │ #support │               │
+│   │ May 5    │  │ May 5    │  │ May 5    │  │ May 5    │               │
+│   └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘               │
+│        │             │             │             │                       │
+│        └──────────┬──┴─────────────┴──┬──────────┘                       │
+│                   ▼                   ▼                                  │
+│            ┌─────────────────────────────────┐                           │
+│            │     Knowledge Units + GNN       │                           │
+│            │  (claims, decisions, Q&A, etc.) │                           │
+│            └─────────────────────────────────┘                           │
+│                            │                                             │
+└────────────────────────────┼─────────────────────────────────────────────┘
+                             │
+        ┌────────────────────┼────────────────────┐
+        ▼                    ▼                    ▼
+┌───────────────┐   ┌───────────────┐   ┌───────────────┐
+│  TOPIC VIEW   │   │  DAILY VIEW   │   │  WEEKLY VIEW  │
+│               │   │               │   │               │
+│ topics/       │   │ log.md        │   │ reports/      │
+│ auth.md       │   │ May 5 digest  │   │ week-19.md    │
+│ api-design.md │   │ cross-channel │   │ themes +      │
+│ (on-demand)   │   │ narrative     │   │ progress      │
+└───────────────┘   └───────────────┘   └───────────────┘
+```
+
+### Benefits of Inversion
+
+| Aspect | Wiki-Primary (Current) | RuVector-Primary |
+|--------|----------------------|------------------|
+| **Source of truth** | Markdown files | Knowledge graph |
+| **Cross-channel synthesis** | Explicit (Layer 2) | Query-time aggregation |
+| **Temporal views** | Pre-generated | Generated on-demand |
+| **Granularity** | Fixed at ingest | Flexible at render |
+| **Storage** | Duplicated (md + vectors) | Single store |
+| **Human edits** | Direct to markdown | Feed back to graph |
+| **Git versioning** | ✅ Native | ⚠️ Needs export |
+
+### Challenges
+
+1. **Git Versioning**: Markdown in git is nice for history. RuVector needs explicit snapshotting.
+2. **Human Edits**: If someone edits a wiki page, how does it propagate back?
+3. **Caching**: Generate pages on every request? Pre-render common views?
+4. **Offline Access**: Markdown works offline. RuVector requires the service.
+
+### Hybrid: RuVector Primary with Markdown Cache
+
+```python
+class HybridWikiRenderer:
+    """
+    RuVector is primary. Markdown is cached rendering.
+    """
+
+    async def get_page(self, path: str) -> str:
+        # 1. Check if cached markdown is fresh
+        cache_meta = await self.get_cache_meta(path)
+        if cache_meta and not self.is_stale(cache_meta):
+            return await self.read_cached_markdown(path)
+
+        # 2. Render from RuVector
+        page_type, params = self.parse_path(path)
+        content = await self.render_wiki_page(page_type, params)
+
+        # 3. Cache as markdown (for git, offline, human review)
+        await self.write_cached_markdown(path, content)
+
+        return content
+
+    async def on_human_edit(self, path: str, new_content: str):
+        """Human edited the markdown directly."""
+        # 1. Diff to find what changed
+        old_content = await self.render_wiki_page(...)
+        changes = self.diff(old_content, new_content)
+
+        # 2. Create correction units in RuVector
+        for change in changes:
+            await self.ruvector.store(
+                content=change.new_text,
+                type="human_correction",
+                corrects=change.old_text,
+                source_id="human_edit",
+                confidence=1.0,  # Human edits are authoritative
+            )
+
+        # 3. Re-render affected pages
+        await self.invalidate_cache(path)
+```
+
+### Implications for ADR-087 Question
+
+If RuVector is primary:
+
+- **Daily per-channel** → Just store summaries with channel+date metadata
+- **Daily cross-channel** → Query-time aggregation, no pre-synthesis needed
+- **Weekly rollup** → Query-time clustering, render on demand
+
+**The ingestion granularity question becomes moot** because granularity is a render-time choice, not an ingest-time choice.
+
+---
+
 ## Recommendation
 
 **Leverage ADR-057's capabilities** to minimize redundant synthesis:

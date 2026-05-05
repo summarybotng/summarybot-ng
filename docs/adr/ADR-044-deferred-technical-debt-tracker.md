@@ -59,6 +59,8 @@ This ADR serves as a central tracker for all deferred technical issues across th
 | P3-008 | Primary guild deletion orphans sources | ADR-026:#14 | Open | - |
 | P3-009 | Problem reporting system | ADR-039 | Proposed | - |
 | P3-010 | Google Drive sync | ADR-007 | Proposed | - |
+| P3-011 | WhatsApp fetcher not polymorphically aligned with other platforms | ADR-051 | Open | - |
+| P3-012 | WhatsApp archive integration uses inconsistent message formats | ADR-081 | Open | - |
 
 ---
 

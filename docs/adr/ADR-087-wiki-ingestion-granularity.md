@@ -5,9 +5,15 @@ Brainstorm
 
 ## Context
 
+ADR-057 describes the RuVector-enhanced wiki with powerful capabilities:
+- **HNSW Vector Index**: Semantic search understands meaning, not just keywords
+- **GNN Knowledge Graph**: Automatic relationship discovery across pages
+- **SONA Temporal Learning**: Self-improving relevance based on usage
+- **Coherence Gate**: Validates content against existing knowledge
+
 ADR-067 implements automatic wiki ingestion from **daily per-channel summaries**. Each channel generates a summary daily, which feeds the wiki independently. This creates accurate but potentially siloed knowledge.
 
-**Question**: Would **daily cross-channel summaries** or **weekly same-channel summaries** produce better wiki content than the current per-channel approach?
+**Question**: Given ADR-057's semantic capabilities, would **daily cross-channel summaries** or **weekly same-channel summaries** produce better wiki content? Or does RuVector's GNN make cross-channel synthesis redundant?
 
 ### Current Approach (ADR-067)
 
@@ -136,6 +142,45 @@ Use different granularities for different wiki sections.
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## ADR-057 Capabilities vs. Ingestion Granularity
+
+### Does RuVector Make Cross-Channel Synthesis Redundant?
+
+ADR-057's GNN can **automatically discover relationships** between wiki pages:
+
+```python
+# From ADR-057: GNN finds connections without explicit links
+relationships = await self.ruvector.classify_edge(
+    from_node=page.id,
+    to_node=candidate.id,
+    attention_heads=["topic_coherence", "temporal_proximity", "author_overlap"]
+)
+```
+
+**Key Insight**: If per-channel summaries mention the same topic (e.g., "API migration"), RuVector's semantic search and GNN will:
+1. Find both pages via HNSW similarity
+2. Infer a `relates_to` edge between them
+3. Surface both when queried
+
+**However**, there are things the GNN **cannot** infer:
+- **Causal relationships**: "Engineering discussed API migration → Product adjusted timeline"
+- **Cross-functional decisions**: "After discussion in #engineering AND #product, we decided..."
+- **Holistic narratives**: The story of what happened today across the org
+
+### Where Each Strategy Excels with ADR-057
+
+| Capability | Per-Channel (ADR-067) | Cross-Channel | Weekly |
+|------------|----------------------|---------------|--------|
+| **HNSW Semantic Search** | ✅ Finds similar topics | ✅ Same | ✅ Same |
+| **GNN Auto-Discovery** | ✅ Infers topic links | ⚠️ Links pre-made | ⚠️ Links pre-made |
+| **Causal Chains** | ❌ Siloed | ✅ LLM sees full context | ✅ Temporal context |
+| **SONA Learning** | ✅ Per-topic signals | ✅ Per-day signals | ⚠️ Weekly granularity |
+| **Coherence Gate** | ✅ Per-summary validation | ⚠️ Larger validation scope | ⚠️ Week of content |
+
+**Conclusion**: ADR-057's capabilities handle **implicit** relationships well. But **explicit** cross-channel narratives require LLM synthesis before ingestion.
 
 ---
 
@@ -287,6 +332,18 @@ Wiki ingestions: 300 + 30 + 4 = 334/month
 
 ## Recommendation
 
+**Leverage ADR-057's capabilities** to minimize redundant synthesis:
+
+### What ADR-057 Already Does Well
+- **Topic Clustering**: GNN finds related pages across channels automatically
+- **Semantic Search**: Users query "API migration" and find all related content
+- **Relationship Inference**: Pages mentioning same entities get linked
+
+### What Still Needs Explicit Synthesis
+- **Daily Narrative**: "What happened today?" requires cross-channel view
+- **Causal Chains**: "Discussion A led to decision B" needs LLM to see both
+- **Executive Summary**: High-level digest for `log.md`
+
 **Keep ADR-067 as-is**, but add:
 
 1. **Daily cross-channel synthesis** (Layer 2)
@@ -357,14 +414,15 @@ This **compositional approach** uses each layer's output as the next layer's inp
 ### Mitigations
 - Layer 2+ use summaries, not raw messages (cheaper, smaller)
 - Each layer is optional and toggleable per guild
-- Coherence Gate (ADR-057) validates cross-layer consistency
+- **ADR-057 Coherence Gate** validates cross-layer consistency
+- **ADR-057 GNN** provides automatic relationship discovery as fallback if cross-channel synthesis is disabled
 
 ---
 
 ## References
 
-- [ADR-056: Compounding Wiki Standard](./ADR-056-compounding-wiki-standard.md)
-- [ADR-057: Compounding Wiki RuVector](./ADR-057-compounding-wiki-ruvector.md)
+- **[ADR-057: Compounding Wiki RuVector](./ADR-057-compounding-wiki-ruvector.md)** - Primary reference for wiki capabilities (HNSW, GNN, SONA, Coherence Gate)
+- [ADR-056: Compounding Wiki Standard](./ADR-056-compounding-wiki-standard.md) - Baseline FTS5 implementation
 - [ADR-061: Wiki Population Strategies](./ADR-061-wiki-population-strategies.md)
-- [ADR-067: Automatic Wiki Ingestion](./ADR-067-automatic-wiki-ingestion.md)
+- [ADR-067: Automatic Wiki Ingestion](./ADR-067-automatic-wiki-ingestion.md) - Current per-channel approach
 - [Karpathy's Compounding Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)

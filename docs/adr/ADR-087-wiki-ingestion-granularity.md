@@ -1,7 +1,13 @@
 # ADR-087: Wiki Ingestion Granularity - Cross-Channel vs. Temporal Strategies
 
 ## Status
-Brainstorm
+Proposed
+
+## Decision
+
+**Implement RuVector as the primary knowledge store. Wiki pages become rendered views.**
+
+This supersedes the original question (daily per-channel vs cross-channel vs weekly) because ingestion granularity becomes a render-time choice, not an ingest-time decision.
 
 ## Context
 
@@ -308,28 +314,6 @@ class WeeklyRollup:
 
 ---
 
-## Cost Analysis
-
-### Current (ADR-067)
-```
-10 channels × $0.01/summary × 30 days = $3/month
-Wiki ingestions: 300/month
-```
-
-### With Layered Approach
-```
-Layer 1: 10 channels × $0.01 × 30 days = $3/month (unchanged)
-Layer 2: $0.02/day × 30 days = $0.60/month (cross-channel)
-Layer 3: $0.05/week × 4 weeks = $0.20/month (weekly)
-
-Total: $3.80/month (+27%)
-Wiki ingestions: 300 + 30 + 4 = 334/month
-```
-
-**Marginal cost for significantly richer wiki content.**
-
----
-
 ## Alternative Architecture: RuVector as Primary, Wiki as View
 
 ### The Inversion
@@ -526,90 +510,125 @@ If RuVector is primary:
 
 ## Recommendation
 
-**Leverage ADR-057's capabilities** to minimize redundant synthesis:
+**Implement RuVector-primary architecture. Abandon layered pre-synthesis.**
 
-### What ADR-057 Already Does Well
-- **Topic Clustering**: GNN finds related pages across channels automatically
-- **Semantic Search**: Users query "API migration" and find all related content
-- **Relationship Inference**: Pages mentioning same entities get linked
+### Current State Assessment
 
-### What Still Needs Explicit Synthesis
-- **Daily Narrative**: "What happened today?" requires cross-channel view
-- **Causal Chains**: "Discussion A led to decision B" needs LLM to see both
-- **Executive Summary**: High-level digest for `log.md`
+| Component | Status |
+|-----------|--------|
+| Wiki infrastructure | Implemented (models, repository, 3 agents) |
+| RuVector/ADR-057 | **Not implemented** - still proposed |
+| Vector search | Not implemented - using SQLite FTS5 |
 
-**Keep ADR-067 as-is**, but add:
+Since RuVector doesn't exist yet, there's no competing implementation to maintain. This is the right time to make it the foundation.
 
-1. **Daily cross-channel synthesis** (Layer 2)
-   - Input: Per-channel summaries (not raw messages)
-   - Output: `log.md` updates, `decisions/` pages
-   - Runs: End of day (after all channel summaries)
+### The Path Forward
 
-2. **Weekly rollup** (Layer 3)
-   - Input: 7 daily cross-channel summaries
-   - Output: `projects/` updates, weekly digest
-   - Runs: Sunday evening
+```
+Phase 1: Implement RuVector as knowledge store
+         └─ Summaries → Knowledge units → Vector embeddings + GNN
 
-3. **Monthly digest** (Layer 4, future)
-   - Input: 4 weekly rollups
-   - Output: Monthly reports, trend analysis
-   - Runs: 1st of month
+Phase 2: Make wiki pages rendered views
+         └─ Query RuVector → Generate markdown on demand
 
-This **compositional approach** uses each layer's output as the next layer's input, keeping context windows manageable while building progressively richer synthesis.
+Phase 3: Keep markdown as cache layer
+         └─ Git history, offline access, human edit feedback
+```
+
+### Why NOT "Implement Both and See"
+
+1. **Layered synthesis (Layers 2-4) becomes unnecessary** - query-time aggregation handles cross-channel and temporal views
+2. **Maintaining two approaches doubles complexity** - storage, sync, consistency
+3. **The current wiki structure is compatible** - `WikiPage.source_refs`, `topics`, categories map cleanly to RuVector
+
+### What Changes
+
+| Current (ADR-067) | RuVector-Primary |
+|-------------------|------------------|
+| Ingest summary → Update markdown pages | Ingest summary → Store knowledge units |
+| Pre-generate cross-channel synthesis | Generate cross-channel view on query |
+| Schedule weekly rollups | Generate weekly view on request |
+| Markdown is source of truth | RuVector is source of truth |
+| FTS5 keyword search | HNSW semantic search |
+
+### What Stays the Same
+
+- Summary generation (per-channel, daily)
+- Wiki page structure (topics, decisions, experts, etc.)
+- Frontend wiki UI
+- Git-backed markdown (as cache/export)
+
+### Migration Path
+
+1. **Add vector embeddings to existing ingest** - `WikiIngestAgent` stores to RuVector alongside SQLite
+2. **Build query-time renderers** - `render_topic_page()`, `render_daily_digest()`, etc.
+3. **Deprecate pre-synthesis** - Remove scheduled cross-channel jobs
+4. **Flip source of truth** - RuVector primary, SQLite/markdown as cache
 
 ---
 
 ## Success Metrics
 
-| Metric | Current | With Layers |
-|--------|---------|-------------|
-| Cross-page links discovered | ~2/page | ~5/page |
+| Metric | Current (ADR-067) | RuVector-Primary |
+|--------|-------------------|------------------|
+| Cross-page links discovered | ~2/page (manual) | ~5/page (GNN auto) |
+| Search relevance | 70% (FTS5 keyword) | 90% (HNSW semantic) |
 | Time to find related info | ~30s | ~10s |
-| Decision traceability | 40% | 80% |
-| Wiki staleness (topics) | <1 day | <1 day |
-| Wiki staleness (projects) | N/A | <7 days |
+| Query flexibility | Fixed pages | Any granularity on demand |
+| Scheduled synthesis jobs | 1/channel/day + cross-channel | 0 (query-time) |
+| Storage duplication | wiki_pages + summaries | Single knowledge store + cache |
 
 ---
 
 ## Implementation Phases
 
-### Phase 1: Daily Cross-Channel (2 weeks)
-- [ ] Create `CrossChannelSynthesizer` class
-- [ ] Scheduled job: end-of-day synthesis
-- [ ] Update `log.md` template for cross-channel format
-- [ ] Add `decisions/` auto-extraction
+### Phase 1: RuVector Foundation (ADR-057)
+- [ ] Implement vector store with HNSW index
+- [ ] Knowledge unit extraction from summaries
+- [ ] Embedding pipeline (text-embedding-3-small)
+- [ ] Basic semantic search
 
-### Phase 2: Weekly Rollup (1 week)
-- [ ] Create `WeeklyRollup` class
-- [ ] Scheduled job: Sunday synthesis
-- [ ] Project page templates
-- [ ] Week-over-week comparison
+### Phase 2: Wiki View Renderers
+- [ ] `render_topic_page(topic)` - semantic query + format
+- [ ] `render_daily_digest(date)` - date filter + cross-channel aggregate
+- [ ] `render_weekly_rollup(week)` - date range + clustering
+- [ ] `render_decisions_log()` - type filter
 
-### Phase 3: Evaluation (2 weeks)
-- [ ] A/B test wiki quality (user survey)
-- [ ] Measure search success rate
-- [ ] Track cross-reference usage
+### Phase 3: Hybrid Cache Layer
+- [ ] Markdown generation from RuVector queries
+- [ ] Staleness tracking (invalidate on new ingests)
+- [ ] Human edit feedback loop to RuVector
+- [ ] Git export for version history
+
+### Phase 4: Migration & Deprecation
+- [ ] Backfill existing wiki sources to RuVector
+- [ ] Parallel operation (both stores)
+- [ ] Flip source of truth
+- [ ] Remove pre-synthesis scheduled jobs
 
 ---
 
 ## Consequences
 
 ### Positive
-- Richer wiki with cross-channel insights
-- Temporal patterns visible in weekly rollups
-- Better executive/management view
-- Compositional (layers build on each other)
+- **Single source of truth** - RuVector holds all knowledge, no sync issues
+- **Flexible granularity** - Daily/weekly/topic views generated on demand
+- **No pre-synthesis jobs** - Simpler scheduling, no cascading failures
+- **Semantic search** - HNSW understands intent, not just keywords
+- **Automatic relationships** - GNN discovers connections without explicit links
+- **Coherence validation** - Gate prevents hallucination accumulation
 
 ### Negative
-- Additional LLM costs (~27%)
-- More scheduled jobs to maintain
-- Potential for synthesis errors to compound
+- **RuVector dependency** - Must implement ADR-057 first
+- **Compute costs shift** - From scheduled synthesis to query-time rendering
+- **Cache invalidation** - Must track when to regenerate markdown
+- **Migration complexity** - Existing wiki data needs backfill to RuVector
 
 ### Mitigations
-- Layer 2+ use summaries, not raw messages (cheaper, smaller)
-- Each layer is optional and toggleable per guild
-- **ADR-057 Coherence Gate** validates cross-layer consistency
-- **ADR-057 GNN** provides automatic relationship discovery as fallback if cross-channel synthesis is disabled
+- **Hybrid cache** - Markdown persists for offline/git, regenerated on staleness
+- **Progressive migration** - Run both stores in parallel during transition
+- **Render caching** - Cache popular views, invalidate on new ingests
+- **Backfill tooling** - Script to embed existing wiki sources into RuVector
 
 ---
 

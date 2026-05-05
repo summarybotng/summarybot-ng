@@ -28,6 +28,8 @@ Jinja2 = ">=3.1.0"
 google-auth = ">=2.0.0"  # ADR-049: Google Workspace SSO
 google-api-python-client = ">=2.0.0"  # ADR-082: Google Drive Import
 dnspython = ">=2.4.0"  # ADR-079: DNS TXT record verification for custom domains
+openai = ">=1.0.0"  # ADR-057: RuVector embeddings (text-embedding-3-small)
+numpy = ">=1.24.0"  # ADR-057: Vector operations
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.4.0"

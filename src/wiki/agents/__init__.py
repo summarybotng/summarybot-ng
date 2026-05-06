@@ -56,10 +56,9 @@ async def create_ingest_agent(
                 EdgeInferenceEngine,
                 CoherenceGate,
             )
-            from ...data.sqlite.connection import SQLiteConnection
 
-            # Get database connection
-            connection = SQLiteConnection.get_instance()
+            # Get database connection from repository
+            connection = repository.connection
 
             # Initialize RuVector components
             embedding_service = EmbeddingService()

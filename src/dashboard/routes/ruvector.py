@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Path
 from pydantic import BaseModel, Field
 
 from ..auth import get_current_user
-from . import get_wiki_repository
+from . import get_wiki_repository, get_database_connection
 
 logger = logging.getLogger(__name__)
 
@@ -431,11 +431,10 @@ async def get_stats(
 async def _get_vector_store(guild_id: str):
     """Get or create vector store for a guild."""
     from src.wiki.ruvector import VectorStore, EmbeddingService
-    from src.data.sqlite.connection import SQLiteConnection
-
+    
     # Get database connection
     # In production, this would be injected via dependency
-    connection = SQLiteConnection.get_instance()
+    connection = await get_database_connection()
 
     embedding_service = EmbeddingService()
     return VectorStore(connection=connection, embedding_service=embedding_service)
@@ -656,8 +655,7 @@ async def process_single_page(
         EdgeInferenceEngine,
         WikiViewRenderer,
     )
-    from src.data.sqlite.connection import SQLiteConnection
-
+    
     try:
         # Get wiki repository
         wiki_repo = await get_wiki_repository()
@@ -684,7 +682,7 @@ async def process_single_page(
             )
 
         # Initialize RuVector components
-        connection = SQLiteConnection.get_instance()
+        connection = await get_database_connection()
         embedding_service = EmbeddingService()
         vector_store = VectorStore(connection=connection, embedding_service=embedding_service)
         extractor = KnowledgeExtractor(embedding_service=embedding_service)
@@ -830,9 +828,8 @@ async def get_backfill_status(
     """
     try:
         from src.wiki.ruvector import RuVectorBackfill, VectorStore, KnowledgeExtractor, EmbeddingService
-        from src.data.sqlite.connection import SQLiteConnection
-
-        connection = SQLiteConnection.get_instance()
+        
+        connection = await get_database_connection()
         embedding_service = EmbeddingService()
         vector_store = VectorStore(connection=connection, embedding_service=embedding_service)
         extractor = KnowledgeExtractor(embedding_service=embedding_service)
@@ -870,9 +867,8 @@ async def start_backfill(
     """
     try:
         from src.wiki.ruvector import RuVectorBackfill, VectorStore, KnowledgeExtractor, EmbeddingService, EdgeInferenceEngine
-        from src.data.sqlite.connection import SQLiteConnection
-
-        connection = SQLiteConnection.get_instance()
+        
+        connection = await get_database_connection()
         embedding_service = EmbeddingService()
         vector_store = VectorStore(connection=connection, embedding_service=embedding_service)
         extractor = KnowledgeExtractor(embedding_service=embedding_service)

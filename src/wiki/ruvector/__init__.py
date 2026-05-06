@@ -29,6 +29,10 @@ from .vector_store import VectorStore
 from .ingest_integration import RuVectorIngestIntegration, RuVectorIngestHook
 from .edge_inference import EdgeInferenceEngine
 from .view_renderer import WikiViewRenderer, RenderedView
+# Phase 3: Learning, validation, and backfill
+from .coherence_gate import CoherenceGate, ValidationResult, CoherenceIssue, IssueType
+from .sona_learning import SONALearning, RelevanceScore
+from .backfill import RuVectorBackfill, BackfillProgress, BackfillResult
 
 __all__ = [
     # Models
@@ -53,4 +57,14 @@ __all__ = [
     "EdgeInferenceEngine",
     "WikiViewRenderer",
     "RenderedView",
+    # Phase 3: Learning, validation, and backfill
+    "CoherenceGate",
+    "ValidationResult",
+    "CoherenceIssue",
+    "IssueType",
+    "SONALearning",
+    "RelevanceScore",
+    "RuVectorBackfill",
+    "BackfillProgress",
+    "BackfillResult",
 ]

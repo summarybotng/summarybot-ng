@@ -195,8 +195,8 @@ export interface Schedule {
   // ADR-034: Guild prompt templates
   prompt_template_id?: string;
   prompt_template_name?: string;
-  // ADR-051: Platform support
-  platform?: "discord" | "slack";
+  // ADR-051: Platform support (ADR-088: added whatsapp)
+  platform?: "discord" | "slack" | "whatsapp";
   // ADR-087: Weekly continuity summaries
   enable_continuity?: boolean;
 }

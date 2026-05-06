@@ -14,6 +14,7 @@ import { Archive, Hash, Globe, Mail, FileCode, AlertTriangle, MessageCircle, Mes
 import type { Schedule, SummaryOptions, Destination, Channel, Category, PromptTemplate } from "@/types";
 import { ScopeSelector, type ScopeSelectorValue, type ScopeType } from "@/components/ScopeSelector";
 import { useCheckChannelPrivacy, type PrivacyWarning } from "@/hooks/useChannelPrivacy";
+import { WhatsAppChatSelector } from "./WhatsAppChatSelector";
 
 const TIMEZONES = [
   "America/Toronto",
@@ -64,8 +65,8 @@ export interface ScheduleFormData {
   min_messages: number;  // Minimum messages required (default 5, set to 1 for low-activity)
   // ADR-034: Guild prompt templates
   prompt_template_id: string | null;
-  // ADR-051: Platform selection
-  platform: "discord" | "slack";
+  // ADR-051: Platform selection (ADR-088: added whatsapp)
+  platform: "discord" | "slack" | "whatsapp";
   // ADR-087: Weekly continuity summaries
   enable_continuity: boolean;
   // ADR-005: Delivery destinations
@@ -145,12 +146,17 @@ export function ScheduleForm({ formData, onChange, channels = [], categories = [
         />
       </div>
 
-      {/* ADR-051: Platform Selection */}
+      {/* ADR-051: Platform Selection (ADR-088: added WhatsApp) */}
       <div className="space-y-2">
         <label className="text-sm font-medium">Platform</label>
         <Select
           value={formData.platform}
-          onValueChange={(v) => onChange({ ...formData, platform: v as "discord" | "slack" })}
+          onValueChange={(v) => {
+            const newPlatform = v as "discord" | "slack" | "whatsapp";
+            // ADR-088: WhatsApp only supports channel scope (no categories/guild)
+            const newScope = newPlatform === "whatsapp" ? "channel" : formData.scope;
+            onChange({ ...formData, platform: newPlatform, scope: newScope });
+          }}
         >
           <SelectTrigger>
             <SelectValue />
@@ -168,26 +174,42 @@ export function ScheduleForm({ formData, onChange, channels = [], categories = [
                 Slack
               </span>
             </SelectItem>
+            <SelectItem value="whatsapp">
+              <span className="flex items-center gap-2">
+                <span className="text-base">📱</span>
+                WhatsApp
+              </span>
+            </SelectItem>
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
           {formData.platform === "slack"
             ? "Fetch messages from connected Slack workspace"
+            : formData.platform === "whatsapp"
+            ? "Summarize imported WhatsApp chats"
             : "Fetch messages from Discord server channels"}
         </p>
       </div>
 
-      {/* ADR-011: Scope Selection */}
-      <ScopeSelector
-        value={scopeValue}
-        onChange={handleScopeChange}
-        channels={channels}
-        categories={categories}
-        compact
-      />
+      {/* ADR-011: Scope Selection / ADR-088: WhatsApp Chat Selection */}
+      {formData.platform === "whatsapp" ? (
+        <WhatsAppChatSelector
+          guildId={guildId}
+          selectedChatIds={formData.channel_ids}
+          onChange={(chatIds) => onChange({ ...formData, channel_ids: chatIds })}
+        />
+      ) : (
+        <ScopeSelector
+          value={scopeValue}
+          onChange={handleScopeChange}
+          channels={channels}
+          categories={categories}
+          compact
+        />
+      )}
 
-      {/* ADR-046: Privacy Warning for Private Channels */}
-      {privacyWarnings.length > 0 && (
+      {/* ADR-046: Privacy Warning for Private Channels (Discord only) */}
+      {formData.platform === "discord" && privacyWarnings.length > 0 && (
         <Alert variant="warning">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Privacy Notice</AlertTitle>

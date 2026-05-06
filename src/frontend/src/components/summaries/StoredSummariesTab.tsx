@@ -9,7 +9,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
-import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, usePushToDM, useSendToEmail, useRegenerateSummary, type SummarySourceType, type RegenerateOptions } from "@/hooks/useStoredSummaries";
+import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, usePushToDM, useSendToEmail, useRegenerateSummary, useSummaryWikiPages, type SummarySourceType, type RegenerateOptions } from "@/hooks/useStoredSummaries";
 import { useGuild } from "@/hooks/useGuilds";
 import { useAuthStore } from "@/stores/authStore";
 import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
@@ -63,6 +63,7 @@ import {
   ChevronUp,
   Hash,
   Lock,
+  BookOpen,  // ADR-086: Wiki navigation
 } from "lucide-react";
 import {
   Select,
@@ -1046,6 +1047,12 @@ function StoredSummaryDetailSheet({
   const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
   const [regenerateOptions, setRegenerateOptions] = useState<RegenerateOptions>({});
 
+  // ADR-086: Fetch wiki pages that reference this summary
+  const { data: wikiPagesData } = useSummaryWikiPages(
+    guildId,
+    summary?.wiki_ingested ? summaryId : null
+  );
+
   // Set browser title to summary title
   useEffect(() => {
     if (summary?.title && open) {
@@ -1320,6 +1327,48 @@ function StoredSummaryDetailSheet({
               {/* References (ADR-004) */}
               {summary.references && summary.references.length > 0 && (
                 <ReferencesCard references={summary.references} formatTime={formatTime} />
+              )}
+
+              {/* ADR-086: Wiki Pages - Bidirectional navigation */}
+              {summary.wiki_ingested && (
+                <Card className="bg-green-500/5 border-green-500/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <BookOpen className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      Used in Wiki
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Ingested {summary.wiki_ingested_at ? formatDateTime(summary.wiki_ingested_at) : ""}
+                    </p>
+                    {wikiPagesData && wikiPagesData.wiki_pages.length > 0 ? (
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">
+                          Pages updated ({wikiPagesData.total_pages}):
+                        </p>
+                        <ul className="space-y-1">
+                          {wikiPagesData.wiki_pages.map((page) => (
+                            <li key={page.path} className="flex items-center gap-2">
+                              <FileText className="h-3 w-3 text-muted-foreground" />
+                              <a
+                                href={`/guilds/${guildId}/wiki/${page.path}`}
+                                className="text-sm text-primary hover:underline flex items-center gap-1"
+                              >
+                                {page.title}
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">
+                        No wiki pages reference this summary yet.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
               )}
 
               {/* ADR-010: How This Summary Was Generated - ALL METADATA */}

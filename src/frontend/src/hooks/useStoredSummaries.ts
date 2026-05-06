@@ -403,3 +403,35 @@ export function useBulkRegenerateSummaries(guildId: string) {
     },
   });
 }
+
+// ============================================================================
+// ADR-086: Bidirectional Summary-Wiki Navigation
+// ============================================================================
+
+export interface WikiPageForSummary {
+  path: string;
+  title: string;
+  updated_at: string | null;
+}
+
+export interface SummaryWikiPagesResponse {
+  summary_id: string;
+  wiki_pages: WikiPageForSummary[];
+  total_pages: number;
+}
+
+/**
+ * ADR-086: Fetch wiki pages that reference a specific summary.
+ * Enables bidirectional navigation from summary detail to wiki.
+ */
+export function useSummaryWikiPages(guildId: string, summaryId: string | null) {
+  return useQuery({
+    queryKey: ["summary-wiki-pages", guildId, summaryId],
+    queryFn: () =>
+      api.get<SummaryWikiPagesResponse>(
+        `/guilds/${guildId}/stored-summaries/${summaryId}/wiki-pages`
+      ),
+    enabled: !!guildId && !!summaryId,
+    staleTime: 60 * 1000, // Cache for 1 minute
+  });
+}

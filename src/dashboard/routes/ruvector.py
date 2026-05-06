@@ -424,6 +424,75 @@ async def get_stats(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get(
+    "/guilds/{guild_id}/units",
+    response_model=SemanticSearchResponse,
+    summary="List knowledge units",
+    description="ADR-057: List all knowledge units for a guild (no semantic search)",
+)
+async def list_units(
+    guild_id: str = Path(..., description="Guild ID"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum results"),
+    unit_type: Optional[str] = Query(None, description="Filter by unit type"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    List knowledge units without semantic search.
+
+    Useful for viewing extracted units when embeddings aren't configured.
+    """
+    try:
+        connection = await get_database_connection()
+
+        # Build query
+        query = """
+        SELECT id, guild_id, content, unit_type, source_id, source_channel, source_date
+        FROM wiki_knowledge_units
+        WHERE guild_id = ?
+        """
+        params = [guild_id]
+
+        if unit_type:
+            query += " AND unit_type = ?"
+            params.append(unit_type)
+
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        rows = await connection.fetch_all(query, tuple(params))
+
+        units = []
+        for row in rows:
+            source_date = None
+            if row.get("source_date"):
+                try:
+                    source_date = row["source_date"]
+                except:
+                    pass
+
+            units.append(KnowledgeUnitResponse(
+                id=row["id"],
+                content=row["content"],
+                unit_type=row["unit_type"],
+                score=1.0,
+                source_id=row["source_id"] or "",
+                source_channel=row.get("source_channel"),
+                source_date=source_date,
+            ))
+
+        return SemanticSearchResponse(
+            query="(list all)",
+            guild_id=guild_id,
+            total=len(units),
+            units=units,
+            search_time_ms=0,
+        )
+
+    except Exception as e:
+        logger.exception(f"List units failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # -------------------------------------------------------------------------
 # Helper Functions
 # -------------------------------------------------------------------------
@@ -626,6 +695,7 @@ class ProcessPageResponse(BaseModel):
     units_created: int
     edges_created: int
     ruvector_view: Optional[RenderedViewResponse] = None
+    units: List[KnowledgeUnitResponse] = []  # The actual extracted units
 
 
 @router.post(
@@ -768,6 +838,20 @@ async def process_single_page(
             f"{len(sources)} sources, {units_created} units, {edges_created} edges"
         )
 
+        # Convert units to response format
+        unit_responses = [
+            KnowledgeUnitResponse(
+                id=u.id,
+                content=u.content,
+                unit_type=u.unit_type.value,
+                score=1.0,
+                source_id=u.source_id or "",
+                source_channel=u.source_channel,
+                source_date=u.source_date.isoformat() if u.source_date else None,
+            )
+            for u in all_units
+        ]
+
         return ProcessPageResponse(
             guild_id=guild_id,
             page_path=path,
@@ -775,6 +859,7 @@ async def process_single_page(
             units_created=units_created,
             edges_created=edges_created,
             ruvector_view=ruvector_view,
+            units=unit_responses,
         )
 
     except HTTPException:

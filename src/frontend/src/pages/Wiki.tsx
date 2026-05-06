@@ -393,6 +393,16 @@ async function cancelBackfill(guildId: string): Promise<{ success: boolean }> {
 }
 
 // ADR-057: RuVector single page processing
+interface RuVectorUnit {
+  id: string;
+  content: string;
+  unit_type: string;
+  score: number;
+  source_id: string;
+  source_channel?: string;
+  source_date?: string;
+}
+
 interface RuVectorProcessResult {
   guild_id: string;
   page_path: string;
@@ -406,6 +416,7 @@ interface RuVectorProcessResult {
     source_count: number;
     generated_at: string;
   };
+  units: RuVectorUnit[];
 }
 
 async function processPageWithRuVector(
@@ -625,14 +636,12 @@ function WikiPageView({ page }: { page: WikiPage }) {
   });
 
   // ADR-057: RuVector processing mutation
-  const [ruvectorView, setRuvectorView] = useState<string | null>(null);
+  const [ruvectorResult, setRuvectorResult] = useState<RuVectorProcessResult | null>(null);
   const ruvectorMutation = useMutation({
     mutationFn: () => processPageWithRuVector(guildId!, page.path),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["wiki-page", guildId, page.path] });
-      if (data.ruvector_view) {
-        setRuvectorView(data.ruvector_view.content);
-      }
+      setRuvectorResult(data);
       toast({
         title: "RuVector processing complete",
         description: `${data.units_created} knowledge units, ${data.edges_created} edges`,
@@ -835,9 +844,9 @@ function WikiPageView({ page }: { page: WikiPage }) {
           <TabsTrigger value="ruvector" className="gap-2">
             <Zap className="h-4 w-4" />
             RuVector
-            {ruvectorView && (
+            {ruvectorResult && ruvectorResult.units.length > 0 && (
               <Badge variant="secondary" className="ml-1 text-xs bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">
-                Ready
+                {ruvectorResult.units_created}
               </Badge>
             )}
           </TabsTrigger>
@@ -941,19 +950,127 @@ function WikiPageView({ page }: { page: WikiPage }) {
         </TabsContent>
 
         <TabsContent value="ruvector" className="mt-4">
-          {ruvectorView ? (
-            <Card>
-              <CardContent className="pt-6">
-                <MarkdownContent content={ruvectorView} />
-                <div className="mt-4 pt-4 border-t flex items-center gap-4 text-sm text-muted-foreground">
-                  <Badge variant="secondary" className="text-xs bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">
-                    <Zap className="h-3 w-3 mr-1" />
-                    RuVector View
-                  </Badge>
-                  <span>Semantic extraction with knowledge units</span>
-                </div>
-              </CardContent>
-            </Card>
+          {ruvectorResult && ruvectorResult.units.length > 0 ? (
+            <div className="space-y-4">
+              {/* Summary stats */}
+              <div className="flex gap-4 flex-wrap">
+                <Badge variant="secondary" className="text-xs bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">
+                  <Zap className="h-3 w-3 mr-1" />
+                  {ruvectorResult.units_created} units
+                </Badge>
+                <Badge variant="outline" className="text-xs">
+                  {ruvectorResult.sources_processed} sources
+                </Badge>
+                <Badge variant="outline" className="text-xs">
+                  {ruvectorResult.units.filter(u => u.unit_type === "claim").length} claims
+                </Badge>
+                <Badge variant="outline" className="text-xs">
+                  {ruvectorResult.units.filter(u => u.unit_type === "action_item").length} action items
+                </Badge>
+              </div>
+
+              {/* Claims */}
+              {ruvectorResult.units.filter(u => u.unit_type === "claim").length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Key Facts ({ruvectorResult.units.filter(u => u.unit_type === "claim").length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {ruvectorResult.units
+                        .filter(u => u.unit_type === "claim")
+                        .slice(0, 20)
+                        .map((unit) => (
+                          <li key={unit.id} className="flex gap-2 text-sm">
+                            <span className="text-muted-foreground">•</span>
+                            <span>{unit.content}</span>
+                          </li>
+                        ))}
+                    </ul>
+                    {ruvectorResult.units.filter(u => u.unit_type === "claim").length > 20 && (
+                      <p className="text-sm text-muted-foreground mt-2">
+                        ... and {ruvectorResult.units.filter(u => u.unit_type === "claim").length - 20} more
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Decisions */}
+              {ruvectorResult.units.filter(u => u.unit_type === "decision").length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Check className="h-4 w-4" />
+                      Decisions ({ruvectorResult.units.filter(u => u.unit_type === "decision").length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {ruvectorResult.units
+                        .filter(u => u.unit_type === "decision")
+                        .map((unit) => (
+                          <li key={unit.id} className="flex gap-2 text-sm">
+                            <Badge variant="outline" className="shrink-0">{unit.source_date?.slice(0, 10) || "—"}</Badge>
+                            <span>{unit.content}</span>
+                          </li>
+                        ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Action Items */}
+              {ruvectorResult.units.filter(u => u.unit_type === "action_item").length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4" />
+                      Action Items ({ruvectorResult.units.filter(u => u.unit_type === "action_item").length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {ruvectorResult.units
+                        .filter(u => u.unit_type === "action_item")
+                        .map((unit) => (
+                          <li key={unit.id} className="flex gap-2 text-sm items-start">
+                            <input type="checkbox" disabled className="mt-1" />
+                            <span>{unit.content}</span>
+                          </li>
+                        ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Questions */}
+              {ruvectorResult.units.filter(u => u.unit_type === "question").length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <HelpCircle className="h-4 w-4" />
+                      Questions ({ruvectorResult.units.filter(u => u.unit_type === "question").length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {ruvectorResult.units
+                        .filter(u => u.unit_type === "question")
+                        .map((unit) => (
+                          <li key={unit.id} className="flex gap-2 text-sm">
+                            <span className="text-muted-foreground">?</span>
+                            <span>{unit.content}</span>
+                          </li>
+                        ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           ) : (
             <Card>
               <CardContent className="py-12 text-center">

@@ -7,6 +7,7 @@ as a reference for implementation.
 
 import asyncio
 import pytest
+import pytest_asyncio
 from datetime import datetime
 from pathlib import Path
 
@@ -39,7 +40,7 @@ from src.models.task import (
 from src.config.settings import GuildConfig, PermissionSettings
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_db():
     """Create a test database."""
     db_path = "tests/data/test_summarybot.db"

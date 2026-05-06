@@ -67,7 +67,6 @@ async def create_ingest_agent(
                 embedding_service=embedding_service,
             )
             knowledge_extractor = KnowledgeExtractor(
-                embedding_service=embedding_service,
                 claude_client=llm_client,
             )
             edge_inference = EdgeInferenceEngine(vector_store=vector_store)

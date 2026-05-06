@@ -685,7 +685,7 @@ async def process_single_page(
         connection = await get_database_connection()
         embedding_service = EmbeddingService()
         vector_store = VectorStore(connection=connection, embedding_service=embedding_service)
-        extractor = KnowledgeExtractor(embedding_service=embedding_service)
+        extractor = KnowledgeExtractor()
         edge_inference = EdgeInferenceEngine(vector_store=vector_store)
 
         # Fetch source documents
@@ -832,7 +832,7 @@ async def get_backfill_status(
         connection = await get_database_connection()
         embedding_service = EmbeddingService()
         vector_store = VectorStore(connection=connection, embedding_service=embedding_service)
-        extractor = KnowledgeExtractor(embedding_service=embedding_service)
+        extractor = KnowledgeExtractor()
 
         backfill = RuVectorBackfill(
             wiki_connection=connection,
@@ -871,7 +871,7 @@ async def start_backfill(
         connection = await get_database_connection()
         embedding_service = EmbeddingService()
         vector_store = VectorStore(connection=connection, embedding_service=embedding_service)
-        extractor = KnowledgeExtractor(embedding_service=embedding_service)
+        extractor = KnowledgeExtractor()
         edge_inference = EdgeInferenceEngine(vector_store=vector_store)
 
         backfill = RuVectorBackfill(

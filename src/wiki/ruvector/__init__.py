@@ -25,6 +25,10 @@ from .models import (
 from .embeddings import EmbeddingService
 from .knowledge_extractor import KnowledgeExtractor
 from .vector_store import VectorStore
+# Phase 2: Integration and inference
+from .ingest_integration import RuVectorIngestIntegration, RuVectorIngestHook
+from .edge_inference import EdgeInferenceEngine
+from .view_renderer import WikiViewRenderer, RenderedView
 
 __all__ = [
     # Models
@@ -39,8 +43,14 @@ __all__ = [
     "ContinuityCheckpoint",
     "SearchResult",
     "ExtractionResult",
-    # Services
+    # Phase 1: Core services
     "EmbeddingService",
     "KnowledgeExtractor",
     "VectorStore",
+    # Phase 2: Integration and inference
+    "RuVectorIngestIntegration",
+    "RuVectorIngestHook",
+    "EdgeInferenceEngine",
+    "WikiViewRenderer",
+    "RenderedView",
 ]

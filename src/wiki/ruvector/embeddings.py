@@ -68,12 +68,13 @@ class EmbeddingService:
 
                 api_key = self._api_key or os.getenv("OPENAI_API_KEY")
                 if not api_key:
-                    raise ValueError("OPENAI_API_KEY not set")
+                    logger.warning("OPENAI_API_KEY not set, using mock embeddings")
+                    return None
 
                 self._client = AsyncOpenAI(api_key=api_key)
             except ImportError:
                 logger.warning("OpenAI package not installed, using mock embeddings")
-                self._client = None
+                return None
         return self._client
 
     def _cache_key(self, text: str) -> str:

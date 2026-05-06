@@ -187,6 +187,7 @@ from .issues import router as issues_router  # ADR-070
 from .coverage import router as coverage_router  # ADR-072
 from .tenants import router as tenants_router  # ADR-079
 from .whatsapp_imports import router as whatsapp_imports_router  # ADR-081
+from .ruvector import router as ruvector_router  # ADR-057
 
 __all__ = [
     "auth_router",
@@ -211,6 +212,7 @@ __all__ = [
     "coverage_router",
     "tenants_router",
     "whatsapp_imports_router",
+    "ruvector_router",
     "set_services",
     "get_discord_bot",
     "get_summarization_engine",

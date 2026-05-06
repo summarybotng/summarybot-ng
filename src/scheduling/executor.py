@@ -23,11 +23,13 @@ from .delivery import (
     EmailDeliveryStrategy,
     DashboardDeliveryStrategy,
 )
-from ..models.task import TaskResult, DestinationType, ScheduledTask, Destination, SummaryScope
+from ..models.task import TaskResult, DestinationType, ScheduledTask, Destination, SummaryScope, ScheduleType
 # ADR-051: Platform fetcher abstraction for multi-platform support
 from ..dashboard.platforms import get_platform_fetcher
 from ..models.summary import SummaryResult, SummarizationContext
 from ..models.stored_summary import StoredSummary
+# ADR-087: Weekly continuity support
+from ..data.repositories import get_stored_summary_repository
 from ..models.error_log import ErrorType, ErrorSeverity
 from ..exceptions import (
     SummaryBotException, InsufficientContentError,
@@ -418,6 +420,9 @@ class TaskExecutor:
         # ADR-035: Returns tuple (content, name, id)
         template_content, template_name, template_id = await self._get_template_content(task)
 
+        # ADR-087: Build continuity context for weekly summaries
+        continuity_context, continuity_week_number, previous_summary_id = await self._build_continuity_context(task)
+
         try:
             # Get time range for messages
             start_msg_time, end_msg_time = task.get_time_range()
@@ -545,15 +550,25 @@ class TaskExecutor:
                 message_types={"text": len(all_messages)}
             )
 
+            # ADR-087: Combine continuity context with template content
+            # Continuity context is prepended to provide previous week's context
+            effective_system_prompt = template_content
+            if continuity_context:
+                if effective_system_prompt:
+                    effective_system_prompt = continuity_context + "\n\n" + effective_system_prompt
+                else:
+                    effective_system_prompt = continuity_context
+
             # Generate summary
             # ADR-034: Pass custom system prompt from guild template if configured
+            # ADR-087: Includes continuity context for weekly summaries
             summary_result = await self.summarization_engine.summarize_messages(
                 messages=all_messages,
                 options=task.summary_options,
                 context=context,
                 channel_id=task.channel_id,  # Primary channel for storage
                 guild_id=task.guild_id,
-                custom_system_prompt=template_content
+                custom_system_prompt=effective_system_prompt
             )
 
             logger.info(f"Generated summary {summary_result.id}")
@@ -572,6 +587,16 @@ class TaskExecutor:
             if task.scheduled_task and task.scheduled_task.scope:
                 summary_result.metadata["scope_type"] = task.scheduled_task.scope.value
             summary_result.metadata["scope_channel_ids"] = channel_ids
+
+            # ADR-087: Store continuity metadata for weekly summaries
+            if continuity_week_number > 0:
+                summary_result.metadata["continuity_week_number"] = continuity_week_number
+                summary_result.metadata["previous_summary_id"] = previous_summary_id
+                summary_result.metadata["archive_granularity"] = "weekly"
+                logger.info(
+                    f"ADR-087: Summary {summary_result.id} is Week {continuity_week_number} "
+                    f"in continuity chain (previous: {previous_summary_id})"
+                )
 
             # ADR-041: Add soft-fail access tracking to metadata
             if channels_skipped:
@@ -943,6 +968,79 @@ class TaskExecutor:
             pass
 
         return f"Channel {channel_id}"
+
+    async def _build_continuity_context(
+        self,
+        task: SummaryTask,
+    ) -> tuple[str, int, Optional[str]]:
+        """
+        ADR-087: Build context from previous week's summary for continuity.
+
+        Returns:
+            Tuple of (context_text, week_number, previous_summary_id).
+            Returns ("", 0, None) if continuity is not enabled or not applicable.
+        """
+        # Only build continuity for weekly tasks with enable_continuity=True
+        if not getattr(task.scheduled_task, 'enable_continuity', False):
+            return "", 0, None
+
+        if task.scheduled_task.schedule_type != ScheduleType.WEEKLY:
+            return "", 0, None
+
+        try:
+            summary_repo = await get_stored_summary_repository()
+
+            # Get the primary channel for continuity lookup
+            channel_ids = task.get_all_channel_ids()
+            if not channel_ids:
+                return "", 1, None  # First week, no previous context
+
+            primary_channel_id = channel_ids[0]
+
+            previous = await summary_repo.get_previous_weekly_summary(
+                guild_id=task.guild_id,
+                channel_id=primary_channel_id,
+                before_date=utc_now_naive(),
+            )
+
+            if not previous:
+                logger.info(f"ADR-087: First week in continuity chain for channel {primary_channel_id}")
+                return "", 1, None  # First week in continuity chain
+
+            week_number = (previous.continuity_week_number or 0) + 1
+            previous_week = previous.continuity_week_number or 1
+
+            # Build context from previous summary
+            previous_result = previous.summary_result
+            if not previous_result:
+                logger.warning(f"ADR-087: Previous summary {previous.id} has no result, starting fresh")
+                return "", week_number, previous.id
+
+            # Extract key information from previous week
+            summary_text = previous_result.summary_text or "No summary available"
+            key_points = previous_result.key_points or []
+
+            # Build continuity context prompt
+            context = f"""
+## Previous Week's Summary (Week {previous_week})
+
+{summary_text}
+
+### Key Points from Last Week:
+{chr(10).join(f"- {kp}" for kp in key_points[:5])}
+
+---
+Continue from this context for Week {week_number}. Reference previous discussions where relevant.
+"""
+            logger.info(
+                f"ADR-087: Built continuity context for Week {week_number}, "
+                f"previous summary {previous.id}"
+            )
+            return context, week_number, previous.id
+
+        except Exception as e:
+            logger.warning(f"ADR-087: Failed to build continuity context: {e}")
+            return "", 1, None
 
     async def _track_access_issues(
         self,

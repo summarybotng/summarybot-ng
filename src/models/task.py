@@ -170,6 +170,9 @@ class ScheduledTask(BaseModel):
     # ADR-034: Guild prompt templates
     prompt_template_id: Optional[str] = None  # Reference to guild_prompt_templates table
 
+    # ADR-087: Weekly continuity summaries
+    enable_continuity: bool = False  # When true, weekly summaries carry context from previous week
+
     def calculate_next_run(self, from_time: Optional[datetime] = None) -> Optional[datetime]:
         """Calculate the next run time for this task.
 

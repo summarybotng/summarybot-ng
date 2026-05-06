@@ -1,7 +1,7 @@
 # ADR-087: Wiki Ingestion Granularity - Cross-Channel vs. Temporal Strategies
 
 ## Status
-Proposed
+Accepted
 
 ## Decision
 
@@ -568,7 +568,7 @@ The **end-of-week summary** acts as a continuity checkpoint:
 
 ```
 1. Raw messages (where available)
-   └─ Discord: ~90 days via API
+   └─ Discord: unlimited (but pagination is expensive for long history)
    └─ Slack: varies by plan
    └─ WhatsApp: full archives imported
 
@@ -665,6 +665,70 @@ The **end-of-week summary** acts as a continuity checkpoint:
 - **Progressive migration** - Run both stores in parallel during transition
 - **Render caching** - Cache popular views, invalidate on new ingests
 - **Backfill tooling** - Script to embed existing wiki sources into RuVector
+
+---
+
+## Implementation
+
+### Weekly Continuity Summaries
+
+Implements the channel continuity model from this ADR, providing longitudinal coherence within each channel through weekly checkpoints.
+
+#### Database Schema
+
+Migration `065_weekly_continuity.sql` adds:
+
+| Table | Column | Type | Purpose |
+|-------|--------|------|---------|
+| `scheduled_tasks` | `enable_continuity` | INTEGER | Opt-in flag for weekly tasks |
+| `stored_summaries` | `previous_summary_id` | TEXT | Link to prior week's summary |
+| `stored_summaries` | `continuity_week_number` | INTEGER | Position in continuity chain (1, 2, 3...) |
+
+Index on `(guild_id, channel_id, archive_granularity, created_at DESC)` enables efficient lookup of previous weekly summaries.
+
+#### Executor Flow
+
+1. Weekly task executes with `enable_continuity = true`
+2. `_build_continuity_context()` fetches previous week's summary for same channel
+3. Context injected into LLM prompt:
+   - Previous week's summary text
+   - Up to 5 key points from last week
+   - Week number for reference
+4. Summary generated with longitudinal awareness
+5. Stored with continuity metadata (`previous_summary_id`, `continuity_week_number`)
+
+#### Data Flow
+
+```
+Week 1 (first run):
+  Messages --> Summary --> Store (week_number=1, previous=NULL)
+
+Week 2:
+  Previous Summary (Week 1) --> Context
+  Messages + Context --> Summary --> Store (week_number=2, previous=week1_id)
+
+Week 3:
+  Previous Summary (Week 2) --> Context (includes week 1 context transitively)
+  Messages + Context --> Summary --> Store (week_number=3, previous=week2_id)
+```
+
+Each week's summary captures:
+- That week's raw messages
+- Context from the previous week (which itself contains prior context)
+- Longitudinal narrative of channel evolution
+
+#### Wiki Fallback
+
+When raw message pagination becomes expensive for older content:
+- Weekly summaries become primary source for wiki synthesis
+- Continuity chain preserves context transitively
+- `source_refs` link wiki pages to weekly summaries
+
+#### Configuration
+
+- **Dashboard UI**: Checkbox "Enable week-to-week continuity" appears for weekly schedules
+- **API**: `enable_continuity` field on schedule create/update
+- **Default**: Disabled (opt-in feature)
 
 ---
 

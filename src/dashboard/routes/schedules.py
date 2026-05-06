@@ -114,6 +114,8 @@ def _task_to_response(task, category_name: str = None, template_name: str = None
         prompt_template_name=template_name,
         # ADR-051: Platform support
         platform=getattr(task, 'platform', 'discord'),
+        # ADR-087: Weekly continuity summaries
+        enable_continuity=getattr(task, 'enable_continuity', False),
     )
 
 
@@ -275,6 +277,7 @@ async def create_schedule(
         resolve_category_at_runtime=(task_scope in (TaskScope.CATEGORY, TaskScope.GUILD)),
         prompt_template_id=body.prompt_template_id,  # ADR-034
         platform=body.platform or "discord",  # ADR-051
+        enable_continuity=body.enable_continuity,  # ADR-087
     )
 
     # Calculate next run
@@ -511,6 +514,10 @@ async def update_schedule(
     # ADR-051: Update platform
     if body.platform is not None:
         task.platform = body.platform
+
+    # ADR-087: Update enable_continuity
+    if body.enable_continuity is not None:
+        task.enable_continuity = body.enable_continuity
 
     # Recalculate next run
     task.next_run = task.calculate_next_run()

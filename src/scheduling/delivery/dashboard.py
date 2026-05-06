@@ -72,6 +72,15 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
                 context=context,
             )
 
+            # ADR-087: Extract continuity metadata if present
+            continuity_week_number = None
+            previous_summary_id = None
+            archive_granularity = None
+            if summary.metadata:
+                continuity_week_number = summary.metadata.get("continuity_week_number")
+                previous_summary_id = summary.metadata.get("previous_summary_id")
+                archive_granularity = summary.metadata.get("archive_granularity")
+
             # Create stored summary with SCHEDULED source
             # Use the SummaryResult's ID to ensure job.summary_id matches stored summary
             stored_summary = StoredSummary(
@@ -82,6 +91,10 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
                 summary_result=summary,
                 title=title,
                 source=SummarySource.SCHEDULED,
+                # ADR-087: Weekly continuity tracking
+                previous_summary_id=previous_summary_id,
+                continuity_week_number=continuity_week_number,
+                archive_granularity=archive_granularity,
             )
 
             # Persist to database

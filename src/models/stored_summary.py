@@ -122,6 +122,10 @@ class StoredSummary(BaseModel):
     split_private_id: Optional[str] = None    # Reference to private portion (on public summary)
     split_public_id: Optional[str] = None     # Reference to public portion (on private summary)
 
+    # ADR-087: Weekly continuity tracking
+    previous_summary_id: Optional[str] = None     # Link to prior week's summary in continuity chain
+    continuity_week_number: Optional[int] = None  # Position in continuity chain (1, 2, 3, ...)
+
     def get_pushed_channel_ids(self) -> List[str]:
         """Get list of channel IDs this summary was pushed to."""
         return [d.channel_id for d in self.push_deliveries if d.success]
@@ -342,6 +346,9 @@ class StoredSummary(BaseModel):
             "split_from": self.split_from,
             "split_private_id": self.split_private_id,
             "split_public_id": self.split_public_id,
+            # ADR-087: Continuity tracking
+            "previous_summary_id": self.previous_summary_id,
+            "continuity_week_number": self.continuity_week_number,
         }
 
     def to_dict(self) -> Dict[str, Any]:
@@ -374,6 +381,9 @@ class StoredSummary(BaseModel):
             "split_from": self.split_from,
             "split_private_id": self.split_private_id,
             "split_public_id": self.split_public_id,
+            # ADR-087: Continuity tracking
+            "previous_summary_id": self.previous_summary_id,
+            "continuity_week_number": self.continuity_week_number,
         }
 
     @classmethod
@@ -415,4 +425,7 @@ class StoredSummary(BaseModel):
             split_from=data.get("split_from"),
             split_private_id=data.get("split_private_id"),
             split_public_id=data.get("split_public_id"),
+            # ADR-087: Continuity tracking
+            previous_summary_id=data.get("previous_summary_id"),
+            continuity_week_number=data.get("continuity_week_number"),
         )

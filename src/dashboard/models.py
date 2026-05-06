@@ -463,6 +463,8 @@ class ScheduleListItem(BaseModel):
     prompt_template_name: Optional[str] = None  # Resolved for display
     # ADR-051: Platform support
     platform: str = "discord"  # discord, slack
+    # ADR-087: Weekly continuity summaries
+    enable_continuity: bool = False  # When true, weekly summaries carry context from previous week
 
 
 class SchedulesResponse(BaseModel):
@@ -488,6 +490,8 @@ class ScheduleCreateRequest(BaseModel):
     prompt_template_id: Optional[str] = None
     # ADR-051: Platform support
     platform: str = "discord"  # discord, slack
+    # ADR-087: Weekly continuity summaries
+    enable_continuity: bool = False  # When true, weekly summaries carry context from previous week
 
 
 class ScheduleUpdateRequest(BaseModel):
@@ -508,6 +512,8 @@ class ScheduleUpdateRequest(BaseModel):
     prompt_template_id: Optional[str] = None
     # ADR-051: Platform support
     platform: Optional[str] = None  # discord, slack
+    # ADR-087: Weekly continuity summaries
+    enable_continuity: Optional[bool] = None  # When true, weekly summaries carry context from previous week
 
 
 class ScheduleRunResponse(BaseModel):

@@ -66,6 +66,8 @@ export interface ScheduleFormData {
   prompt_template_id: string | null;
   // ADR-051: Platform selection
   platform: "discord" | "slack";
+  // ADR-087: Weekly continuity summaries
+  enable_continuity: boolean;
   // ADR-005: Delivery destinations
   destinations: {
     dashboard: boolean;
@@ -278,6 +280,32 @@ export function ScheduleForm({ formData, onChange, channels = [], categories = [
           </SelectContent>
         </Select>
       </div>
+
+      {/* ADR-087: Weekly Continuity Toggle */}
+      {formData.schedule_type === "weekly" && (
+        <div className="flex items-start space-x-3 rounded-md border p-3 bg-muted/30">
+          <Checkbox
+            id="enable-continuity"
+            checked={formData.enable_continuity}
+            onCheckedChange={(checked) =>
+              onChange({
+                ...formData,
+                enable_continuity: checked as boolean,
+              })
+            }
+          />
+          <div className="space-y-1">
+            <label htmlFor="enable-continuity" className="text-sm font-medium cursor-pointer">
+              Enable week-to-week continuity
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Each week's summary includes context from the previous week,
+              maintaining conversation continuity over time. Useful for ongoing
+              discussions and project tracking.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2">
         <label className="text-sm font-medium">Summary Length</label>
@@ -578,6 +606,7 @@ export const getInitialFormData = (): ScheduleFormData => ({
   min_messages: 5,  // Default: require 5 messages
   prompt_template_id: null,  // ADR-034: Use default prompt
   platform: "discord",  // ADR-051: Default to Discord
+  enable_continuity: false,  // ADR-087: Weekly continuity disabled by default
   destinations: {
     dashboard: true, // Default to dashboard
     discord_channel: false,
@@ -619,6 +648,7 @@ export function scheduleToFormData(schedule: Schedule): ScheduleFormData {
     min_messages: schedule.summary_options.min_messages ?? 5,
     prompt_template_id: schedule.prompt_template_id || null,  // ADR-034
     platform: schedule.platform || "discord",  // ADR-051
+    enable_continuity: schedule.enable_continuity ?? false,  // ADR-087
     destinations: {
       dashboard: !!dashboardDest,
       discord_channel: !!discordDest,

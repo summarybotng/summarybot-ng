@@ -107,7 +107,8 @@ async def _create_schema(connection: SQLiteConnection) -> None:
             resolve_category_at_runtime INTEGER DEFAULT 0,
             timezone TEXT DEFAULT 'UTC',
             prompt_template_id TEXT,
-            platform TEXT DEFAULT 'discord'
+            platform TEXT DEFAULT 'discord',
+            enable_continuity INTEGER DEFAULT 0
         )
     """)
 
@@ -158,6 +159,8 @@ async def _create_schema(connection: SQLiteConnection) -> None:
             scope TEXT DEFAULT 'channel',
             category_id TEXT,
             category_name TEXT,
+            previous_summary_id TEXT,
+            continuity_week_number INTEGER,
             FOREIGN KEY (schedule_id) REFERENCES scheduled_tasks(id) ON DELETE SET NULL
         )
     """)

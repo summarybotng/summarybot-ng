@@ -66,8 +66,9 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             message_count, participant_count,
             wiki_ingested, wiki_ingested_at,
             contains_sensitive_channels,
-            split_from, split_private_id, split_public_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            split_from, split_private_id, split_public_id,
+            previous_summary_id, continuity_week_number
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -101,6 +102,9 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             summary.split_from,
             summary.split_private_id,
             summary.split_public_id,
+            # ADR-087: Continuity tracking
+            summary.previous_summary_id,
+            summary.continuity_week_number,
         )
 
         await self.connection.execute(query, params)
@@ -780,6 +784,9 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             split_from=row.get('split_from'),
             split_private_id=row.get('split_private_id'),
             split_public_id=row.get('split_public_id'),
+            # ADR-087: Continuity tracking
+            previous_summary_id=row.get('previous_summary_id'),
+            continuity_week_number=row.get('continuity_week_number'),
         )
 
     def _dict_to_summary_result(self, data: Dict[str, Any]) -> SummaryResult:
@@ -1129,4 +1136,99 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         LIMIT ?
         """
         rows = await self.connection.fetch_all(query, (guild_id, limit))
+        return [self._row_to_stored_summary(row) for row in rows]
+
+    # ADR-087: Weekly continuity summaries
+
+    async def get_previous_weekly_summary(
+        self,
+        guild_id: str,
+        channel_id: str,
+        before_date: datetime,
+    ) -> Optional[StoredSummary]:
+        """
+        Find the most recent weekly summary for this channel before the given date.
+        Used to build continuity context for weekly summaries.
+
+        Args:
+            guild_id: Discord guild/server ID
+            channel_id: Primary channel ID for the summary
+            before_date: Find summaries created before this date
+
+        Returns:
+            The most recent weekly summary for continuity, or None if not found
+        """
+        # Look for weekly summaries that include this channel
+        # We use source_channel_ids JSON array to check if the channel is included
+        query = """
+        SELECT * FROM stored_summaries
+        WHERE guild_id = ?
+          AND archive_granularity = 'weekly'
+          AND created_at < ?
+          AND (
+            source_channel_ids LIKE ?
+            OR source_channel_ids LIKE ?
+            OR source_channel_ids LIKE ?
+          )
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+        # Match channel_id in JSON array: ["123"], ["123","456"], ["456","123"]
+        rows = await self.connection.fetch_all(
+            query,
+            (
+                guild_id,
+                before_date.isoformat(),
+                f'["{channel_id}"]',        # Only channel
+                f'["{channel_id}",%',       # First in array
+                f'%,"{channel_id}"%',       # Middle or end of array
+            )
+        )
+
+        if not rows:
+            return None
+
+        return self._row_to_stored_summary(rows[0])
+
+    async def find_continuity_chain(
+        self,
+        guild_id: str,
+        channel_id: str,
+        limit: int = 10,
+    ) -> List[StoredSummary]:
+        """
+        Find the continuity chain of weekly summaries for a channel.
+        Returns summaries ordered by continuity_week_number descending (most recent first).
+
+        Args:
+            guild_id: Discord guild/server ID
+            channel_id: Primary channel ID
+            limit: Maximum number of summaries to return
+
+        Returns:
+            List of weekly summaries in the continuity chain
+        """
+        query = """
+        SELECT * FROM stored_summaries
+        WHERE guild_id = ?
+          AND archive_granularity = 'weekly'
+          AND continuity_week_number IS NOT NULL
+          AND (
+            source_channel_ids LIKE ?
+            OR source_channel_ids LIKE ?
+            OR source_channel_ids LIKE ?
+          )
+        ORDER BY continuity_week_number DESC
+        LIMIT ?
+        """
+        rows = await self.connection.fetch_all(
+            query,
+            (
+                guild_id,
+                f'["{channel_id}"]',
+                f'["{channel_id}",%',
+                f'%,"{channel_id}"%',
+                limit,
+            )
+        )
         return [self._row_to_stored_summary(row) for row in rows]

@@ -89,6 +89,7 @@ export function Schedules() {
         destinations: formDataToDestinations(formData),
         prompt_template_id: formData.prompt_template_id || undefined,  // ADR-034
         platform: formData.platform,  // ADR-051
+        enable_continuity: formData.enable_continuity,  // ADR-087
         summary_options: {
           summary_length: formData.summary_length,
           perspective: formData.perspective,
@@ -138,6 +139,7 @@ export function Schedules() {
           destinations: formDataToDestinations(formData),
           prompt_template_id: formData.prompt_template_id || undefined,  // ADR-034
           platform: formData.platform,  // ADR-051
+          enable_continuity: formData.enable_continuity,  // ADR-087
           summary_options: {
             summary_length: formData.summary_length,
             perspective: formData.perspective,

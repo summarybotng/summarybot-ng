@@ -197,6 +197,8 @@ export interface Schedule {
   prompt_template_name?: string;
   // ADR-051: Platform support
   platform?: "discord" | "slack";
+  // ADR-087: Weekly continuity summaries
+  enable_continuity?: boolean;
 }
 
 // ADR-034: Guild Prompt Template types

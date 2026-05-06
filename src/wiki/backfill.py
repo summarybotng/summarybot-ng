@@ -238,14 +238,15 @@ class WikiBackfillExecutor:
         config: BackfillConfig,
     ) -> None:
         """Process a single summary into the wiki."""
-        from .agents import WikiIngestAgent
+        # ADR-057 Phase 4: Use factory to get agent with RuVector dual-write
+        from .agents import create_ingest_agent
 
         result = summary.summary_result
         if not result:
             logger.debug(f"No summary result for {summary.id}, skipping")
             return
 
-        agent = WikiIngestAgent(self.wiki_repo)
+        agent = await create_ingest_agent(self.wiki_repo, enable_ruvector=True)
 
         # Extract platform from archive_source_key or default to discord
         platform = "discord"

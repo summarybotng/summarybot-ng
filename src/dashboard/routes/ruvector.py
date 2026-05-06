@@ -448,3 +448,554 @@ async def _get_view_renderer(guild_id: str):
 
     vector_store = await _get_vector_store(guild_id)
     return WikiViewRenderer(vector_store=vector_store)
+
+
+# -------------------------------------------------------------------------
+# Comparison Endpoints (ADR-057 Phase 4)
+# -------------------------------------------------------------------------
+
+class ComparisonViewResponse(BaseModel):
+    """Comparison of RuVector vs existing wiki synthesis."""
+    topic: str
+    guild_id: str
+    ruvector_view: Optional[RenderedViewResponse] = None
+    existing_synthesis: Optional[str] = None
+    existing_content: Optional[str] = None
+    existing_path: Optional[str] = None
+    ruvector_unit_count: int = 0
+    existing_source_count: int = 0
+
+
+@router.get(
+    "/guilds/{guild_id}/compare/topic/{topic}",
+    response_model=ComparisonViewResponse,
+    summary="Compare topic renderings",
+    description="ADR-057 Phase 4: Compare RuVector rendering vs existing wiki synthesis",
+)
+async def compare_topic_views(
+    guild_id: str = Path(..., description="Guild ID"),
+    topic: str = Path(..., description="Topic name"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Compare RuVector topic rendering with existing wiki synthesis.
+
+    Useful for validating RuVector produces equivalent or better content.
+    """
+    from . import get_wiki_repository
+
+    response = ComparisonViewResponse(topic=topic, guild_id=guild_id)
+
+    # Get RuVector view
+    try:
+        renderer = await _get_view_renderer(guild_id)
+        view = await renderer.render_topic_page(
+            guild_id=guild_id,
+            topic=topic,
+            max_units=30,
+        )
+        response.ruvector_view = RenderedViewResponse(
+            title=view.title,
+            content=view.content,
+            view_type=view.view_type,
+            source_count=len(view.source_units),
+            generated_at=view.generated_at.isoformat(),
+            cache_key=view.cache_key,
+        )
+        response.ruvector_unit_count = len(view.source_units)
+    except Exception as e:
+        logger.warning(f"RuVector view failed: {e}")
+
+    # Get existing wiki synthesis
+    try:
+        wiki_repo = await get_wiki_repository()
+        if wiki_repo:
+            # Try to find a matching topic page
+            import re
+            slug = re.sub(r'[^\w\s-]', '', topic.lower().strip())
+            slug = re.sub(r'[-\s]+', '-', slug)[:50]
+            path = f"topics/{slug}.md"
+
+            page = await wiki_repo.get_page(guild_id, path)
+            if page:
+                response.existing_synthesis = getattr(page, 'synthesis', None)
+                response.existing_content = page.content
+                response.existing_path = path
+                response.existing_source_count = len(page.source_refs) if page.source_refs else 0
+    except Exception as e:
+        logger.warning(f"Existing wiki lookup failed: {e}")
+
+    return response
+
+
+class ComparisonDailyResponse(BaseModel):
+    """Comparison of daily views."""
+    date: str
+    guild_id: str
+    ruvector_view: Optional[RenderedViewResponse] = None
+    existing_summaries: List[dict] = []
+    ruvector_unit_count: int = 0
+
+
+@router.get(
+    "/guilds/{guild_id}/compare/daily/{date}",
+    response_model=ComparisonDailyResponse,
+    summary="Compare daily views",
+    description="ADR-057 Phase 4: Compare RuVector daily digest vs existing summaries",
+)
+async def compare_daily_views(
+    guild_id: str = Path(..., description="Guild ID"),
+    date: str = Path(..., description="Date (YYYY-MM-DD)"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Compare RuVector daily digest with existing summaries for that date.
+    """
+    from ...data.repositories import get_stored_summary_repository
+
+    # Parse date
+    try:
+        target_date = datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    response = ComparisonDailyResponse(date=date, guild_id=guild_id)
+
+    # Get RuVector view
+    try:
+        renderer = await _get_view_renderer(guild_id)
+        view = await renderer.render_daily_digest(
+            guild_id=guild_id,
+            date=target_date,
+        )
+        response.ruvector_view = RenderedViewResponse(
+            title=view.title,
+            content=view.content,
+            view_type=view.view_type,
+            source_count=len(view.source_units),
+            generated_at=view.generated_at.isoformat(),
+            cache_key=view.cache_key,
+        )
+        response.ruvector_unit_count = len(view.source_units)
+    except Exception as e:
+        logger.warning(f"RuVector daily view failed: {e}")
+
+    # Get existing summaries for that date
+    try:
+        stored_repo = await get_stored_summary_repository()
+        if stored_repo:
+            start_of_day = target_date.replace(hour=0, minute=0, second=0)
+            end_of_day = target_date.replace(hour=23, minute=59, second=59)
+
+            summaries = await stored_repo.find_by_guild(
+                guild_id=guild_id,
+                created_after=start_of_day,
+                created_before=end_of_day,
+                limit=50,
+            )
+
+            response.existing_summaries = [
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "summary_text": s.summary_result.summary_text[:500] if s.summary_result else "",
+                    "channel": s.title,
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                }
+                for s in summaries
+            ]
+    except Exception as e:
+        logger.warning(f"Existing summaries lookup failed: {e}")
+
+    return response
+
+
+# -------------------------------------------------------------------------
+# Backfill Endpoints (ADR-057 Phase 3/4)
+# -------------------------------------------------------------------------
+
+class BackfillRequest(BaseModel):
+    """Request to start RuVector backfill."""
+    include_sources: bool = True
+    include_pages: bool = True
+    rebuild_edges: bool = True
+
+
+class BackfillStatusResponse(BaseModel):
+    """Status of RuVector data for a guild."""
+    guild_id: str
+    knowledge_units: int
+    wiki_sources: int
+    edges: int
+    estimated_coverage: float
+
+
+class BackfillResultResponse(BaseModel):
+    """Result of backfill operation."""
+    guild_id: str
+    sources_processed: int
+    pages_processed: int
+    units_created: int
+    edges_created: int
+    errors: List[str]
+    duration_seconds: float
+
+
+@router.get(
+    "/guilds/{guild_id}/backfill/status",
+    response_model=BackfillStatusResponse,
+    summary="Get backfill status",
+    description="ADR-057 Phase 4: Get RuVector backfill status for a guild",
+)
+async def get_backfill_status(
+    guild_id: str = Path(..., description="Guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Get current RuVector backfill status.
+
+    Shows how much existing wiki content has been migrated.
+    """
+    try:
+        from src.wiki.ruvector import RuVectorBackfill, VectorStore, KnowledgeExtractor, EmbeddingService
+        from src.data.sqlite.connection import SQLiteConnection
+
+        connection = SQLiteConnection.get_instance()
+        embedding_service = EmbeddingService()
+        vector_store = VectorStore(connection=connection, embedding_service=embedding_service)
+        extractor = KnowledgeExtractor(embedding_service=embedding_service)
+
+        backfill = RuVectorBackfill(
+            wiki_connection=connection,
+            vector_store=vector_store,
+            knowledge_extractor=extractor,
+        )
+
+        status = await backfill.get_backfill_status(guild_id)
+
+        return BackfillStatusResponse(**status)
+
+    except Exception as e:
+        logger.exception(f"Get backfill status failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/guilds/{guild_id}/backfill",
+    response_model=BackfillResultResponse,
+    summary="Start backfill",
+    description="ADR-057 Phase 4: Backfill existing wiki content to RuVector",
+)
+async def start_backfill(
+    guild_id: str = Path(..., description="Guild ID"),
+    request: BackfillRequest = BackfillRequest(),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Backfill existing wiki content to RuVector.
+
+    Migrates wiki_sources and wiki_pages to knowledge units.
+    """
+    try:
+        from src.wiki.ruvector import RuVectorBackfill, VectorStore, KnowledgeExtractor, EmbeddingService, EdgeInferenceEngine
+        from src.data.sqlite.connection import SQLiteConnection
+
+        connection = SQLiteConnection.get_instance()
+        embedding_service = EmbeddingService()
+        vector_store = VectorStore(connection=connection, embedding_service=embedding_service)
+        extractor = KnowledgeExtractor(embedding_service=embedding_service)
+        edge_inference = EdgeInferenceEngine(vector_store=vector_store)
+
+        backfill = RuVectorBackfill(
+            wiki_connection=connection,
+            vector_store=vector_store,
+            knowledge_extractor=extractor,
+            edge_inference=edge_inference,
+            enable_coherence_check=False,  # Skip coherence during bulk backfill
+        )
+
+        result = await backfill.backfill_guild(
+            guild_id=guild_id,
+            include_sources=request.include_sources,
+            include_pages=request.include_pages,
+            rebuild_edges=request.rebuild_edges,
+        )
+
+        logger.info(f"RuVector backfill completed for {guild_id}: {result.units_created} units")
+
+        return BackfillResultResponse(
+            guild_id=result.guild_id,
+            sources_processed=result.sources_processed,
+            pages_processed=result.pages_processed,
+            units_created=result.units_created,
+            edges_created=result.edges_created,
+            errors=result.errors[:20],  # Limit errors in response
+            duration_seconds=result.duration_seconds,
+        )
+
+    except Exception as e:
+        logger.exception(f"Backfill failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# -------------------------------------------------------------------------
+# SONA Learning Endpoints (ADR-057 Phase 3)
+# -------------------------------------------------------------------------
+
+class LearningStatsResponse(BaseModel):
+    """SONA learning statistics."""
+    guild_id: str
+    signals_by_type: dict
+    total_signals: int
+    recent_signals_7d: int
+    top_clicked_units: List[tuple]
+
+
+class RecordClickRequest(BaseModel):
+    """Record a search click."""
+    query: str
+    unit_id: str
+    position: int
+
+
+class RecordDwellRequest(BaseModel):
+    """Record dwell time."""
+    unit_id: str
+    dwell_seconds: float
+
+
+class RecordFeedbackRequest(BaseModel):
+    """Record explicit feedback."""
+    unit_id: str
+    feedback_type: str = Field(..., pattern="^(helpful|not_helpful|report)$")
+    comment: Optional[str] = None
+
+
+@router.get(
+    "/guilds/{guild_id}/learning/stats",
+    response_model=LearningStatsResponse,
+    summary="Get learning stats",
+    description="ADR-057 Phase 3: Get SONA learning statistics",
+)
+async def get_learning_stats(
+    guild_id: str = Path(..., description="Guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Get SONA learning statistics for a guild.
+    """
+    try:
+        from src.wiki.ruvector import SONALearning
+        vector_store = await _get_vector_store(guild_id)
+        sona = SONALearning(vector_store=vector_store)
+
+        stats = await sona.get_learning_stats(guild_id)
+
+        return LearningStatsResponse(
+            guild_id=guild_id,
+            **stats,
+        )
+
+    except Exception as e:
+        logger.exception(f"Get learning stats failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/guilds/{guild_id}/learning/click",
+    summary="Record search click",
+    description="ADR-057 Phase 3: Record a search result click for learning",
+)
+async def record_click(
+    guild_id: str = Path(..., description="Guild ID"),
+    request: RecordClickRequest = ...,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Record that a user clicked a search result.
+    """
+    try:
+        from src.wiki.ruvector import SONALearning
+        vector_store = await _get_vector_store(guild_id)
+        sona = SONALearning(vector_store=vector_store)
+
+        await sona.on_search_click(
+            guild_id=guild_id,
+            query=request.query,
+            unit_id=request.unit_id,
+            position=request.position,
+            user_id=user.get("sub"),
+        )
+
+        return {"success": True}
+
+    except Exception as e:
+        logger.exception(f"Record click failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/guilds/{guild_id}/learning/dwell",
+    summary="Record dwell time",
+    description="ADR-057 Phase 3: Record content view duration for learning",
+)
+async def record_dwell(
+    guild_id: str = Path(..., description="Guild ID"),
+    request: RecordDwellRequest = ...,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Record time spent viewing content.
+    """
+    try:
+        from src.wiki.ruvector import SONALearning
+        vector_store = await _get_vector_store(guild_id)
+        sona = SONALearning(vector_store=vector_store)
+
+        await sona.on_dwell(
+            guild_id=guild_id,
+            unit_id=request.unit_id,
+            dwell_seconds=request.dwell_seconds,
+            user_id=user.get("sub"),
+        )
+
+        return {"success": True}
+
+    except Exception as e:
+        logger.exception(f"Record dwell failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/guilds/{guild_id}/learning/feedback",
+    summary="Record feedback",
+    description="ADR-057 Phase 3: Record explicit user feedback for learning",
+)
+async def record_feedback(
+    guild_id: str = Path(..., description="Guild ID"),
+    request: RecordFeedbackRequest = ...,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Record explicit user feedback on content.
+    """
+    try:
+        from src.wiki.ruvector import SONALearning
+        vector_store = await _get_vector_store(guild_id)
+        sona = SONALearning(vector_store=vector_store)
+
+        await sona.on_feedback(
+            guild_id=guild_id,
+            unit_id=request.unit_id,
+            feedback_type=request.feedback_type,
+            comment=request.comment,
+            user_id=user.get("sub"),
+        )
+
+        return {"success": True}
+
+    except Exception as e:
+        logger.exception(f"Record feedback failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# -------------------------------------------------------------------------
+# Coherence Gate Endpoints (ADR-057 Phase 3)
+# -------------------------------------------------------------------------
+
+class CoherenceValidationResponse(BaseModel):
+    """A flagged coherence validation."""
+    id: int
+    unit_id: str
+    validation_type: str
+    status: str
+    details: dict
+    unit_content: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class CoherenceValidationsResponse(BaseModel):
+    """List of flagged validations."""
+    guild_id: str
+    total: int
+    validations: List[CoherenceValidationResponse]
+
+
+@router.get(
+    "/guilds/{guild_id}/coherence/flagged",
+    response_model=CoherenceValidationsResponse,
+    summary="Get flagged validations",
+    description="ADR-057 Phase 3: Get content flagged by coherence gate",
+)
+async def get_flagged_validations(
+    guild_id: str = Path(..., description="Guild ID"),
+    limit: int = Query(50, ge=1, le=200),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Get validations flagged for human review.
+    """
+    try:
+        from src.wiki.ruvector import CoherenceGate
+        vector_store = await _get_vector_store(guild_id)
+        gate = CoherenceGate(vector_store=vector_store)
+
+        validations = await gate.get_flagged_validations(guild_id, limit=limit)
+
+        return CoherenceValidationsResponse(
+            guild_id=guild_id,
+            total=len(validations),
+            validations=[
+                CoherenceValidationResponse(
+                    id=v.get("id", 0),
+                    unit_id=v.get("unit_id", ""),
+                    validation_type=v.get("validation_type", ""),
+                    status=v.get("status", ""),
+                    details=v.get("details", {}),
+                    unit_content=v.get("unit_content"),
+                    created_at=v.get("created_at"),
+                )
+                for v in validations
+            ],
+        )
+
+    except Exception as e:
+        logger.exception(f"Get flagged validations failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ResolveValidationRequest(BaseModel):
+    """Request to resolve a flagged validation."""
+    resolution: str
+
+
+@router.post(
+    "/guilds/{guild_id}/coherence/resolve/{validation_id}",
+    summary="Resolve flagged validation",
+    description="ADR-057 Phase 3: Resolve a flagged coherence validation",
+)
+async def resolve_validation(
+    guild_id: str = Path(..., description="Guild ID"),
+    validation_id: int = Path(..., description="Validation ID"),
+    request: ResolveValidationRequest = ...,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Resolve a flagged validation.
+    """
+    try:
+        from src.wiki.ruvector import CoherenceGate
+        vector_store = await _get_vector_store(guild_id)
+        gate = CoherenceGate(vector_store=vector_store)
+
+        await gate.resolve_validation(
+            validation_id=validation_id,
+            resolution=request.resolution,
+            reviewed_by=user.get("sub", "unknown"),
+        )
+
+        return {"success": True, "validation_id": validation_id}
+
+    except Exception as e:
+        logger.exception(f"Resolve validation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

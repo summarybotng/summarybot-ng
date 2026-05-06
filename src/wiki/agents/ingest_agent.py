@@ -26,6 +26,14 @@ from ..models import (
 )
 from ...data.sqlite.wiki_repository import SQLiteWikiRepository
 
+# ADR-057: Optional RuVector integration for dual-write
+try:
+    from ..ruvector.ingest_integration import RuVectorIngestHook
+    RUVECTOR_AVAILABLE = True
+except ImportError:
+    RUVECTOR_AVAILABLE = False
+    RuVectorIngestHook = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,16 +59,23 @@ class WikiIngestAgent:
     - Maintains cross-references between pages
     """
 
-    def __init__(self, repository: SQLiteWikiRepository, llm_client: Optional[Any] = None):
+    def __init__(
+        self,
+        repository: SQLiteWikiRepository,
+        llm_client: Optional[Any] = None,
+        ruvector_hook: Optional["RuVectorIngestHook"] = None,
+    ):
         """
         Initialize the ingest agent.
 
         Args:
             repository: Wiki repository for data access
             llm_client: Optional LLM client for semantic analysis
+            ruvector_hook: Optional RuVector hook for dual-write (ADR-057 Phase 4)
         """
         self.repository = repository
         self.llm_client = llm_client
+        self.ruvector_hook = ruvector_hook
 
     async def ingest_summary(
         self,
@@ -119,6 +134,25 @@ class WikiIngestAgent:
                 },
             )
             await self.repository.save_source(source)
+
+            # ADR-057 Phase 4: Dual-write to RuVector if hook is configured
+            if self.ruvector_hook:
+                try:
+                    ruvector_result = await self.ruvector_hook.on_summary_ingested(
+                        guild_id=guild_id,
+                        summary_id=summary_id,
+                        summary_text=summary_text,
+                        channel_name=channel_name,
+                        summary_date=timestamp,
+                        key_points=key_points,
+                        action_items=action_items,
+                    )
+                    logger.info(
+                        f"RuVector dual-write: {len(ruvector_result.units)} units, "
+                        f"{ruvector_result.edges_created} edges"
+                    )
+                except Exception as e:
+                    logger.warning(f"RuVector dual-write failed (non-fatal): {e}")
 
             # 2. Identify topics to update
             topics = self._extract_topics(summary_text, key_points, technical_terms)

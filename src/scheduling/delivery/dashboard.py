@@ -211,10 +211,10 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
                 logger.debug(f"No summary result for {summary.id}, skipping wiki ingestion")
                 return
 
-            # Import wiki ingest agent
-            from ...wiki.agents import WikiIngestAgent
+            # ADR-057 Phase 4: Use factory to get agent with RuVector dual-write
+            from ...wiki.agents import create_ingest_agent
 
-            agent = WikiIngestAgent(wiki_repo)
+            agent = await create_ingest_agent(wiki_repo, enable_ruvector=True)
 
             # Get platform from context
             platform = 'discord'

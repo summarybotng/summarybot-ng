@@ -848,8 +848,9 @@ async def populate_wiki(
     )
     logger.info(f"Found {len(summaries)} summaries to process for wiki population")
 
-    # Create ingest agent
-    ingest_agent = WikiIngestAgent(wiki_repo)
+    # ADR-057 Phase 4: Use factory to get agent with RuVector dual-write
+    from ...wiki.agents import create_ingest_agent
+    ingest_agent = await create_ingest_agent(wiki_repo, enable_ruvector=True)
 
     # Process each summary
     pages_created = 0

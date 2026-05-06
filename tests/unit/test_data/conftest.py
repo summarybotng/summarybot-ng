@@ -105,7 +105,9 @@ async def _create_schema(connection: SQLiteConnection) -> None:
             category_id TEXT,
             excluded_channel_ids TEXT DEFAULT '[]',
             resolve_category_at_runtime INTEGER DEFAULT 0,
-            timezone TEXT DEFAULT 'UTC'
+            timezone TEXT DEFAULT 'UTC',
+            prompt_template_id TEXT,
+            platform TEXT DEFAULT 'discord'
         )
     """)
 

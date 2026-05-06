@@ -151,7 +151,11 @@ async def test_execute_summary_task_success(task_executor, sample_summary_task, 
 
 @pytest.mark.asyncio
 async def test_execute_summary_task_insufficient_content(task_executor, sample_summary_task, mock_message_processor):
-    """Test handling insufficient content error."""
+    """Test handling insufficient content error.
+
+    Insufficient content is treated as a SKIP, not a failure.
+    The task succeeds but with no summary produced.
+    """
     # Make processor return no messages
     mock_message_processor.process_channel_messages.return_value = []
 
@@ -163,11 +167,15 @@ async def test_execute_summary_task_insufficient_content(task_executor, sample_s
 
     result = await task_executor.execute_summary_task(sample_summary_task)
 
-    assert result.success is False
+    # Insufficient content is success=True (skip), not a failure
+    assert result.success is True
     assert result.summary_result is None
     assert result.error_message is not None
-    assert "message" in result.error_message.lower() or "content" in result.error_message.lower()
-    assert sample_summary_task.status == TaskStatus.FAILED
+    assert "skipped" in result.error_message.lower()
+    assert result.error_details.get("skipped") is True
+    assert result.error_details.get("reason") == "insufficient_content"
+    # Skipped tasks are marked as COMPLETED (not failed)
+    assert sample_summary_task.status == TaskStatus.COMPLETED
 
 
 @pytest.mark.asyncio

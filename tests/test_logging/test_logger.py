@@ -3,6 +3,7 @@ Tests for command logger.
 """
 
 import pytest
+import pytest_asyncio
 import asyncio
 from datetime import datetime
 from unittest.mock import Mock, AsyncMock, patch
@@ -13,7 +14,7 @@ from src.logging.repository import CommandLogRepository
 from src.logging.sanitizer import LogSanitizer
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def mock_repository():
     """Create mock repository."""
     repo = Mock(spec=CommandLogRepository)
@@ -34,8 +35,8 @@ def config():
     )
 
 
-@pytest.fixture
-def logger_instance(mock_repository, config):
+@pytest_asyncio.fixture
+async def logger_instance(mock_repository, config):
     """Create command logger instance."""
     return CommandLogger(
         repository=mock_repository,

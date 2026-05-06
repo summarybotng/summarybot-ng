@@ -147,13 +147,14 @@ class TestBotConfig:
         assert config.max_message_batch == 5000
         assert config.cache_ttl == 7200
     
+    @patch('src.config.environment.load_dotenv')  # Prevent .env file from overriding
     @patch.dict(os.environ, {
         'DISCORD_TOKEN': 'env_discord_token',
         'WEBHOOK_PORT': '9000',
         'MAX_MESSAGE_BATCH': '20000',
         'CACHE_TTL': '1800'
-    })
-    def test_load_from_env(self):
+    }, clear=True)
+    def test_load_from_env(self, mock_dotenv):
         """Test loading configuration from environment variables."""
         config = BotConfig.load_from_env()
 

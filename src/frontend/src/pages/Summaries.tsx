@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
@@ -6,6 +6,8 @@ import { useGenerateSummary, useTaskStatus } from "@/hooks/useSummaries";
 import { useGuild } from "@/hooks/useGuilds";
 import { usePromptTemplates } from "@/hooks/usePromptTemplates";
 import { useWhatsAppChats } from "@/hooks/useWhatsApp";
+import { useCreateSchedule } from "@/hooks/useSchedules";
+import { SummaryWizard, type WizardState } from "@/components/summary-wizard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -75,6 +77,10 @@ export function Summaries() {
   const [promptTemplateId, setPromptTemplateId] = useState<string | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [channelSearch, setChannelSearch] = useState("");
+
+  // ADR-089: Unified Summary Wizard
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const createSchedule = useCreateSchedule(id || "");
 
   // ADR-035: Track generation parameters for progress display
   const [generationParams, setGenerationParams] = useState<{
@@ -158,6 +164,93 @@ export function Summaries() {
       });
     }
   }, [taskStatus.isError, activeTaskId, toast]);
+
+  // ADR-089: Wizard handlers
+  const handleWizardGenerateNow = useCallback(async (state: WizardState) => {
+    const hoursMap: Record<string, number> = { "4h": 4, "8h": 8, "24h": 24, "48h": 48 };
+    const hours = state.timeRange === "custom" ? state.customHours || 24 : hoursMap[state.timeRange];
+
+    const request: GenerateRequest = {
+      scope: state.scope,
+      time_range: { type: "hours", value: hours },
+      options: {
+        summary_length: state.summaryLength,
+        include_action_items: true,
+        include_technical_terms: true,
+        min_messages: state.minMessages,
+      },
+      channel_ids: state.scope === "channel" ? state.channelIds : undefined,
+      category_id: state.scope === "category" ? state.categoryId : undefined,
+      platform: state.platform,
+      ...(state.promptTemplateId && { prompt_template_id: state.promptTemplateId }),
+    };
+
+    const result = await generateSummary.mutateAsync(request);
+    setActiveTaskId(result.task_id);
+    toast({ title: "Generating", description: "Your summary is being generated..." });
+  }, [generateSummary, toast]);
+
+  const handleWizardCreateSchedule = useCallback(async (state: WizardState) => {
+    await createSchedule.mutateAsync({
+      name: state.scheduleName,
+      scope: state.scope,
+      channel_ids: state.scope === "channel" ? state.channelIds : [],
+      category_id: state.scope === "category" ? state.categoryId : undefined,
+      schedule_type: state.frequency === "daily" ? "daily" : state.frequency === "weekly" ? "weekly" : "monthly",
+      schedule_time: state.scheduleTime,
+      schedule_days: state.frequency === "weekly" ? state.scheduleDays : undefined,
+      timezone: state.timezone,
+      platform: state.platform,
+      enable_continuity: state.enableContinuity,
+      destinations: [
+        { type: "dashboard", target: "default", format: "embed" },
+        ...(state.destinations.discordChannel && state.destinations.discordChannelId
+          ? [{ type: "discord_channel" as const, target: state.destinations.discordChannelId, format: "embed" as const }]
+          : []),
+        ...(state.destinations.webhook && state.destinations.webhookUrl
+          ? [{ type: "webhook" as const, target: state.destinations.webhookUrl, format: "json" as const }]
+          : []),
+        ...(state.destinations.email && state.destinations.emailAddresses
+          ? [{ type: "email" as const, target: state.destinations.emailAddresses, format: "html" as const }]
+          : []),
+      ],
+      summary_options: {
+        summary_length: state.summaryLength,
+        perspective: state.perspective as "general" | "technical" | "executive" | "action-focused",
+        include_action_items: true,
+        include_technical_terms: true,
+        min_messages: state.minMessages,
+      },
+    });
+    toast({ title: "Schedule created", description: `${state.scheduleName} has been scheduled.` });
+  }, [createSchedule, toast]);
+
+  const handleWizardGeneratePast = useCallback(async (state: WizardState) => {
+    if (!state.dateFrom || !state.dateTo) return;
+
+    const request: GenerateRequest = {
+      scope: state.scope,
+      time_range: {
+        type: "custom",
+        start: state.dateFrom.toISOString(),
+        end: state.dateTo.toISOString(),
+      },
+      options: {
+        summary_length: state.summaryLength,
+        include_action_items: true,
+        include_technical_terms: true,
+        min_messages: state.minMessages,
+      },
+      channel_ids: state.scope === "channel" ? state.channelIds : undefined,
+      category_id: state.scope === "category" ? state.categoryId : undefined,
+      platform: state.platform,
+      ...(state.promptTemplateId && { prompt_template_id: state.promptTemplateId }),
+    };
+
+    const result = await generateSummary.mutateAsync(request);
+    setActiveTaskId(result.task_id);
+    toast({ title: "Generating", description: "Your retrospective summary is being generated..." });
+  }, [generateSummary, toast]);
 
   const handleGenerate = async () => {
     try {
@@ -269,12 +362,26 @@ export function Summaries() {
             View past summaries and generate new ones
           </p>
         </div>
+        {/* ADR-089: Unified Summary Wizard */}
+        <Button onClick={() => setWizardOpen(true)}>
+          <Sparkles className="mr-2 h-4 w-4" />
+          Create Summary
+        </Button>
+
+        <SummaryWizard
+          open={wizardOpen}
+          onOpenChange={setWizardOpen}
+          guildId={id || ""}
+          initialWhenType="now"
+          onGenerateNow={handleWizardGenerateNow}
+          onCreateSchedule={handleWizardCreateSchedule}
+          onGeneratePast={handleWizardGeneratePast}
+        />
+
+        {/* Legacy dialog - kept for reference, hidden */}
         <Dialog open={generateOpen} onOpenChange={setGenerateOpen}>
           <DialogTrigger asChild>
-            <Button>
-              <Sparkles className="mr-2 h-4 w-4" />
-              Generate Summary
-            </Button>
+            <span className="hidden" />
           </DialogTrigger>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>

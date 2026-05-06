@@ -614,6 +614,178 @@ async def compare_daily_views(
 # Backfill Endpoints (ADR-057 Phase 3/4)
 # -------------------------------------------------------------------------
 
+class ProcessPageRequest(BaseModel):
+    """Request to process a single wiki page with RuVector."""
+    rebuild_edges: bool = True
+
+
+class ProcessPageResponse(BaseModel):
+    """Result of processing a single page."""
+    guild_id: str
+    page_path: str
+    sources_processed: int
+    units_created: int
+    edges_created: int
+    ruvector_view: Optional[RenderedViewResponse] = None
+
+
+@router.post(
+    "/guilds/{guild_id}/process-page/{path:path}",
+    response_model=ProcessPageResponse,
+    summary="Process single page",
+    description="ADR-057: Process a single wiki page into RuVector knowledge units",
+)
+async def process_single_page(
+    guild_id: str = Path(..., description="Guild ID"),
+    path: str = Path(..., description="Wiki page path (e.g., topics/agentic-flow.md)"),
+    request: ProcessPageRequest = ProcessPageRequest(),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Process a single wiki page into RuVector.
+
+    Extracts knowledge units from the page's source documents and
+    optionally rebuilds edges for the new units.
+    """
+    import json
+    from . import get_wiki_repository
+    from src.wiki.ruvector import (
+        VectorStore,
+        KnowledgeExtractor,
+        EmbeddingService,
+        EdgeInferenceEngine,
+        WikiViewRenderer,
+    )
+    from src.data.sqlite.connection import SQLiteConnection
+
+    try:
+        # Get wiki repository
+        wiki_repo = await get_wiki_repository()
+        if not wiki_repo:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "SERVICE_UNAVAILABLE", "message": "Wiki service unavailable"}
+            )
+
+        # Fetch the wiki page
+        page = await wiki_repo.get_page(guild_id, path)
+        if not page:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": f"Page not found: {path}"}
+            )
+
+        # Get source documents for this page
+        source_refs = page.source_refs or []
+        if not source_refs:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "NO_SOURCES", "message": "Page has no source documents to process"}
+            )
+
+        # Initialize RuVector components
+        connection = SQLiteConnection.get_instance()
+        embedding_service = EmbeddingService()
+        vector_store = VectorStore(connection=connection, embedding_service=embedding_service)
+        extractor = KnowledgeExtractor(embedding_service=embedding_service)
+        edge_inference = EdgeInferenceEngine(vector_store=vector_store)
+
+        # Fetch source documents
+        sources = await wiki_repo.get_sources_by_ids(guild_id, source_refs)
+
+        units_created = 0
+        all_units = []
+
+        # Process each source
+        for source in sources:
+            try:
+                metadata = json.loads(source.metadata) if isinstance(source.metadata, str) else (source.metadata or {})
+                channel_name = metadata.get("channel_name", "unknown")
+
+                # Parse timestamp
+                source_date = None
+                if metadata.get("timestamp"):
+                    try:
+                        source_date = datetime.fromisoformat(
+                            metadata["timestamp"].replace("Z", "+00:00")
+                        )
+                    except (ValueError, TypeError):
+                        pass
+
+                # Extract knowledge units
+                extraction = await extractor.extract_from_summary(
+                    guild_id=guild_id,
+                    summary_id=source.id,
+                    summary_text=source.content or "",
+                    channel_name=channel_name,
+                    summary_date=source_date,
+                    key_points=metadata.get("key_points", []),
+                    action_items=metadata.get("action_items", []),
+                )
+
+                all_units.extend(extraction.units)
+
+            except Exception as e:
+                logger.warning(f"Failed to process source {source.id}: {e}")
+
+        # Store units
+        if all_units:
+            await vector_store.store_units_batch(all_units)
+            units_created = len(all_units)
+
+        # Rebuild edges if requested
+        edges_created = 0
+        if request.rebuild_edges and all_units:
+            try:
+                unit_ids = [u.id for u in all_units]
+                edge_result = await edge_inference.infer_edges_for_units(unit_ids)
+                edges_created = edge_result.get("edges_created", 0)
+            except Exception as e:
+                logger.warning(f"Edge inference failed: {e}")
+
+        # Generate RuVector view for comparison
+        ruvector_view = None
+        try:
+            # Extract topic from path
+            topic = path.replace("topics/", "").replace(".md", "").replace("-", " ")
+            renderer = WikiViewRenderer(vector_store=vector_store)
+            view = await renderer.render_topic_page(
+                guild_id=guild_id,
+                topic=topic,
+                max_units=30,
+            )
+            ruvector_view = RenderedViewResponse(
+                title=view.title,
+                content=view.content,
+                view_type=view.view_type,
+                source_count=len(view.source_units),
+                generated_at=view.generated_at.isoformat(),
+                cache_key=view.cache_key,
+            )
+        except Exception as e:
+            logger.warning(f"View rendering failed: {e}")
+
+        logger.info(
+            f"Processed page {path} for guild {guild_id}: "
+            f"{len(sources)} sources, {units_created} units, {edges_created} edges"
+        )
+
+        return ProcessPageResponse(
+            guild_id=guild_id,
+            page_path=path,
+            sources_processed=len(sources),
+            units_created=units_created,
+            edges_created=edges_created,
+            ruvector_view=ruvector_view,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Process page failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class BackfillRequest(BaseModel):
     """Request to start RuVector backfill."""
     include_sources: bool = True

@@ -32,6 +32,7 @@ import {
   Play,
   Square,
   Settings2,
+  Zap,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -391,6 +392,32 @@ async function cancelBackfill(guildId: string): Promise<{ success: boolean }> {
   return api.post<{ success: boolean }>(`/guilds/${guildId}/wiki/backfill/cancel`, {});
 }
 
+// ADR-057: RuVector single page processing
+interface RuVectorProcessResult {
+  guild_id: string;
+  page_path: string;
+  sources_processed: number;
+  units_created: number;
+  edges_created: number;
+  ruvector_view?: {
+    title: string;
+    content: string;
+    view_type: string;
+    source_count: number;
+    generated_at: string;
+  };
+}
+
+async function processPageWithRuVector(
+  guildId: string,
+  path: string
+): Promise<RuVectorProcessResult> {
+  return api.post<RuVectorProcessResult>(
+    `/ruvector/guilds/${guildId}/process-page/${path}`,
+    { rebuild_edges: true }
+  );
+}
+
 // Clear wiki
 interface ClearWikiResult {
   pages_deleted: number;
@@ -518,12 +545,13 @@ function WikiPageView({ page }: { page: WikiPage }) {
     return () => { document.title = "SummaryBot Dashboard"; };
   }, [page.title]);
 
-  // URL-based tab selection (ADR-063): ?tab=synthesis or ?tab=updates
-  const tabFromUrl = searchParams.get("tab") as "synthesis" | "updates" | null;
+  // URL-based tab selection (ADR-063): ?tab=synthesis or ?tab=updates or ?tab=ruvector
+  type TabType = "synthesis" | "updates" | "ruvector";
+  const tabFromUrl = searchParams.get("tab") as TabType | null;
   const defaultTab = page.synthesis ? "synthesis" : "updates";
-  const activeTab = tabFromUrl && ["synthesis", "updates"].includes(tabFromUrl) ? tabFromUrl : defaultTab;
+  const activeTab = tabFromUrl && ["synthesis", "updates", "ruvector"].includes(tabFromUrl) ? tabFromUrl : defaultTab;
 
-  const setActiveTab = (tab: "synthesis" | "updates") => {
+  const setActiveTab = (tab: TabType) => {
     const newParams = new URLSearchParams(searchParams);
     newParams.set("tab", tab);
     setSearchParams(newParams, { replace: true });
@@ -593,6 +621,25 @@ function WikiPageView({ page }: { page: WikiPage }) {
     },
     onError: () => {
       toast({ title: "Failed to submit rating", variant: "destructive" });
+    },
+  });
+
+  // ADR-057: RuVector processing mutation
+  const [ruvectorView, setRuvectorView] = useState<string | null>(null);
+  const ruvectorMutation = useMutation({
+    mutationFn: () => processPageWithRuVector(guildId!, page.path),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["wiki-page", guildId, page.path] });
+      if (data.ruvector_view) {
+        setRuvectorView(data.ruvector_view.content);
+      }
+      toast({
+        title: "RuVector processing complete",
+        description: `${data.units_created} knowledge units, ${data.edges_created} edges`,
+      });
+    },
+    onError: () => {
+      toast({ title: "RuVector processing failed", variant: "destructive" });
     },
   });
 
@@ -719,19 +766,43 @@ function WikiPageView({ page }: { page: WikiPage }) {
         <h1 className="text-2xl font-bold">{page.title}</h1>
         <div className="flex gap-2">
           {activeTab === "synthesis" && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => synthesizeMutation.mutate()}
-              disabled={synthesizeMutation.isPending}
-            >
-              {synthesizeMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4 mr-1" />
-              )}
-              Regenerate
-            </Button>
+            <>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => ruvectorMutation.mutate()}
+                      disabled={ruvectorMutation.isPending}
+                    >
+                      {ruvectorMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <Zap className="h-4 w-4 mr-1" />
+                      )}
+                      RuVector
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Process page with RuVector semantic extraction</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => synthesizeMutation.mutate()}
+                disabled={synthesizeMutation.isPending}
+              >
+                {synthesizeMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                )}
+                Regenerate
+              </Button>
+            </>
           )}
           <Button variant="outline" size="sm" onClick={handleShare}>
             {copied ? (
@@ -749,8 +820,8 @@ function WikiPageView({ page }: { page: WikiPage }) {
         </div>
       </div>
 
-      {/* ADR-063: Tabs for Synthesis and Updates */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "synthesis" | "updates")}>
+      {/* ADR-063: Tabs for Synthesis, Updates, and RuVector */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabType)}>
         <TabsList>
           <TabsTrigger value="synthesis" className="gap-2">
             <Sparkles className="h-4 w-4" />
@@ -758,6 +829,15 @@ function WikiPageView({ page }: { page: WikiPage }) {
             {page.synthesis && (
               <Badge variant="secondary" className="ml-1 text-xs">
                 {page.synthesis_source_count} sources
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="ruvector" className="gap-2">
+            <Zap className="h-4 w-4" />
+            RuVector
+            {ruvectorView && (
+              <Badge variant="secondary" className="ml-1 text-xs bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">
+                Ready
               </Badge>
             )}
           </TabsTrigger>
@@ -854,6 +934,44 @@ function WikiPageView({ page }: { page: WikiPage }) {
                     <Sparkles className="h-4 w-4 mr-2" />
                   )}
                   Generate Synthesis
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="ruvector" className="mt-4">
+          {ruvectorView ? (
+            <Card>
+              <CardContent className="pt-6">
+                <MarkdownContent content={ruvectorView} />
+                <div className="mt-4 pt-4 border-t flex items-center gap-4 text-sm text-muted-foreground">
+                  <Badge variant="secondary" className="text-xs bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">
+                    <Zap className="h-3 w-3 mr-1" />
+                    RuVector View
+                  </Badge>
+                  <span>Semantic extraction with knowledge units</span>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Zap className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="font-medium mb-2">No RuVector view yet</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Process this page with RuVector to extract structured knowledge units
+                </p>
+                <Button
+                  onClick={() => ruvectorMutation.mutate()}
+                  disabled={ruvectorMutation.isPending}
+                >
+                  {ruvectorMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Zap className="h-4 w-4 mr-2" />
+                  )}
+                  Process with RuVector
                 </Button>
               </CardContent>
             </Card>

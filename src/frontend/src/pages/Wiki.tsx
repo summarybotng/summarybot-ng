@@ -218,6 +218,8 @@ async function fetchSourceReferences(guildId: string, sourceId: string): Promise
 interface WikiSettings {
   wiki_auto_ingest: boolean;
   wiki_auto_synthesis: boolean;
+  // ADR-090: Vector ingestion toggle
+  wiki_ingest_to_vectors: boolean;
   // ADR-080: Perspective filtering
   wiki_allowed_perspectives: string[];
 }
@@ -1894,17 +1896,45 @@ function PopulateWiki({ guildId }: { guildId: string }) {
             By default, only "general" perspective summaries are included.
           </p>
 
-          {/* Auto-ingest toggle */}
-          <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-            <div className="flex items-center gap-2">
-              <RefreshCw className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Auto-ingest new summaries</span>
+          {/* Ingestion path toggles (ADR-090) */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Ingestion Paths</label>
+
+            {/* Pages toggle */}
+            <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <span className="text-sm font-medium">Pages (traditional)</span>
+                  <p className="text-xs text-muted-foreground">Summaries update wiki page content</p>
+                </div>
+              </div>
+              <Switch
+                checked={wikiSettings?.wiki_auto_ingest ?? true}
+                onCheckedChange={(checked) => settingsMutation.mutate({ wiki_auto_ingest: checked })}
+                disabled={settingsMutation.isPending}
+              />
             </div>
-            <Switch
-              checked={wikiSettings?.wiki_auto_ingest ?? true}
-              onCheckedChange={(checked) => settingsMutation.mutate({ wiki_auto_ingest: checked })}
-              disabled={settingsMutation.isPending}
-            />
+
+            {/* Vectors toggle */}
+            <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+              <div className="flex items-center gap-2">
+                <Cpu className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <span className="text-sm font-medium">Vectors (experimental)</span>
+                  <p className="text-xs text-muted-foreground">Summaries create knowledge units for semantic search</p>
+                </div>
+              </div>
+              <Switch
+                checked={wikiSettings?.wiki_ingest_to_vectors ?? false}
+                onCheckedChange={(checked) => settingsMutation.mutate({ wiki_ingest_to_vectors: checked })}
+                disabled={settingsMutation.isPending}
+              />
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Enable both to compare approaches side-by-side. Vector ingestion powers semantic clustering (ADR-090).
+            </p>
           </div>
 
           {/* Perspective selector */}

@@ -1504,6 +1504,8 @@ class WikiSettingsResponse(BaseModel):
     """Wiki settings for a guild."""
     wiki_auto_ingest: bool = True
     wiki_auto_synthesis: bool = True
+    # ADR-090: Vector ingestion toggle
+    wiki_ingest_to_vectors: bool = False
     # ADR-080: Perspective filtering
     wiki_allowed_perspectives: List[str] = ["general"]
 
@@ -1512,6 +1514,8 @@ class WikiSettingsUpdateRequest(BaseModel):
     """Request to update wiki settings."""
     wiki_auto_ingest: Optional[bool] = None
     wiki_auto_synthesis: Optional[bool] = None
+    # ADR-090: Vector ingestion toggle
+    wiki_ingest_to_vectors: Optional[bool] = None
     # ADR-080: Perspective filtering
     wiki_allowed_perspectives: Optional[List[str]] = None
 
@@ -1547,7 +1551,7 @@ async def get_wiki_settings(
         factory = get_repository_factory()
         conn = await factory.get_connection()
         row = await conn.fetch_one(
-            "SELECT wiki_auto_ingest, wiki_auto_synthesis, wiki_allowed_perspectives FROM guild_configs WHERE guild_id = ?",
+            "SELECT wiki_auto_ingest, wiki_auto_synthesis, wiki_ingest_to_vectors, wiki_allowed_perspectives FROM guild_configs WHERE guild_id = ?",
             (guild_id,)
         )
 
@@ -1563,6 +1567,7 @@ async def get_wiki_settings(
             return WikiSettingsResponse(
                 wiki_auto_ingest=row.get('wiki_auto_ingest', True) if row.get('wiki_auto_ingest') is not None else True,
                 wiki_auto_synthesis=row.get('wiki_auto_synthesis', True) if row.get('wiki_auto_synthesis') is not None else True,
+                wiki_ingest_to_vectors=bool(row.get('wiki_ingest_to_vectors', 0)),
                 wiki_allowed_perspectives=allowed_perspectives,
             )
         return WikiSettingsResponse()
@@ -1606,6 +1611,10 @@ async def update_wiki_settings(
         if settings.wiki_auto_synthesis is not None:
             updates.append("wiki_auto_synthesis = ?")
             params.append(settings.wiki_auto_synthesis)
+        # ADR-090: Vector ingestion toggle
+        if settings.wiki_ingest_to_vectors is not None:
+            updates.append("wiki_ingest_to_vectors = ?")
+            params.append(settings.wiki_ingest_to_vectors)
         # ADR-080: Handle allowed perspectives
         if settings.wiki_allowed_perspectives is not None:
             updates.append("wiki_allowed_perspectives = ?")
@@ -1625,7 +1634,7 @@ async def update_wiki_settings(
 
         # Return updated settings
         row = await conn.fetch_one(
-            "SELECT wiki_auto_ingest, wiki_auto_synthesis, wiki_allowed_perspectives FROM guild_configs WHERE guild_id = ?",
+            "SELECT wiki_auto_ingest, wiki_auto_synthesis, wiki_ingest_to_vectors, wiki_allowed_perspectives FROM guild_configs WHERE guild_id = ?",
             (guild_id,)
         )
 
@@ -1644,6 +1653,7 @@ async def update_wiki_settings(
             details={
                 "auto_ingest": settings.wiki_auto_ingest,
                 "auto_synthesis": settings.wiki_auto_synthesis,
+                "ingest_to_vectors": settings.wiki_ingest_to_vectors,
                 "allowed_perspectives": settings.wiki_allowed_perspectives,
             },
         )
@@ -1651,6 +1661,7 @@ async def update_wiki_settings(
         return WikiSettingsResponse(
             wiki_auto_ingest=row.get('wiki_auto_ingest', True) if row and row.get('wiki_auto_ingest') is not None else True,
             wiki_auto_synthesis=row.get('wiki_auto_synthesis', True) if row and row.get('wiki_auto_synthesis') is not None else True,
+            wiki_ingest_to_vectors=bool(row.get('wiki_ingest_to_vectors', 0)) if row else False,
             wiki_allowed_perspectives=allowed_perspectives,
         )
 

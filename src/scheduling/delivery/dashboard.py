@@ -163,20 +163,25 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
         try:
             from ...data.repositories import get_wiki_repository, get_repository_factory
 
-            # Check if auto-ingest is enabled for this guild (default: enabled)
-            auto_ingest_enabled = True
+            # Check wiki ingestion settings for this guild
+            # ADR-090: Two separate switches for page vs vector ingestion
+            auto_ingest_enabled = True  # Pages (default: enabled)
+            ingest_to_vectors = False   # Vectors (default: disabled)
             try:
                 factory = get_repository_factory()
                 conn = await factory.get_connection()
                 row = await conn.fetch_one(
-                    "SELECT wiki_auto_ingest FROM guild_configs WHERE guild_id = ?",
+                    "SELECT wiki_auto_ingest, wiki_ingest_to_vectors FROM guild_configs WHERE guild_id = ?",
                     (summary.guild_id,)
                 )
-                if row and row.get('wiki_auto_ingest') is not None:
-                    auto_ingest_enabled = bool(row['wiki_auto_ingest'])
+                if row:
+                    if row.get('wiki_auto_ingest') is not None:
+                        auto_ingest_enabled = bool(row['wiki_auto_ingest'])
+                    if row.get('wiki_ingest_to_vectors') is not None:
+                        ingest_to_vectors = bool(row['wiki_ingest_to_vectors'])
             except Exception as e:
-                # Column may not exist yet, default to enabled
-                logger.debug(f"Could not check wiki_auto_ingest setting: {e}")
+                # Columns may not exist yet, use defaults
+                logger.debug(f"Could not check wiki ingestion settings: {e}")
 
             if not auto_ingest_enabled:
                 logger.debug(f"Wiki auto-ingest disabled for guild {summary.guild_id}")
@@ -224,10 +229,11 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
                 logger.debug(f"No summary result for {summary.id}, skipping wiki ingestion")
                 return
 
-            # ADR-057 Phase 4: Use factory to get agent with RuVector dual-write
+            # ADR-057 Phase 4: Use factory to get agent with optional RuVector dual-write
+            # ADR-090: Controlled by wiki_ingest_to_vectors setting
             from ...wiki.agents import create_ingest_agent
 
-            agent = await create_ingest_agent(wiki_repo, enable_ruvector=True)
+            agent = await create_ingest_agent(wiki_repo, enable_ruvector=ingest_to_vectors)
 
             # Get platform from context
             platform = 'discord'

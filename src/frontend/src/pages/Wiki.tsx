@@ -461,11 +461,14 @@ async function getRuVectorBackfillStatus(guildId: string): Promise<RuVectorBackf
 }
 
 async function startRuVectorBackfill(guildId: string): Promise<RuVectorBackfillResult> {
-  return api.post<RuVectorBackfillResult>(`/ruvector/guilds/${guildId}/backfill`, {
+  console.log("[RuVector] Starting backfill for guild:", guildId);
+  const result = await api.post<RuVectorBackfillResult>(`/ruvector/guilds/${guildId}/backfill`, {
     include_sources: true,
     include_pages: true,
     rebuild_edges: true,
   });
+  console.log("[RuVector] Backfill result:", result);
+  return result;
 }
 
 // Clear wiki
@@ -2358,8 +2361,10 @@ export function Wiki() {
       refetchRuvectorStatus();
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.detail || "Failed to start RuVector backfill";
-      toast({ title: "Error", description: message, variant: "destructive" });
+      // Handle both fetch errors and parsed JSON errors
+      const message = error?.detail?.message || error?.detail || error?.message || "Failed to start RuVector backfill";
+      toast({ title: "RuVector Error", description: String(message), variant: "destructive" });
+      console.error("RuVector backfill error:", error);
     },
   });
 

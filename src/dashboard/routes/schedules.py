@@ -116,6 +116,8 @@ def _task_to_response(task, category_name: str = None, template_name: str = None
         platform=getattr(task, 'platform', 'discord'),
         # ADR-087: Weekly continuity summaries
         enable_continuity=getattr(task, 'enable_continuity', False),
+        # ADR-089: Lookback period
+        time_range_hours=getattr(task, 'time_range_hours', 24),
     )
 
 
@@ -278,6 +280,7 @@ async def create_schedule(
         prompt_template_id=body.prompt_template_id,  # ADR-034
         platform=body.platform or "discord",  # ADR-051
         enable_continuity=body.enable_continuity,  # ADR-087
+        time_range_hours=body.time_range_hours,  # ADR-089: Lookback period
     )
 
     # Calculate next run
@@ -518,6 +521,10 @@ async def update_schedule(
     # ADR-087: Update enable_continuity
     if body.enable_continuity is not None:
         task.enable_continuity = body.enable_continuity
+
+    # ADR-089: Update time_range_hours
+    if body.time_range_hours is not None:
+        task.time_range_hours = body.time_range_hours
 
     # Recalculate next run
     task.next_run = task.calculate_next_run()

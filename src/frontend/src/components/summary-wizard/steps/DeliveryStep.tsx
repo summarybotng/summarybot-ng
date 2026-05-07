@@ -23,7 +23,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ChevronDown, Mail, Webhook, Hash, MessageSquare } from "lucide-react";
+import { ChevronDown, Mail, Webhook, Hash, MessageSquare, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { StepProps } from "../types";
 
@@ -96,6 +96,45 @@ export function DeliveryStep({ state, onChange, guildId }: StepProps) {
                   ))}
                 </SelectContent>
               </Select>
+            )}
+          </div>
+        </div>
+
+        {/* Discord DM (ADR-047) */}
+        <div className="flex items-start gap-3 p-3 rounded-md border">
+          <Checkbox
+            checked={state.destinations.discordDm}
+            onCheckedChange={(checked) =>
+              onChange({
+                destinations: {
+                  ...state.destinations,
+                  discordDm: !!checked,
+                },
+              })
+            }
+            className="mt-1"
+          />
+          <div className="flex-1 space-y-2">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="h-4 w-4" />
+              <span className="font-medium">Discord DM</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Send directly to a user via DM
+            </p>
+            {state.destinations.discordDm && (
+              <Input
+                placeholder="Discord User ID (e.g., 123456789012345678)"
+                value={state.destinations.discordDmUserId}
+                onChange={(e) =>
+                  onChange({
+                    destinations: {
+                      ...state.destinations,
+                      discordDmUserId: e.target.value,
+                    },
+                  })
+                }
+              />
             )}
           </div>
         </div>
@@ -225,13 +264,14 @@ export function DeliveryStep({ state, onChange, guildId }: StepProps) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="general">General</SelectItem>
-                <SelectItem value="technical">Technical</SelectItem>
+                <SelectItem value="developer">Developer</SelectItem>
+                <SelectItem value="marketing">Marketing</SelectItem>
                 <SelectItem value="executive">Executive</SelectItem>
-                <SelectItem value="action-focused">Action-Focused</SelectItem>
+                <SelectItem value="support">Support</SelectItem>
                 {promptTemplates && promptTemplates.length > 0 && (
                   <>
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      Custom Templates
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-2">
+                      Custom Perspectives
                     </div>
                     {promptTemplates.map((t) => (
                       <SelectItem key={t.id} value={`template:${t.id}`}>

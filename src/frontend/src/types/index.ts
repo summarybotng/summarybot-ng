@@ -199,6 +199,8 @@ export interface Schedule {
   platform?: "discord" | "slack" | "whatsapp";
   // ADR-087: Weekly continuity summaries
   enable_continuity?: boolean;
+  // ADR-089: Lookback period
+  time_range_hours?: number;
 }
 
 // ADR-034: Guild Prompt Template types

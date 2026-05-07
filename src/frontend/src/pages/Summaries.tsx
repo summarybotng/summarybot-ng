@@ -196,16 +196,22 @@ export function Summaries() {
       scope: state.scope,
       channel_ids: state.scope === "channel" ? state.channelIds : [],
       category_id: state.scope === "category" ? state.categoryId : undefined,
-      schedule_type: state.frequency === "daily" ? "daily" : state.frequency === "weekly" ? "weekly" : "monthly",
+      schedule_type: state.frequency,  // Pass frequency directly - supports all types
       schedule_time: state.scheduleTime,
       schedule_days: state.frequency === "weekly" ? state.scheduleDays : undefined,
       timezone: state.timezone,
       platform: state.platform,
       enable_continuity: state.enableContinuity,
+      time_range_hours: state.lookbackHours,  // ADR-089: Lookback period
+      prompt_template_id: state.promptTemplateId || undefined,  // ADR-034: Custom templates
       destinations: [
         { type: "dashboard", target: "default", format: "embed" },
         ...(state.destinations.discordChannel && state.destinations.discordChannelId
           ? [{ type: "discord_channel" as const, target: state.destinations.discordChannelId, format: "embed" as const }]
+          : []),
+        // ADR-047: Discord DM destination
+        ...(state.destinations.discordDm && state.destinations.discordDmUserId
+          ? [{ type: "discord_dm" as const, target: state.destinations.discordDmUserId, format: "embed" as const }]
           : []),
         ...(state.destinations.webhook && state.destinations.webhookUrl
           ? [{ type: "webhook" as const, target: state.destinations.webhookUrl, format: "json" as const }]
@@ -216,7 +222,7 @@ export function Summaries() {
       ],
       summary_options: {
         summary_length: state.summaryLength,
-        perspective: state.perspective as "general" | "technical" | "executive" | "action-focused",
+        perspective: state.perspective,  // Pass perspective directly
         include_action_items: true,
         include_technical_terms: true,
         min_messages: state.minMessages,

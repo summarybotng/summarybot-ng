@@ -685,6 +685,7 @@ async def compare_daily_views(
 class ProcessPageRequest(BaseModel):
     """Request to process a single wiki page with RuVector."""
     rebuild_edges: bool = True
+    topic_filter: Optional[str] = None  # If set, filter units to only those relevant to this topic
 
 
 class ProcessPageResponse(BaseModel):
@@ -795,6 +796,33 @@ async def process_single_page(
 
             except Exception as e:
                 logger.warning(f"Failed to process source {source.id}: {e}")
+
+        # ADR-057: Filter units by topic relevance if topic_filter is provided
+        topic = request.topic_filter or path.replace("topics/", "").replace(".md", "").replace("-", " ")
+        if topic and all_units:
+            try:
+                # Get embedding for topic
+                topic_embedding = await embedding_service.embed_text(topic)
+
+                # Filter units to only those semantically relevant to the topic
+                filtered_units = []
+                for unit in all_units:
+                    unit_embedding = await embedding_service.embed_text(unit.content)
+                    # Cosine similarity
+                    import numpy as np
+                    similarity = np.dot(topic_embedding, unit_embedding) / (
+                        np.linalg.norm(topic_embedding) * np.linalg.norm(unit_embedding)
+                    )
+                    # Keep units with similarity > 0.3 (configurable threshold)
+                    if similarity > 0.3:
+                        filtered_units.append(unit)
+
+                logger.info(
+                    f"Topic filter '{topic}': {len(all_units)} units -> {len(filtered_units)} relevant units"
+                )
+                all_units = filtered_units
+            except Exception as e:
+                logger.warning(f"Topic filtering failed, using all units: {e}")
 
         # Store units
         if all_units:

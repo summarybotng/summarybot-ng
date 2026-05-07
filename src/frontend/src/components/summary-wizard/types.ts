@@ -6,7 +6,14 @@ export type Platform = "discord" | "slack" | "whatsapp";
 
 export type WhenType = "now" | "recurring" | "past";
 
-export type ScheduleFrequency = "daily" | "weekly" | "monthly" | "custom";
+export type ScheduleFrequency =
+  | "fifteen-minutes"
+  | "hourly"
+  | "every-4-hours"
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "once";
 
 export type TimeRange = "4h" | "8h" | "24h" | "48h" | "custom";
 
@@ -31,6 +38,7 @@ export interface WizardState {
   timezone: string;
   scheduleName: string;
   enableContinuity: boolean;
+  lookbackHours: number;  // How far back to fetch messages (time_range_hours)
 
   // When: Past options
   dateFrom: Date | null;
@@ -42,6 +50,8 @@ export interface WizardState {
     dashboard: boolean;
     discordChannel: boolean;
     discordChannelId: string;
+    discordDm: boolean;        // ADR-047: Discord DM delivery
+    discordDmUserId: string;   // ADR-047: Discord user ID for DM
     webhook: boolean;
     webhookUrl: string;
     email: boolean;
@@ -76,6 +86,7 @@ export const initialWizardState: WizardState = {
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Toronto",
   scheduleName: "",
   enableContinuity: false,
+  lookbackHours: 24,  // Default: look back 24 hours
 
   // Past options
   dateFrom: null,
@@ -87,6 +98,8 @@ export const initialWizardState: WizardState = {
     dashboard: true,
     discordChannel: false,
     discordChannelId: "",
+    discordDm: false,        // ADR-047
+    discordDmUserId: "",     // ADR-047
     webhook: false,
     webhookUrl: "",
     email: false,

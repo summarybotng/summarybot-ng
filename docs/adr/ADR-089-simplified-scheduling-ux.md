@@ -1,7 +1,7 @@
 # ADR-089: Unified Summary Creation UX
 
 ## Status
-Proposed
+Accepted (Phases 1-4 implemented, Phases 5-6 pending)
 
 ## Context
 
@@ -485,13 +485,225 @@ Start with templates: "Weekly team sync", "Daily standup recap"
 
 ---
 
+## Feature Parity Gaps
+
+The SummaryWizard must reach feature parity with the existing ScheduleForm. The following features are missing or incomplete:
+
+### Critical Gaps
+
+#### 1. Time Range Hours (Lookback Period)
+
+The backend supports `time_range_hours` (how far back to fetch messages when a schedule runs), but neither UI exposes this:
+
+```tsx
+// WhenStep RecurringOptions should include:
+<div>
+  <Label>Look back period</Label>
+  <Select value={state.lookbackHours} onValueChange={...}>
+    <SelectItem value="8">8 hours</SelectItem>
+    <SelectItem value="24">24 hours (default)</SelectItem>
+    <SelectItem value="48">48 hours</SelectItem>
+    <SelectItem value="168">7 days</SelectItem>
+    <SelectItem value="custom">Custom</SelectItem>
+  </Select>
+  <p className="text-xs text-muted-foreground">
+    How many hours of messages to include in each summary
+  </p>
+</div>
+```
+
+**Common patterns:**
+- Daily at 9am → 24 hours (covers previous day)
+- Twice daily (9am, 5pm) → 8 hours each
+- Weekly → 168 hours (7 days)
+
+#### 2. Discord DM Delivery (ADR-047)
+
+ScheduleForm supports sending summaries via Discord DM to a specific user. Missing from wizard:
+
+```tsx
+// DeliveryStep should include:
+<div className="flex items-start gap-3 p-3 rounded-md border">
+  <Checkbox checked={state.destinations.discordDm} ... />
+  <div className="flex-1 space-y-2">
+    <div className="flex items-center gap-2">
+      <MessageCircle className="h-4 w-4" />
+      <span className="font-medium">Discord DM</span>
+    </div>
+    {state.destinations.discordDm && (
+      <Input
+        placeholder="Discord User ID (e.g., 123456789012345678)"
+        value={state.destinations.discordDmUserId}
+        onChange={...}
+      />
+    )}
+  </div>
+</div>
+```
+
+#### 3. Interval-Based Schedules
+
+ScheduleForm supports high-frequency schedules not in wizard:
+
+| Schedule Type | In ScheduleForm | In Wizard |
+|---------------|-----------------|-----------|
+| fifteen-minutes | ✅ | ❌ |
+| hourly | ✅ | ❌ |
+| every-4-hours | ✅ | ❌ |
+| once | ✅ | ❌ |
+| daily | ✅ | ✅ |
+| weekly | ✅ | ✅ |
+| monthly | ✅ | ✅ |
+
+Add to WhenStep RecurringOptions:
+
+```tsx
+const frequencies = [
+  { value: "fifteen-minutes", label: "Every 15 min" },
+  { value: "hourly", label: "Hourly" },
+  { value: "every-4-hours", label: "Every 4 hours" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "once", label: "Once" },
+];
+```
+
+Note: For interval schedules (fifteen-minutes, hourly, every-4-hours), hide the time picker since they run on intervals, not at specific times.
+
+#### 4. Push Single Summary
+
+Users need ability to push an existing stored summary to destinations on-demand. This is NOT part of schedule creation but should be accessible from summary detail view:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Summary: Weekly #general - May 5, 2024                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ [Summary content...]                                        │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│ Push to:                                                    │
+│ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐            │
+│ │ Discord │ │  Slack  │ │  Email  │ │ Webhook │            │
+│ │    #    │ │    #    │ │   ✉️    │ │   🔗    │            │
+│ └─────────┘ └─────────┘ └─────────┘ └─────────┘            │
+│                                                             │
+│ [Select destination and push]                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Implementation:**
+- Add "Push to..." dropdown/dialog to `StoredSummaryDetailSheet`
+- Options: Discord channel, Slack channel, Email addresses, Webhook URL
+- Calls existing push endpoints (`POST /summaries/{id}/push`)
+
+### Minor Gaps
+
+#### 5. Privacy Warnings (ADR-046)
+
+ScheduleForm shows warnings when private Discord channels are selected. Add to WhatStep:
+
+```tsx
+{privacyWarnings.length > 0 && (
+  <Alert variant="warning">
+    <AlertTriangle className="h-4 w-4" />
+    <AlertTitle>Privacy Notice</AlertTitle>
+    <AlertDescription>
+      This includes {privacyWarnings.length} private channel(s).
+      Summaries will be visible to all guild members.
+    </AlertDescription>
+  </Alert>
+)}
+```
+
+#### 6. Dynamic Perspectives
+
+Perspectives should be fetched dynamically, not hardcoded. The wizard currently has:
+- general, technical, executive, action-focused
+
+ScheduleForm has:
+- general, developer, marketing, executive, support
+
+**Solution:** Fetch perspectives from API and merge with custom prompt templates:
+
+```tsx
+const { data: perspectives } = usePerspectives(guildId);
+const { data: promptTemplates } = usePromptTemplates(guildId);
+
+// Render dynamically
+<SelectContent>
+  {perspectives?.map((p) => (
+    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+  ))}
+  {promptTemplates?.length > 0 && (
+    <>
+      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+        Custom Templates
+      </div>
+      {promptTemplates.map((t) => (
+        <SelectItem key={t.id} value={`template:${t.id}`}>
+          {t.name}
+        </SelectItem>
+      ))}
+    </>
+  )}
+</SelectContent>
+```
+
+### Types Update
+
+Add to `types.ts`:
+
+```typescript
+export interface WizardState {
+  // ... existing fields ...
+
+  // Add to When: Recurring options
+  lookbackHours: number;  // time_range_hours
+
+  // Add to Delivery destinations
+  destinations: {
+    // ... existing ...
+    discordDm: boolean;
+    discordDmUserId: string;
+  };
+}
+
+export type ScheduleFrequency =
+  | "fifteen-minutes"
+  | "hourly"
+  | "every-4-hours"
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "once";
+```
+
+---
+
 ## Implementation Estimate
 
-| Phase | Scope |
-|-------|-------|
-| Phase 1 | WhatStep, WhenStep, DeliveryStep, WizardProgress, integration |
-| Phase 2 | Edit mode migration, animations |
-| Phase 3 | Mobile polish, accessibility audit |
+| Phase | Scope | Status |
+|-------|-------|--------|
+| Phase 1 | WhatStep, WhenStep, DeliveryStep, WizardProgress, integration | ✅ Done |
+| Phase 2 | Feature parity: lookback hours, interval schedules, Discord DM | ✅ Done |
+| Phase 3 | Push single summary to destinations | ✅ Done (existing) |
+| Phase 4 | Dynamic perspectives, privacy warnings | ✅ Done |
+| Phase 5 | Edit mode migration, animations | ❌ Pending |
+| Phase 6 | Mobile polish, accessibility audit | ❌ Pending |
+
+### Phase 2 Details (Feature Parity)
+
+1. **WizardState types** - Add `lookbackHours`, `discordDm`, `discordDmUserId`, expand `ScheduleFrequency`
+2. **WhenStep** - Add lookback hours selector, interval schedule options
+3. **DeliveryStep** - Add Discord DM destination
+
+### Phase 3 Details (Push Summary)
+
+1. **StoredSummaryDetailSheet** - Add "Push to..." action
+2. **PushSummaryDialog** - Select destination type and target
+3. **API integration** - Call `POST /summaries/{id}/push`
 
 ---
 

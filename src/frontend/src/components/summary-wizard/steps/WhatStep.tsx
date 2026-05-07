@@ -4,21 +4,43 @@
  * Platform selection + channel/scope selection
  */
 
+import { useEffect, useState } from "react";
 import { useGuild } from "@/hooks/useGuilds";
 import { useWhatsAppChats } from "@/hooks/useWhatsApp";
+import { useCheckChannelPrivacy, type PrivacyWarning } from "@/hooks/useChannelPrivacy";
 import { PlatformCard } from "../shared/PlatformCard";
 import { ScopeSelector, type ScopeSelectorValue } from "@/components/ScopeSelector";
 import { WhatsAppChatSelector } from "@/components/schedules/WhatsAppChatSelector";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertCircle, AlertTriangle } from "lucide-react";
 import type { StepProps, Platform } from "../types";
 
 export function WhatStep({ state, onChange, guildId }: StepProps) {
   const { data: guild, isLoading: guildLoading } = useGuild(guildId);
   const { data: whatsappChats } = useWhatsAppChats(guildId);
+  const checkPrivacy = useCheckChannelPrivacy(guildId);
+  const [privacyWarnings, setPrivacyWarnings] = useState<PrivacyWarning[]>([]);
 
   const hasWhatsApp = whatsappChats && whatsappChats.length > 0;
+
+  // ADR-046: Check privacy when Discord channels are selected
+  useEffect(() => {
+    if (state.platform !== "discord" || state.scope !== "channel" || state.channelIds.length === 0) {
+      setPrivacyWarnings([]);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      checkPrivacy.mutateAsync(state.channelIds).then((result) => {
+        setPrivacyWarnings(result.warnings);
+      }).catch(() => {
+        setPrivacyWarnings([]);
+      });
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [state.platform, state.scope, state.channelIds.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePlatformChange = (platform: Platform) => {
     // Reset scope when switching platforms
@@ -105,6 +127,23 @@ export function WhatStep({ state, onChange, guildId }: StepProps) {
           />
         )}
       </div>
+
+      {/* ADR-046: Privacy Warning for Private Channels */}
+      {state.platform === "discord" && privacyWarnings.length > 0 && (
+        <Alert variant="default" className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <AlertTitle className="text-amber-800 dark:text-amber-200">Privacy Notice</AlertTitle>
+          <AlertDescription className="text-amber-700 dark:text-amber-300">
+            This schedule includes {privacyWarnings.length} private channel{privacyWarnings.length > 1 ? "s" : ""}.
+            Summaries will be visible to all guild members in the dashboard.
+            <ul className="mt-2 list-disc list-inside text-sm">
+              {privacyWarnings.map((w) => (
+                <li key={w.channel_id}>#{w.channel_name}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Validation */}
       {state.scope === "channel" && state.channelIds.length === 0 && (

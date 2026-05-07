@@ -462,9 +462,11 @@ class ScheduleListItem(BaseModel):
     prompt_template_id: Optional[str] = None
     prompt_template_name: Optional[str] = None  # Resolved for display
     # ADR-051: Platform support
-    platform: str = "discord"  # discord, slack
+    platform: str = "discord"  # discord, slack, whatsapp
     # ADR-087: Weekly continuity summaries
     enable_continuity: bool = False  # When true, weekly summaries carry context from previous week
+    # ADR-089: Lookback period
+    time_range_hours: int = 24  # How far back to fetch messages
 
 
 class SchedulesResponse(BaseModel):
@@ -489,9 +491,11 @@ class ScheduleCreateRequest(BaseModel):
     # ADR-034: Guild prompt templates
     prompt_template_id: Optional[str] = None
     # ADR-051: Platform support
-    platform: str = "discord"  # discord, slack
+    platform: str = "discord"  # discord, slack, whatsapp
     # ADR-087: Weekly continuity summaries
     enable_continuity: bool = False  # When true, weekly summaries carry context from previous week
+    # ADR-089: Lookback period (how far back to fetch messages)
+    time_range_hours: int = 24  # Default: look back 24 hours
 
 
 class ScheduleUpdateRequest(BaseModel):
@@ -511,9 +515,11 @@ class ScheduleUpdateRequest(BaseModel):
     # ADR-034: Guild prompt templates
     prompt_template_id: Optional[str] = None
     # ADR-051: Platform support
-    platform: Optional[str] = None  # discord, slack
+    platform: Optional[str] = None  # discord, slack, whatsapp
     # ADR-087: Weekly continuity summaries
     enable_continuity: Optional[bool] = None  # When true, weekly summaries carry context from previous week
+    # ADR-089: Lookback period (how far back to fetch messages)
+    time_range_hours: Optional[int] = None
 
 
 class ScheduleRunResponse(BaseModel):

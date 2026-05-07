@@ -133,10 +133,25 @@ function NowOptions({ state, onChange }: Pick<StepProps, "state" | "onChange">) 
 
 function RecurringOptions({ state, onChange }: Pick<StepProps, "state" | "onChange">) {
   const frequencies: { value: ScheduleFrequency; label: string }[] = [
+    { value: "fifteen-minutes", label: "Every 15 min" },
+    { value: "hourly", label: "Hourly" },
+    { value: "every-4-hours", label: "Every 4 hours" },
     { value: "daily", label: "Daily" },
     { value: "weekly", label: "Weekly" },
     { value: "monthly", label: "Monthly" },
+    { value: "once", label: "Once" },
   ];
+
+  const lookbackOptions = [
+    { value: 4, label: "4 hours" },
+    { value: 8, label: "8 hours" },
+    { value: 24, label: "24 hours" },
+    { value: 48, label: "48 hours" },
+    { value: 168, label: "7 days" },
+  ];
+
+  // Interval schedules don't need time picker
+  const isIntervalSchedule = ["fifteen-minutes", "hourly", "every-4-hours"].includes(state.frequency);
 
   const toggleDay = (day: number) => {
     const newDays = state.scheduleDays.includes(day)
@@ -186,35 +201,58 @@ function RecurringOptions({ state, onChange }: Pick<StepProps, "state" | "onChan
         </div>
       )}
 
-      {/* Time and Timezone */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label>Time</Label>
-          <Input
-            type="time"
-            value={state.scheduleTime}
-            onChange={(e) => onChange({ scheduleTime: e.target.value })}
-            className="mt-2"
-          />
+      {/* Time and Timezone - hidden for interval schedules */}
+      {!isIntervalSchedule && (
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Time</Label>
+            <Input
+              type="time"
+              value={state.scheduleTime}
+              onChange={(e) => onChange({ scheduleTime: e.target.value })}
+              className="mt-2"
+            />
+          </div>
+          <div>
+            <Label>Timezone</Label>
+            <Select
+              value={state.timezone}
+              onValueChange={(v) => onChange({ timezone: v })}
+            >
+              <SelectTrigger className="mt-2">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TIMEZONES.map((tz) => (
+                  <SelectItem key={tz} value={tz}>
+                    {tz}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        <div>
-          <Label>Timezone</Label>
-          <Select
-            value={state.timezone}
-            onValueChange={(v) => onChange({ timezone: v })}
-          >
-            <SelectTrigger className="mt-2">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TIMEZONES.map((tz) => (
-                <SelectItem key={tz} value={tz}>
-                  {tz}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      )}
+
+      {/* Lookback Hours */}
+      <div>
+        <Label>Look back period</Label>
+        <div className="flex gap-2 mt-2 flex-wrap">
+          {lookbackOptions.map((opt) => (
+            <Button
+              key={opt.value}
+              type="button"
+              variant={state.lookbackHours === opt.value ? "default" : "outline"}
+              size="sm"
+              onClick={() => onChange({ lookbackHours: opt.value })}
+            >
+              {opt.label}
+            </Button>
+          ))}
         </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          How many hours of messages to include in each summary
+        </p>
       </div>
 
       {/* Schedule Name */}

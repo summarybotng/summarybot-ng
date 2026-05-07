@@ -421,12 +421,51 @@ interface RuVectorProcessResult {
 
 async function processPageWithRuVector(
   guildId: string,
-  path: string
+  path: string,
+  topicFilter?: string
 ): Promise<RuVectorProcessResult> {
   return api.post<RuVectorProcessResult>(
     `/ruvector/guilds/${guildId}/process-page/${path}`,
-    { rebuild_edges: true }
+    { rebuild_edges: true, topic_filter: topicFilter }
   );
+}
+
+// ADR-057: RuVector backfill status and bulk processing
+interface RuVectorBackfillStatus {
+  guild_id: string;
+  total_sources: number;
+  processed_sources: number;
+  total_pages: number;
+  processed_pages: number;
+  units: number;
+  edges: number;
+  estimated_coverage: number;
+}
+
+interface RuVectorBackfillResult {
+  guild_id: string;
+  sources_processed: number;
+  pages_processed: number;
+  units_created: number;
+  edges_created: number;
+  errors: string[];
+  duration_seconds: number;
+}
+
+async function getRuVectorBackfillStatus(guildId: string): Promise<RuVectorBackfillStatus | null> {
+  try {
+    return await api.get<RuVectorBackfillStatus>(`/ruvector/guilds/${guildId}/backfill/status`);
+  } catch {
+    return null;
+  }
+}
+
+async function startRuVectorBackfill(guildId: string): Promise<RuVectorBackfillResult> {
+  return api.post<RuVectorBackfillResult>(`/ruvector/guilds/${guildId}/backfill`, {
+    include_sources: true,
+    include_pages: true,
+    rebuild_edges: true,
+  });
 }
 
 // Clear wiki
@@ -2302,6 +2341,28 @@ export function Wiki() {
 
   const activeJob = regenJobs?.active_job;
 
+  // ADR-057: RuVector backfill status and mutation
+  const { data: ruvectorStatus, refetch: refetchRuvectorStatus } = useQuery({
+    queryKey: ["ruvector-backfill-status", guildId],
+    queryFn: () => getRuVectorBackfillStatus(guildId!),
+    enabled: !!guildId,
+  });
+
+  const ruvectorBackfillMutation = useMutation({
+    mutationFn: () => startRuVectorBackfill(guildId!),
+    onSuccess: (data) => {
+      toast({
+        title: "RuVector backfill complete",
+        description: `${data.units_created} units, ${data.edges_created} edges from ${data.sources_processed} sources`,
+      });
+      refetchRuvectorStatus();
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.detail || "Failed to start RuVector backfill";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    },
+  });
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -2365,6 +2426,42 @@ export function Wiki() {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+
+          {/* ADR-057: RuVector backfill button */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => ruvectorBackfillMutation.mutate()}
+                  disabled={ruvectorBackfillMutation.isPending}
+                >
+                  {ruvectorBackfillMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Zap className="h-4 w-4 mr-2" />
+                  )}
+                  RuVector
+                  {ruvectorStatus && ruvectorStatus.units > 0 && (
+                    <Badge variant="secondary" className="ml-2 text-xs bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">
+                      {ruvectorStatus.units}
+                    </Badge>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Process all wiki sources into RuVector knowledge units</p>
+                {ruvectorStatus && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {ruvectorStatus.processed_sources}/{ruvectorStatus.total_sources} sources,{" "}
+                    {Math.round(ruvectorStatus.estimated_coverage * 100)}% coverage
+                  </p>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
           <Link to={`/guilds/${guildId}/wiki?q=`}>
             <Button variant="outline">
               <Search className="h-4 w-4 mr-2" />

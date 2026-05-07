@@ -8,11 +8,21 @@ interface SchedulesResponse {
 
 interface ScheduleRequest {
   name: string;
+  // ADR-011: Scope-based scheduling
+  scope?: "channel" | "category" | "guild";
   channel_ids: string[];
-  schedule_type: "daily" | "weekly" | "monthly" | "once";
+  category_id?: string;
+  // ADR-089: All schedule types including intervals
+  schedule_type: "fifteen-minutes" | "hourly" | "every-4-hours" | "daily" | "weekly" | "monthly" | "once";
   schedule_time: string;
   schedule_days?: number[];
   timezone: string;
+  // ADR-051: Platform support
+  platform?: "discord" | "slack" | "whatsapp";
+  // ADR-087: Weekly continuity
+  enable_continuity?: boolean;
+  // ADR-089: Lookback period
+  time_range_hours?: number;
   destinations: Destination[];
   summary_options: SummaryOptions;
   // ADR-034: Guild prompt templates

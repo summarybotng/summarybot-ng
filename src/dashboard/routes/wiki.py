@@ -1622,9 +1622,11 @@ async def update_wiki_settings(
 
         if updates:
             params.append(guild_id)
-            # Ensure row exists first
+            # Ensure row exists first (provide defaults for NOT NULL columns)
             await conn.execute(
-                "INSERT OR IGNORE INTO guild_configs (guild_id) VALUES (?)",
+                """INSERT OR IGNORE INTO guild_configs
+                   (guild_id, enabled_channels, excluded_channels, default_summary_options, permission_settings)
+                   VALUES (?, '[]', '[]', '{}', '{}')""",
                 (guild_id,)
             )
             await conn.execute(

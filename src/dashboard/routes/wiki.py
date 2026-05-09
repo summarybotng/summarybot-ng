@@ -1510,6 +1510,11 @@ class WikiSettingsResponse(BaseModel):
     wiki_ingest_to_vectors: bool = False
     # ADR-080: Perspective filtering
     wiki_allowed_perspectives: List[str] = ["general"]
+    # ADR-076 Amendment: Periodic synthesis job
+    wiki_synthesis_job_enabled: bool = True
+    wiki_synthesis_job_last_run: Optional[str] = None
+    wiki_synthesis_job_interval_hours: int = 24
+    dirty_page_count: int = 0  # Pages needing regeneration
 
 
 class WikiSettingsUpdateRequest(BaseModel):
@@ -1520,6 +1525,9 @@ class WikiSettingsUpdateRequest(BaseModel):
     wiki_ingest_to_vectors: Optional[bool] = None
     # ADR-080: Perspective filtering
     wiki_allowed_perspectives: Optional[List[str]] = None
+    # ADR-076 Amendment: Periodic synthesis job
+    wiki_synthesis_job_enabled: Optional[bool] = None
+    wiki_synthesis_job_interval_hours: Optional[int] = None
 
 
 class WikiAvailablePerspectivesResponse(BaseModel):
@@ -1552,10 +1560,24 @@ async def get_wiki_settings(
     try:
         factory = get_repository_factory()
         conn = await factory.get_connection()
+
+        # Get guild config including new job settings
         row = await conn.fetch_one(
-            "SELECT wiki_auto_ingest, wiki_auto_synthesis, wiki_ingest_to_vectors, wiki_allowed_perspectives FROM guild_configs WHERE guild_id = ?",
+            """SELECT wiki_auto_ingest, wiki_auto_synthesis, wiki_ingest_to_vectors,
+                      wiki_allowed_perspectives, wiki_synthesis_job_enabled,
+                      wiki_synthesis_job_last_run, wiki_synthesis_job_interval_hours
+               FROM guild_configs WHERE guild_id = ?""",
             (guild_id,)
         )
+
+        # Count dirty pages (pages where updated_at > synthesis_updated_at OR synthesis is NULL)
+        dirty_count_row = await conn.fetch_one(
+            """SELECT COUNT(*) as count FROM wiki_pages
+               WHERE guild_id = ?
+               AND (synthesis_updated_at IS NULL OR updated_at > synthesis_updated_at)""",
+            (guild_id,)
+        )
+        dirty_page_count = dirty_count_row['count'] if dirty_count_row else 0
 
         if row:
             # ADR-080: Parse allowed perspectives
@@ -1571,8 +1593,12 @@ async def get_wiki_settings(
                 wiki_auto_synthesis=row.get('wiki_auto_synthesis', True) if row.get('wiki_auto_synthesis') is not None else True,
                 wiki_ingest_to_vectors=bool(row.get('wiki_ingest_to_vectors', 0)),
                 wiki_allowed_perspectives=allowed_perspectives,
+                wiki_synthesis_job_enabled=row.get('wiki_synthesis_job_enabled', True) if row.get('wiki_synthesis_job_enabled') is not None else True,
+                wiki_synthesis_job_last_run=row.get('wiki_synthesis_job_last_run'),
+                wiki_synthesis_job_interval_hours=row.get('wiki_synthesis_job_interval_hours', 24) or 24,
+                dirty_page_count=dirty_page_count,
             )
-        return WikiSettingsResponse()
+        return WikiSettingsResponse(dirty_page_count=dirty_page_count)
     except Exception as e:
         # Columns may not exist yet
         logger.debug(f"Could not get wiki settings: {e}")
@@ -1621,6 +1647,13 @@ async def update_wiki_settings(
         if settings.wiki_allowed_perspectives is not None:
             updates.append("wiki_allowed_perspectives = ?")
             params.append(json.dumps(settings.wiki_allowed_perspectives))
+        # ADR-076 Amendment: Periodic synthesis job
+        if settings.wiki_synthesis_job_enabled is not None:
+            updates.append("wiki_synthesis_job_enabled = ?")
+            params.append(settings.wiki_synthesis_job_enabled)
+        if settings.wiki_synthesis_job_interval_hours is not None:
+            updates.append("wiki_synthesis_job_interval_hours = ?")
+            params.append(settings.wiki_synthesis_job_interval_hours)
 
         if updates:
             params.append(guild_id)
@@ -1638,9 +1671,21 @@ async def update_wiki_settings(
 
         # Return updated settings
         row = await conn.fetch_one(
-            "SELECT wiki_auto_ingest, wiki_auto_synthesis, wiki_ingest_to_vectors, wiki_allowed_perspectives FROM guild_configs WHERE guild_id = ?",
+            """SELECT wiki_auto_ingest, wiki_auto_synthesis, wiki_ingest_to_vectors,
+                      wiki_allowed_perspectives, wiki_synthesis_job_enabled,
+                      wiki_synthesis_job_last_run, wiki_synthesis_job_interval_hours
+               FROM guild_configs WHERE guild_id = ?""",
             (guild_id,)
         )
+
+        # Count dirty pages
+        dirty_count_row = await conn.fetch_one(
+            """SELECT COUNT(*) as count FROM wiki_pages
+               WHERE guild_id = ?
+               AND (synthesis_updated_at IS NULL OR updated_at > synthesis_updated_at)""",
+            (guild_id,)
+        )
+        dirty_page_count = dirty_count_row['count'] if dirty_count_row else 0
 
         # ADR-080: Parse allowed perspectives
         allowed_perspectives = ["general"]
@@ -1659,6 +1704,8 @@ async def update_wiki_settings(
                 "auto_synthesis": settings.wiki_auto_synthesis,
                 "ingest_to_vectors": settings.wiki_ingest_to_vectors,
                 "allowed_perspectives": settings.wiki_allowed_perspectives,
+                "synthesis_job_enabled": settings.wiki_synthesis_job_enabled,
+                "synthesis_job_interval_hours": settings.wiki_synthesis_job_interval_hours,
             },
         )
 
@@ -1667,10 +1714,162 @@ async def update_wiki_settings(
             wiki_auto_synthesis=row.get('wiki_auto_synthesis', True) if row and row.get('wiki_auto_synthesis') is not None else True,
             wiki_ingest_to_vectors=bool(row.get('wiki_ingest_to_vectors', 0)) if row else False,
             wiki_allowed_perspectives=allowed_perspectives,
+            wiki_synthesis_job_enabled=row.get('wiki_synthesis_job_enabled', True) if row and row.get('wiki_synthesis_job_enabled') is not None else True,
+            wiki_synthesis_job_last_run=row.get('wiki_synthesis_job_last_run') if row else None,
+            wiki_synthesis_job_interval_hours=row.get('wiki_synthesis_job_interval_hours', 24) if row else 24,
+            dirty_page_count=dirty_page_count,
         )
 
     except Exception as e:
         logger.error(f"Failed to update wiki settings: {e}")
+        raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": str(e)})
+
+
+class SynthesisJobResponse(BaseModel):
+    """Response from synthesis job trigger."""
+    success: bool
+    message: str
+    pages_processed: int = 0
+    pages_remaining: int = 0
+
+
+@router.post(
+    "/guilds/{guild_id}/wiki/synthesis-job/trigger",
+    response_model=SynthesisJobResponse,
+    summary="Trigger wiki synthesis job",
+    description="Manually trigger the wiki synthesis job to regenerate dirty pages (ADR-076).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        429: {"model": ErrorResponse, "description": "Rate limited - wait before retrying"},
+    },
+)
+async def trigger_synthesis_job(
+    guild_id: str = Path(..., description="Guild ID"),
+    user: dict = Depends(get_current_user),
+    max_pages: int = Query(10, description="Maximum pages to process", ge=1, le=50),
+):
+    """Trigger the wiki synthesis job to regenerate dirty pages.
+
+    Rate limited to once per 5 minutes per guild.
+    """
+    from datetime import datetime, timedelta
+
+    _check_guild_access(guild_id, user)
+
+    from ...data.repositories import get_repository_factory
+
+    try:
+        factory = get_repository_factory()
+        conn = await factory.get_connection()
+
+        # Check rate limit - last run within 5 minutes
+        row = await conn.fetch_one(
+            "SELECT wiki_synthesis_job_last_run FROM guild_configs WHERE guild_id = ?",
+            (guild_id,)
+        )
+        if row and row.get('wiki_synthesis_job_last_run'):
+            last_run = datetime.fromisoformat(row['wiki_synthesis_job_last_run'].replace('Z', '+00:00'))
+            if datetime.now(last_run.tzinfo) - last_run < timedelta(minutes=5):
+                raise HTTPException(
+                    status_code=429,
+                    detail={"code": "RATE_LIMITED", "message": "Please wait 5 minutes between job triggers"}
+                )
+
+        # Find dirty pages
+        dirty_pages = await conn.fetch_all(
+            """SELECT id, path, title, content, source_refs FROM wiki_pages
+               WHERE guild_id = ?
+               AND (synthesis_updated_at IS NULL OR updated_at > synthesis_updated_at)
+               ORDER BY updated_at DESC
+               LIMIT ?""",
+            (guild_id, max_pages)
+        )
+
+        if not dirty_pages:
+            return SynthesisJobResponse(
+                success=True,
+                message="No dirty pages to process",
+                pages_processed=0,
+                pages_remaining=0,
+            )
+
+        # Process each dirty page
+        processed = 0
+        for page_row in dirty_pages:
+            try:
+                from ...wiki.synthesis import synthesize_wiki_page
+
+                # Get Claude client
+                claude_client = None
+                try:
+                    engine = await get_summarization_engine()
+                    if engine:
+                        claude_client = engine.client
+                except Exception:
+                    pass
+
+                source_refs = []
+                if page_row.get('source_refs'):
+                    import json
+                    try:
+                        source_refs = json.loads(page_row['source_refs'])
+                    except json.JSONDecodeError:
+                        pass
+
+                result = await synthesize_wiki_page(
+                    page_title=page_row['title'],
+                    page_content=page_row['content'],
+                    source_refs=source_refs,
+                    claude_client=claude_client,
+                )
+
+                # Save synthesis
+                repo = await _get_wiki_repository()
+                if repo:
+                    await repo.save_synthesis(
+                        guild_id=guild_id,
+                        path=page_row['path'],
+                        synthesis=result.synthesis,
+                        source_count=result.source_count,
+                    )
+                    processed += 1
+
+            except Exception as e:
+                logger.warning(f"Failed to synthesize page {page_row['path']}: {e}")
+
+        # Update last run time
+        await conn.execute(
+            "UPDATE guild_configs SET wiki_synthesis_job_last_run = ? WHERE guild_id = ?",
+            (datetime.utcnow().isoformat(), guild_id)
+        )
+
+        # Count remaining dirty pages
+        remaining_row = await conn.fetch_one(
+            """SELECT COUNT(*) as count FROM wiki_pages
+               WHERE guild_id = ?
+               AND (synthesis_updated_at IS NULL OR updated_at > synthesis_updated_at)""",
+            (guild_id,)
+        )
+        remaining = remaining_row['count'] if remaining_row else 0
+
+        await audit_log(
+            "action.wiki.synthesis_job_triggered",
+            user_id=user.get("id", "unknown"),
+            guild_id=guild_id,
+            details={"pages_processed": processed, "pages_remaining": remaining},
+        )
+
+        return SynthesisJobResponse(
+            success=True,
+            message=f"Processed {processed} pages",
+            pages_processed=processed,
+            pages_remaining=remaining,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to trigger synthesis job: {e}")
         raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": str(e)})
 
 

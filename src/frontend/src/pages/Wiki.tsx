@@ -223,6 +223,18 @@ interface WikiSettings {
   wiki_ingest_to_vectors: boolean;
   // ADR-080: Perspective filtering
   wiki_allowed_perspectives: string[];
+  // ADR-076 Amendment: Periodic synthesis job
+  wiki_synthesis_job_enabled: boolean;
+  wiki_synthesis_job_last_run: string | null;
+  wiki_synthesis_job_interval_hours: number;
+  dirty_page_count: number;
+}
+
+interface SynthesisJobResponse {
+  success: boolean;
+  message: string;
+  pages_processed: number;
+  pages_remaining: number;
 }
 
 async function fetchWikiSettings(guildId: string): Promise<WikiSettings> {
@@ -231,6 +243,10 @@ async function fetchWikiSettings(guildId: string): Promise<WikiSettings> {
 
 async function updateWikiSettings(guildId: string, settings: Partial<WikiSettings>): Promise<WikiSettings> {
   return api.patch<WikiSettings>(`/guilds/${guildId}/wiki/settings`, settings);
+}
+
+async function triggerSynthesisJob(guildId: string): Promise<SynthesisJobResponse> {
+  return api.post<SynthesisJobResponse>(`/guilds/${guildId}/wiki/synthesis-job/trigger`, {});
 }
 
 // ADR-080: Available perspectives for wiki ingestion
@@ -2372,6 +2388,24 @@ export function Wiki() {
     },
   });
 
+  // ADR-076 Amendment: Synthesis job trigger
+  const synthJobMutation = useMutation({
+    mutationFn: () => triggerSynthesisJob(guildId!),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["wiki-settings", guildId] });
+      toast({
+        title: data.pages_processed > 0 ? "Pages regenerated" : "No pages to process",
+        description: data.pages_remaining > 0
+          ? `${data.pages_processed} processed, ${data.pages_remaining} remaining`
+          : data.message,
+      });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.detail?.message || "Failed to trigger synthesis job";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    },
+  });
+
   // ADR-084: Wiki regeneration
   const { data: regenJobs, refetch: refetchRegenJobs } = useQuery({
     queryKey: ["wiki-regen-jobs", guildId],
@@ -2482,6 +2516,40 @@ export function Wiki() {
               </TooltipTrigger>
               <TooltipContent>
                 <p>When enabled, wiki pages are automatically re-synthesized<br/>when new content is ingested</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          {/* ADR-076 Amendment: Synthesis job trigger */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => synthJobMutation.mutate()}
+                  disabled={synthJobMutation.isPending || (wikiSettings?.dirty_page_count ?? 0) === 0}
+                >
+                  {synthJobMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  Regenerate
+                  {(wikiSettings?.dirty_page_count ?? 0) > 0 && (
+                    <Badge variant="secondary" className="ml-2 text-xs bg-amber-500/20 text-amber-700 dark:text-amber-400">
+                      {wikiSettings?.dirty_page_count}
+                    </Badge>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Regenerate dirty wiki pages (pages with new sources)</p>
+                {wikiSettings?.wiki_synthesis_job_last_run && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Last run: {new Date(wikiSettings.wiki_synthesis_job_last_run).toLocaleString()}
+                  </p>
+                )}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

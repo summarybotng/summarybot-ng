@@ -21,6 +21,7 @@ import {
   useTriggerSync,
   useDriveFolders,
   useSharedDrives,  // ADR-007.1
+  useDriveUserInfo,  // ADR-007.1
   useAllJobs,
   usePauseJob,
   useResumeJob,
@@ -1495,13 +1496,25 @@ function SyncSettings({ guildId }: { guildId: string }) {
   const { data: driveStatus } = useDriveStatus();
   const { data: oauthConfig } = useOAuthConfig();
   const { data: serverConfig, refetch: refetchServerConfig } = useServerSyncConfig(guildId);
-  // ADR-007.1: Support shared drives
+  // ADR-007.1: Support shared drives and user info
   const { data: sharedDrivesData } = useSharedDrives(guildId);
+  const { data: userInfo } = useDriveUserInfo(guildId);
   const { data: foldersData, isLoading: foldersLoading } = useDriveFolders(
     guildId,
     folderPath[folderPath.length - 1]?.id || "root",
     driveType === "shared" ? selectedDriveId || undefined : undefined
   );
+
+  // Build Google Drive folder URL
+  const getFolderUrl = (folderId?: string, driveId?: string) => {
+    if (!folderId) return null;
+    if (driveId) {
+      // Shared drive folder
+      return `https://drive.google.com/drive/folders/${folderId}`;
+    }
+    // My Drive folder
+    return `https://drive.google.com/drive/folders/${folderId}`;
+  };
 
   // Mutations
   const startOAuth = useStartOAuth();
@@ -1673,16 +1686,31 @@ function SyncSettings({ guildId }: { guildId: string }) {
                 {/* ADR-007.1: Show detailed connection info */}
                 {serverConfig?.enabled && !serverConfig.using_fallback ? (
                   <div className="text-sm text-muted-foreground space-y-0.5">
-                    {serverConfig.user_email && (
-                      <p>Connected as: {serverConfig.user_email}</p>
-                    )}
+                    <p>
+                      Connected as: {userInfo?.email || serverConfig.user_email || "Loading..."}
+                    </p>
                     <p>
                       Drive: {serverConfig.drive_name || "My Drive"}
                       {serverConfig.drive_type === "shared" && (
                         <Badge variant="outline" className="ml-2 text-xs">Shared</Badge>
                       )}
                     </p>
-                    <p>Folder: {serverConfig.folder_path || serverConfig.folder_name || serverConfig.folder_id}</p>
+                    <p className="flex items-center gap-1">
+                      Folder:{" "}
+                      {serverConfig.folder_id ? (
+                        <a
+                          href={getFolderUrl(serverConfig.folder_id, serverConfig.drive_id)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline inline-flex items-center gap-1"
+                        >
+                          {serverConfig.folder_path || serverConfig.folder_name || serverConfig.folder_id}
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : (
+                        serverConfig.folder_path || serverConfig.folder_name || "Not set"
+                      )}
+                    </p>
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">

@@ -137,6 +137,7 @@ interface WikiFilters {
   min_sources?: number;
   max_sources?: number;
   has_synthesis?: boolean;
+  has_ruvector?: boolean;
   synthesis_model?: string;
   min_rating?: number;
   sort_by?: string;
@@ -294,6 +295,7 @@ async function fetchWikiPages(
   if (filters.min_sources !== undefined) params.append("min_sources", String(filters.min_sources));
   if (filters.max_sources !== undefined) params.append("max_sources", String(filters.max_sources));
   if (filters.has_synthesis !== undefined) params.append("has_synthesis", String(filters.has_synthesis));
+  if (filters.has_ruvector !== undefined) params.append("has_ruvector", String(filters.has_ruvector));
   if (filters.synthesis_model) params.append("synthesis_model", filters.synthesis_model);
   if (filters.min_rating !== undefined) params.append("min_rating", String(filters.min_rating));
   if (filters.sort_by) params.append("sort_by", filters.sort_by);
@@ -2318,6 +2320,7 @@ export function Wiki() {
 
   const hasActiveFilters = filters.min_sources !== undefined ||
     filters.has_synthesis !== undefined ||
+    filters.has_ruvector !== undefined ||
     filters.synthesis_model !== undefined ||
     filters.min_rating !== undefined;
 
@@ -2533,6 +2536,7 @@ export function Wiki() {
                     <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
                       {(filters.min_sources ? 1 : 0) +
                        (filters.has_synthesis ? 1 : 0) +
+                       (filters.has_ruvector ? 1 : 0) +
                        (filters.min_rating ? 1 : 0)}
                     </Badge>
                   )}
@@ -2574,7 +2578,7 @@ export function Wiki() {
                   {/* Synthesis filter */}
                   <div>
                     <label className="text-xs font-medium mb-1.5 block text-muted-foreground">Content</label>
-                    <div className="flex gap-1">
+                    <div className="flex flex-wrap gap-1">
                       <Badge
                         variant={filters.has_synthesis === true ? "default" : "outline"}
                         className="cursor-pointer text-xs"
@@ -2585,6 +2589,17 @@ export function Wiki() {
                       >
                         <Sparkles className="h-3 w-3 mr-1" />
                         With synthesis
+                      </Badge>
+                      <Badge
+                        variant={filters.has_ruvector === true ? "default" : "outline"}
+                        className="cursor-pointer text-xs"
+                        onClick={() => setFilters(f => ({
+                          ...f,
+                          has_ruvector: f.has_ruvector === true ? undefined : true,
+                        }))}
+                      >
+                        <Cpu className="h-3 w-3 mr-1" />
+                        With RuVector
                       </Badge>
                     </div>
                   </div>

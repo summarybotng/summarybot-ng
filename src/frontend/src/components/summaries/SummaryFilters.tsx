@@ -136,6 +136,8 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
     filters.hasAccessIssues !== undefined,
     // ADR-073: Private channels filter
     filters.containsPrivateChannels !== undefined,
+    // ADR-087: Granularity filter
+    filters.granularity !== undefined,
   ].filter(Boolean).length;
 
   const handleClearFilters = () => {
@@ -165,6 +167,8 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
       hasAccessIssues: undefined,
       // ADR-073: Clear private channels filter
       containsPrivateChannels: undefined,
+      // ADR-087: Clear granularity filter
+      granularity: undefined,
     });
   };
 
@@ -226,6 +230,25 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
               <SelectItem value="discord">Discord</SelectItem>
               <SelectItem value="slack">Slack</SelectItem>
               <SelectItem value="whatsapp">WhatsApp</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* ADR-087: Granularity filter */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Granularity:</span>
+          <Select
+            value={filters.granularity || "all"}
+            onValueChange={(v) => onFiltersChange({ ...filters, granularity: v === "all" ? undefined : v })}
+          >
+            <SelectTrigger className="w-[120px] h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="daily">Daily</SelectItem>
+              <SelectItem value="weekly">Weekly</SelectItem>
+              <SelectItem value="monthly">Monthly</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -934,6 +957,18 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
               {filters.containsPrivateChannels ? "Private Channels" : "Public Only"}
               <button
                 onClick={() => onFiltersChange({ ...filters, containsPrivateChannels: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {/* ADR-087: Granularity filter badge */}
+          {filters.granularity && (
+            <Badge variant="secondary" className="gap-1 capitalize">
+              {filters.granularity}
+              <button
+                onClick={() => onFiltersChange({ ...filters, granularity: undefined })}
                 className="ml-1 hover:text-destructive"
               >
                 <X className="h-3 w-3" />

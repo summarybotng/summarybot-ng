@@ -120,6 +120,7 @@ class SQLiteWikiRepository:
         updated_before: Optional[datetime] = None,
         min_rating: Optional[float] = None,
         has_synthesis: Optional[bool] = None,
+        has_ruvector: Optional[bool] = None,
         synthesis_models: Optional[List[str]] = None,
         min_confidence: Optional[int] = None,
         sort_by: str = "updated_at",
@@ -168,6 +169,25 @@ class SQLiteWikiRepository:
                 conditions.append("synthesis IS NOT NULL")
             else:
                 conditions.append("synthesis IS NULL")
+
+        # ADR-090: Filter by RuVector knowledge units presence
+        if has_ruvector is not None:
+            if has_ruvector:
+                conditions.append("""
+                    EXISTS (
+                        SELECT 1 FROM wiki_knowledge_units
+                        WHERE source_id = 'page-' || wiki_pages.id
+                        AND wiki_knowledge_units.guild_id = wiki_pages.guild_id
+                    )
+                """)
+            else:
+                conditions.append("""
+                    NOT EXISTS (
+                        SELECT 1 FROM wiki_knowledge_units
+                        WHERE source_id = 'page-' || wiki_pages.id
+                        AND wiki_knowledge_units.guild_id = wiki_pages.guild_id
+                    )
+                """)
 
         if synthesis_models:
             placeholders = ",".join("?" * len(synthesis_models))

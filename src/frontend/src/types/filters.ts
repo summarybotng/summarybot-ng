@@ -86,6 +86,10 @@ export interface SummaryFilterCriteria {
   /** Filter by private/locked channel content (true = contains private content) */
   containsPrivateChannels?: boolean;
 
+  // === Archive Granularity (ADR-087) ===
+  /** Filter by archive granularity (daily, weekly, monthly) */
+  granularity?: string;
+
   // === Sorting (for list views, not feeds) ===
   sortBy?: SortByType;
   sortOrder?: SortOrderType;
@@ -179,6 +183,11 @@ export function criteriaToSearchParams(criteria: SummaryFilterCriteria): URLSear
     params.set("contains_private_channels", criteria.containsPrivateChannels.toString());
   }
 
+  // ADR-087: Archive granularity filter
+  if (criteria.granularity) {
+    params.set("archive_granularity", criteria.granularity);
+  }
+
   // Sorting
   if (criteria.sortBy) params.set("sort_by", criteria.sortBy);
   if (criteria.sortOrder) params.set("sort_order", criteria.sortOrder);
@@ -219,6 +228,8 @@ export function criteriaToApiBody(criteria: SummaryFilterCriteria): Record<strin
   if (criteria.hasAccessIssues !== undefined) body.has_access_issues = criteria.hasAccessIssues;
   // ADR-073: Private channels filter
   if (criteria.containsPrivateChannels !== undefined) body.contains_private_channels = criteria.containsPrivateChannels;
+  // ADR-087: Archive granularity filter
+  if (criteria.granularity) body.archive_granularity = criteria.granularity;
 
   return body;
 }
@@ -248,6 +259,7 @@ export function countActiveFilters(criteria: SummaryFilterCriteria): number {
     criteria.summaryLength,
     criteria.perspective,
     criteria.hasAccessIssues !== undefined,
+    criteria.granularity,
   ].filter(Boolean).length;
 }
 

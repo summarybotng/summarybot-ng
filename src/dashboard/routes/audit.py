@@ -106,6 +106,7 @@ class AuditSummaryResponse(BaseModel):
 async def list_audit_logs(
     guild_id: str,
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
+    user_name: Optional[str] = Query(None, description="Filter by user name (partial match)"),
     event_type: Optional[str] = Query(None, description="Filter by event type (supports wildcards like 'auth.*')"),
     category: Optional[str] = Query(None, description="Filter by category"),
     severity: Optional[str] = Query(None, description="Filter by severity"),
@@ -168,6 +169,7 @@ async def list_audit_logs(
     logs = await repo.find(
         guild_id=guild_id,
         user_id=user_id,
+        user_name=user_name,
         event_type=event_type,
         category=parsed_category,
         severity=parsed_severity,
@@ -184,6 +186,7 @@ async def list_audit_logs(
     total = await repo.count(
         guild_id=guild_id,
         user_id=user_id,
+        user_name=user_name,
         event_type=event_type,
         category=parsed_category,
         severity=parsed_severity,

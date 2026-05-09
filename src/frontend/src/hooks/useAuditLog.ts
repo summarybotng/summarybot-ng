@@ -13,6 +13,7 @@ export function useAuditLogs(guildId: string, filters: AuditFilters = {}) {
       const params = new URLSearchParams();
 
       if (filters.user_id) params.set("user_id", filters.user_id);
+      if (filters.user_name) params.set("user_name", filters.user_name);
       if (filters.event_type) params.set("event_type", filters.event_type);
       if (filters.category) params.set("category", filters.category);
       if (filters.severity) params.set("severity", filters.severity);

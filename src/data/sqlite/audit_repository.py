@@ -125,6 +125,7 @@ class SQLiteAuditRepository:
         self,
         *,
         user_id: Optional[str] = None,
+        user_name: Optional[str] = None,
         guild_id: Optional[str] = None,
         event_type: Optional[str] = None,
         category: Optional[AuditEventCategory] = None,
@@ -145,6 +146,10 @@ class SQLiteAuditRepository:
         if user_id:
             query += " AND user_id = ?"
             params.append(user_id)
+
+        if user_name:
+            query += " AND user_name LIKE ?"
+            params.append(f"%{user_name}%")
 
         if guild_id:
             query += " AND guild_id = ?"
@@ -200,6 +205,7 @@ class SQLiteAuditRepository:
         self,
         *,
         user_id: Optional[str] = None,
+        user_name: Optional[str] = None,
         guild_id: Optional[str] = None,
         event_type: Optional[str] = None,
         category: Optional[AuditEventCategory] = None,
@@ -211,6 +217,10 @@ class SQLiteAuditRepository:
         """Count audit logs matching criteria."""
         query = "SELECT COUNT(*) as cnt FROM audit_logs WHERE 1=1"
         params: List[Any] = []
+
+        if user_name:
+            query += " AND user_name LIKE ?"
+            params.append(f"%{user_name}%")
 
         if user_id:
             query += " AND user_id = ?"

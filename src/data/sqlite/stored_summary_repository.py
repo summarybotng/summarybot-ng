@@ -329,6 +329,11 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         elif filter.contains_private_channels is False:
             conditions.append("(contains_sensitive_channels IS NULL OR contains_sensitive_channels = 0)")
 
+        # ADR-087: Archive granularity filter
+        if filter.archive_granularity:
+            conditions.append("archive_granularity = ?")
+            params.append(filter.archive_granularity)
+
         where_clause = " AND ".join(conditions)
         return where_clause, params
 
@@ -373,6 +378,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         has_access_issues: Optional[bool] = None,
         # ADR-073: Private channel content filter
         contains_private_channels: Optional[bool] = None,
+        # ADR-087: Archive granularity filter
+        archive_granularity: Optional[str] = None,
     ) -> List[StoredSummary]:
         """Find stored summaries for a guild.
 
@@ -426,6 +433,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             exclude_custom_perspectives=exclude_custom_perspectives,
             has_access_issues=has_access_issues,
             contains_private_channels=contains_private_channels,
+            archive_granularity=archive_granularity,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 
@@ -518,8 +526,10 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         has_access_issues: Optional[bool] = None,
         # ADR-073: Private channel content filter
         contains_private_channels: Optional[bool] = None,
+        # ADR-087: Archive granularity filter
+        archive_granularity: Optional[str] = None,
     ) -> int:
-        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026, ADR-035, ADR-041, ADR-073)."""
+        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026, ADR-035, ADR-041, ADR-073, ADR-087)."""
         # CS-002: Use shared filter builder
         filter_obj = StoredSummaryFilter(
             guild_id=guild_id,
@@ -548,6 +558,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             exclude_custom_perspectives=exclude_custom_perspectives,
             has_access_issues=has_access_issues,
             contains_private_channels=contains_private_channels,
+            archive_granularity=archive_granularity,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 

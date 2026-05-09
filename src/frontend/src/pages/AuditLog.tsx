@@ -84,7 +84,7 @@ export function AuditLog() {
     setFilters({ limit: 50, offset: 0 });
   };
 
-  const hasActiveFilters = filters.category || filters.severity || filters.event_type || filters.success !== undefined;
+  const hasActiveFilters = filters.category || filters.severity || filters.event_type || filters.user_name || filters.success !== undefined;
 
   const handlePrevPage = () => {
     setFilters(f => ({
@@ -201,6 +201,13 @@ export function AuditLog() {
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-medium">Filters</span>
               </div>
+
+              <Input
+                placeholder="User name"
+                value={filters.user_name || ""}
+                onChange={(e) => setFilters(f => ({ ...f, user_name: e.target.value || undefined, offset: 0 }))}
+                className="w-36"
+              />
 
               <Input
                 placeholder="Event type (e.g., auth.*)"

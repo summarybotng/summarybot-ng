@@ -59,6 +59,10 @@ class GenerateRequest(BaseModel):
     category_id: Optional[str] = None  # For CATEGORY scope
     date_range: DateRangeRequest
     granularity: str = "daily"
+    # For weekly granularity: which days to generate (0=Sun, 6=Sat)
+    schedule_days: Optional[List[int]] = None
+    # Lookback hours for each summary (default 24h for daily, 168h for weekly)
+    lookback_hours: Optional[int] = None
     timezone: str = "UTC"
     skip_existing: bool = True
     regenerate_outdated: bool = False
@@ -995,6 +999,8 @@ async def generate_retrospective(request: GenerateRequest):
         dry_run=request.dry_run or False,
         summary_type=request.summary_type or "detailed",
         perspective=request.perspective or "general",
+        schedule_days=request.schedule_days,
+        lookback_hours=request.lookback_hours,
     )
 
     # Start job in background if not dry run

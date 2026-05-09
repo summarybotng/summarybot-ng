@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGenerateSummary, useTaskStatus } from "@/hooks/useSummaries";
+import { useGenerateArchive, useGenerationJob } from "@/hooks/useArchive";
 import { useGuild } from "@/hooks/useGuilds";
 import { usePromptTemplates } from "@/hooks/usePromptTemplates";
 import { useWhatsAppChats } from "@/hooks/useWhatsApp";
@@ -50,6 +51,7 @@ export function Summaries() {
   const { data: promptTemplates = [] } = usePromptTemplates(id || "");
   const { data: whatsappChats = [] } = useWhatsAppChats(id || "");
   const generateSummary = useGenerateSummary(id || "");
+  const generateArchive = useGenerateArchive();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -76,6 +78,7 @@ export function Summaries() {
   const [perspective, setPerspective] = useState<SummaryOptions["perspective"]>("general");
   const [promptTemplateId, setPromptTemplateId] = useState<string | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);  // For archive retrospective jobs
   const [channelSearch, setChannelSearch] = useState("");
 
   // ADR-089: Unified Summary Wizard
@@ -165,6 +168,28 @@ export function Summaries() {
     }
   }, [taskStatus.isError, activeTaskId, toast]);
 
+  // Track archive retrospective job status
+  const archiveJob = useGenerationJob(activeJobId);
+  useEffect(() => {
+    if (!archiveJob.data) return;
+
+    if (archiveJob.data.status === "completed") {
+      queryClient.invalidateQueries({ queryKey: ["stored-summaries", id] });
+      setActiveJobId(null);
+      toast({
+        title: "Retrospective complete!",
+        description: `Generated ${archiveJob.data.completed || 0} summaries successfully.`,
+      });
+    } else if (archiveJob.data.status === "failed") {
+      setActiveJobId(null);
+      toast({
+        title: "Retrospective failed",
+        description: archiveJob.data.error || "Failed to generate retrospective summaries.",
+        variant: "destructive",
+      });
+    }
+  }, [archiveJob.data?.status, archiveJob.data?.completed, id, queryClient, toast]);
+
   // ADR-089: Wizard handlers
   const handleWizardGenerateNow = useCallback(async (state: WizardState) => {
     const hoursMap: Record<string, number> = { "4h": 4, "8h": 8, "24h": 24, "48h": 48 };
@@ -232,8 +257,45 @@ export function Summaries() {
   }, [createSchedule, toast]);
 
   const handleWizardGeneratePast = useCallback(async (state: WizardState) => {
-    if (!state.dateFrom || !state.dateTo) return;
+    if (!state.dateFrom || !state.dateTo || !id) return;
 
+    // For weekly/daily granularity, use the archive generator which handles batch generation
+    if (state.pastGranularity === "weekly" || state.pastGranularity === "daily") {
+      // Map weekly days to specific dates within the range
+      const archiveRequest = {
+        source_type: state.platform,
+        server_id: id,
+        scope: state.scope,
+        channel_ids: state.scope === "channel" ? state.channelIds : undefined,
+        category_id: state.scope === "category" ? state.categoryId : undefined,
+        date_range: {
+          start: state.dateFrom.toISOString().split("T")[0],
+          end: state.dateTo.toISOString().split("T")[0],
+        },
+        granularity: state.pastGranularity,
+        // For weekly, pass the selected days (0=Sun, 6=Sat)
+        // The backend will generate summaries for each matching day in the range
+        schedule_days: state.pastGranularity === "weekly" ? state.pastScheduleDays : undefined,
+        // Lookback hours determines how many hours each summary covers
+        lookback_hours: state.pastLookbackHours,
+        summary_type: state.summaryLength,
+        skip_existing: true,
+      };
+
+      const result = await generateArchive.mutateAsync(archiveRequest);
+      setActiveJobId(result.id);
+
+      const granularityLabel = state.pastGranularity === "weekly"
+        ? `weekly (${state.pastScheduleDays.map(d => ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d]).join(", ")})`
+        : "daily";
+      toast({
+        title: "Retrospective Started",
+        description: `Generating ${granularityLabel} summaries for the selected period...`
+      });
+      return;
+    }
+
+    // For single summary, use the regular summary API
     const request: GenerateRequest = {
       scope: state.scope,
       time_range: {
@@ -256,7 +318,7 @@ export function Summaries() {
     const result = await generateSummary.mutateAsync(request);
     setActiveTaskId(result.task_id);
     toast({ title: "Generating", description: "Your retrospective summary is being generated..." });
-  }, [generateSummary, toast]);
+  }, [generateSummary, generateArchive, toast, id]);
 
   const handleGenerate = async () => {
     try {

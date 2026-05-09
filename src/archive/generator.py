@@ -114,6 +114,9 @@ class GenerationJob:
     # Summary options
     summary_type: str = "detailed"  # brief, detailed, comprehensive
     perspective: str = "general"  # general, developer, marketing, product, etc.
+    # Weekly options
+    schedule_days: Optional[List[int]] = None  # For weekly: which days to generate (0=Sun, 6=Sat)
+    lookback_hours: Optional[int] = None  # How many hours to look back for each summary
 
     def to_dict(self) -> Dict[str, Any]:
         start_date, end_date = self.date_range
@@ -217,6 +220,8 @@ class RetrospectiveGenerator:
         dry_run: bool = False,
         summary_type: str = "detailed",
         perspective: str = "general",
+        schedule_days: Optional[List[int]] = None,
+        lookback_hours: Optional[int] = None,
     ) -> GenerationJob:
         """
         Create a new generation job.
@@ -234,6 +239,8 @@ class RetrospectiveGenerator:
             dry_run: Estimate cost without generating
             summary_type: Type of summary (brief, detailed, comprehensive)
             perspective: Perspective/audience (general, developer, etc.)
+            schedule_days: For weekly granularity - which days to generate (0=Sun, 6=Sat)
+            lookback_hours: How many hours to look back for each summary
 
         Returns:
             Created job
@@ -245,7 +252,7 @@ class RetrospectiveGenerator:
             f"Creating job {job_id}: start_date={start_date} (type={type(start_date).__name__}), "
             f"end_date={end_date} (type={type(end_date).__name__}), granularity={granularity}"
         )
-        periods = list(self._generate_periods(start_date, end_date, granularity))
+        periods = list(self._generate_periods(start_date, end_date, granularity, schedule_days))
         logger.info(f"Job {job_id}: calculated {len(periods)} periods")
 
         job = GenerationJob(
@@ -263,6 +270,8 @@ class RetrospectiveGenerator:
             dry_run=dry_run,
             summary_type=summary_type,
             perspective=perspective,
+            schedule_days=schedule_days,
+            lookback_hours=lookback_hours,
         )
 
         if max_cost_usd:
@@ -350,7 +359,7 @@ class RetrospectiveGenerator:
 
         try:
             start_date, end_date = job.date_range
-            periods = list(self._generate_periods(start_date, end_date, job.granularity))
+            periods = list(self._generate_periods(start_date, end_date, job.granularity, job.schedule_days))
 
             for period_start, period_end in periods:
                 # Check for cancellation/pause
@@ -466,11 +475,24 @@ class RetrospectiveGenerator:
 
         # Create period info with UTC timezone-aware datetimes
         from datetime import timezone as tz
+
+        # Determine lookback hours:
+        # 1. Use job.lookback_hours if explicitly set
+        # 2. Default based on granularity: 24h for daily, 168h for weekly, 720h for monthly
+        if job.lookback_hours:
+            duration_hours = job.lookback_hours
+        elif job.granularity == "daily":
+            duration_hours = 24
+        elif job.granularity == "weekly":
+            duration_hours = 168
+        else:
+            duration_hours = 720
+
         period = PeriodInfo(
             start=datetime.combine(period_start, datetime.min.time(), tzinfo=tz.utc),
             end=datetime.combine(period_end, datetime.max.time().replace(microsecond=0), tzinfo=tz.utc),
             timezone=job.timezone,
-            duration_hours=24 if job.granularity == "daily" else 168 if job.granularity == "weekly" else 720,
+            duration_hours=duration_hours,
         )
 
         # Acquire lock
@@ -745,8 +767,16 @@ class RetrospectiveGenerator:
         start_date: date,
         end_date: date,
         granularity: str,
+        schedule_days: Optional[List[int]] = None,
     ) -> AsyncIterator[tuple]:
-        """Generate period tuples for the date range."""
+        """Generate period tuples for the date range.
+
+        Args:
+            start_date: Start date of the range
+            end_date: End date of the range
+            granularity: "daily", "weekly", or "monthly"
+            schedule_days: For weekly granularity - which days to generate (0=Sun, 6=Sat in JS format)
+        """
         current = start_date
 
         while current <= end_date:
@@ -756,11 +786,22 @@ class RetrospectiveGenerator:
                 current += timedelta(days=1)
 
             elif granularity == "weekly":
-                # Start on Monday
-                days_until_sunday = 6 - current.weekday()
-                period_end = min(current + timedelta(days=days_until_sunday), end_date)
-                yield (current, period_end)
-                current = period_end + timedelta(days=1)
+                # If schedule_days is specified, yield each matching day in range
+                # schedule_days uses 0=Sun, 6=Sat format (JavaScript style)
+                if schedule_days:
+                    # Convert Python weekday to JS weekday format
+                    # Python: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+                    # JS: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+                    js_weekday = (current.weekday() + 1) % 7
+                    if js_weekday in schedule_days:
+                        yield (current, current)
+                    current += timedelta(days=1)
+                else:
+                    # Original behavior: Monday to Sunday periods
+                    days_until_sunday = 6 - current.weekday()
+                    period_end = min(current + timedelta(days=days_until_sunday), end_date)
+                    yield (current, period_end)
+                    current = period_end + timedelta(days=1)
 
             elif granularity == "monthly":
                 # End of month

@@ -65,6 +65,10 @@ export interface GenerateRequest {
     end: string;
   };
   granularity?: string;
+  // For weekly granularity: which days to generate (0=Sun, 6=Sat)
+  schedule_days?: number[];
+  // Lookback hours for each summary
+  lookback_hours?: number;
   timezone?: string;
   skip_existing?: boolean;
   regenerate_outdated?: boolean;

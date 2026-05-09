@@ -80,15 +80,17 @@ export function SummaryWizard({
       }
     }
     if (state.whenType === "recurring") {
-      if (!state.scheduleName.trim()) {
-        return false;
-      }
+      // Schedule name is optional - will use auto-generated if empty
       if (state.frequency === "weekly" && state.scheduleDays.length === 0) {
         return false;
       }
     }
     if (state.whenType === "past") {
       if (!state.dateFrom || !state.dateTo) {
+        return false;
+      }
+      // Weekly past requires at least one day selected
+      if (state.pastGranularity === "weekly" && state.pastScheduleDays.length === 0) {
         return false;
       }
     }

@@ -131,6 +131,48 @@ function NowOptions({ state, onChange }: Pick<StepProps, "state" | "onChange">) 
   );
 }
 
+// Generate auto-name based on selected options
+function generateScheduleName(state: Pick<StepProps, "state">["state"]): string {
+  const parts: string[] = [];
+
+  // Frequency
+  const freqLabels: Record<ScheduleFrequency, string> = {
+    "fifteen-minutes": "15min",
+    "hourly": "Hourly",
+    "every-4-hours": "4hr",
+    "daily": "Daily",
+    "weekly": "Weekly",
+    "monthly": "Monthly",
+    "once": "Once",
+  };
+  parts.push(freqLabels[state.frequency]);
+
+  // Days for weekly
+  if (state.frequency === "weekly" && state.scheduleDays.length > 0) {
+    const dayNames = state.scheduleDays
+      .sort((a, b) => a - b)
+      .map((d) => DAYS[d])
+      .join("/");
+    parts.push(dayNames);
+  }
+
+  // Lookback period
+  if (state.lookbackHours === 168) {
+    parts.push("7d");
+  } else if (state.lookbackHours >= 24) {
+    parts.push(`${state.lookbackHours / 24}d`);
+  } else {
+    parts.push(`${state.lookbackHours}h`);
+  }
+
+  // Continuity
+  if (state.enableContinuity) {
+    parts.push("continuity");
+  }
+
+  return parts.join(" ");
+}
+
 function RecurringOptions({ state, onChange }: Pick<StepProps, "state" | "onChange">) {
   const frequencies: { value: ScheduleFrequency; label: string }[] = [
     { value: "fifteen-minutes", label: "Every 15 min" },
@@ -160,12 +202,15 @@ function RecurringOptions({ state, onChange }: Pick<StepProps, "state" | "onChan
     onChange({ scheduleDays: newDays });
   };
 
+  // Auto-generate name when options change
+  const autoName = generateScheduleName(state);
+
   return (
     <div className="space-y-4">
       {/* Frequency */}
       <div>
         <Label>Frequency</Label>
-        <div className="flex gap-2 mt-2">
+        <div className="flex gap-2 mt-2 flex-wrap">
           {frequencies.map((f) => (
             <Button
               key={f.value}
@@ -255,17 +300,6 @@ function RecurringOptions({ state, onChange }: Pick<StepProps, "state" | "onChan
         </p>
       </div>
 
-      {/* Schedule Name */}
-      <div>
-        <Label>Schedule name</Label>
-        <Input
-          value={state.scheduleName}
-          onChange={(e) => onChange({ scheduleName: e.target.value })}
-          placeholder="e.g., Weekly team summary"
-          className="mt-2"
-        />
-      </div>
-
       {/* Continuity for weekly */}
       {state.frequency === "weekly" && (
         <div className="flex items-start space-x-3 p-3 rounded-md border bg-background">
@@ -284,6 +318,35 @@ function RecurringOptions({ state, onChange }: Pick<StepProps, "state" | "onChan
           </div>
         </div>
       )}
+
+      {/* Schedule Name with auto-generated suggestion */}
+      <div>
+        <Label>Schedule name</Label>
+        <div className="flex gap-2 mt-2">
+          <Input
+            value={state.scheduleName}
+            onChange={(e) => onChange({ scheduleName: e.target.value })}
+            placeholder={autoName}
+            className="flex-1"
+          />
+          {state.scheduleName !== autoName && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onChange({ scheduleName: autoName })}
+              title="Use auto-generated name"
+            >
+              Auto
+            </Button>
+          )}
+        </div>
+        {!state.scheduleName && (
+          <p className="text-xs text-muted-foreground mt-1">
+            Will use: {autoName}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -295,16 +358,31 @@ function PastOptions({ state, onChange }: Pick<StepProps, "state" | "onChange">)
     { label: "Last 90 days", from: subDays(new Date(), 90), to: new Date() },
   ];
 
+  const lookbackOptions = [
+    { value: 4, label: "4 hours" },
+    { value: 8, label: "8 hours" },
+    { value: 24, label: "24 hours" },
+    { value: 48, label: "48 hours" },
+    { value: 168, label: "7 days" },
+  ];
+
   const handleQuickRange = (from: Date, to: Date) => {
     onChange({ dateFrom: from, dateTo: to });
+  };
+
+  const toggleDay = (day: number) => {
+    const newDays = state.pastScheduleDays.includes(day)
+      ? state.pastScheduleDays.filter((d) => d !== day)
+      : [...state.pastScheduleDays, day];
+    onChange({ pastScheduleDays: newDays });
   };
 
   return (
     <div className="space-y-4">
       {/* Quick Ranges */}
       <div>
-        <Label>Quick select</Label>
-        <div className="flex gap-2 mt-2">
+        <Label>Date range</Label>
+        <div className="flex gap-2 mt-2 flex-wrap">
           {quickRanges.map((r) => (
             <Button
               key={r.label}
@@ -376,33 +454,100 @@ function PastOptions({ state, onChange }: Pick<StepProps, "state" | "onChange">)
       {/* Granularity */}
       <div>
         <Label>Granularity</Label>
-        <div className="flex gap-4 mt-2">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              checked={state.pastGranularity === "single"}
-              onChange={() => onChange({ pastGranularity: "single" })}
-              className="h-4 w-4"
-            />
-            <span className="text-sm">One summary for entire period</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              checked={state.pastGranularity === "daily"}
-              onChange={() => onChange({ pastGranularity: "daily" })}
-              className="h-4 w-4"
-            />
-            <span className="text-sm">Daily summaries</span>
-          </label>
+        <div className="flex gap-2 mt-2 flex-wrap">
+          <Button
+            type="button"
+            variant={state.pastGranularity === "single" ? "default" : "outline"}
+            size="sm"
+            onClick={() => onChange({ pastGranularity: "single" })}
+          >
+            Single
+          </Button>
+          <Button
+            type="button"
+            variant={state.pastGranularity === "daily" ? "default" : "outline"}
+            size="sm"
+            onClick={() => onChange({ pastGranularity: "daily" })}
+          >
+            Daily
+          </Button>
+          <Button
+            type="button"
+            variant={state.pastGranularity === "weekly" ? "default" : "outline"}
+            size="sm"
+            onClick={() => onChange({ pastGranularity: "weekly" })}
+          >
+            Weekly
+          </Button>
         </div>
       </div>
 
-      <p className="text-sm text-muted-foreground">
-        {state.pastGranularity === "single"
-          ? "One summary covering the entire date range will be generated."
-          : "A separate summary will be generated for each day in the range."}
-      </p>
+      {/* Day picker for weekly */}
+      {state.pastGranularity === "weekly" && (
+        <div>
+          <Label>Generate on</Label>
+          <div className="flex gap-1 mt-2">
+            {DAYS.map((day, i) => (
+              <Button
+                key={day}
+                type="button"
+                variant={state.pastScheduleDays.includes(i) ? "default" : "outline"}
+                size="sm"
+                className="w-10"
+                onClick={() => toggleDay(i)}
+              >
+                {day}
+              </Button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            A summary will be generated for each selected day in the date range
+          </p>
+        </div>
+      )}
+
+      {/* Lookback Hours - for weekly and daily */}
+      {state.pastGranularity !== "single" && (
+        <div>
+          <Label>Look back period</Label>
+          <div className="flex gap-2 mt-2 flex-wrap">
+            {lookbackOptions.map((opt) => (
+              <Button
+                key={opt.value}
+                type="button"
+                variant={state.pastLookbackHours === opt.value ? "default" : "outline"}
+                size="sm"
+                onClick={() => onChange({ pastLookbackHours: opt.value })}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            How many hours of messages to include in each summary
+          </p>
+        </div>
+      )}
+
+      {/* Description of what will happen */}
+      <div className="p-3 rounded-md bg-muted/50 text-sm text-muted-foreground">
+        {state.pastGranularity === "single" && (
+          <>One summary covering the entire date range will be generated.</>
+        )}
+        {state.pastGranularity === "daily" && (
+          <>A separate summary will be generated for each day, looking back {state.pastLookbackHours} hours.</>
+        )}
+        {state.pastGranularity === "weekly" && state.pastScheduleDays.length > 0 && (
+          <>
+            Weekly summaries will be generated for every{" "}
+            {state.pastScheduleDays.sort((a, b) => a - b).map((d) => DAYS[d]).join(", ")}{" "}
+            in the date range, each covering {state.pastLookbackHours} hours.
+          </>
+        )}
+        {state.pastGranularity === "weekly" && state.pastScheduleDays.length === 0 && (
+          <>Select at least one day to generate weekly summaries.</>
+        )}
+      </div>
     </div>
   );
 }

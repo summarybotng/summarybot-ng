@@ -43,7 +43,9 @@ export interface WizardState {
   // When: Past options
   dateFrom: Date | null;
   dateTo: Date | null;
-  pastGranularity: "single" | "daily";
+  pastGranularity: "single" | "daily" | "weekly";
+  pastScheduleDays: number[];  // For weekly: which days to generate (0=Sun, 6=Sat)
+  pastLookbackHours: number;   // How many hours to look back for each summary
 
   // Step 3: Delivery (recurring only)
   destinations: {
@@ -91,7 +93,9 @@ export const initialWizardState: WizardState = {
   // Past options
   dateFrom: null,
   dateTo: null,
-  pastGranularity: "single",
+  pastGranularity: "weekly",  // Default to weekly for retrospective
+  pastScheduleDays: [6],      // Default to Saturday
+  pastLookbackHours: 168,     // Default to 7 days
 
   // Delivery
   destinations: {

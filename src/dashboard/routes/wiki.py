@@ -1916,14 +1916,6 @@ async def mark_all_pages_dirty(
 
 @router.get(
     "/guilds/{guild_id}/wiki/available-perspectives",
-        raise
-    except Exception as e:
-        logger.error(f"Failed to trigger synthesis job: {e}")
-        raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": str(e)})
-
-
-@router.get(
-    "/guilds/{guild_id}/wiki/available-perspectives",
     response_model=WikiAvailablePerspectivesResponse,
     summary="Get available perspectives",
     description="Get perspectives that have summaries in the guild, with counts (ADR-080).",

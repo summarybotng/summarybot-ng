@@ -1873,6 +1873,55 @@ async def trigger_synthesis_job(
         raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": str(e)})
 
 
+@router.post(
+    "/guilds/{guild_id}/wiki/mark-all-dirty",
+    summary="Mark all wiki pages as dirty (testing)",
+    description="Mark all wiki pages as needing regeneration by clearing synthesis_updated_at.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def mark_all_pages_dirty(
+    guild_id: str = Path(..., description="Guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Mark all wiki pages as dirty for testing the synthesis job."""
+    _check_guild_access(guild_id, user)
+
+    from ...data.repositories import get_repository_factory
+
+    try:
+        factory = get_repository_factory()
+        conn = await factory.get_connection()
+
+        # Clear synthesis_updated_at to mark all pages as dirty
+        result = await conn.execute(
+            "UPDATE wiki_pages SET synthesis_updated_at = NULL WHERE guild_id = ?",
+            (guild_id,)
+        )
+
+        # Count pages affected
+        count_row = await conn.fetch_one(
+            "SELECT COUNT(*) as count FROM wiki_pages WHERE guild_id = ?",
+            (guild_id,)
+        )
+        count = count_row['count'] if count_row else 0
+
+        return {"success": True, "pages_marked_dirty": count}
+
+    except Exception as e:
+        logger.error(f"Failed to mark pages dirty: {e}")
+        raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": str(e)})
+
+
+@router.get(
+    "/guilds/{guild_id}/wiki/available-perspectives",
+        raise
+    except Exception as e:
+        logger.error(f"Failed to trigger synthesis job: {e}")
+        raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": str(e)})
+
+
 @router.get(
     "/guilds/{guild_id}/wiki/available-perspectives",
     response_model=WikiAvailablePerspectivesResponse,

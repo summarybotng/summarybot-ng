@@ -249,6 +249,15 @@ async function triggerSynthesisJob(guildId: string): Promise<SynthesisJobRespons
   return api.post<SynthesisJobResponse>(`/guilds/${guildId}/wiki/synthesis-job/trigger`, {});
 }
 
+interface MarkDirtyResponse {
+  success: boolean;
+  pages_marked_dirty: number;
+}
+
+async function markAllPagesDirty(guildId: string): Promise<MarkDirtyResponse> {
+  return api.post<MarkDirtyResponse>(`/guilds/${guildId}/wiki/mark-all-dirty`, {});
+}
+
 // ADR-080: Available perspectives for wiki ingestion
 interface WikiAvailablePerspectives {
   available: string[];
@@ -2406,6 +2415,22 @@ export function Wiki() {
     },
   });
 
+  // Mark all pages dirty (admin maintenance)
+  const markDirtyMutation = useMutation({
+    mutationFn: () => markAllPagesDirty(guildId!),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["wiki-settings", guildId] });
+      toast({
+        title: "Pages marked for regeneration",
+        description: `${data.pages_marked_dirty} pages marked as dirty`,
+      });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.detail?.message || "Failed to mark pages dirty";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    },
+  });
+
   // ADR-084: Wiki regeneration
   const { data: regenJobs, refetch: refetchRegenJobs } = useQuery({
     queryKey: ["wiki-regen-jobs", guildId],
@@ -2550,6 +2575,31 @@ export function Wiki() {
                     Last run: {new Date(wikiSettings.wiki_synthesis_job_last_run).toLocaleString()}
                   </p>
                 )}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          {/* Admin: Mark all pages dirty for full re-synthesis */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => markDirtyMutation.mutate()}
+                  disabled={markDirtyMutation.isPending}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  {markDirtyMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Mark all pages for re-synthesis (admin)</p>
+                <p className="text-xs text-muted-foreground">Forces full wiki regeneration</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

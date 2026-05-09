@@ -1285,3 +1285,85 @@ async def list_scoped_workspaces(
 
     workspaces = await repo.get_tenant_workspaces(tenant.id)
     return [workspace_to_response(w) for w in workspaces]
+
+
+# =============================================================================
+# PWA Manifest (ADR-007.1: Tenant Branding)
+# =============================================================================
+
+
+@router.get(
+    "/manifest.json",
+    summary="Get PWA manifest",
+    description="Returns tenant-branded PWA manifest for Android/iOS app name.",
+    include_in_schema=False,  # Hide from API docs
+)
+async def get_pwa_manifest(request: Request):
+    """
+    ADR-007.1: Return tenant-branded PWA manifest.
+
+    This endpoint returns a dynamic manifest.json with the tenant's app name
+    so that when users install the PWA on Android/iOS, it shows the tenant name
+    instead of "SummaryBot".
+    """
+    from fastapi.responses import JSONResponse
+
+    # Get tenant from middleware (may be None for main domain)
+    tenant = getattr(request.state, "tenant", None)
+
+    # Default manifest values
+    app_name = "SummaryBot"
+    short_name = "SummaryBot"
+    theme_color = "#3b82f6"
+    background_color = "#0f172a"
+
+    # Apply tenant branding if available
+    if tenant:
+        if tenant.branding and tenant.branding.app_name_override:
+            app_name = tenant.branding.app_name_override
+            short_name = tenant.branding.app_name_override[:12]  # Short name max 12 chars
+        elif tenant.name:
+            app_name = tenant.name
+            short_name = tenant.name[:12]
+
+        if tenant.branding and tenant.branding.primary_color:
+            theme_color = tenant.branding.primary_color
+
+    manifest = {
+        "name": app_name,
+        "short_name": short_name,
+        "description": f"{app_name} - AI-powered chat summarization",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": background_color,
+        "theme_color": theme_color,
+        "icons": [
+            {
+                "src": "/icons/icon.svg",
+                "sizes": "any",
+                "type": "image/svg+xml",
+                "purpose": "any maskable"
+            }
+        ],
+        "share_target": {
+            "action": "/share",
+            "method": "POST",
+            "enctype": "multipart/form-data",
+            "params": {
+                "title": "title",
+                "text": "text",
+                "url": "url",
+                "files": [
+                    {
+                        "name": "file",
+                        "accept": ["text/plain", ".txt", "application/zip", ".zip"]
+                    }
+                ]
+            }
+        }
+    }
+
+    return JSONResponse(
+        content=manifest,
+        media_type="application/manifest+json",
+    )

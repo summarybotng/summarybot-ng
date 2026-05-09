@@ -283,6 +283,70 @@ class WebhookServer:
 
             index_html = frontend_dist / "index.html"
 
+            # ADR-007.1: Dynamic PWA manifest for tenant branding
+            @self.app.get("/manifest.json", include_in_schema=False)
+            async def serve_dynamic_manifest(request: Request):
+                """Serve tenant-branded PWA manifest for Android/iOS app name."""
+                # Get tenant from middleware (may be None for main domain)
+                tenant = getattr(request.state, "tenant", None)
+
+                # Default manifest values
+                app_name = "SummaryBot"
+                short_name = "SummaryBot"
+                theme_color = "#3b82f6"
+                background_color = "#0f172a"
+
+                # Apply tenant branding if available
+                if tenant:
+                    if tenant.branding and tenant.branding.app_name_override:
+                        app_name = tenant.branding.app_name_override
+                        short_name = tenant.branding.app_name_override[:12]
+                    elif tenant.name:
+                        app_name = tenant.name
+                        short_name = tenant.name[:12]
+
+                    if tenant.branding and tenant.branding.primary_color:
+                        theme_color = tenant.branding.primary_color
+
+                manifest = {
+                    "name": app_name,
+                    "short_name": short_name,
+                    "description": f"{app_name} - AI-powered chat summarization",
+                    "start_url": "/",
+                    "display": "standalone",
+                    "background_color": background_color,
+                    "theme_color": theme_color,
+                    "icons": [
+                        {
+                            "src": "/icons/icon.svg",
+                            "sizes": "any",
+                            "type": "image/svg+xml",
+                            "purpose": "any maskable"
+                        }
+                    ],
+                    "share_target": {
+                        "action": "/share",
+                        "method": "POST",
+                        "enctype": "multipart/form-data",
+                        "params": {
+                            "title": "title",
+                            "text": "text",
+                            "url": "url",
+                            "files": [
+                                {
+                                    "name": "file",
+                                    "accept": ["text/plain", ".txt", "application/zip", ".zip"]
+                                }
+                            ]
+                        }
+                    }
+                }
+
+                return JSONResponse(
+                    content=manifest,
+                    media_type="application/manifest+json",
+                )
+
             @self.app.get("/", include_in_schema=False)
             async def serve_spa_root():
                 return FileResponse(str(index_html))

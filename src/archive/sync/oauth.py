@@ -207,6 +207,7 @@ class GoogleOAuthFlow:
     SCOPES = [
         "https://www.googleapis.com/auth/drive.file",  # Create/access app files
         "https://www.googleapis.com/auth/drive.metadata.readonly",  # Browse existing folders
+        "https://www.googleapis.com/auth/userinfo.email",  # ADR-007.1: Get user email
     ]
 
     def __init__(self, token_store: SecureTokenStore):

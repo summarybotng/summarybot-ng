@@ -1687,7 +1687,7 @@ function SyncSettings({ guildId }: { guildId: string }) {
                 {serverConfig?.enabled && !serverConfig.using_fallback ? (
                   <div className="text-sm text-muted-foreground space-y-0.5">
                     <p>
-                      Connected as: {userInfo?.email || serverConfig.user_email || "Loading..."}
+                      Connected as: {userInfo?.email || serverConfig.user_email || "(reconnect to see email)"}
                     </p>
                     <p>
                       Drive: {serverConfig.drive_name || "My Drive"}

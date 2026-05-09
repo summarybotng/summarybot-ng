@@ -350,6 +350,23 @@ export function useServerSyncConfig(serverId: string) {
   });
 }
 
+// ADR-007.1: Sync statistics
+export interface SyncStats {
+  summaries_available: number;
+  files_in_drive: number;
+  last_sync?: string;
+  summaries_query_url: string;
+}
+
+export function useSyncStats(serverId: string) {
+  return useQuery({
+    queryKey: ["archive", "sync", "stats", serverId],
+    queryFn: () => api.get<SyncStats>(`/archive/sync/server/${serverId}/stats`),
+    enabled: !!serverId,
+    staleTime: 30 * 1000,
+  });
+}
+
 export function useStartOAuth() {
   return useMutation({
     mutationFn: ({ serverId, userId }: { serverId: string; userId: string }) =>

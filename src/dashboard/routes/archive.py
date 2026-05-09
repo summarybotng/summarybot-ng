@@ -1997,28 +1997,38 @@ async def oauth_callback(
         state: State token for CSRF protection
 
     Returns:
-        Success response with server info
+        Redirect to frontend with success/error indicator
     """
+    from fastapi.responses import RedirectResponse
+    import urllib.parse
+
     oauth = get_oauth_flow()
+    base_url = os.environ.get("DASHBOARD_BASE_URL", "https://summarybot.app")
 
     # Validate state
     oauth_state = oauth.validate_state(state)
     if not oauth_state:
-        raise HTTPException(400, "Invalid or expired state token")
+        return RedirectResponse(
+            url=f"{base_url}/?oauth_error={urllib.parse.quote('Invalid or expired state token')}",
+            status_code=302,
+        )
 
     try:
         # Exchange code for tokens
         tokens = await oauth.exchange_code(code, oauth_state)
 
-        return {
-            "success": True,
-            "server_id": oauth_state.server_id,
-            "message": "Google Drive connected successfully. Now select a folder.",
-        }
+        # Redirect to frontend with success - the UI will detect this and open folder picker
+        return RedirectResponse(
+            url=f"{base_url}/guilds/{oauth_state.server_id}/retrospective?oauth=success&select_folder=true",
+            status_code=302,
+        )
 
     except Exception as e:
         logger.error(f"OAuth callback failed: {e}")
-        raise HTTPException(500, f"OAuth failed: {e}")
+        return RedirectResponse(
+            url=f"{base_url}/guilds/{oauth_state.server_id}/retrospective?oauth=error&message={urllib.parse.quote(str(e))}",
+            status_code=302,
+        )
 
 
 @router.delete("/oauth/google/{server_id}")
@@ -2080,6 +2090,83 @@ async def get_server_sync_config(server_id: str):
         enabled=using_fallback,
         folder_id=service.config.folder_id if using_fallback else None,
         using_fallback=using_fallback,
+    )
+
+
+class SyncStatsResponse(BaseModel):
+    """Sync statistics for a server."""
+    summaries_available: int  # Number of archive summaries that can be synced
+    files_in_drive: int  # Number of files already in Drive folder
+    last_sync: Optional[str] = None
+    summaries_query_url: str  # URL to view summaries in UI
+
+
+@router.get("/sync/server/{server_id}/stats", response_model=SyncStatsResponse)
+async def get_sync_stats(server_id: str):
+    """
+    Get sync statistics for a server.
+
+    Returns count of summaries available to sync and files already in Drive.
+    """
+    from . import get_stored_summary_repository
+
+    # Count archive summaries for this server
+    repo = await get_stored_summary_repository()
+    summaries_available = 0
+    if repo:
+        # Count summaries with archive source
+        summaries = await repo.find_by_guild(server_id, source="archive", limit=10000)
+        summaries_available = len(summaries)
+
+    # Get files in Drive folder
+    files_in_drive = 0
+    last_sync = None
+    service = get_sync_service()
+    config = await service.get_server_config(server_id)
+
+    if config and config.enabled and config.folder_id:
+        oauth = get_oauth_flow()
+        token_id = f"srv_{server_id}_gdrive"
+        tokens = await oauth.get_valid_tokens(token_id)
+
+        if tokens:
+            try:
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    # Count files in the sync folder
+                    params: Dict[str, Any] = {
+                        "q": f"'{config.folder_id}' in parents and trashed=false",
+                        "fields": "files(id)",
+                        "pageSize": 1000,
+                    }
+                    if config.drive_id:
+                        params["corpora"] = "drive"
+                        params["driveId"] = config.drive_id
+                        params["includeItemsFromAllDrives"] = "true"
+                        params["supportsAllDrives"] = "true"
+
+                    response = await client.get(
+                        "https://www.googleapis.com/drive/v3/files",
+                        headers={"Authorization": f"Bearer {tokens.access_token}"},
+                        params=params,
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        files_in_drive = len(data.get("files", []))
+            except Exception as e:
+                logger.warning(f"Failed to count Drive files: {e}")
+
+        if config.last_sync:
+            last_sync = config.last_sync.isoformat()
+
+    # Build URL to view summaries
+    summaries_query_url = f"/guilds/{server_id}/summaries?source=archive"
+
+    return SyncStatsResponse(
+        summaries_available=summaries_available,
+        files_in_drive=files_in_drive,
+        last_sync=last_sync,
+        summaries_query_url=summaries_query_url,
     )
 
 

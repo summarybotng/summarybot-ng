@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { format, subDays, addDays } from "date-fns";
 import {
@@ -15,6 +15,7 @@ import {
   useDriveStatus,
   useOAuthConfig,
   useServerSyncConfig,
+  useSyncStats,  // ADR-007.1
   useStartOAuth,
   useDisconnectDrive,
   useConfigureServerSync,
@@ -87,7 +88,7 @@ import {
   MessageSquare,
   Cloud,
   CloudOff,
-  Link,
+  Link as LinkIcon,
   Unlink,
   ExternalLink,
   Settings,
@@ -96,6 +97,7 @@ import {
   Briefcase,
   Pause,
   RotateCcw,
+  Files,
 } from "lucide-react";
 
 export function Archive() {
@@ -1482,6 +1484,7 @@ function JobsView({ guildId }: { guildId: string }) {
 
 function SyncSettings({ guildId }: { guildId: string }) {
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   // ADR-007.1: Drive type selection
   const [driveType, setDriveType] = useState<"my_drive" | "shared">("my_drive");
@@ -1496,14 +1499,50 @@ function SyncSettings({ guildId }: { guildId: string }) {
   const { data: driveStatus } = useDriveStatus();
   const { data: oauthConfig } = useOAuthConfig();
   const { data: serverConfig, refetch: refetchServerConfig } = useServerSyncConfig(guildId);
-  // ADR-007.1: Support shared drives and user info
+  // ADR-007.1: Support shared drives, user info, and sync stats
   const { data: sharedDrivesData } = useSharedDrives(guildId);
   const { data: userInfo } = useDriveUserInfo(guildId);
+  const { data: syncStats, refetch: refetchSyncStats } = useSyncStats(guildId);
   const { data: foldersData, isLoading: foldersLoading } = useDriveFolders(
     guildId,
     folderPath[folderPath.length - 1]?.id || "root",
     driveType === "shared" ? selectedDriveId || undefined : undefined
   );
+
+  // ADR-007.1: Handle OAuth redirect - detect success and open folder picker
+  useEffect(() => {
+    const oauthResult = searchParams.get("oauth");
+    const selectFolder = searchParams.get("select_folder");
+
+    if (oauthResult === "success") {
+      // Clear URL params
+      searchParams.delete("oauth");
+      searchParams.delete("select_folder");
+      setSearchParams(searchParams, { replace: true });
+
+      // Refresh config and show folder picker
+      refetchServerConfig();
+      toast({
+        title: "Google Drive connected",
+        description: "Now select a folder for your archive.",
+      });
+
+      if (selectFolder === "true") {
+        setShowFolderPicker(true);
+      }
+    } else if (oauthResult === "error") {
+      const message = searchParams.get("message") || "Authorization failed";
+      searchParams.delete("oauth");
+      searchParams.delete("message");
+      setSearchParams(searchParams, { replace: true });
+
+      toast({
+        title: "Connection failed",
+        description: message,
+        variant: "destructive",
+      });
+    }
+  }, [searchParams, setSearchParams, refetchServerConfig, toast]);
 
   // Build Google Drive folder URL
   const getFolderUrl = (folderId?: string, driveId?: string) => {
@@ -1530,13 +1569,8 @@ function SyncSettings({ guildId }: { guildId: string }) {
         userId: "dashboard_user",
       });
 
-      // Open OAuth URL in new window
-      window.open(result.auth_url, "_blank", "width=600,height=700");
-
-      toast({
-        title: "Authorization started",
-        description: "Complete the authorization in the popup window, then return here.",
-      });
+      // Open OAuth URL in same window (will redirect back after auth)
+      window.location.href = result.auth_url;
     } catch (error) {
       toast({
         title: "Failed to start authorization",
@@ -1752,7 +1786,7 @@ function SyncSettings({ guildId }: { guildId: string }) {
                   {startOAuth.isPending ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
-                    <Link className="mr-2 h-4 w-4" />
+                    <LinkIcon className="mr-2 h-4 w-4" />
                   )}
                   Connect Your Drive
                 </Button>
@@ -1768,6 +1802,54 @@ function SyncSettings({ guildId }: { guildId: string }) {
           {serverConfig?.last_sync && (
             <div className="text-sm text-muted-foreground">
               Last synced: {new Date(serverConfig.last_sync).toLocaleString()}
+            </div>
+          )}
+
+          {/* ADR-007.1: Sync Statistics */}
+          {serverConfig?.enabled && !serverConfig.using_fallback && syncStats && (
+            <div className="border rounded-lg p-4 bg-muted/30 space-y-2">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <Files className="h-4 w-4" />
+                Sync Statistics
+              </h4>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-muted-foreground">Summaries available to sync</p>
+                  <p className="font-medium flex items-center gap-2">
+                    {syncStats.summaries_available}
+                    <Link
+                      to={`/guilds/${guildId}/summaries?source=archive`}
+                      className="text-primary hover:underline text-xs"
+                    >
+                      View summaries
+                    </Link>
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Files in Drive folder</p>
+                  <p className="font-medium flex items-center gap-2">
+                    {syncStats.files_in_drive}
+                    {serverConfig.folder_id && (
+                      <a
+                        href={getFolderUrl(serverConfig.folder_id, serverConfig.drive_id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline text-xs inline-flex items-center gap-1"
+                      >
+                        Open Drive <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </p>
+                </div>
+              </div>
+              {syncStats.summaries_available !== syncStats.files_in_drive && (
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  {syncStats.summaries_available > syncStats.files_in_drive
+                    ? `${syncStats.summaries_available - syncStats.files_in_drive} summaries not yet synced. Click "Sync Now" to upload.`
+                    : "Drive has more files than expected (may include subfolders or manual uploads)."}
+                </p>
+              )}
             </div>
           )}
 

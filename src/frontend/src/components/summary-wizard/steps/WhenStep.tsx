@@ -49,8 +49,13 @@ export function WhenStep({ state, onChange }: StepProps) {
     <div className="space-y-6">
       <h3 className="text-lg font-medium">When do you want this summary?</h3>
 
-      {/* When Type Selection */}
+      {/* When Type Selection - Order: Past, Recent (Now), Future (Recurring) */}
       <div className="grid grid-cols-3 gap-3">
+        <WhenTypeCard
+          whenType="past"
+          selected={state.whenType === "past"}
+          onClick={() => handleWhenTypeChange("past")}
+        />
         <WhenTypeCard
           whenType="now"
           selected={state.whenType === "now"}
@@ -60,11 +65,6 @@ export function WhenStep({ state, onChange }: StepProps) {
           whenType="recurring"
           selected={state.whenType === "recurring"}
           onClick={() => handleWhenTypeChange("recurring")}
-        />
-        <WhenTypeCard
-          whenType="past"
-          selected={state.whenType === "past"}
-          onClick={() => handleWhenTypeChange("past")}
         />
       </div>
 

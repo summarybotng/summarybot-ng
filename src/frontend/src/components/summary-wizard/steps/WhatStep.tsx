@@ -7,22 +7,37 @@
 import { useEffect, useState } from "react";
 import { useGuild } from "@/hooks/useGuilds";
 import { useWhatsAppChats } from "@/hooks/useWhatsApp";
+import { useSlackGuildLinks, useSlackChannels } from "@/hooks/useSlack";
 import { useCheckChannelPrivacy, type PrivacyWarning } from "@/hooks/useChannelPrivacy";
 import { PlatformCard } from "../shared/PlatformCard";
 import { ScopeSelector, type ScopeSelectorValue } from "@/components/ScopeSelector";
 import { WhatsAppChatSelector } from "@/components/schedules/WhatsAppChatSelector";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { AlertCircle, AlertTriangle } from "lucide-react";
 import type { StepProps, Platform } from "../types";
 
 export function WhatStep({ state, onChange, guildId }: StepProps) {
   const { data: guild, isLoading: guildLoading } = useGuild(guildId);
   const { data: whatsappChats } = useWhatsAppChats(guildId);
+  const { data: slackLinksData } = useSlackGuildLinks(guildId);
+  const [selectedSlackWorkspace, setSelectedSlackWorkspace] = useState<string>("");
+  const { data: slackChannels } = useSlackChannels(selectedSlackWorkspace);
   const checkPrivacy = useCheckChannelPrivacy(guildId);
   const [privacyWarnings, setPrivacyWarnings] = useState<PrivacyWarning[]>([]);
 
   const hasWhatsApp = whatsappChats && whatsappChats.length > 0;
+  const linkedSlackWorkspaces = slackLinksData?.workspaces || [];
+  const hasSlack = linkedSlackWorkspaces.length > 0;
+
+  // Auto-select first Slack workspace if only one
+  useEffect(() => {
+    if (state.platform === "slack" && linkedSlackWorkspaces.length === 1 && !selectedSlackWorkspace) {
+      setSelectedSlackWorkspace(linkedSlackWorkspaces[0].workspace_id);
+    }
+  }, [state.platform, linkedSlackWorkspaces, selectedSlackWorkspace]);
 
   // ADR-046: Check privacy when Discord channels are selected
   useEffect(() => {
@@ -118,6 +133,56 @@ export function WhatStep({ state, onChange, guildId }: StepProps) {
             selectedChatIds={state.channelIds}
             onChange={(chatIds) => onChange({ channelIds: chatIds })}
           />
+        ) : state.platform === "slack" ? (
+          <div className="space-y-4">
+            {/* Slack Workspace Selector */}
+            {linkedSlackWorkspaces.length > 1 && (
+              <div>
+                <Label className="text-sm">Workspace</Label>
+                <Select
+                  value={selectedSlackWorkspace}
+                  onValueChange={(v) => {
+                    setSelectedSlackWorkspace(v);
+                    onChange({ channelIds: [] }); // Reset channels on workspace change
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select workspace" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {linkedSlackWorkspaces.map((ws) => (
+                      <SelectItem key={ws.workspace_id} value={ws.workspace_id}>
+                        {ws.workspace_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {/* Slack Channel Selector */}
+            {selectedSlackWorkspace && slackChannels ? (
+              <ScopeSelector
+                value={scopeValue}
+                onChange={handleScopeChange}
+                channels={slackChannels.map((ch) => ({
+                  id: ch.id,
+                  name: ch.name,
+                  type: ch.is_private ? 2 : 0,
+                }))}
+                categories={[]}
+                allowedScopes={["channel"]}
+              />
+            ) : !hasSlack ? (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  No Slack workspaces linked. Go to Sources to connect Slack.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <p className="text-sm text-muted-foreground">Select a workspace to see channels</p>
+            )}
+          </div>
         ) : (
           <ScopeSelector
             value={scopeValue}

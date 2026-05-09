@@ -12,7 +12,7 @@ This supersedes the original question (daily per-channel vs cross-channel vs wee
 2. **Channel continuity** (longitudinal with weekly checkpoints) beats daily cross-channel stitching
 3. **Raw messages** are the preferred source; summaries are fallback for older content
 
-## Context
+## Context  
 
 ADR-057 describes the RuVector-enhanced wiki with powerful capabilities:
 - **HNSW Vector Index**: Semantic search understands meaning, not just keywords

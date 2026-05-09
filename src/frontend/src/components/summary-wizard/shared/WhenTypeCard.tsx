@@ -12,20 +12,20 @@ interface WhenTypeCardProps {
 }
 
 const whenTypeConfig: Record<WhenType, { icon: string; label: string; description: string }> = {
-  now: {
-    icon: "⚡",
-    label: "Now",
-    description: "Last few hours",
-  },
-  recurring: {
-    icon: "🔄",
-    label: "Recurring",
-    description: "Schedule it",
-  },
   past: {
     icon: "📅",
     label: "Past",
     description: "Specific dates",
+  },
+  now: {
+    icon: "⚡",
+    label: "Recent",
+    description: "Last few hours",
+  },
+  recurring: {
+    icon: "🔄",
+    label: "Future",
+    description: "Schedule recurring",
   },
 };
 

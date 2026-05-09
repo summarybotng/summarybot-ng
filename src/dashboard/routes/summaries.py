@@ -409,6 +409,9 @@ async def get_summary_metadata(
             # Build title
             title = stored.title or (f"Summary — {stored.created_at.strftime('%b %d, %H:%M')}" if stored.created_at else "Summary")
 
+            # Get key points from summary result
+            key_points = sr.key_points if sr and sr.key_points else None
+
             return SummaryMetadataLightResponse(
                 id=stored.id,
                 title=title,
@@ -420,6 +423,7 @@ async def get_summary_metadata(
                 created_at=stored.created_at,
                 period_start=sr.start_time if sr else None,
                 period_end=sr.end_time if sr else None,
+                key_points=key_points,
             )
 
     # Fall back to summaries table
@@ -457,6 +461,9 @@ async def get_summary_metadata(
     # Build title
     title = getattr(summary, 'title', None) or f"Summary — {summary.created_at.strftime('%b %d, %H:%M')}"
 
+    # Get key points if available
+    key_points = getattr(summary, 'key_points', None)
+
     return SummaryMetadataLightResponse(
         id=summary.id,
         title=title,
@@ -468,6 +475,7 @@ async def get_summary_metadata(
         created_at=summary.created_at,
         period_start=summary.start_time,
         period_end=summary.end_time,
+        key_points=key_points,
     )
 
 

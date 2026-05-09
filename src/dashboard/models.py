@@ -378,6 +378,7 @@ class SummaryMetadataLightResponse(BaseModel):
     created_at: Optional[datetime] = None
     period_start: Optional[datetime] = None
     period_end: Optional[datetime] = None
+    key_points: Optional[List[str]] = None  # Key points from the summary
 
 
 class SummaryPromptResponse(BaseModel):

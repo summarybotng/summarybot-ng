@@ -1374,6 +1374,7 @@ interface SummaryMetadata {
   created_at?: string;
   period_start?: string;
   period_end?: string;
+  key_points?: string[];  // Key points from the summary
 }
 
 async function fetchSummaryMetadata(guildId: string, summaryId: string): Promise<SummaryMetadata | null> {
@@ -1533,6 +1534,26 @@ function SourceReferences({ guildId, sourceId }: { guildId: string; sourceId: st
                   </Badge>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Key points from the source summary */}
+          {summaryMeta?.key_points && summaryMeta.key_points.length > 0 && (
+            <div className="pt-2 border-t">
+              <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                <span>Key Points</span>
+                <Badge variant="outline" className="text-xs px-1.5 py-0">
+                  {summaryMeta.key_points.length}
+                </Badge>
+              </div>
+              <ul className="space-y-1.5 text-sm">
+                {summaryMeta.key_points.map((point, idx) => (
+                  <li key={idx} className="flex gap-2">
+                    <span className="text-primary shrink-0">•</span>
+                    <span className="text-muted-foreground">{point}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

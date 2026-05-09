@@ -1,6 +1,6 @@
 # ADR-007: Per-Server Google Drive Sync with Fallback
 
-**Status:** Proposed (Partially Implemented)
+**Status:** Implemented
 **Date:** 2026-02-15
 **Depends on:** ADR-006 (Retrospective Summary Archive)
 **Related:** ADR-082 (Google Drive Import - opposite direction)
@@ -344,22 +344,22 @@ ARCHIVE_REQUIRE_ADMIN_APPROVAL=false
 ## 4. Implementation Phases
 
 ### Phase 1: Global Fallback (MVP)
-- [ ] Environment variable configuration
-- [ ] Service account authentication
-- [ ] Auto-sync after summary generation
-- [ ] Sync status in dashboard
+- [x] Environment variable configuration
+- [x] Service account authentication
+- [x] Auto-sync after summary generation
+- [x] Sync status in dashboard
 
 ### Phase 2: Server-Specific Configuration
-- [ ] OAuth flow implementation
-- [ ] Secure token storage
-- [ ] Server manifest updates
-- [ ] Dashboard UI for configuration
+- [x] OAuth flow implementation
+- [x] Secure token storage
+- [x] Server manifest updates
+- [x] Dashboard UI for configuration
 
 ### Phase 3: Advanced Features
-- [ ] Folder picker UI
+- [x] Folder picker UI
 - [ ] Sync scheduling options
 - [ ] Selective sync (include/exclude patterns)
-- [ ] Sync conflict resolution settings
+- [x] Sync conflict resolution settings
 
 ---
 

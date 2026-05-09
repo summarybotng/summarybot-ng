@@ -138,6 +138,8 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
     filters.containsPrivateChannels !== undefined,
     // ADR-087: Granularity filter
     filters.granularity !== undefined,
+    // ADR-087: Continuity filter
+    filters.hasContinuity !== undefined,
   ].filter(Boolean).length;
 
   const handleClearFilters = () => {
@@ -169,6 +171,8 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
       containsPrivateChannels: undefined,
       // ADR-087: Clear granularity filter
       granularity: undefined,
+      // ADR-087: Clear continuity filter
+      hasContinuity: undefined,
     });
   };
 
@@ -249,6 +253,27 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
               <SelectItem value="daily">Daily</SelectItem>
               <SelectItem value="weekly">Weekly</SelectItem>
               <SelectItem value="monthly">Monthly</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* ADR-087: Continuity filter */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Continuity:</span>
+          <Select
+            value={filters.hasContinuity === undefined ? "all" : filters.hasContinuity ? "yes" : "no"}
+            onValueChange={(v) => onFiltersChange({
+              ...filters,
+              hasContinuity: v === "all" ? undefined : v === "yes"
+            })}
+          >
+            <SelectTrigger className="w-[100px] h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="yes">Has Chain</SelectItem>
+              <SelectItem value="no">No Chain</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -969,6 +994,18 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
               {filters.granularity}
               <button
                 onClick={() => onFiltersChange({ ...filters, granularity: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {/* ADR-087: Continuity filter badge */}
+          {filters.hasContinuity !== undefined && (
+            <Badge variant="secondary" className="gap-1">
+              {filters.hasContinuity ? "Has Continuity" : "No Continuity"}
+              <button
+                onClick={() => onFiltersChange({ ...filters, hasContinuity: undefined })}
                 className="ml-1 hover:text-destructive"
               >
                 <X className="h-3 w-3" />

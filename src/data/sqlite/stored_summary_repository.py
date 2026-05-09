@@ -334,6 +334,12 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             conditions.append("archive_granularity = ?")
             params.append(filter.archive_granularity)
 
+        # ADR-087: Continuity chain filter
+        if filter.has_continuity is True:
+            conditions.append("continuity_week_number IS NOT NULL")
+        elif filter.has_continuity is False:
+            conditions.append("continuity_week_number IS NULL")
+
         where_clause = " AND ".join(conditions)
         return where_clause, params
 
@@ -380,6 +386,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         contains_private_channels: Optional[bool] = None,
         # ADR-087: Archive granularity filter
         archive_granularity: Optional[str] = None,
+        # ADR-087: Continuity chain filter
+        has_continuity: Optional[bool] = None,
     ) -> List[StoredSummary]:
         """Find stored summaries for a guild.
 
@@ -434,6 +442,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             has_access_issues=has_access_issues,
             contains_private_channels=contains_private_channels,
             archive_granularity=archive_granularity,
+            has_continuity=has_continuity,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 
@@ -528,6 +537,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         contains_private_channels: Optional[bool] = None,
         # ADR-087: Archive granularity filter
         archive_granularity: Optional[str] = None,
+        # ADR-087: Continuity chain filter
+        has_continuity: Optional[bool] = None,
     ) -> int:
         """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026, ADR-035, ADR-041, ADR-073, ADR-087)."""
         # CS-002: Use shared filter builder
@@ -559,6 +570,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             has_access_issues=has_access_issues,
             contains_private_channels=contains_private_channels,
             archive_granularity=archive_granularity,
+            has_continuity=has_continuity,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 

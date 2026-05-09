@@ -53,3 +53,5 @@ class StoredSummaryFilter:
     contains_private_channels: Optional[bool] = None  # True = contains locked channel content
     # ADR-087: Archive granularity filter
     archive_granularity: Optional[str] = None  # 'daily' | 'weekly' | 'monthly'
+    # ADR-087: Continuity chain filter
+    has_continuity: Optional[bool] = None  # True = has continuity_week_number

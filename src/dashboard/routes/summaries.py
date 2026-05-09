@@ -1197,6 +1197,8 @@ async def list_stored_summaries(
     contains_private_channels: Optional[bool] = Query(None, description="Filter by private/locked channel content (True = contains private content)"),
     # ADR-087: Archive granularity filter
     archive_granularity: Optional[str] = Query(None, description="Filter by archive granularity (daily, weekly, monthly)"),
+    # ADR-087: Continuity chain filter
+    has_continuity: Optional[bool] = Query(None, description="Filter by continuity chain presence (weekly summaries with continuity_week_number)"),
     user: dict = Depends(get_current_user),
 ):
     """List stored summaries for a guild.
@@ -1276,6 +1278,8 @@ async def list_stored_summaries(
         contains_private_channels=contains_private_channels,
         # ADR-087: Archive granularity filter
         archive_granularity=archive_granularity,
+        # ADR-087: Continuity chain filter
+        has_continuity=has_continuity,
     )
 
     total = await stored_repo.count_by_guild(
@@ -1313,6 +1317,8 @@ async def list_stored_summaries(
         contains_private_channels=contains_private_channels,
         # ADR-087: Archive granularity filter
         archive_granularity=archive_granularity,
+        # ADR-087: Continuity chain filter
+        has_continuity=has_continuity,
     )
 
     # ADR-046: Filter sensitive summaries for non-admin users

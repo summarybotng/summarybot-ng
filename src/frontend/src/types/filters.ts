@@ -90,6 +90,10 @@ export interface SummaryFilterCriteria {
   /** Filter by archive granularity (daily, weekly, monthly) */
   granularity?: string;
 
+  // === Continuity Chain (ADR-087) ===
+  /** Filter by continuity chain presence (weekly summaries with continuity_week_number) */
+  hasContinuity?: boolean;
+
   // === Sorting (for list views, not feeds) ===
   sortBy?: SortByType;
   sortOrder?: SortOrderType;
@@ -188,6 +192,11 @@ export function criteriaToSearchParams(criteria: SummaryFilterCriteria): URLSear
     params.set("archive_granularity", criteria.granularity);
   }
 
+  // ADR-087: Continuity chain filter
+  if (criteria.hasContinuity !== undefined) {
+    params.set("has_continuity", criteria.hasContinuity.toString());
+  }
+
   // Sorting
   if (criteria.sortBy) params.set("sort_by", criteria.sortBy);
   if (criteria.sortOrder) params.set("sort_order", criteria.sortOrder);
@@ -230,6 +239,8 @@ export function criteriaToApiBody(criteria: SummaryFilterCriteria): Record<strin
   if (criteria.containsPrivateChannels !== undefined) body.contains_private_channels = criteria.containsPrivateChannels;
   // ADR-087: Archive granularity filter
   if (criteria.granularity) body.archive_granularity = criteria.granularity;
+  // ADR-087: Continuity chain filter
+  if (criteria.hasContinuity !== undefined) body.has_continuity = criteria.hasContinuity;
 
   return body;
 }
@@ -260,6 +271,7 @@ export function countActiveFilters(criteria: SummaryFilterCriteria): number {
     criteria.perspective,
     criteria.hasAccessIssues !== undefined,
     criteria.granularity,
+    criteria.hasContinuity !== undefined,
   ].filter(Boolean).length;
 }
 

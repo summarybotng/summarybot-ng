@@ -240,6 +240,12 @@ export function StoredSummaryCard({
                 Wiki
               </Badge>
             )}
+            {/* ADR-087: Continuity chain indicator */}
+            {summary.continuity_week_number && (
+              <Badge variant="outline" className="bg-cyan-500/10 text-cyan-600 border-cyan-500/30">
+                Week {summary.continuity_week_number}
+              </Badge>
+            )}
           </div>
 
           <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">

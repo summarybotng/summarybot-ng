@@ -382,6 +382,9 @@ export interface StoredSummary {
   // ADR-086: Wiki ingestion status
   wiki_ingested?: boolean;
   wiki_ingested_at?: string;
+  // ADR-087: Continuity chain fields
+  continuity_week_number?: number;
+  previous_summary_id?: string;
 }
 
 // ADR-020: Navigation for prev/next summary

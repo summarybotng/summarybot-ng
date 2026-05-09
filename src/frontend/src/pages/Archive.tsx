@@ -20,6 +20,7 @@ import {
   useConfigureServerSync,
   useTriggerSync,
   useDriveFolders,
+  useSharedDrives,  // ADR-007.1
   useAllJobs,
   usePauseJob,
   useResumeJob,
@@ -1480,7 +1481,11 @@ function JobsView({ guildId }: { guildId: string }) {
 
 function SyncSettings({ guildId }: { guildId: string }) {
   const { toast } = useToast();
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
+  // ADR-007.1: Drive type selection
+  const [driveType, setDriveType] = useState<"my_drive" | "shared">("my_drive");
+  const [selectedDriveId, setSelectedDriveId] = useState<string | null>(null);
+  const [selectedDriveName, setSelectedDriveName] = useState<string>("My Drive");
   const [folderPath, setFolderPath] = useState<{ id: string; name: string }[]>([
     { id: "root", name: "My Drive" },
   ]);
@@ -1490,9 +1495,12 @@ function SyncSettings({ guildId }: { guildId: string }) {
   const { data: driveStatus } = useDriveStatus();
   const { data: oauthConfig } = useOAuthConfig();
   const { data: serverConfig, refetch: refetchServerConfig } = useServerSyncConfig(guildId);
+  // ADR-007.1: Support shared drives
+  const { data: sharedDrivesData } = useSharedDrives(guildId);
   const { data: foldersData, isLoading: foldersLoading } = useDriveFolders(
     guildId,
-    folderPath[folderPath.length - 1]?.id || "root"
+    folderPath[folderPath.length - 1]?.id || "root",
+    driveType === "shared" ? selectedDriveId || undefined : undefined
   );
 
   // Mutations
@@ -1542,17 +1550,34 @@ function SyncSettings({ guildId }: { guildId: string }) {
   };
 
   const handleSelectFolder = async (folderId: string, folderName: string) => {
+    // ADR-007.1: Prevent selecting root
+    if (folderId === "root") {
+      toast({
+        title: "Invalid selection",
+        description: "Please select a specific folder, not the drive root.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
+      // Build folder path string
+      const pathString = folderPath.map(f => f.name).join(" / ");
+
       await configureSync.mutateAsync({
         serverId: guildId,
         folderId,
         folderName,
+        folderPath: pathString + " / " + folderName,
+        driveType,
+        driveId: driveType === "shared" ? selectedDriveId || undefined : undefined,
+        driveName: selectedDriveName,
       });
       toast({
         title: "Folder configured",
-        description: `Archives will sync to "${folderName}"`,
+        description: `Archives will sync to "${folderName}" in ${selectedDriveName}`,
       });
-      setSelectedFolder(null);
+      setShowFolderPicker(false);
       refetchServerConfig();
     } catch (error) {
       toast({
@@ -1584,6 +1609,20 @@ function SyncSettings({ guildId }: { guildId: string }) {
 
   const navigateBack = (index: number) => {
     setFolderPath(folderPath.slice(0, index + 1));
+  };
+
+  // ADR-007.1: Handle drive type change
+  const handleDriveTypeChange = (type: "my_drive" | "shared", driveId?: string, driveName?: string) => {
+    setDriveType(type);
+    if (type === "my_drive") {
+      setSelectedDriveId(null);
+      setSelectedDriveName("My Drive");
+      setFolderPath([{ id: "root", name: "My Drive" }]);
+    } else if (driveId && driveName) {
+      setSelectedDriveId(driveId);
+      setSelectedDriveName(driveName);
+      setFolderPath([{ id: driveId, name: driveName }]);
+    }
   };
 
   if (syncStatusLoading) {
@@ -1631,13 +1670,27 @@ function SyncSettings({ guildId }: { guildId: string }) {
                     ? "Using Default Drive"
                     : "Not Connected"}
                 </p>
-                <p className="text-sm text-muted-foreground">
-                  {serverConfig?.enabled && !serverConfig.using_fallback
-                    ? `Folder: ${serverConfig.folder_name || serverConfig.folder_id}`
-                    : syncStatus?.configured
-                    ? "Archives sync to the bot operator's Drive"
-                    : "Connect Google Drive to enable backup"}
-                </p>
+                {/* ADR-007.1: Show detailed connection info */}
+                {serverConfig?.enabled && !serverConfig.using_fallback ? (
+                  <div className="text-sm text-muted-foreground space-y-0.5">
+                    {serverConfig.user_email && (
+                      <p>Connected as: {serverConfig.user_email}</p>
+                    )}
+                    <p>
+                      Drive: {serverConfig.drive_name || "My Drive"}
+                      {serverConfig.drive_type === "shared" && (
+                        <Badge variant="outline" className="ml-2 text-xs">Shared</Badge>
+                      )}
+                    </p>
+                    <p>Folder: {serverConfig.folder_path || serverConfig.folder_name || serverConfig.folder_id}</p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {syncStatus?.configured
+                      ? "Archives sync to the bot operator's Drive"
+                      : "Connect Google Drive to enable backup"}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex gap-2">
@@ -1692,12 +1745,12 @@ function SyncSettings({ guildId }: { guildId: string }) {
 
           {/* Folder Selection Dialog */}
           {oauthConfig?.configured && !serverConfig?.enabled && (
-            <Dialog open={selectedFolder !== null} onOpenChange={(open) => !open && setSelectedFolder(null)}>
+            <Dialog open={showFolderPicker} onOpenChange={setShowFolderPicker}>
               <DialogTrigger asChild>
                 <Button
                   variant="outline"
                   className="w-full"
-                  onClick={() => setSelectedFolder("root")}
+                  onClick={() => setShowFolderPicker(true)}
                 >
                   <Folder className="mr-2 h-4 w-4" />
                   Select Folder After Connecting
@@ -1705,78 +1758,139 @@ function SyncSettings({ guildId }: { guildId: string }) {
               </DialogTrigger>
               <DialogContent className="max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>Select Archive Folder</DialogTitle>
+                  <DialogTitle>Select Sync Destination</DialogTitle>
                   <DialogDescription>
-                    Choose where to store your archive summaries
+                    Choose a drive and folder for your archive summaries
                   </DialogDescription>
                 </DialogHeader>
 
-                {/* Breadcrumb */}
-                <div className="flex items-center gap-1 text-sm overflow-x-auto py-2">
-                  {folderPath.map((folder, index) => (
-                    <div key={folder.id} className="flex items-center">
-                      {index > 0 && <ChevronRight className="h-4 w-4 text-muted-foreground mx-1" />}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-auto py-1 px-2"
-                        onClick={() => navigateBack(index)}
-                      >
-                        {folder.name}
-                      </Button>
-                    </div>
-                  ))}
-                </div>
+                {/* ADR-007.1: Drive Type Selection */}
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Step 1: Choose Drive</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      variant={driveType === "my_drive" ? "default" : "outline"}
+                      className="justify-start"
+                      onClick={() => handleDriveTypeChange("my_drive")}
+                    >
+                      <HardDrive className="mr-2 h-4 w-4" />
+                      My Drive
+                    </Button>
+                    <Button
+                      variant={driveType === "shared" ? "default" : "outline"}
+                      className="justify-start"
+                      onClick={() => setDriveType("shared")}
+                      disabled={!sharedDrivesData?.drives?.length}
+                    >
+                      <Briefcase className="mr-2 h-4 w-4" />
+                      Shared Drives
+                    </Button>
+                  </div>
 
-                {/* Folder List */}
-                <div className="border rounded-lg max-h-64 overflow-y-auto">
-                  {foldersLoading ? (
-                    <div className="flex items-center justify-center p-8">
-                      <Loader2 className="h-6 w-6 animate-spin" />
-                    </div>
-                  ) : foldersData?.folders.length === 0 ? (
-                    <div className="p-8 text-center text-muted-foreground">
-                      No folders found
-                    </div>
-                  ) : (
-                    foldersData?.folders.map((folder) => (
-                      <div
-                        key={folder.id}
-                        className="flex items-center justify-between p-3 hover:bg-muted/50 border-b last:border-b-0"
-                      >
+                  {/* Shared Drives List */}
+                  {driveType === "shared" && sharedDrivesData?.drives && (
+                    <div className="border rounded-lg max-h-32 overflow-y-auto">
+                      {sharedDrivesData.drives.map((drive) => (
                         <button
-                          className="flex items-center gap-2 flex-1 text-left"
-                          onClick={() => navigateToFolder(folder.id, folder.name)}
+                          key={drive.id}
+                          className={`w-full flex items-center gap-2 p-3 hover:bg-muted/50 border-b last:border-b-0 text-left ${
+                            selectedDriveId === drive.id ? "bg-primary/10" : ""
+                          }`}
+                          onClick={() => handleDriveTypeChange("shared", drive.id, drive.name)}
                         >
-                          <Folder className="h-4 w-4 text-muted-foreground" />
-                          <span>{folder.name}</span>
+                          <Briefcase className="h-4 w-4 text-muted-foreground" />
+                          <span>{drive.name}</span>
+                          {selectedDriveId === drive.id && (
+                            <CheckCircle2 className="h-4 w-4 text-primary ml-auto" />
+                          )}
                         </button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleSelectFolder(folder.id, folder.name)}
-                        >
-                          Select
-                        </Button>
-                      </div>
-                    ))
+                      ))}
+                    </div>
                   )}
                 </div>
 
-                <DialogFooter>
+                {/* Step 2: Folder Selection */}
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Step 2: Select Folder (Required)</Label>
+
+                  {/* Breadcrumb */}
+                  <div className="flex items-center gap-1 text-sm overflow-x-auto py-2 bg-muted/30 rounded px-2">
+                    {folderPath.map((folder, index) => (
+                      <div key={folder.id} className="flex items-center">
+                        {index > 0 && <ChevronRight className="h-4 w-4 text-muted-foreground mx-1" />}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-auto py-1 px-2"
+                          onClick={() => navigateBack(index)}
+                        >
+                          {folder.name}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Folder List */}
+                  <div className="border rounded-lg max-h-48 overflow-y-auto">
+                    {foldersLoading ? (
+                      <div className="flex items-center justify-center p-8">
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                      </div>
+                    ) : foldersData?.folders.length === 0 ? (
+                      <div className="p-8 text-center text-muted-foreground">
+                        No folders found. Navigate into a folder or create one in Drive first.
+                      </div>
+                    ) : (
+                      foldersData?.folders.map((folder) => (
+                        <div
+                          key={folder.id}
+                          className="flex items-center justify-between p-3 hover:bg-muted/50 border-b last:border-b-0"
+                        >
+                          <button
+                            className="flex items-center gap-2 flex-1 text-left"
+                            onClick={() => navigateToFolder(folder.id, folder.name)}
+                          >
+                            <Folder className="h-4 w-4 text-muted-foreground" />
+                            <span>{folder.name}</span>
+                          </button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleSelectFolder(folder.id, folder.name)}
+                          >
+                            Select
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Warning about root */}
+                  {folderPath.length === 1 && (
+                    <p className="text-sm text-amber-600 flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4" />
+                      Navigate into a folder to select it. Drive root is not allowed.
+                    </p>
+                  )}
+                </div>
+
+                <DialogFooter className="gap-2">
+                  <Button variant="outline" onClick={() => setShowFolderPicker(false)}>
+                    Cancel
+                  </Button>
                   <Button
-                    onClick={() =>
-                      handleSelectFolder(
-                        folderPath[folderPath.length - 1].id,
-                        folderPath[folderPath.length - 1].name
-                      )
-                    }
-                    disabled={configureSync.isPending}
+                    onClick={() => {
+                      if (folderPath.length > 1) {
+                        const lastFolder = folderPath[folderPath.length - 1];
+                        handleSelectFolder(lastFolder.id, lastFolder.name);
+                      }
+                    }}
+                    disabled={configureSync.isPending || folderPath.length <= 1}
                   >
                     {configureSync.isPending ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : null}
-                    Use Current Folder
+                    Use Selected Folder
                   </Button>
                 </DialogFooter>
               </DialogContent>

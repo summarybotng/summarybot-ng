@@ -28,6 +28,11 @@ class ServerSyncConfig:
     enabled: bool = False
     folder_id: str = ""
     folder_name: str = ""
+    folder_path: str = ""  # ADR-007.1: Full path for clarity
+    drive_type: str = "my_drive"  # ADR-007.1: "my_drive" | "shared"
+    drive_id: str = ""  # ADR-007.1: Shared drive ID (empty for My Drive)
+    drive_name: str = ""  # ADR-007.1: Drive display name
+    user_email: str = ""  # ADR-007.1: Connected user's email
     oauth_token_id: str = ""
     configured_by: str = ""
     configured_at: Optional[datetime] = None
@@ -40,6 +45,11 @@ class ServerSyncConfig:
             "enabled": self.enabled,
             "folder_id": self.folder_id,
             "folder_name": self.folder_name,
+            "folder_path": self.folder_path,
+            "drive_type": self.drive_type,
+            "drive_id": self.drive_id,
+            "drive_name": self.drive_name,
+            "user_email": self.user_email,
             "oauth_token_id": self.oauth_token_id,
             "configured_by": self.configured_by,
             "configured_at": self.configured_at.isoformat() if self.configured_at else None,
@@ -61,6 +71,11 @@ class ServerSyncConfig:
             enabled=data.get("enabled", False),
             folder_id=data.get("folder_id", ""),
             folder_name=data.get("folder_name", ""),
+            folder_path=data.get("folder_path", ""),
+            drive_type=data.get("drive_type", "my_drive"),
+            drive_id=data.get("drive_id", ""),
+            drive_name=data.get("drive_name", ""),
+            user_email=data.get("user_email", ""),
             oauth_token_id=data.get("oauth_token_id", ""),
             configured_by=data.get("configured_by", ""),
             configured_at=configured_at,

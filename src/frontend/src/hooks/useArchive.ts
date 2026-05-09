@@ -287,6 +287,11 @@ export interface ServerSyncConfig {
   enabled: boolean;
   folder_id?: string;
   folder_name?: string;
+  folder_path?: string;  // ADR-007.1: Full path
+  drive_type?: string;  // ADR-007.1: "my_drive" | "shared"
+  drive_id?: string;  // ADR-007.1: Shared drive ID
+  drive_name?: string;  // ADR-007.1: Drive display name
+  user_email?: string;  // ADR-007.1: Connected user's email
   configured_by?: string;
   configured_at?: string;
   last_sync?: string;
@@ -296,6 +301,18 @@ export interface ServerSyncConfig {
 export interface DriveFolder {
   id: string;
   name: string;
+}
+
+// ADR-007.1: Shared drives
+export interface SharedDrive {
+  id: string;
+  name: string;
+}
+
+export interface DriveUserInfo {
+  email: string;
+  name?: string;
+  picture?: string;
 }
 
 // ==================== Sync Hooks ====================
@@ -362,16 +379,28 @@ export function useConfigureServerSync() {
       serverId,
       folderId,
       folderName,
+      folderPath,
+      driveType,
+      driveId,
+      driveName,
       userId,
     }: {
       serverId: string;
       folderId: string;
       folderName: string;
+      folderPath?: string;  // ADR-007.1
+      driveType?: string;   // ADR-007.1: "my_drive" | "shared"
+      driveId?: string;     // ADR-007.1: For shared drives
+      driveName?: string;   // ADR-007.1: Drive display name
       userId?: string;
     }) =>
       api.put(`/archive/sync/server/${serverId}?user_id=${userId || ""}`, {
         folder_id: folderId,
         folder_name: folderName,
+        folder_path: folderPath || "",
+        drive_type: driveType || "my_drive",
+        drive_id: driveId || null,
+        drive_name: driveName || (driveType === "my_drive" ? "My Drive" : ""),
         sync_on_generation: true,
         include_metadata: true,
       }),
@@ -404,15 +433,44 @@ export function useTriggerSyncAll() {
   });
 }
 
-export function useDriveFolders(serverId: string, parentId: string = "root") {
+export function useDriveFolders(serverId: string, parentId: string = "root", driveId?: string) {
   return useQuery({
-    queryKey: ["archive", "oauth", "folders", serverId, parentId],
+    queryKey: ["archive", "oauth", "folders", serverId, parentId, driveId],
+    queryFn: () => {
+      let url = `/archive/oauth/google/folders?server_id=${serverId}&parent_id=${parentId}`;
+      if (driveId) {
+        url += `&drive_id=${driveId}`;
+      }
+      return api.get<{ parent_id: string; drive_id?: string; folders: DriveFolder[] }>(url);
+    },
+    enabled: !!serverId,
+    staleTime: 60 * 1000,
+  });
+}
+
+// ADR-007.1: List shared drives
+export function useSharedDrives(serverId: string) {
+  return useQuery({
+    queryKey: ["archive", "oauth", "drives", serverId],
     queryFn: () =>
-      api.get<{ parent_id: string; folders: DriveFolder[] }>(
-        `/archive/oauth/google/folders?server_id=${serverId}&parent_id=${parentId}`
+      api.get<{ drives: SharedDrive[] }>(
+        `/archive/oauth/google/drives?server_id=${serverId}`
       ),
     enabled: !!serverId,
     staleTime: 60 * 1000,
+  });
+}
+
+// ADR-007.1: Get connected user info
+export function useDriveUserInfo(serverId: string) {
+  return useQuery({
+    queryKey: ["archive", "oauth", "user", serverId],
+    queryFn: () =>
+      api.get<DriveUserInfo>(
+        `/archive/oauth/google/user?server_id=${serverId}`
+      ),
+    enabled: !!serverId,
+    staleTime: 5 * 60 * 1000,
   });
 }
 

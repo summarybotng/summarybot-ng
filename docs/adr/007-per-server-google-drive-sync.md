@@ -228,6 +228,29 @@ class DriveResolver:
 | `GET` | `/api/v1/archive/oauth/google/callback` | Handle OAuth callback |
 | `DELETE` | `/api/v1/archive/oauth/google/{server_id}` | Disconnect Google Drive |
 
+#### Drive & Folder Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/archive/oauth/google/folders` | List folders in My Drive or shared drive |
+| `GET` | `/api/v1/archive/oauth/google/drives` | List available shared drives |
+| `GET` | `/api/v1/archive/oauth/google/user` | Get connected user info (email, name) |
+
+**Query Parameters for `/folders`:**
+- `server_id` (required): Server requesting folders
+- `parent_id` (default: "root"): Parent folder ID
+- `drive_id` (optional): Shared drive ID (omit for My Drive)
+
+**Response for `/drives`:**
+```json
+{
+  "drives": [
+    {"id": "0ABCD123", "name": "Marketing Team"},
+    {"id": "0EFGH456", "name": "Engineering Archives"}
+  ]
+}
+```
+
 #### Configuration Endpoints
 
 | Method | Endpoint | Description |
@@ -243,6 +266,8 @@ class DriveResolver:
 
 #### Server Settings → Archive Sync
 
+The UI must clearly show connection details and require explicit folder selection:
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  Archive Sync Settings                                          │
@@ -253,9 +278,12 @@ class DriveResolver:
 │  │  ○ Use default archive location (Bot operator's Drive)     │ │
 │  │  ● Use custom Google Drive                                  │ │
 │  │                                                              │ │
-│  │  Connected: My Organization Drive                           │ │
-│  │  Folder: /Archives/Discord Summaries                        │ │
-│  │  Last sync: 5 minutes ago (32 files)                        │ │
+│  │  ┌──────────────────────────────────────────────────────┐  │ │
+│  │  │  👤 Connected as: user@example.com                   │  │ │
+│  │  │  💾 Drive: Marketing Team Drive (Shared)             │  │ │
+│  │  │  📁 Folder: /Archives/Discord Summaries              │  │ │
+│  │  │  🕐 Last sync: 5 minutes ago (32 files)              │  │ │
+│  │  └──────────────────────────────────────────────────────┘  │ │
 │  │                                                              │ │
 │  │  [Disconnect]  [Change Folder]  [Sync Now]                  │ │
 │  └────────────────────────────────────────────────────────────┘ │
@@ -271,6 +299,81 @@ class DriveResolver:
 │  [Save Settings]                                                 │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+**Key UI Requirements:**
+1. Show connected user email - users must know which account is connected
+2. Show drive type and name - distinguish between "My Drive" and shared drives
+3. Show folder path - files go into a folder, never the drive root
+4. Require explicit folder selection - users must actively choose a destination
+
+### 2.6.1 Shared Drives (Team Drives) Support
+
+Many organizations use Shared Drives (formerly Team Drives) for collaborative storage. The system must support these as the primary sync destination.
+
+#### Drive Selection Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Select Sync Destination                                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Step 1: Choose Drive                                            │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │  ○ My Drive                                                 │ │
+│  │  ● Shared Drives                                            │ │
+│  │     ├─ Marketing Team Drive                                 │ │
+│  │     ├─ Engineering Archives                                 │ │
+│  │     └─ Company Documents                                    │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  Step 2: Select Folder (Required)                                │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │  📁 Marketing Team Drive                                    │ │
+│  │     └─ 📁 Archives                                          │ │
+│  │         └─ 📁 Discord Summaries ← [Select]                  │ │
+│  │  ⚠ You must select a folder (not the drive root)           │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  [Cancel]                               [Use Selected Folder]   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### API Changes for Shared Drives
+
+The folder listing endpoint must support the `corpora` parameter:
+
+```python
+# List folders in My Drive
+GET /archive/oauth/google/folders?server_id=xxx&parent_id=root
+
+# List shared drives
+GET /archive/oauth/google/drives?server_id=xxx
+
+# List folders in a shared drive
+GET /archive/oauth/google/folders?server_id=xxx&parent_id={folder_id}&drive_id={drive_id}
+```
+
+#### Configuration Schema Extension
+
+```json
+{
+  "sync": {
+    "google_drive": {
+      "enabled": true,
+      "drive_type": "shared",           // "my_drive" | "shared"
+      "drive_id": "0ABCD123xyz...",     // Shared drive ID (null for My Drive)
+      "drive_name": "Marketing Team",   // Display name
+      "folder_id": "1ABC123xyz...",
+      "folder_name": "Discord Summaries",
+      "folder_path": "/Archives/Discord Summaries",
+      "user_email": "admin@company.com", // Connected user's email
+      "credentials_type": "oauth",
+      "oauth_token_id": "srv_xxx_gdrive"
+    }
+  }
+}
 ```
 
 ### 2.7 Security Considerations
@@ -360,6 +463,14 @@ ARCHIVE_REQUIRE_ADMIN_APPROVAL=false
 - [ ] Sync scheduling options
 - [ ] Selective sync (include/exclude patterns)
 - [x] Sync conflict resolution settings
+
+### Phase 4: Shared Drives & UX Improvements (ADR-007.1)
+- [x] Show connected user email in UI
+- [x] Show drive name and type (My Drive vs Shared)
+- [x] Shared Drives listing endpoint
+- [x] Folder picker for shared drives
+- [x] Require folder selection (prevent root upload)
+- [x] Display folder path, not just folder name
 
 ---
 

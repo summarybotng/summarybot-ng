@@ -1911,6 +1911,11 @@ class ServerSyncConfigResponse(BaseModel):
     enabled: bool
     folder_id: Optional[str] = None
     folder_name: Optional[str] = None
+    folder_path: Optional[str] = None  # ADR-007.1: Full path for clarity
+    drive_type: Optional[str] = None  # ADR-007.1: "my_drive" | "shared"
+    drive_id: Optional[str] = None  # ADR-007.1: Shared drive ID
+    drive_name: Optional[str] = None  # ADR-007.1: Drive display name
+    user_email: Optional[str] = None  # ADR-007.1: Connected user's email
     configured_by: Optional[str] = None
     configured_at: Optional[str] = None
     last_sync: Optional[str] = None
@@ -1921,6 +1926,10 @@ class ConfigureServerSyncRequest(BaseModel):
     """Request to configure server sync."""
     folder_id: str
     folder_name: str = ""
+    folder_path: str = ""  # ADR-007.1: Full path
+    drive_type: str = "my_drive"  # ADR-007.1: "my_drive" | "shared"
+    drive_id: Optional[str] = None  # ADR-007.1: For shared drives
+    drive_name: Optional[str] = None  # ADR-007.1: Drive display name
     sync_on_generation: bool = True
     include_metadata: bool = True
 
@@ -2052,6 +2061,11 @@ async def get_server_sync_config(server_id: str):
             enabled=True,
             folder_id=config.folder_id,
             folder_name=config.folder_name,
+            folder_path=config.folder_path,
+            drive_type=config.drive_type,
+            drive_id=config.drive_id or None,
+            drive_name=config.drive_name or None,
+            user_email=config.user_email or None,
             configured_by=config.configured_by,
             configured_at=config.configured_at.isoformat() if config.configured_at else None,
             last_sync=config.last_sync.isoformat() if config.last_sync else None,
@@ -2084,6 +2098,7 @@ async def configure_server_sync(
         user_id: Discord user ID making the change
     """
     from src.archive.sync import ServerSyncConfig
+    import httpx
 
     service = get_sync_service()
     oauth = get_oauth_flow()
@@ -2098,11 +2113,36 @@ async def configure_server_sync(
             "No OAuth tokens found. Please connect Google Drive first."
         )
 
-    # Create config
+    # ADR-007.1: Prevent syncing to drive root - folder selection is required
+    if not request.folder_id or request.folder_id == "root":
+        raise HTTPException(
+            400,
+            "You must select a specific folder. Syncing to the drive root is not allowed."
+        )
+
+    # ADR-007.1: Get user email for display
+    user_email = ""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {tokens.access_token}"},
+            )
+            if response.status_code == 200:
+                user_email = response.json().get("email", "")
+    except Exception as e:
+        logger.warning(f"Failed to get user email: {e}")
+
+    # Create config with ADR-007.1 fields
     config = ServerSyncConfig(
         enabled=True,
         folder_id=request.folder_id,
         folder_name=request.folder_name,
+        folder_path=request.folder_path,
+        drive_type=request.drive_type,
+        drive_id=request.drive_id or "",
+        drive_name=request.drive_name or ("My Drive" if request.drive_type == "my_drive" else ""),
+        user_email=user_email,
         oauth_token_id=token_id,
         configured_by=user_id,
         configured_at=utc_now_naive(),
@@ -2120,6 +2160,9 @@ async def configure_server_sync(
         "success": True,
         "server_id": server_id,
         "folder_id": request.folder_id,
+        "folder_name": request.folder_name,
+        "drive_type": request.drive_type,
+        "user_email": user_email,
         "message": "Server sync configured successfully",
     }
 
@@ -2158,6 +2201,7 @@ async def test_server_sync(server_id: str):
 async def list_drive_folders(
     server_id: str,
     parent_id: str = "root",
+    drive_id: Optional[str] = None,  # ADR-007.1: For shared drives
 ):
     """
     List folders in Google Drive for folder selection.
@@ -2165,6 +2209,70 @@ async def list_drive_folders(
     Args:
         server_id: Discord server ID (to get OAuth tokens)
         parent_id: Parent folder ID (default: root)
+        drive_id: Shared drive ID (optional, omit for My Drive)
+    """
+    oauth = get_oauth_flow()
+    token_id = f"srv_{server_id}_gdrive"
+
+    tokens = await oauth.get_valid_tokens(token_id)
+    if not tokens:
+        raise HTTPException(400, "No valid OAuth tokens. Please connect first.")
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient() as client:
+            # Build query params - different for shared drives
+            params: Dict[str, Any] = {
+                "q": f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+                "fields": "files(id, name, mimeType)",
+                "orderBy": "name",
+                "pageSize": 100,
+            }
+
+            # ADR-007.1: Support shared drives
+            if drive_id:
+                params["corpora"] = "drive"
+                params["driveId"] = drive_id
+                params["includeItemsFromAllDrives"] = "true"
+                params["supportsAllDrives"] = "true"
+
+            response = await client.get(
+                "https://www.googleapis.com/drive/v3/files",
+                headers={"Authorization": f"Bearer {tokens.access_token}"},
+                params=params,
+            )
+
+            if response.status_code != 200:
+                error_detail = response.text[:500] if response.text else "Unknown error"
+                logger.error(f"Drive API error {response.status_code}: {error_detail}")
+                raise HTTPException(response.status_code, f"Drive API error: {error_detail}")
+
+            data = response.json()
+            return {
+                "parent_id": parent_id,
+                "drive_id": drive_id,
+                "folders": [
+                    {"id": f["id"], "name": f["name"]}
+                    for f in data.get("files", [])
+                ],
+            }
+
+    except httpx.HTTPError as e:
+        logger.error(f"HTTP error listing folders: {e}")
+        raise HTTPException(500, f"Drive API error: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error listing folders: {e}")
+        raise HTTPException(500, f"Failed to list folders: {e}")
+
+
+@router.get("/oauth/google/drives")
+async def list_shared_drives(server_id: str):
+    """
+    ADR-007.1: List available shared drives (Team Drives).
+
+    Args:
+        server_id: Discord server ID (to get OAuth tokens)
     """
     oauth = get_oauth_flow()
     token_id = f"srv_{server_id}_gdrive"
@@ -2178,12 +2286,10 @@ async def list_drive_folders(
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                "https://www.googleapis.com/drive/v3/files",
+                "https://www.googleapis.com/drive/v3/drives",
                 headers={"Authorization": f"Bearer {tokens.access_token}"},
                 params={
-                    "q": f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-                    "fields": "files(id, name, mimeType)",
-                    "orderBy": "name",
+                    "fields": "drives(id, name)",
                     "pageSize": 100,
                 },
             )
@@ -2195,19 +2301,62 @@ async def list_drive_folders(
 
             data = response.json()
             return {
-                "parent_id": parent_id,
-                "folders": [
-                    {"id": f["id"], "name": f["name"]}
-                    for f in data.get("files", [])
+                "drives": [
+                    {"id": d["id"], "name": d["name"]}
+                    for d in data.get("drives", [])
                 ],
             }
 
     except httpx.HTTPError as e:
-        logger.error(f"HTTP error listing folders: {e}")
+        logger.error(f"HTTP error listing drives: {e}")
         raise HTTPException(500, f"Drive API error: {e}")
     except Exception as e:
-        logger.error(f"Unexpected error listing folders: {e}")
-        raise HTTPException(500, f"Failed to list folders: {e}")
+        logger.error(f"Unexpected error listing drives: {e}")
+        raise HTTPException(500, f"Failed to list drives: {e}")
+
+
+@router.get("/oauth/google/user")
+async def get_connected_user(server_id: str):
+    """
+    ADR-007.1: Get connected Google account user info.
+
+    Args:
+        server_id: Discord server ID (to get OAuth tokens)
+    """
+    oauth = get_oauth_flow()
+    token_id = f"srv_{server_id}_gdrive"
+
+    tokens = await oauth.get_valid_tokens(token_id)
+    if not tokens:
+        raise HTTPException(400, "No valid OAuth tokens. Please connect first.")
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {tokens.access_token}"},
+            )
+
+            if response.status_code != 200:
+                error_detail = response.text[:500] if response.text else "Unknown error"
+                logger.error(f"User info API error {response.status_code}: {error_detail}")
+                raise HTTPException(response.status_code, f"API error: {error_detail}")
+
+            data = response.json()
+            return {
+                "email": data.get("email"),
+                "name": data.get("name"),
+                "picture": data.get("picture"),
+            }
+
+    except httpx.HTTPError as e:
+        logger.error(f"HTTP error getting user info: {e}")
+        raise HTTPException(500, f"API error: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error getting user info: {e}")
+        raise HTTPException(500, f"Failed to get user info: {e}")
 
 
 # ==================== Archive Sync ====================

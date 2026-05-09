@@ -1751,6 +1751,18 @@ async def trigger_source_sync(source_key: str):
         source_dir = source_info.get_archive_path(archive_root)
         server_name = source_info.server_name
 
+        # ADR-007.1: Get tenant name for subfolder isolation
+        tenant_folder_name = None
+        try:
+            from . import get_tenant_repository
+            tenant_repo = await get_tenant_repository()
+            if tenant_repo:
+                tenant = await tenant_repo.get_tenant_for_workspace(server_id)
+                if tenant:
+                    tenant_folder_name = tenant.name
+        except Exception as e:
+            logger.warning(f"Failed to get tenant for server {server_id}: {e}")
+
         # Sync using OAuth tokens
         files_synced = 0
         files_failed = 0
@@ -1759,52 +1771,262 @@ async def trigger_source_sync(source_key: str):
 
         try:
             async with httpx.AsyncClient() as client:
-                # Get list of markdown files to sync
-                md_files = list(source_dir.glob("**/*.md"))
+                # ADR-007.1: Create tenant subfolder if tenant exists
+                target_folder_id = server_config.folder_id
+                if tenant_folder_name:
+                    # Check if tenant folder exists, create if not
+                    sanitized_name = tenant_folder_name.replace("/", "_").replace("\\", "_")[:50]
+                    params: Dict[str, Any] = {
+                        "q": f"name='{sanitized_name}' and '{server_config.folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+                        "fields": "files(id,name)",
+                    }
+                    if server_config.drive_id:
+                        params["corpora"] = "drive"
+                        params["driveId"] = server_config.drive_id
+                        params["includeItemsFromAllDrives"] = "true"
+                        params["supportsAllDrives"] = "true"
 
-                for md_file in md_files:
+                    response = await client.get(
+                        "https://www.googleapis.com/drive/v3/files",
+                        headers={"Authorization": f"Bearer {tokens.access_token}"},
+                        params=params,
+                    )
+
+                    if response.status_code == 200:
+                        existing = response.json().get("files", [])
+                        if existing:
+                            target_folder_id = existing[0]["id"]
+                        else:
+                            # Create tenant subfolder
+                            folder_metadata: Dict[str, Any] = {
+                                "name": sanitized_name,
+                                "mimeType": "application/vnd.google-apps.folder",
+                                "parents": [server_config.folder_id],
+                            }
+                            create_params: Dict[str, Any] = {"supportsAllDrives": "true"} if server_config.drive_id else {}
+                            create_response = await client.post(
+                                "https://www.googleapis.com/drive/v3/files",
+                                headers={
+                                    "Authorization": f"Bearer {tokens.access_token}",
+                                    "Content-Type": "application/json",
+                                },
+                                params=create_params,
+                                json=folder_metadata,
+                            )
+                            if create_response.status_code in (200, 201):
+                                target_folder_id = create_response.json()["id"]
+                                logger.info(f"Created tenant subfolder: {sanitized_name}")
+
+                # ADR-091: Get stored summaries from database with filtering
+                from . import get_stored_summary_repository
+                from src.archive.sync.exporter import export_summary, get_period_folder_name
+
+                repo = await get_stored_summary_repository()
+                if not repo:
+                    raise HTTPException(500, "Summary repository not available")
+
+                # Apply export filters from config
+                filter_kwargs: Dict[str, Any] = {"limit": 10000}
+                if server_config.export_filters:
+                    ef = server_config.export_filters
+                    if ef.get("source"):
+                        filter_kwargs["source"] = ef["source"]
+                    if ef.get("createdAfter"):
+                        filter_kwargs["created_after"] = ef["createdAfter"]
+                    if ef.get("createdBefore"):
+                        filter_kwargs["created_before"] = ef["createdBefore"]
+
+                summaries = await repo.find_by_guild(server_id, **filter_kwargs)
+                logger.info(f"Found {len(summaries)} summaries to sync for {server_id}")
+
+                # ADR-091: Create conversations/ folder structure
+                conversations_folder_id = target_folder_id
+                if server_config.folder_structure == "by-period":
+                    # Create 'conversations' top-level folder
+                    conv_params: Dict[str, Any] = {
+                        "q": f"name='conversations' and '{target_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+                        "fields": "files(id,name)",
+                    }
+                    if server_config.drive_id:
+                        conv_params["corpora"] = "drive"
+                        conv_params["driveId"] = server_config.drive_id
+                        conv_params["includeItemsFromAllDrives"] = "true"
+                        conv_params["supportsAllDrives"] = "true"
+
+                    conv_response = await client.get(
+                        "https://www.googleapis.com/drive/v3/files",
+                        headers={"Authorization": f"Bearer {tokens.access_token}"},
+                        params=conv_params,
+                    )
+
+                    if conv_response.status_code == 200:
+                        existing = conv_response.json().get("files", [])
+                        if existing:
+                            conversations_folder_id = existing[0]["id"]
+                        else:
+                            # Create conversations folder
+                            conv_metadata: Dict[str, Any] = {
+                                "name": "conversations",
+                                "mimeType": "application/vnd.google-apps.folder",
+                                "parents": [target_folder_id],
+                            }
+                            create_params: Dict[str, Any] = {"supportsAllDrives": "true"} if server_config.drive_id else {}
+                            create_response = await client.post(
+                                "https://www.googleapis.com/drive/v3/files",
+                                headers={
+                                    "Authorization": f"Bearer {tokens.access_token}",
+                                    "Content-Type": "application/json",
+                                },
+                                params=create_params,
+                                json=conv_metadata,
+                            )
+                            if create_response.status_code in (200, 201):
+                                conversations_folder_id = create_response.json()["id"]
+                                logger.info("Created conversations folder")
+
+                # Cache for period folders
+                period_folder_cache: Dict[str, str] = {}
+
+                async def get_or_create_period_folder(period_name: str) -> str:
+                    """Get or create a period folder, caching results."""
+                    if period_name in period_folder_cache:
+                        return period_folder_cache[period_name]
+
+                    # Check if exists
+                    search_params: Dict[str, Any] = {
+                        "q": f"name='{period_name}' and '{conversations_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+                        "fields": "files(id,name)",
+                    }
+                    if server_config.drive_id:
+                        search_params["corpora"] = "drive"
+                        search_params["driveId"] = server_config.drive_id
+                        search_params["includeItemsFromAllDrives"] = "true"
+                        search_params["supportsAllDrives"] = "true"
+
+                    response = await client.get(
+                        "https://www.googleapis.com/drive/v3/files",
+                        headers={"Authorization": f"Bearer {tokens.access_token}"},
+                        params=search_params,
+                    )
+
+                    if response.status_code == 200:
+                        existing = response.json().get("files", [])
+                        if existing:
+                            period_folder_cache[period_name] = existing[0]["id"]
+                            return existing[0]["id"]
+
+                    # Create folder
+                    folder_metadata: Dict[str, Any] = {
+                        "name": period_name,
+                        "mimeType": "application/vnd.google-apps.folder",
+                        "parents": [conversations_folder_id],
+                    }
+                    create_params: Dict[str, Any] = {"supportsAllDrives": "true"} if server_config.drive_id else {}
+                    create_response = await client.post(
+                        "https://www.googleapis.com/drive/v3/files",
+                        headers={
+                            "Authorization": f"Bearer {tokens.access_token}",
+                            "Content-Type": "application/json",
+                        },
+                        params=create_params,
+                        json=folder_metadata,
+                    )
+                    if create_response.status_code in (200, 201):
+                        folder_id = create_response.json()["id"]
+                        period_folder_cache[period_name] = folder_id
+                        logger.info(f"Created period folder: {period_name}")
+                        return folder_id
+
+                    return conversations_folder_id  # Fallback
+
+                for summary in summaries:
                     try:
-                        # Upload file to Drive
-                        rel_path = md_file.relative_to(source_dir)
-                        file_content = md_file.read_text()
+                        # Export to markdown (and optionally JSON)
+                        base_filename, markdown_content, json_content = export_summary(summary)
 
-                        # Create file metadata
-                        metadata = {
-                            "name": md_file.name,
-                            "parents": [server_config.folder_id],
+                        # ADR-091: Determine target folder based on structure
+                        if server_config.folder_structure == "by-period":
+                            period_name = get_period_folder_name(
+                                summary.created_at,
+                                server_config.period_grouping
+                            )
+                            file_folder_id = await get_or_create_period_folder(period_name)
+                        else:
+                            file_folder_id = conversations_folder_id
+
+                        # Upload markdown file
+                        md_metadata = {
+                            "name": f"{base_filename}.md",
+                            "parents": [file_folder_id],
                         }
-
-                        # Simple upload using multipart
                         boundary = "===boundary==="
-                        body = (
+                        md_body = (
                             f"--{boundary}\r\n"
                             f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
-                            f"{json.dumps(metadata)}\r\n"
+                            f"{json.dumps(md_metadata)}\r\n"
                             f"--{boundary}\r\n"
-                            f"Content-Type: text/markdown\r\n\r\n"
-                            f"{file_content}\r\n"
+                            f"Content-Type: text/markdown; charset=UTF-8\r\n\r\n"
+                            f"{markdown_content}\r\n"
                             f"--{boundary}--"
                         )
 
-                        response = await client.post(
-                            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+                        upload_params: Dict[str, Any] = {"uploadType": "multipart"}
+                        if server_config.drive_id:
+                            upload_params["supportsAllDrives"] = "true"
+
+                        md_response = await client.post(
+                            "https://www.googleapis.com/upload/drive/v3/files",
                             headers={
                                 "Authorization": f"Bearer {tokens.access_token}",
                                 "Content-Type": f"multipart/related; boundary={boundary}",
                             },
-                            content=body.encode(),
+                            params=upload_params,
+                            content=md_body.encode("utf-8"),
                         )
 
-                        if response.status_code in (200, 201):
+                        if md_response.status_code in (200, 201):
                             files_synced += 1
-                            bytes_uploaded += len(file_content.encode())
+                            bytes_uploaded += len(markdown_content.encode("utf-8"))
                         else:
                             files_failed += 1
-                            errors.append(f"{md_file.name}: {response.status_code}")
+                            errors.append(f"{base_filename}.md: {md_response.status_code}")
+                            continue  # Skip JSON if markdown failed
+
+                        # ADR-091: Only upload JSON if include_json is enabled
+                        if server_config.include_json:
+                            json_metadata = {
+                                "name": f"{base_filename}.json",
+                                "parents": [file_folder_id],
+                            }
+                            json_body = (
+                                f"--{boundary}\r\n"
+                                f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+                                f"{json.dumps(json_metadata)}\r\n"
+                                f"--{boundary}\r\n"
+                                f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+                                f"{json_content}\r\n"
+                                f"--{boundary}--"
+                            )
+
+                            json_response = await client.post(
+                                "https://www.googleapis.com/upload/drive/v3/files",
+                                headers={
+                                    "Authorization": f"Bearer {tokens.access_token}",
+                                    "Content-Type": f"multipart/related; boundary={boundary}",
+                                },
+                                params=upload_params,
+                                content=json_body.encode("utf-8"),
+                            )
+
+                            if json_response.status_code in (200, 201):
+                                files_synced += 1
+                                bytes_uploaded += len(json_content.encode("utf-8"))
+                            else:
+                                errors.append(f"{base_filename}.json: {json_response.status_code}")
 
                     except Exception as e:
                         files_failed += 1
-                        errors.append(f"{md_file.name}: {str(e)}")
+                        errors.append(f"{summary.id[:8]}: {str(e)}")
 
         except Exception as e:
             logger.error(f"Sync failed: {e}")
@@ -1920,6 +2142,11 @@ class ServerSyncConfigResponse(BaseModel):
     configured_at: Optional[str] = None
     last_sync: Optional[str] = None
     using_fallback: bool = False
+    # ADR-091: Export configuration
+    export_filters: Optional[Dict[str, Any]] = None
+    include_json: bool = False
+    folder_structure: str = "by-period"
+    period_grouping: str = "week"
 
 
 class ConfigureServerSyncRequest(BaseModel):
@@ -1932,6 +2159,11 @@ class ConfigureServerSyncRequest(BaseModel):
     drive_name: Optional[str] = None  # ADR-007.1: Drive display name
     sync_on_generation: bool = True
     include_metadata: bool = True
+    # ADR-091: Export configuration
+    export_filters: Optional[Dict[str, Any]] = None
+    include_json: bool = False
+    folder_structure: str = "by-period"
+    period_grouping: str = "week"
 
 
 def get_oauth_flow():
@@ -2080,6 +2312,11 @@ async def get_server_sync_config(server_id: str):
             configured_at=config.configured_at.isoformat() if config.configured_at else None,
             last_sync=config.last_sync.isoformat() if config.last_sync else None,
             using_fallback=False,
+            # ADR-091: Export configuration
+            export_filters=config.export_filters,
+            include_json=config.include_json,
+            folder_structure=config.folder_structure,
+            period_grouping=config.period_grouping,
         )
 
     # Check if using fallback
@@ -2094,9 +2331,9 @@ async def get_server_sync_config(server_id: str):
 
 
 class SyncStatsResponse(BaseModel):
-    """Sync statistics for a server."""
-    summaries_available: int  # Number of archive summaries that can be synced
-    files_in_drive: int  # Number of files already in Drive folder
+    """Sync statistics for a server. ADR-007.1: Now syncs database summaries as markdown + JSON."""
+    summaries_available: int  # Number of stored summaries that can be synced
+    files_in_drive: int  # Number of files already in Drive folder (includes .md and .json)
     last_sync: Optional[str] = None
     summaries_query_url: str  # URL to view summaries in UI
 
@@ -2106,16 +2343,16 @@ async def get_sync_stats(server_id: str):
     """
     Get sync statistics for a server.
 
-    Returns count of summaries available to sync and files already in Drive.
+    Returns count of stored summaries available to sync and files already in Drive.
+    ADR-007.1: Sync now exports database summaries as markdown + JSON.
     """
     from . import get_stored_summary_repository
 
-    # Count archive summaries for this server
+    # Count database summaries for this server (what gets synced)
     repo = await get_stored_summary_repository()
     summaries_available = 0
     if repo:
-        # Count summaries with archive source
-        summaries = await repo.find_by_guild(server_id, source="archive", limit=10000)
+        summaries = await repo.find_by_guild(server_id, limit=10000)
         summaries_available = len(summaries)
 
     # Get files in Drive folder
@@ -2159,8 +2396,8 @@ async def get_sync_stats(server_id: str):
         if config.last_sync:
             last_sync = config.last_sync.isoformat()
 
-    # Build URL to view summaries
-    summaries_query_url = f"/guilds/{server_id}/summaries?source=archive"
+    # Build URL to view summaries (all summaries since we sync all)
+    summaries_query_url = f"/guilds/{server_id}/summaries"
 
     return SyncStatsResponse(
         summaries_available=summaries_available,
@@ -2220,7 +2457,7 @@ async def configure_server_sync(
     except Exception as e:
         logger.warning(f"Failed to get user email: {e}")
 
-    # Create config with ADR-007.1 fields
+    # Create config with ADR-007.1 and ADR-091 fields
     config = ServerSyncConfig(
         enabled=True,
         folder_id=request.folder_id,
@@ -2235,6 +2472,11 @@ async def configure_server_sync(
         configured_at=utc_now_naive(),
         sync_on_generation=request.sync_on_generation,
         include_metadata=request.include_metadata,
+        # ADR-091: Export configuration
+        export_filters=request.export_filters,
+        include_json=request.include_json,
+        folder_structure=request.folder_structure,
+        period_grouping=request.period_grouping,
     )
 
     # Save config
@@ -2251,6 +2493,58 @@ async def configure_server_sync(
         "drive_type": request.drive_type,
         "user_email": user_email,
         "message": "Server sync configured successfully",
+    }
+
+
+class UpdateExportSettingsRequest(BaseModel):
+    """ADR-091: Request to update export settings only."""
+    export_filters: Optional[Dict[str, Any]] = None
+    include_json: Optional[bool] = None
+    folder_structure: Optional[str] = None
+    period_grouping: Optional[str] = None
+
+
+@router.patch("/sync/server/{server_id}/export-settings")
+async def update_export_settings(
+    server_id: str,
+    request: UpdateExportSettingsRequest,
+):
+    """
+    ADR-091: Update export settings without re-configuring OAuth.
+
+    Allows updating filters, JSON inclusion, and folder structure
+    after initial setup.
+    """
+    service = get_sync_service()
+    config = await service.get_server_config(server_id)
+
+    if not config or not config.enabled:
+        raise HTTPException(400, "Server sync not configured")
+
+    # Update only provided fields
+    if request.export_filters is not None:
+        config.export_filters = request.export_filters
+    if request.include_json is not None:
+        config.include_json = request.include_json
+    if request.folder_structure is not None:
+        config.folder_structure = request.folder_structure
+    if request.period_grouping is not None:
+        config.period_grouping = request.period_grouping
+
+    # Save updated config
+    success = await service.save_server_config(server_id, config)
+
+    if not success:
+        raise HTTPException(500, "Failed to save export settings")
+
+    return {
+        "success": True,
+        "server_id": server_id,
+        "export_filters": config.export_filters,
+        "include_json": config.include_json,
+        "folder_structure": config.folder_structure,
+        "period_grouping": config.period_grouping,
+        "message": "Export settings updated",
     }
 
 

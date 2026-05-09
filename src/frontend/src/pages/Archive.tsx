@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { format, subDays, addDays } from "date-fns";
@@ -23,6 +23,7 @@ import {
   useDriveFolders,
   useSharedDrives,  // ADR-007.1
   useDriveUserInfo,  // ADR-007.1
+  useUpdateExportSettings,  // ADR-091
   useAllJobs,
   usePauseJob,
   useResumeJob,
@@ -98,7 +99,15 @@ import {
   Pause,
   RotateCcw,
   Files,
+  Settings2,
+  HelpCircle,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export function Archive() {
   const { id: guildId } = useParams<{ id: string }>();
@@ -1560,6 +1569,7 @@ function SyncSettings({ guildId }: { guildId: string }) {
   const disconnectDrive = useDisconnectDrive();
   const configureSync = useConfigureServerSync();
   const triggerSync = useTriggerSync();
+  const updateExportSettings = useUpdateExportSettings(guildId);  // ADR-091
 
   const handleConnectDrive = async () => {
     try {
@@ -1850,6 +1860,81 @@ function SyncSettings({ guildId }: { guildId: string }) {
                     : "Drive has more files than expected (may include subfolders or manual uploads)."}
                 </p>
               )}
+            </div>
+          )}
+
+          {/* ADR-091: Export Settings */}
+          {serverConfig?.enabled && !serverConfig.using_fallback && (
+            <div className="border rounded-lg p-4 space-y-4">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <Settings2 className="h-4 w-4" />
+                Export Settings
+              </h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs">Folder Structure</Label>
+                  <Select
+                    value={serverConfig.folder_structure || "by-period"}
+                    onValueChange={(value) => {
+                      updateExportSettings.mutate({ folder_structure: value as "flat" | "by-period" | "by-channel" });
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="flat">Flat (all in one folder)</SelectItem>
+                      <SelectItem value="by-period">By Period (recommended)</SelectItem>
+                      <SelectItem value="by-channel">By Channel</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(serverConfig.folder_structure || "by-period") === "by-period" && (
+                  <div className="space-y-2">
+                    <Label className="text-xs">Period Grouping</Label>
+                    <Select
+                      value={serverConfig.period_grouping || "week"}
+                      onValueChange={(value) => {
+                        updateExportSettings.mutate({ period_grouping: value as "week" | "month" });
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="week">Weekly (e.g., 2026-05-05--2026-05-11)</SelectItem>
+                        <SelectItem value="month">Monthly (e.g., 2026-05-01--2026-05-31)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="include-json"
+                  checked={serverConfig.include_json || false}
+                  onCheckedChange={(checked) => {
+                    updateExportSettings.mutate({ include_json: checked });
+                  }}
+                />
+                <Label htmlFor="include-json" className="text-sm">
+                  Include JSON backup files
+                </Label>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      JSON files contain complete data for import/restoration.
+                      Markdown files are always included for human readability.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Files organized in: conversations/{serverConfig.period_grouping === "month" ? "YYYY-MM-DD--YYYY-MM-DD" : "weekly date ranges"}/
+              </p>
             </div>
           )}
 

@@ -296,6 +296,19 @@ export interface ServerSyncConfig {
   configured_at?: string;
   last_sync?: string;
   using_fallback: boolean;
+  // ADR-091: Export configuration
+  export_filters?: Record<string, unknown>;
+  include_json?: boolean;
+  folder_structure?: "flat" | "by-period" | "by-channel";
+  period_grouping?: "week" | "month";
+}
+
+// ADR-091: Export settings update request
+export interface ExportSettingsUpdate {
+  export_filters?: Record<string, unknown>;
+  include_json?: boolean;
+  folder_structure?: "flat" | "by-period" | "by-channel";
+  period_grouping?: "week" | "month";
 }
 
 export interface DriveFolder {
@@ -364,6 +377,19 @@ export function useSyncStats(serverId: string) {
     queryFn: () => api.get<SyncStats>(`/archive/sync/server/${serverId}/stats`),
     enabled: !!serverId,
     staleTime: 30 * 1000,
+  });
+}
+
+// ADR-091: Update export settings
+export function useUpdateExportSettings(serverId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (settings: ExportSettingsUpdate) =>
+      api.patch(`/archive/sync/server/${serverId}/export-settings`, settings),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["archive", "sync", "server", serverId] });
+    },
   });
 }
 

@@ -39,6 +39,11 @@ class ServerSyncConfig:
     last_sync: Optional[datetime] = None
     sync_on_generation: bool = True
     include_metadata: bool = True
+    # ADR-091: Export configuration
+    export_filters: Optional[Dict[str, Any]] = None  # Filter criteria (source, date range, etc.)
+    include_json: bool = False  # Include JSON backup files (default: markdown only)
+    folder_structure: str = "by-period"  # "flat" | "by-period" | "by-channel"
+    period_grouping: str = "week"  # "week" | "month"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -56,6 +61,11 @@ class ServerSyncConfig:
             "last_sync": self.last_sync.isoformat() if self.last_sync else None,
             "sync_on_generation": self.sync_on_generation,
             "include_metadata": self.include_metadata,
+            # ADR-091: Export configuration
+            "export_filters": self.export_filters,
+            "include_json": self.include_json,
+            "folder_structure": self.folder_structure,
+            "period_grouping": self.period_grouping,
         }
 
     @classmethod
@@ -82,6 +92,11 @@ class ServerSyncConfig:
             last_sync=last_sync,
             sync_on_generation=data.get("sync_on_generation", True),
             include_metadata=data.get("include_metadata", True),
+            # ADR-091: Export configuration
+            export_filters=data.get("export_filters"),
+            include_json=data.get("include_json", False),
+            folder_structure=data.get("folder_structure", "by-period"),
+            period_grouping=data.get("period_grouping", "week"),
         )
 
 

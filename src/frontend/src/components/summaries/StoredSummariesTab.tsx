@@ -677,6 +677,24 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
         </Button>
       </div>
 
+      {/* ADR-007.1: Source filter indicator banner */}
+      {filters.source !== "all" && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-md border">
+          <Archive className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm">
+            Showing <span className="font-medium capitalize">{filters.source}</span> summaries
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 ml-auto"
+            onClick={() => setFilters({ ...filters, source: "all" })}
+          >
+            Clear filter
+          </Button>
+        </div>
+      )}
+
       {/* ADR-017: Enhanced filters */}
       {viewMode === "list" && (
         <SummaryFilters

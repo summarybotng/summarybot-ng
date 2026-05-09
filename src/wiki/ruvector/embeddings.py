@@ -12,6 +12,8 @@ from dataclasses import dataclass
 import hashlib
 import json
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 # Embedding dimensions for text-embedding-3-small
@@ -270,6 +272,8 @@ class EmbeddingService:
         """
         Calculate cosine similarity between two embeddings.
 
+        Uses numpy for vectorized computation to avoid blocking the event loop.
+
         Args:
             embedding_a: First embedding vector
             embedding_b: Second embedding vector
@@ -280,14 +284,18 @@ class EmbeddingService:
         if len(embedding_a) != len(embedding_b):
             raise ValueError("Embeddings must have same dimensions")
 
-        dot_product = sum(a * b for a, b in zip(embedding_a, embedding_b))
-        magnitude_a = sum(a * a for a in embedding_a) ** 0.5
-        magnitude_b = sum(b * b for b in embedding_b) ** 0.5
+        # Use numpy for fast vectorized computation
+        a = np.array(embedding_a, dtype=np.float32)
+        b = np.array(embedding_b, dtype=np.float32)
+
+        dot_product = np.dot(a, b)
+        magnitude_a = np.linalg.norm(a)
+        magnitude_b = np.linalg.norm(b)
 
         if magnitude_a == 0 or magnitude_b == 0:
             return 0.0
 
-        return dot_product / (magnitude_a * magnitude_b)
+        return float(dot_product / (magnitude_a * magnitude_b))
 
     def clear_cache(self) -> int:
         """Clear the embedding cache. Returns number of entries cleared."""

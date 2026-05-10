@@ -20,7 +20,9 @@ import {
   AlertCircle,
   Clock,
   Zap,
+  Network,
 } from "lucide-react";
+import { lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +38,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api } from "@/api/client";
+
+// Lazy load heavy graph component
+const KnowledgeGraph = lazy(() => import("@/components/ruvector/KnowledgeGraph"));
 
 // Types
 interface KnowledgeUnit {
@@ -519,6 +524,10 @@ export function RuVectorExplorer() {
                 <List className="h-4 w-4" />
                 Browse
               </TabsTrigger>
+              <TabsTrigger value="graph" className="flex items-center gap-2">
+                <Network className="h-4 w-4" />
+                Graph
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="search" className="mt-4">
@@ -545,6 +554,22 @@ export function RuVectorExplorer() {
                 </CardHeader>
                 <CardContent>
                   {guildId && <BrowseTab guildId={guildId} />}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="graph" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Knowledge Graph</CardTitle>
+                  <CardDescription>
+                    Interactive visualization of knowledge units and relationships (ADR-093)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Suspense fallback={<Skeleton className="h-[500px]" />}>
+                    {guildId && <KnowledgeGraph guildId={guildId} />}
+                  </Suspense>
                 </CardContent>
               </Card>
             </TabsContent>

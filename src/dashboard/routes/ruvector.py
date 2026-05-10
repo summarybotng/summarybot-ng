@@ -519,6 +519,141 @@ async def _get_view_renderer(guild_id: str):
 
 
 # -------------------------------------------------------------------------
+# Graph Endpoints (ADR-093)
+# -------------------------------------------------------------------------
+
+class GraphNodeResponse(BaseModel):
+    """A node in the knowledge graph."""
+    id: str
+    content: str
+    unit_type: str
+    source_channel: Optional[str] = None
+    source_date: Optional[str] = None
+
+
+class GraphEdgeResponse(BaseModel):
+    """An edge in the knowledge graph."""
+    id: str
+    source: str
+    target: str
+    edge_type: str
+    weight: float = 1.0
+
+
+class GraphResponse(BaseModel):
+    """Knowledge graph data for visualization."""
+    nodes: List[GraphNodeResponse]
+    edges: List[GraphEdgeResponse]
+    total_nodes: int
+    total_edges: int
+
+
+@router.get(
+    "/guilds/{guild_id}/graph",
+    response_model=GraphResponse,
+    summary="Get knowledge graph",
+    description="ADR-093: Get nodes and edges for knowledge graph visualization",
+)
+async def get_graph(
+    guild_id: str = Path(..., description="Guild ID"),
+    limit: int = Query(100, ge=10, le=500, description="Maximum nodes"),
+    unit_types: Optional[str] = Query(None, description="Comma-separated unit types filter"),
+    channel: Optional[str] = Query(None, description="Filter by channel"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Get knowledge graph data for visualization.
+
+    Returns nodes (knowledge units) and edges (relationships) for rendering
+    as an interactive graph.
+    """
+    try:
+        connection = await get_database_connection()
+
+        # Build query for nodes
+        conditions = ["guild_id = ?"]
+        params: list = [guild_id]
+
+        if unit_types:
+            type_list = [t.strip() for t in unit_types.split(",")]
+            placeholders = ",".join("?" * len(type_list))
+            conditions.append(f"unit_type IN ({placeholders})")
+            params.extend(type_list)
+
+        if channel:
+            conditions.append("source_channel = ?")
+            params.append(channel)
+
+        params.append(limit)
+
+        # Get nodes
+        node_query = f"""
+        SELECT id, content, unit_type, source_channel, source_date
+        FROM wiki_knowledge_units
+        WHERE {' AND '.join(conditions)}
+        ORDER BY created_at DESC
+        LIMIT ?
+        """
+
+        node_rows = await connection.fetch_all(node_query, tuple(params))
+
+        nodes = []
+        node_ids = set()
+        for row in node_rows:
+            node_ids.add(row["id"])
+            nodes.append(GraphNodeResponse(
+                id=row["id"],
+                content=row["content"][:200] + "..." if len(row["content"]) > 200 else row["content"],
+                unit_type=row["unit_type"],
+                source_channel=row.get("source_channel"),
+                source_date=row["source_date"] if row.get("source_date") else None,
+            ))
+
+        # Get edges between these nodes
+        edges = []
+        if node_ids:
+            placeholders = ",".join("?" * len(node_ids))
+            edge_query = f"""
+            SELECT id, from_unit_id, to_unit_id, edge_type, weight
+            FROM wiki_edges
+            WHERE guild_id = ?
+              AND from_unit_id IN ({placeholders})
+              AND to_unit_id IN ({placeholders})
+            """
+            edge_params = [guild_id] + list(node_ids) + list(node_ids)
+            edge_rows = await connection.fetch_all(edge_query, tuple(edge_params))
+
+            for row in edge_rows:
+                edges.append(GraphEdgeResponse(
+                    id=str(row["id"]),
+                    source=row["from_unit_id"],
+                    target=row["to_unit_id"],
+                    edge_type=row["edge_type"],
+                    weight=row.get("weight", 1.0),
+                ))
+
+        # Get totals
+        total_query = "SELECT COUNT(*) as cnt FROM wiki_knowledge_units WHERE guild_id = ?"
+        total_row = await connection.fetch_one(total_query, (guild_id,))
+        total_nodes = total_row["cnt"] if total_row else 0
+
+        edge_total_query = "SELECT COUNT(*) as cnt FROM wiki_edges WHERE guild_id = ?"
+        edge_total_row = await connection.fetch_one(edge_total_query, (guild_id,))
+        total_edges = edge_total_row["cnt"] if edge_total_row else 0
+
+        return GraphResponse(
+            nodes=nodes,
+            edges=edges,
+            total_nodes=total_nodes,
+            total_edges=total_edges,
+        )
+
+    except Exception as e:
+        logger.exception(f"Get graph failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# -------------------------------------------------------------------------
 # Comparison Endpoints (ADR-057 Phase 4)
 # -------------------------------------------------------------------------
 

@@ -63,6 +63,9 @@ Your response MUST be valid JSON with this structure:
   "technical_terms": [
     {"term": "concept", "definition": "explanation", "context": "usage"}
   ],
+  "knowledge_units": [
+    {"content": "An atomic piece of knowledge", "type": "claim|decision|question|action_item|context|definition|reference", "confidence": 0.95, "references": [1, 2]}
+  ],
   "sources": [
     {"position": 2, "author": "username", "time": "14:32", "snippet": "First 60 chars of the message..."},
     {"position": 4, "author": "other_user", "time": "14:35", "snippet": "Another relevant quote..."}
@@ -75,6 +78,23 @@ actual message details so readers can trace claims back to the conversation.
 
 The "references" arrays contain message position numbers [N] that support each claim.
 Confidence is 0.0-1.0 indicating how well the cited messages support the claim.
+
+KNOWLEDGE UNITS EXTRACTION (ADR-090):
+Extract atomic knowledge units from the conversation. Each unit should be a
+self-contained piece of information that can stand alone. Types:
+- "claim": A factual statement or assertion made in the conversation
+- "decision": A decision that was made or agreed upon
+- "question": An open question raised (answered or unanswered)
+- "action_item": Something to be done (with owner if mentioned)
+- "context": Background or contextual information important for understanding
+- "definition": A term or concept that was defined or explained
+- "reference": A reference to an external resource, document, or link
+
+For knowledge_units:
+- Extract 5-20 units depending on conversation length/complexity
+- Each unit should be atomic (one idea per unit)
+- Include references to the source messages
+- Set confidence based on how clearly the information was stated
 """
 
     def __init__(self, enable_citations: bool = True):

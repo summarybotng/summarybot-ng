@@ -48,6 +48,13 @@ class ValidationStatus(str, Enum):
     FLAGGED = "flagged"  # Needs human review
 
 
+class ExtractionSource(str, Enum):
+    """Source of knowledge unit extraction (ADR-090)."""
+    INLINE = "inline"  # Extracted during summarization (optimal)
+    BACKFILL = "backfill"  # Extracted from historical stored_summaries
+    MANUAL = "manual"  # Extracted via 360° Generate (legacy)
+
+
 @dataclass
 class KnowledgeUnit:
     """An atomic unit of knowledge extracted from content."""
@@ -64,6 +71,9 @@ class KnowledgeUnit:
     confidence: float = 1.0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    # ADR-090: Track extraction source
+    extraction_source: ExtractionSource = ExtractionSource.MANUAL
+    summary_id: Optional[str] = None  # Direct link to source summary
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for storage."""
@@ -78,6 +88,9 @@ class KnowledgeUnit:
             "source_date": self.source_date.isoformat() if self.source_date else None,
             "embedding_model": self.embedding_model,
             "confidence": self.confidence,
+            # ADR-090: Inline extraction tracking
+            "extraction_source": self.extraction_source.value if isinstance(self.extraction_source, ExtractionSource) else self.extraction_source,
+            "summary_id": self.summary_id,
         }
 
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted (Updated 2026-05-10 with Section 7: Data Origin Optimization)
 
 ## Context
 
@@ -483,6 +483,206 @@ Wiki Curation Dashboard
 └── Coverage Gaps
     └── Embedding region near "deployment" has few units
 ```
+
+## Section 7: Data Origin Optimization
+
+### Problem: Redundant LLM Processing
+
+The current implementation has a critical inefficiency:
+
+```
+CURRENT FLOW (Sub-optimal):
+Discord Messages
+      ↓
+Claude Summarization (LLM #1) ──→ stored_summaries
+      ↓
+Topic Extraction (heuristics)
+      ↓
+wiki_sources table
+      ↓
+[User clicks "360° Generate"]
+      ↓
+KnowledgeExtractor (LLM #2) ←── REDUNDANT CALL
+      ↓
+wiki_knowledge_units
+```
+
+**The Problem**: We're calling Claude twice:
+1. First to summarize messages
+2. Then to "extract knowledge units" from already-summarized text
+
+This is wasteful and loses fidelity. By the time content reaches `wiki_sources`, information has already been distilled.
+
+### Solution: Inline KU Extraction
+
+Extract knowledge units **during summarization**, not after:
+
+```
+OPTIMAL FLOW:
+Discord Messages
+      ↓
+Claude Summarization ──┬──→ stored_summaries (for display)
+   (single LLM call)   │
+                       └──→ Knowledge Units (extracted inline)
+                                  ↓
+                           Embeddings (async)
+                                  ↓
+                           wiki_knowledge_units
+                                  ↓
+                           HNSW Index
+                                  ↓
+                           Semantic Clustering
+                                  ↓
+                           Wiki Pages EMERGE
+```
+
+### Implementation Changes
+
+#### 1. Extend Summarization Prompt
+
+Modify the summarization prompt to return structured output:
+
+```python
+# src/summarization/prompts.py
+SUMMARY_WITH_KU_EXTRACTION = """
+Summarize the following messages and extract atomic knowledge units.
+
+Messages:
+{messages}
+
+Return JSON:
+{
+  "summary": "The narrative summary text...",
+  "key_points": ["point 1", "point 2"],
+  "action_items": ["action 1"],
+  "knowledge_units": [
+    {
+      "content": "Atomic fact or decision",
+      "type": "claim|decision|question|action_item|context|definition",
+      "confidence": 0.95
+    }
+  ]
+}
+"""
+```
+
+#### 2. Dual-Write in Summarization Pipeline
+
+```python
+# src/summarization/engine.py
+async def summarize_messages(messages: List[Message]) -> SummaryResult:
+    # Single LLM call extracts both summary AND knowledge units
+    response = await claude.complete(
+        SUMMARY_WITH_KU_EXTRACTION.format(messages=format_messages(messages))
+    )
+
+    result = parse_response(response)
+
+    # Store summary (existing flow)
+    await store_summary(result.summary, result.key_points, result.action_items)
+
+    # Store knowledge units (new - happens automatically)
+    if result.knowledge_units:
+        await ruvector.store_units_batch(
+            guild_id=guild_id,
+            units=result.knowledge_units,
+            source_id=summary_id,
+            source_type="summary",
+        )
+
+    return result
+```
+
+#### 3. Remove Manual "360° Generate" Button
+
+The button becomes unnecessary because:
+- KUs are extracted at summarization time (automatic)
+- No separate extraction step needed
+- Users see KUs immediately
+
+Replace with:
+- **"Re-extract KUs"** - Only for historical content migration
+- **"Cluster Now"** - Trigger clustering on-demand
+
+#### 4. Schema: Track Extraction Source
+
+```sql
+-- Track whether KUs came from inline extraction or backfill
+ALTER TABLE wiki_knowledge_units ADD COLUMN extraction_source TEXT DEFAULT 'inline';
+-- Values: 'inline' (during summarization), 'backfill' (from wiki_sources), 'manual'
+
+-- Index for finding units that need re-extraction
+CREATE INDEX idx_ku_extraction_source ON wiki_knowledge_units(guild_id, extraction_source);
+```
+
+### Migration Strategy
+
+#### Phase 0: Enable Inline Extraction (Week 1) - ✅ COMPLETE
+- [x] Modify summarization prompt to return KUs (`src/summarization/prompt_builder.py:CITATION_INSTRUCTIONS`)
+- [x] Parse KUs in response parser (`src/summarization/response_parser.py:InlineKnowledgeUnit`)
+- [x] Store KUs in `SummaryResult.knowledge_units` (`src/models/summary.py`)
+- [x] Add KU storage to summarization pipeline (`src/summarization/engine.py:_store_knowledge_units_in_ruvector`)
+- [x] Feature flag: `RUVECTOR_INLINE_EXTRACTION=true` (env var check in engine.py)
+- [x] Database migration for extraction_source column (`092_inline_ku_extraction.sql`)
+- [x] KnowledgeUnit model updated with `extraction_source` and `summary_id` fields
+- [ ] Enable feature flag in production
+
+#### Phase 1: Backfill Historical Content (Week 2) - ✅ COMPLETE
+- [x] Add `backfill_from_summaries()` method to `RuVectorBackfill`
+- [x] Support two modes: fast conversion (no LLM) and LLM extraction
+- [x] Mark units as `extraction_source='backfill'`
+- [x] API endpoint: `POST /ruvector/guilds/{id}/backfill-summaries`
+- [ ] Run backfill for production guilds
+
+#### Phase 2: Deprecate Manual Extraction (Week 3) - ✅ COMPLETE
+- [x] Mark `POST /process-page` endpoint as deprecated in OpenAPI
+- [x] Update UI: "RuVector" button → "Re-extract KUs (Admin)" with muted styling
+- [x] Update empty state to inform users KUs are extracted automatically
+- [x] Keep admin functionality for debugging/re-processing
+
+#### Phase 3: Remove wiki_sources Dependency (Week 4)
+- [ ] KU-based wiki pages don't need wiki_sources
+- [ ] Archive wiki_sources table (don't delete)
+- [ ] Update wiki synthesis to read from KUs
+
+### Cost Analysis
+
+| Approach | LLM Calls | Tokens | Cost/1000 summaries |
+|----------|-----------|--------|---------------------|
+| Current (double) | 2 per summary | ~4000 | $12.00 |
+| Inline extraction | 1 per summary | ~2500 | $7.50 |
+| **Savings** | **50%** | **37%** | **$4.50** |
+
+### Configuration
+
+```python
+@dataclass
+class RuVectorInlineConfig:
+    # Enable inline KU extraction during summarization
+    inline_extraction_enabled: bool = True
+
+    # Minimum confidence to store a KU
+    min_ku_confidence: float = 0.5
+
+    # Maximum KUs per summary (prevent explosion)
+    max_kus_per_summary: int = 20
+
+    # Generate embeddings synchronously or queue
+    embedding_mode: str = "async"  # "sync" | "async"
+
+    # Auto-cluster after N new KUs
+    auto_cluster_threshold: int = 50
+```
+
+### Deprecation Timeline
+
+| Component | Current State | Target State | Timeline |
+|-----------|---------------|--------------|----------|
+| `KnowledgeExtractor.extract_from_summary()` | Active | Deprecated | Week 3 |
+| `POST /process-page` endpoint | Active | Admin-only | Week 3 |
+| "360° Generate" button | Visible | Removed | Week 3 |
+| `wiki_sources` table | Active | Read-only archive | Week 4 |
+| `RuVectorIngestHook` | Optional | Mandatory | Week 2 |
 
 ## References
 

@@ -4,15 +4,21 @@ Main summarization engine coordinating all components.
 
 import asyncio
 import logging
-from typing import List, Optional, Dict, Any
+import os
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime
 from dataclasses import dataclass
 
 from .claude_client import ClaudeClient, ClaudeOptions, ClaudeResponse
 from .prompt_builder import PromptBuilder
-from .response_parser import ResponseParser
+from .response_parser import ResponseParser, InlineKnowledgeUnit
 from .cache import SummaryCache
 from src.utils.time import utc_now_naive
+
+# ADR-090: Lazy import for RuVector to avoid circular imports
+if TYPE_CHECKING:
+    from ..wiki.ruvector.models import KnowledgeUnit, KnowledgeUnitType, ExtractionSource
+    from ..wiki.ruvector.vector_store import VectorStore
 from .retry_strategy import (
     RetryReason, RetryAction, GenerationAttempt, GenerationAttemptTracker,
     determine_retry_strategy, detect_quality_issue, is_malformed_content
@@ -636,7 +642,16 @@ class SummarizationEngine:
             # Cache result if cache is available
             if self.cache:
                 await self.cache.cache_summary(summary_result)
-            
+
+            # ADR-090: Store inline-extracted knowledge units in RuVector
+            channel_name = context.channel_name if context else None
+            ku_count = await self._store_knowledge_units_in_ruvector(
+                summary_result=summary_result,
+                channel_name=channel_name,
+            )
+            if ku_count > 0:
+                summary_result.metadata["ruvector_ku_count"] = ku_count
+
             return summary_result
             
         except Exception as e:
@@ -873,3 +888,103 @@ class SummarizationEngine:
                     lines.append(f"  [Attachments: {', '.join(att_names)}]")
 
         return "\n".join(lines)
+
+    async def _store_knowledge_units_in_ruvector(
+        self,
+        summary_result: SummaryResult,
+        channel_name: Optional[str] = None,
+    ) -> int:
+        """
+        ADR-090: Store inline-extracted knowledge units in RuVector.
+
+        This enables the accumulate-then-structure approach where wiki pages
+        emerge from semantic clusters of knowledge units.
+
+        Args:
+            summary_result: The completed summary with knowledge_units
+            channel_name: Source channel name for metadata
+
+        Returns:
+            Number of knowledge units stored
+        """
+        # Check feature flag
+        if not os.getenv("RUVECTOR_INLINE_EXTRACTION", "").lower() in ("true", "1", "yes"):
+            logger.debug("RUVECTOR_INLINE_EXTRACTION disabled, skipping KU storage")
+            return 0
+
+        if not summary_result.knowledge_units:
+            logger.debug("No knowledge units to store")
+            return 0
+
+        try:
+            # Lazy import to avoid circular imports
+            from ..wiki.ruvector.models import (
+                KnowledgeUnit, KnowledgeUnitType, ExtractionSource
+            )
+            from ..wiki.ruvector.vector_store import VectorStore
+            from ..data.sqlite.connection import get_connection
+            from ..wiki.ruvector.embeddings import EmbeddingService
+
+            # Get database connection
+            connection = await get_connection()
+            embedding_service = EmbeddingService()
+            vector_store = VectorStore(
+                connection=connection,
+                embedding_service=embedding_service,
+            )
+
+            # Map unit types
+            type_mapping = {
+                "claim": KnowledgeUnitType.CLAIM,
+                "decision": KnowledgeUnitType.DECISION,
+                "question": KnowledgeUnitType.QUESTION,
+                "action_item": KnowledgeUnitType.ACTION_ITEM,
+                "context": KnowledgeUnitType.CONTEXT,
+                "definition": KnowledgeUnitType.DEFINITION,
+                "reference": KnowledgeUnitType.REFERENCE,
+            }
+
+            # Convert InlineKnowledgeUnits to KnowledgeUnits
+            from ..models.base import generate_id
+            ku_objects = []
+            for iku in summary_result.knowledge_units:
+                # Handle both object and dict formats
+                if hasattr(iku, 'content'):
+                    content = iku.content
+                    unit_type_str = iku.unit_type
+                    confidence = iku.confidence
+                else:
+                    content = iku.get('content', '')
+                    unit_type_str = iku.get('unit_type', 'claim')
+                    confidence = iku.get('confidence', 1.0)
+
+                unit_type = type_mapping.get(unit_type_str, KnowledgeUnitType.CLAIM)
+
+                ku = KnowledgeUnit(
+                    id=generate_id(),
+                    guild_id=summary_result.guild_id,
+                    content=content,
+                    unit_type=unit_type,
+                    source_id=summary_result.id,
+                    source_type="summary",
+                    source_channel=channel_name,
+                    source_date=summary_result.created_at,
+                    confidence=confidence,
+                    extraction_source=ExtractionSource.INLINE,
+                    summary_id=summary_result.id,
+                )
+                ku_objects.append(ku)
+
+            # Store units batch (generates embeddings async)
+            stored_ids = await vector_store.store_units_batch(ku_objects)
+            logger.info(
+                f"ADR-090: Stored {len(stored_ids)} inline KUs for summary "
+                f"{summary_result.id[:8]} in guild {summary_result.guild_id}"
+            )
+
+            return len(stored_ids)
+
+        except Exception as e:
+            # Don't fail summarization if RuVector storage fails
+            logger.warning(f"ADR-090: Failed to store inline KUs in RuVector: {e}")
+            return 0

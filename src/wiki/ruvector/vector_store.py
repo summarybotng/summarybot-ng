@@ -88,16 +88,25 @@ class VectorStore:
         # Serialize embedding
         embedding_blob = serialize_embedding(unit.embedding) if unit.embedding else None
 
+        # ADR-090: Include extraction_source and summary_id
+        extraction_source = getattr(unit, 'extraction_source', None)
+        if extraction_source is not None:
+            from .models import ExtractionSource
+            extraction_source = extraction_source.value if isinstance(extraction_source, ExtractionSource) else extraction_source
+
         query = """
         INSERT INTO wiki_knowledge_units (
             id, guild_id, content, unit_type, source_id, source_type,
-            source_channel, source_date, embedding, embedding_model, confidence
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            source_channel, source_date, embedding, embedding_model, confidence,
+            extraction_source, summary_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             content = excluded.content,
             unit_type = excluded.unit_type,
             embedding = excluded.embedding,
             confidence = excluded.confidence,
+            extraction_source = excluded.extraction_source,
+            summary_id = excluded.summary_id,
             updated_at = datetime('now')
         """
 
@@ -113,6 +122,8 @@ class VectorStore:
             embedding_blob,
             unit.embedding_model,
             unit.confidence,
+            extraction_source,
+            getattr(unit, 'summary_id', None),
         )
 
         await self.connection.execute(query, params)

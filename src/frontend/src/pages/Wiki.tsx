@@ -847,25 +847,31 @@ function WikiPageView({ page }: { page: WikiPage }) {
         <div className="flex gap-2">
           {activeTab === "synthesis" && (
             <>
+              {/* ADR-090: RuVector button deprecated - inline extraction is now preferred */}
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
                       onClick={() => ruvectorMutation.mutate()}
                       disabled={ruvectorMutation.isPending}
+                      className="text-muted-foreground opacity-70"
                     >
                       {ruvectorMutation.isPending ? (
                         <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                       ) : (
                         <Zap className="h-4 w-4 mr-1" />
                       )}
-                      RuVector
+                      Re-extract KUs
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Process page with RuVector semantic extraction</p>
+                    <p className="font-medium">Admin: Re-extract KUs (deprecated)</p>
+                    <p className="text-xs text-muted-foreground">
+                      KUs are now extracted automatically during summarization.
+                      Use this only for debugging or re-processing old content.
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -1146,20 +1152,24 @@ function WikiPageView({ page }: { page: WikiPage }) {
             <Card>
               <CardContent className="py-12 text-center">
                 <Zap className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="font-medium mb-2">No RuVector view yet</h3>
+                <h3 className="font-medium mb-2">No Knowledge Units Yet</h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Process this page with RuVector to extract structured knowledge units
+                  Knowledge units are automatically extracted during summarization.
+                  <br />
+                  For historical content, use the backfill option in Admin settings.
                 </p>
                 <Button
+                  variant="outline"
                   onClick={() => ruvectorMutation.mutate()}
                   disabled={ruvectorMutation.isPending}
+                  className="text-muted-foreground"
                 >
                   {ruvectorMutation.isPending ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : (
                     <Zap className="h-4 w-4 mr-2" />
                   )}
-                  Process with RuVector
+                  Extract KUs (Admin)
                 </Button>
               </CardContent>
             </Card>

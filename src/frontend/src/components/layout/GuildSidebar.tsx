@@ -35,6 +35,7 @@ import {
   BookOpen,
   BarChart3,
   MessageSquareText,
+  Database,
 } from "lucide-react";
 
 // ADR-040: Jobs promoted to top-level navigation
@@ -51,6 +52,7 @@ const navItems = [
   { icon: Rss, label: "Feeds", path: "/feeds" },
   { icon: AlertTriangle, label: "Errors", path: "/errors", showBadge: true },
   { icon: BookOpen, label: "Wiki", path: "/wiki" },
+  { icon: Database, label: "RuVector", path: "/ruvector" },
   { icon: BarChart3, label: "Coverage", path: "/coverage" },
   { icon: MessageSquareText, label: "WhatsApp", path: "/whatsapp" },
   { icon: Shield, label: "Audit Log", path: "/audit" },

@@ -13,7 +13,7 @@ from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime
 from dataclasses import dataclass, field
 
-from .models import KnowledgeUnit, KnowledgeUnitType, ExtractionResult
+from .models import KnowledgeUnit, KnowledgeUnitType, ExtractionResult, ExtractionSource
 from .embeddings import EmbeddingService
 from .knowledge_extractor import KnowledgeExtractor
 from .vector_store import VectorStore
@@ -429,3 +429,289 @@ class RuVectorBackfill:
 
         logger.info(f"Cleared {deleted} RuVector records for guild {guild_id}")
         return deleted
+
+    async def backfill_from_summaries(
+        self,
+        guild_id: str,
+        use_llm: bool = False,
+        max_summaries: Optional[int] = None,
+        progress_callback: Optional[callable] = None,
+    ) -> Dict[str, Any]:
+        """
+        ADR-090: Backfill KUs from stored_summaries.
+
+        This extracts knowledge units from historical summaries that were created
+        before inline extraction was enabled.
+
+        Args:
+            guild_id: Guild to backfill
+            use_llm: If True, use LLM to extract KUs (more comprehensive but slower).
+                     If False, convert existing key_points/decisions/action_items (faster).
+            max_summaries: Maximum summaries to process (None for all)
+            progress_callback: Optional callback for progress updates
+
+        Returns:
+            Dict with statistics
+        """
+        import json
+        from ...models.base import generate_id
+
+        result = {
+            "processed": 0,
+            "skipped": 0,
+            "units_created": 0,
+            "errors": [],
+        }
+
+        # Find summaries that don't have KUs yet
+        query = """
+        SELECT ss.id, ss.guild_id, ss.summary_json, ss.created_at,
+               ss.source_channel_ids
+        FROM stored_summaries ss
+        WHERE ss.guild_id = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM wiki_knowledge_units ku
+            WHERE ku.summary_id = ss.id
+          )
+        ORDER BY ss.created_at DESC
+        """
+        params = [guild_id]
+
+        if max_summaries:
+            query += " LIMIT ?"
+            params.append(max_summaries)
+
+        rows = await self.wiki_connection.fetch_all(query, tuple(params))
+        total = len(rows)
+
+        if total == 0:
+            logger.info(f"No summaries to backfill for guild {guild_id}")
+            return result
+
+        logger.info(f"Backfilling {total} summaries for guild {guild_id}")
+
+        for row in rows:
+            try:
+                summary_id = row["id"]
+                summary_json = row.get("summary_json")
+
+                if not summary_json:
+                    result["skipped"] += 1
+                    continue
+
+                summary_data = json.loads(summary_json)
+
+                # Get channel info
+                channel_ids = json.loads(row.get("source_channel_ids") or "[]")
+                channel_name = channel_ids[0] if channel_ids else None
+
+                # Parse date
+                created_at = None
+                if row.get("created_at"):
+                    try:
+                        created_at = datetime.fromisoformat(row["created_at"])
+                    except (ValueError, TypeError):
+                        pass
+
+                if use_llm:
+                    # Use LLM extraction (more comprehensive)
+                    units = await self._extract_units_with_llm(
+                        guild_id=guild_id,
+                        summary_id=summary_id,
+                        summary_data=summary_data,
+                        channel_name=channel_name,
+                        created_at=created_at,
+                    )
+                else:
+                    # Convert existing data to KUs (faster, no LLM)
+                    units = self._convert_summary_to_units(
+                        guild_id=guild_id,
+                        summary_id=summary_id,
+                        summary_data=summary_data,
+                        channel_name=channel_name,
+                        created_at=created_at,
+                    )
+
+                # Store units
+                if units:
+                    await self.vector_store.store_units_batch(units)
+                    result["units_created"] += len(units)
+
+                result["processed"] += 1
+
+                if progress_callback:
+                    progress_callback(BackfillProgress(
+                        guild_id=guild_id,
+                        phase="summaries",
+                        total_items=total,
+                        processed_items=result["processed"],
+                        units_created=result["units_created"],
+                    ))
+
+            except Exception as e:
+                result["errors"].append(f"Summary {row['id']}: {e}")
+                logger.warning(f"Error backfilling summary {row['id']}: {e}")
+
+        logger.info(
+            f"Summary backfill complete for guild {guild_id}: "
+            f"{result['processed']} processed, {result['units_created']} units created"
+        )
+
+        return result
+
+    def _convert_summary_to_units(
+        self,
+        guild_id: str,
+        summary_id: str,
+        summary_data: Dict[str, Any],
+        channel_name: Optional[str],
+        created_at: Optional[datetime],
+    ) -> List[KnowledgeUnit]:
+        """
+        ADR-090: Convert existing summary data to KUs without LLM.
+
+        Uses key_points, decisions (referenced_decisions), and action_items
+        already extracted during summarization.
+        """
+        from ...models.base import generate_id
+
+        units = []
+
+        # Convert key_points to claims
+        key_points = summary_data.get("key_points", [])
+        for kp in key_points:
+            if isinstance(kp, str) and kp.strip():
+                units.append(KnowledgeUnit(
+                    id=generate_id(),
+                    guild_id=guild_id,
+                    content=kp.strip(),
+                    unit_type=KnowledgeUnitType.CLAIM,
+                    source_id=summary_id,
+                    source_type="summary",
+                    source_channel=channel_name,
+                    source_date=created_at,
+                    confidence=0.9,  # Slightly lower since indirect extraction
+                    extraction_source=ExtractionSource.BACKFILL,
+                    summary_id=summary_id,
+                ))
+
+        # Convert referenced_key_points (with confidence)
+        ref_key_points = summary_data.get("referenced_key_points", [])
+        for rkp in ref_key_points:
+            if isinstance(rkp, dict) and rkp.get("text"):
+                units.append(KnowledgeUnit(
+                    id=generate_id(),
+                    guild_id=guild_id,
+                    content=rkp["text"],
+                    unit_type=KnowledgeUnitType.CLAIM,
+                    source_id=summary_id,
+                    source_type="summary",
+                    source_channel=channel_name,
+                    source_date=created_at,
+                    confidence=rkp.get("confidence", 0.9),
+                    extraction_source=ExtractionSource.BACKFILL,
+                    summary_id=summary_id,
+                ))
+
+        # Convert decisions
+        ref_decisions = summary_data.get("referenced_decisions", [])
+        for dec in ref_decisions:
+            if isinstance(dec, dict) and dec.get("text"):
+                units.append(KnowledgeUnit(
+                    id=generate_id(),
+                    guild_id=guild_id,
+                    content=dec["text"],
+                    unit_type=KnowledgeUnitType.DECISION,
+                    source_id=summary_id,
+                    source_type="summary",
+                    source_channel=channel_name,
+                    source_date=created_at,
+                    confidence=dec.get("confidence", 0.9),
+                    extraction_source=ExtractionSource.BACKFILL,
+                    summary_id=summary_id,
+                ))
+
+        # Convert action items
+        action_items = summary_data.get("action_items", [])
+        for item in action_items:
+            description = ""
+            if isinstance(item, dict):
+                description = item.get("description", "")
+            elif isinstance(item, str):
+                description = item
+
+            if description.strip():
+                units.append(KnowledgeUnit(
+                    id=generate_id(),
+                    guild_id=guild_id,
+                    content=description.strip(),
+                    unit_type=KnowledgeUnitType.ACTION_ITEM,
+                    source_id=summary_id,
+                    source_type="summary",
+                    source_channel=channel_name,
+                    source_date=created_at,
+                    confidence=0.95,
+                    extraction_source=ExtractionSource.BACKFILL,
+                    summary_id=summary_id,
+                ))
+
+        # Convert technical terms to definitions
+        tech_terms = summary_data.get("technical_terms", [])
+        for term in tech_terms:
+            if isinstance(term, dict) and term.get("term") and term.get("definition"):
+                content = f"{term['term']}: {term['definition']}"
+                units.append(KnowledgeUnit(
+                    id=generate_id(),
+                    guild_id=guild_id,
+                    content=content,
+                    unit_type=KnowledgeUnitType.DEFINITION,
+                    source_id=summary_id,
+                    source_type="summary",
+                    source_channel=channel_name,
+                    source_date=created_at,
+                    confidence=0.95,
+                    extraction_source=ExtractionSource.BACKFILL,
+                    summary_id=summary_id,
+                ))
+
+        return units
+
+    async def _extract_units_with_llm(
+        self,
+        guild_id: str,
+        summary_id: str,
+        summary_data: Dict[str, Any],
+        channel_name: Optional[str],
+        created_at: Optional[datetime],
+    ) -> List[KnowledgeUnit]:
+        """
+        ADR-090: Extract KUs using LLM (more comprehensive).
+
+        Uses the KnowledgeExtractor to re-extract from summary text.
+        """
+        summary_text = summary_data.get("summary_text", "")
+        key_points = [
+            kp if isinstance(kp, str) else kp.get("text", "")
+            for kp in summary_data.get("key_points", [])
+        ]
+        action_items = [
+            item.get("description", "") if isinstance(item, dict) else item
+            for item in summary_data.get("action_items", [])
+        ]
+
+        extraction = await self.extractor.extract_from_summary(
+            guild_id=guild_id,
+            summary_id=summary_id,
+            summary_text=summary_text,
+            channel_name=channel_name,
+            summary_date=created_at,
+            key_points=key_points,
+            action_items=action_items,
+        )
+
+        # Mark all units as backfill
+        for unit in extraction.units:
+            unit.extraction_source = ExtractionSource.BACKFILL
+            unit.summary_id = summary_id
+
+        return extraction.units

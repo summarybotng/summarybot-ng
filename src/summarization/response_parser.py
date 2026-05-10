@@ -55,6 +55,15 @@ class ParsingRecovery:
 
 
 @dataclass
+class InlineKnowledgeUnit:
+    """ADR-090: Knowledge unit extracted inline during summarization."""
+    content: str
+    unit_type: str  # claim, decision, question, action_item, context, definition, reference
+    confidence: float = 1.0
+    references: List[int] = field(default_factory=list)
+
+
+@dataclass
 class ParsedSummary(BaseModel):
     """Parsed and structured summary from Claude response."""
     summary_text: str
@@ -70,6 +79,8 @@ class ParsedSummary(BaseModel):
     referenced_decisions: List[ReferencedClaim] = field(default_factory=list)
     referenced_topics: List[ReferencedClaim] = field(default_factory=list)
     reference_index: List[SummaryReference] = field(default_factory=list)
+    # ADR-090: Inline knowledge units
+    knowledge_units: List[InlineKnowledgeUnit] = field(default_factory=list)
 
 
 class ResponseParser:
@@ -183,7 +194,9 @@ class ResponseParser:
             referenced_key_points=parsed.referenced_key_points,
             referenced_action_items=parsed.referenced_action_items,
             referenced_decisions=parsed.referenced_decisions,
-            reference_index=parsed.reference_index
+            reference_index=parsed.reference_index,
+            # ADR-090: Include inline knowledge units
+            knowledge_units=parsed.knowledge_units
         )
     
     def _parse_json_response(self, content: str, metadata: Dict[str, Any],
@@ -423,6 +436,23 @@ class ResponseParser:
                 referenced_decisions
             )
 
+        # ADR-090: Parse inline knowledge units
+        knowledge_units: List[InlineKnowledgeUnit] = []
+        knowledge_units_raw = data.get("knowledge_units", [])
+        valid_types = {"claim", "decision", "question", "action_item", "context", "definition", "reference"}
+        for ku_data in knowledge_units_raw:
+            if isinstance(ku_data, dict) and "content" in ku_data:
+                unit_type = ku_data.get("type", "claim")
+                # Normalize type
+                if unit_type not in valid_types:
+                    unit_type = "claim"
+                knowledge_units.append(InlineKnowledgeUnit(
+                    content=ku_data["content"],
+                    unit_type=unit_type,
+                    confidence=ku_data.get("confidence", 1.0),
+                    references=ku_data.get("references", [])
+                ))
+
         metadata["extraction_stats"] = {
             "key_points": len(key_points),
             "action_items": len(action_items),
@@ -430,7 +460,8 @@ class ResponseParser:
             "participants": len(participants),
             "referenced_key_points": len(referenced_key_points),
             "referenced_decisions": len(referenced_decisions),
-            "reference_count": len(reference_index)
+            "reference_count": len(reference_index),
+            "knowledge_units": len(knowledge_units)
         }
 
         return ParsedSummary(
@@ -444,7 +475,8 @@ class ResponseParser:
             referenced_key_points=referenced_key_points,
             referenced_action_items=referenced_action_items,
             referenced_decisions=referenced_decisions,
-            reference_index=reference_index
+            reference_index=reference_index,
+            knowledge_units=knowledge_units
         )
     
     def _parse_markdown_response(self, content: str, metadata: Dict[str, Any]) -> Optional[ParsedSummary]:

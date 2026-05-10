@@ -37,6 +37,7 @@ const Wiki = lazy(() => import("@/pages/Wiki").then(m => ({ default: m.Wiki })))
 const Coverage = lazy(() => import("@/pages/Coverage").then(m => ({ default: m.Coverage })));
 const Tenants = lazy(() => import("@/pages/Tenants").then(m => ({ default: m.Tenants })));
 const WhatsAppImports = lazy(() => import("@/pages/WhatsAppImports").then(m => ({ default: m.WhatsAppImports })));
+const RuVectorExplorer = lazy(() => import("@/pages/RuVectorExplorer").then(m => ({ default: m.RuVectorExplorer })));
 const ShareReceived = lazy(() => import("@/pages/ShareReceived"));
 
 // Loading fallback for lazy-loaded pages
@@ -101,6 +102,7 @@ const App = () => (
               <Route path="audit" element={<AuditLog />} />
               <Route path="archive" element={<Suspense fallback={<PageLoader />}><Archive /></Suspense>} />
               <Route path="wiki/*" element={<Suspense fallback={<PageLoader />}><Wiki /></Suspense>} />
+              <Route path="ruvector" element={<Suspense fallback={<PageLoader />}><RuVectorExplorer /></Suspense>} />
               <Route path="coverage" element={<Suspense fallback={<PageLoader />}><Coverage /></Suspense>} />
               <Route path="whatsapp" element={<Suspense fallback={<PageLoader />}><WhatsAppImports /></Suspense>} />
             </Route>

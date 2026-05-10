@@ -158,6 +158,8 @@ class SummaryResult(BaseModel):
     referenced_decisions: List[Any] = field(default_factory=list)  # List[ReferencedClaim]
     referenced_topics: List[Any] = field(default_factory=list)  # List[ReferencedClaim]
     reference_index: List[Any] = field(default_factory=list)  # List[SummaryReference] - deduped index
+    # ADR-090: Inline knowledge units extracted during summarization
+    knowledge_units: List[Any] = field(default_factory=list)  # List[InlineKnowledgeUnit]
 
     def add_warning(self, code: str, message: str, details: Dict[str, Any] = None):
         """Add a warning to the summary."""
@@ -441,6 +443,15 @@ class SummaryResult(BaseModel):
             stats["referenced_decisions_count"] = len(self.referenced_decisions)
         else:
             stats["grounded"] = False
+        # ADR-090: Add knowledge unit stats
+        if self.knowledge_units:
+            stats["knowledge_units_count"] = len(self.knowledge_units)
+            # Count by type
+            type_counts = {}
+            for ku in self.knowledge_units:
+                ku_type = getattr(ku, 'unit_type', ku.get('unit_type', 'claim') if isinstance(ku, dict) else 'claim')
+                type_counts[ku_type] = type_counts.get(ku_type, 0) + 1
+            stats["knowledge_unit_types"] = type_counts
         return stats
 
     def has_references(self) -> bool:

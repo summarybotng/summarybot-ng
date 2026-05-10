@@ -702,8 +702,11 @@ class ProcessPageResponse(BaseModel):
 @router.post(
     "/guilds/{guild_id}/process-page/{path:path}",
     response_model=ProcessPageResponse,
-    summary="Process single page",
-    description="ADR-057: Process a single wiki page into RuVector knowledge units",
+    summary="Process single page (DEPRECATED)",
+    description="ADR-090: DEPRECATED - Use inline extraction instead. "
+                "Knowledge units are now extracted during summarization. "
+                "This endpoint remains for admin/debugging purposes only.",
+    deprecated=True,
 )
 async def process_single_page(
     guild_id: str = Path(..., description="Guild ID"),
@@ -712,10 +715,17 @@ async def process_single_page(
     user: dict = Depends(get_current_user),
 ):
     """
-    Process a single wiki page into RuVector.
+    DEPRECATED: Process a single wiki page into RuVector.
 
-    Extracts knowledge units from the page's source documents and
-    optionally rebuilds edges for the new units.
+    ADR-090: This endpoint is deprecated. Knowledge units are now extracted
+    inline during summarization (see RUVECTOR_INLINE_EXTRACTION env var).
+
+    This endpoint remains available for:
+    - Admin debugging
+    - Re-extracting units from specific pages
+    - Migration verification
+
+    For backfilling historical content, use POST /backfill-summaries instead.
     """
     import json
     from . import get_wiki_repository
@@ -1016,6 +1026,100 @@ async def start_backfill(
 
     except Exception as e:
         logger.exception(f"Backfill failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# -------------------------------------------------------------------------
+# Summary Backfill (ADR-090)
+# -------------------------------------------------------------------------
+
+class SummaryBackfillRequest(BaseModel):
+    """Request to backfill KUs from stored_summaries."""
+    use_llm: bool = Field(
+        False,
+        description="Use LLM for extraction (slower but more comprehensive)"
+    )
+    max_summaries: Optional[int] = Field(
+        None,
+        ge=1,
+        le=10000,
+        description="Maximum summaries to process (None for all)"
+    )
+
+
+class SummaryBackfillResponse(BaseModel):
+    """Response from summary backfill."""
+    guild_id: str
+    processed: int
+    skipped: int
+    units_created: int
+    errors: List[str]
+
+
+@router.post(
+    "/guilds/{guild_id}/backfill-summaries",
+    response_model=SummaryBackfillResponse,
+    summary="Backfill KUs from summaries",
+    description="ADR-090: Extract knowledge units from historical stored_summaries",
+)
+async def backfill_from_summaries(
+    guild_id: str = Path(..., description="Guild ID"),
+    request: SummaryBackfillRequest = SummaryBackfillRequest(),
+    user: dict = Depends(get_current_user),
+):
+    """
+    ADR-090: Backfill knowledge units from historical summaries.
+
+    Extracts KUs from stored_summaries created before inline extraction was enabled.
+    Two modes:
+    - use_llm=False (default): Convert existing key_points/decisions to KUs (fast, no cost)
+    - use_llm=True: Re-extract using LLM (slower, more comprehensive)
+    """
+    try:
+        from ..services.job_executor import get_claude_client
+        from ...wiki.ruvector.backfill import RuVectorBackfill
+        from ...wiki.ruvector.vector_store import VectorStore
+        from ...wiki.ruvector.knowledge_extractor import KnowledgeExtractor
+        from ...wiki.ruvector.embeddings import EmbeddingService
+
+        connection = await get_database_connection()
+        embedding_service = EmbeddingService()
+        vector_store = VectorStore(connection=connection, embedding_service=embedding_service)
+
+        # Get Claude client if LLM extraction requested
+        claude_client = None
+        if request.use_llm:
+            claude_client = await get_claude_client()
+
+        extractor = KnowledgeExtractor(claude_client=claude_client)
+
+        backfill = RuVectorBackfill(
+            wiki_connection=connection,
+            vector_store=vector_store,
+            knowledge_extractor=extractor,
+        )
+
+        result = await backfill.backfill_from_summaries(
+            guild_id=guild_id,
+            use_llm=request.use_llm,
+            max_summaries=request.max_summaries,
+        )
+
+        logger.info(
+            f"ADR-090: Summary backfill for {guild_id}: "
+            f"{result['units_created']} units from {result['processed']} summaries"
+        )
+
+        return SummaryBackfillResponse(
+            guild_id=guild_id,
+            processed=result["processed"],
+            skipped=result["skipped"],
+            units_created=result["units_created"],
+            errors=result["errors"][:20],
+        )
+
+    except Exception as e:
+        logger.exception(f"Summary backfill failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

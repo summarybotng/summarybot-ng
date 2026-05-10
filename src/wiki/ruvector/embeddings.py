@@ -3,10 +3,13 @@ Embedding service for RuVector (ADR-057).
 
 Generates vector embeddings using OpenAI's text-embedding-3-small model.
 Supports batching for efficiency and caching for cost optimization.
+
+ADR-090: Also supports OpenRouter for embeddings via OPENROUTER_API_KEY.
 """
 
 import logging
 import asyncio
+import os
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 import hashlib
@@ -19,6 +22,7 @@ logger = logging.getLogger(__name__)
 # Embedding dimensions for text-embedding-3-small
 EMBEDDING_DIMENSIONS = 1536
 DEFAULT_MODEL = "text-embedding-3-small"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 @dataclass
@@ -41,6 +45,7 @@ class EmbeddingService:
     def __init__(
         self,
         api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
         model: str = DEFAULT_MODEL,
         cache_enabled: bool = True,
         max_batch_size: int = 100,
@@ -49,7 +54,8 @@ class EmbeddingService:
         Initialize the embedding service.
 
         Args:
-            api_key: OpenAI API key (defaults to OPENAI_API_KEY env var)
+            api_key: API key (checks OPENROUTER_API_KEY, then OPENAI_API_KEY)
+            base_url: Custom API base URL (auto-detected for OpenRouter)
             model: Embedding model to use
             cache_enabled: Whether to cache embeddings
             max_batch_size: Maximum texts per batch request
@@ -60,20 +66,40 @@ class EmbeddingService:
         self._cache: Dict[str, List[float]] = {}
         self._client = None
         self._api_key = api_key
+        self._base_url = base_url
 
     def _get_client(self):
-        """Lazy initialization of OpenAI client."""
+        """Lazy initialization of OpenAI-compatible client."""
         if self._client is None:
             try:
                 from openai import AsyncOpenAI
-                import os
 
-                api_key = self._api_key or os.getenv("OPENAI_API_KEY")
+                # Check for OpenRouter first, then OpenAI
+                api_key = self._api_key
+                base_url = self._base_url
+
                 if not api_key:
-                    logger.warning("OPENAI_API_KEY not set, using mock embeddings")
+                    # Try OpenRouter first
+                    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+                    if openrouter_key:
+                        api_key = openrouter_key
+                        base_url = base_url or OPENROUTER_BASE_URL
+                        logger.info("Using OpenRouter for embeddings")
+                    else:
+                        # Fall back to OpenAI
+                        api_key = os.getenv("OPENAI_API_KEY")
+
+                if not api_key:
+                    logger.warning("No API key set (OPENROUTER_API_KEY or OPENAI_API_KEY), using mock embeddings")
                     return None
 
-                self._client = AsyncOpenAI(api_key=api_key)
+                # Create client with optional base_url for OpenRouter
+                client_kwargs = {"api_key": api_key}
+                if base_url:
+                    client_kwargs["base_url"] = base_url
+                    logger.info(f"Embedding service using base URL: {base_url}")
+
+                self._client = AsyncOpenAI(**client_kwargs)
             except ImportError:
                 logger.warning("OpenAI package not installed, using mock embeddings")
                 return None

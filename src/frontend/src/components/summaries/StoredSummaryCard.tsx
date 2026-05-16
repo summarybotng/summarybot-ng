@@ -32,7 +32,7 @@ import type { StoredSummary, SummarySourceType } from "@/types";
 function getSourceBadge(source: SummarySourceType) {
   switch (source) {
     case "archive":
-      return { label: "Archive", className: "bg-orange-500/10 text-orange-600 border-orange-500/30", icon: History };
+      return { label: "Archive", className: "bg-slate-500/10 text-slate-600 border-slate-500/30", icon: History };
     case "scheduled":
       return { label: "Scheduled", className: "bg-blue-500/10 text-blue-600 border-blue-500/30", icon: Clock };
     case "manual":

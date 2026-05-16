@@ -105,7 +105,7 @@ function getJobTypeBadge(jobType: Job["job_type"]) {
     case "scheduled":
       return { label: "Scheduled", className: "bg-blue-500/10 text-blue-600 border-blue-500/30", icon: Clock };
     case "retrospective":
-      return { label: "Retrospective", className: "bg-orange-500/10 text-orange-600 border-orange-500/30", icon: History };
+      return { label: "Retrospective", className: "bg-slate-500/10 text-slate-600 border-slate-500/30", icon: History };
     case "regenerate":
       return { label: "Regenerate", className: "bg-green-500/10 text-green-600 border-green-500/30", icon: RefreshCw };
     case "wiki_backfill":
@@ -355,7 +355,7 @@ function JobCard({ job, onCancel, onRetry, onPause, onResume, isCancelling, isRe
                 <span className="font-mono">{job.schedule_id.substring(0, 8)}</span>
               </div>
             )}
-            {job.summary_id && (
+            {job.summary_id && !job.summary_ids?.length && (
               <a
                 href={`/guilds/${job.guild_id}/summaries?view=${job.summary_id}`}
                 className="flex items-center gap-1 text-green-600 hover:text-green-700 hover:underline"
@@ -365,10 +365,19 @@ function JobCard({ job, onCancel, onRetry, onPause, onResume, isCancelling, isRe
                 <span>View Summary</span>
               </a>
             )}
-            {job.summary_ids && job.summary_ids.length > 1 && (
-              <span className="text-green-600">
-                {job.summary_ids.length} summaries generated
-              </span>
+            {job.summary_ids && job.summary_ids.length > 0 && (
+              <a
+                href={`/guilds/${job.guild_id}/summaries?source=${job.job_type === "retrospective" ? "archive" : job.job_type}&view=${job.summary_ids[0]}`}
+                className="flex items-center gap-1 text-green-600 hover:text-green-700 hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <CheckCircle2 className="h-3 w-3" />
+                <span>
+                  {job.summary_ids.length === 1
+                    ? "View Summary"
+                    : `View ${job.summary_ids.length} Summaries`}
+                </span>
+              </a>
             )}
           </div>
 

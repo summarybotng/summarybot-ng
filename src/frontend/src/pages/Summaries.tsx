@@ -9,6 +9,7 @@ import { usePromptTemplates } from "@/hooks/usePromptTemplates";
 import { useWhatsAppChats } from "@/hooks/useWhatsApp";
 import { useCreateSchedule } from "@/hooks/useSchedules";
 import { SummaryWizard, type WizardState } from "@/components/summary-wizard";
+import { generateScheduleName } from "@/components/summary-wizard/steps/WhenStep";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -216,8 +217,10 @@ export function Summaries() {
   }, [generateSummary, toast]);
 
   const handleWizardCreateSchedule = useCallback(async (state: WizardState) => {
+    // Use auto-generated name if user didn't provide one
+    const scheduleName = state.scheduleName.trim() || generateScheduleName(state);
     await createSchedule.mutateAsync({
-      name: state.scheduleName,
+      name: scheduleName,
       scope: state.scope,
       channel_ids: state.scope === "channel" ? state.channelIds : [],
       category_id: state.scope === "category" ? state.categoryId : undefined,
@@ -253,7 +256,7 @@ export function Summaries() {
         min_messages: state.minMessages,
       },
     });
-    toast({ title: "Schedule created", description: `${state.scheduleName} has been scheduled.` });
+    toast({ title: "Schedule created", description: `${scheduleName} has been scheduled.` });
   }, [createSchedule, toast]);
 
   const handleWizardGeneratePast = useCallback(async (state: WizardState) => {

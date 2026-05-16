@@ -212,7 +212,15 @@ class TaskPersistence:
             "run_count": task.run_count,
             "failure_count": task.failure_count,
             "max_failures": task.max_failures,
-            "retry_delay_minutes": task.retry_delay_minutes
+            "retry_delay_minutes": task.retry_delay_minutes,
+            # ADR-034: Guild prompt templates
+            "prompt_template_id": getattr(task, 'prompt_template_id', None),
+            # ADR-051: Platform support
+            "platform": getattr(task, 'platform', 'discord'),
+            # ADR-087: Weekly continuity summaries
+            "enable_continuity": getattr(task, 'enable_continuity', False),
+            # ADR-089: Lookback period
+            "time_range_hours": getattr(task, 'time_range_hours', 24),
         }
 
     def _deserialize_task(self, data: Dict[str, Any]) -> ScheduledTask:
@@ -291,7 +299,15 @@ class TaskPersistence:
             run_count=data.get("run_count", 0),
             failure_count=data.get("failure_count", 0),
             max_failures=data.get("max_failures", 3),
-            retry_delay_minutes=data.get("retry_delay_minutes", 5)
+            retry_delay_minutes=data.get("retry_delay_minutes", 5),
+            # ADR-034: Guild prompt templates
+            prompt_template_id=data.get("prompt_template_id"),
+            # ADR-051: Platform support
+            platform=data.get("platform", "discord"),
+            # ADR-087: Weekly continuity summaries
+            enable_continuity=data.get("enable_continuity", False),
+            # ADR-089: Lookback period
+            time_range_hours=data.get("time_range_hours", 24),
         )
 
     async def cleanup_old_tasks(self, days: int = 90) -> int:

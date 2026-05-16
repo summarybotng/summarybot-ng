@@ -173,7 +173,7 @@ class SQLiteTaskRepository(TaskRepository):
             destinations.append(Destination(**dest))
 
         options_data = json.loads(row['summary_options'])
-        options_data['summary_length'] = SummaryLength(options_data['summary_length'])
+        options_data['summary_length'] = SummaryLength(options_data.get('summary_length', 'detailed'))
         summary_options = SummaryOptions(**options_data)
 
         # Parse scope (ADR-011)

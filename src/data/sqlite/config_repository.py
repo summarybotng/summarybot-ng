@@ -69,8 +69,8 @@ class SQLiteConfigRepository(ConfigRepository):
         options_data = json.loads(row['default_summary_options'])
         permission_data = json.loads(row['permission_settings'])
 
-        # Convert summary options
-        options_data['summary_length'] = SummaryLength(options_data['summary_length'])
+        # Convert summary options (with default for legacy configs)
+        options_data['summary_length'] = SummaryLength(options_data.get('summary_length', 'detailed'))
 
         # Handle legacy field name: claude_model -> summarization_model
         if 'claude_model' in options_data:

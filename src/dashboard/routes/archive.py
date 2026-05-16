@@ -6,6 +6,7 @@ Phase 10: Frontend UI - Backend API
 
 import json
 import logging
+import os
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -2262,11 +2263,18 @@ async def oauth_callback(
         )
 
     except Exception as e:
-        logger.error(f"OAuth callback failed: {e}")
-        return RedirectResponse(
-            url=f"{base_url}/guilds/{oauth_state.server_id}/retrospective?oauth=error&message={urllib.parse.quote(str(e))}",
-            status_code=302,
-        )
+        logger.error(f"OAuth callback failed: {e}", exc_info=True)
+        # Use server_id from oauth_state if available, otherwise redirect to home
+        if oauth_state and oauth_state.server_id:
+            return RedirectResponse(
+                url=f"{base_url}/guilds/{oauth_state.server_id}/retrospective?oauth=error&message={urllib.parse.quote(str(e))}",
+                status_code=302,
+            )
+        else:
+            return RedirectResponse(
+                url=f"{base_url}/?oauth_error={urllib.parse.quote(str(e))}",
+                status_code=302,
+            )
 
 
 @router.delete("/oauth/google/{server_id}")

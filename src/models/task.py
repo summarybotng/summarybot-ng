@@ -173,6 +173,9 @@ class ScheduledTask(BaseModel):
     # ADR-087: Weekly continuity summaries
     enable_continuity: bool = False  # When true, weekly summaries carry context from previous week
 
+    # ADR-089: Lookback period (how far back to fetch messages)
+    time_range_hours: int = 24  # Default: look back 24 hours
+
     def calculate_next_run(self, from_time: Optional[datetime] = None) -> Optional[datetime]:
         """Calculate the next run time for this task.
 

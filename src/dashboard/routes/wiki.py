@@ -1824,7 +1824,7 @@ async def trigger_synthesis_job(
                 )
 
                 # Save synthesis
-                repo = await _get_wiki_repository()
+                repo = await get_wiki_repository()
                 if repo:
                     await repo.save_synthesis(
                         guild_id=guild_id,

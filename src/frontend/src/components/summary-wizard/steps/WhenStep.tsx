@@ -131,8 +131,8 @@ function NowOptions({ state, onChange }: Pick<StepProps, "state" | "onChange">) 
   );
 }
 
-// Generate auto-name based on selected options
-function generateScheduleName(state: Pick<StepProps, "state">["state"]): string {
+// Generate auto-name based on selected options - exported for use in submission
+export function generateScheduleName(state: Pick<StepProps, "state">["state"]): string {
   const parts: string[] = [];
 
   // Frequency

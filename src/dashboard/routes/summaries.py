@@ -3291,11 +3291,18 @@ from ..models import (
 def _job_to_list_item(job: SummaryJob) -> JobListItem:
     """Convert SummaryJob to JobListItem for API response."""
     from ..models import JobDateRange, JobCostResponse
+    from datetime import datetime
 
     # Build date range if available
+    # Check both period_start/end (manual/scheduled) and date_range_start/end (retrospective)
     date_range = None
     if job.period_start or job.period_end:
         date_range = JobDateRange(start=job.period_start, end=job.period_end)
+    elif job.date_range_start or job.date_range_end:
+        # Convert date to datetime for consistency
+        start_dt = datetime.combine(job.date_range_start, datetime.min.time()) if job.date_range_start else None
+        end_dt = datetime.combine(job.date_range_end, datetime.min.time()) if job.date_range_end else None
+        date_range = JobDateRange(start=start_dt, end=end_dt)
 
     # Build cost if available
     cost = None
@@ -3305,6 +3312,13 @@ def _job_to_list_item(job: SummaryJob) -> JobListItem:
             tokens_input=job.tokens_input or 0,
             tokens_output=job.tokens_output or 0,
         )
+
+    # Get granularity - check job field first, then metadata
+    granularity = job.granularity or (job.metadata.get("granularity") if job.metadata else None)
+
+    # Get source_key and server_name - check job fields first, then metadata
+    source_key = job.source_key or (job.metadata.get("source_key") if job.metadata else None)
+    server_name = job.server_name or (job.metadata.get("server_name") if job.metadata else None)
 
     return JobListItem(
         job_id=job.id,
@@ -3330,9 +3344,9 @@ def _job_to_list_item(job: SummaryJob) -> JobListItem:
         # ADR-094: Additional details for job visibility
         date_range=date_range,
         channel_ids=job.channel_ids or [],
-        granularity=job.metadata.get("granularity") if job.metadata else None,
-        source_key=job.metadata.get("source_key") if job.metadata else None,
-        server_name=job.metadata.get("server_name") if job.metadata else None,
+        granularity=granularity,
+        source_key=source_key,
+        server_name=server_name,
         cost=cost,
     )
 

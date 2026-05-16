@@ -320,9 +320,14 @@ function JobCard({ job, onCancel, onRetry, onPause, onResume, isCancelling, isRe
                     <span className="capitalize">{job.granularity}</span>
                   </div>
                 )}
+                {job.source_key && (
+                  <div className="flex items-center gap-1" title="Platform">
+                    <Server className="h-3 w-3" />
+                    <span className="capitalize">{job.source_key.split(":")[0]}</span>
+                  </div>
+                )}
                 {job.server_name && (
                   <div className="flex items-center gap-1" title="Server">
-                    <Server className="h-3 w-3" />
                     <span>{job.server_name}</span>
                   </div>
                 )}

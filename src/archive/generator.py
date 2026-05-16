@@ -118,6 +118,9 @@ class GenerationJob:
     schedule_days: Optional[List[int]] = None  # For weekly: which days to generate (0=Sun, 6=Sat)
     lookback_hours: Optional[int] = None  # How many hours to look back for each summary
 
+    # Results
+    summary_ids: List[str] = field(default_factory=list)  # IDs of created summaries
+
     def to_dict(self) -> Dict[str, Any]:
         start_date, end_date = self.date_range
         return {
@@ -154,6 +157,8 @@ class GenerationJob:
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "pause_reason": self.pause_reason,
             "error": self.error,
+            # Results
+            "summary_ids": self.summary_ids,
         }
 
 
@@ -313,6 +318,7 @@ class RetrospectiveGenerator:
                 cost_usd=job.cost.cost_usd,
                 tokens_input=job.cost.tokens_input,
                 tokens_output=job.cost.tokens_output,
+                summary_ids=job.summary_ids,  # Track created summaries
                 error=job.error,
                 pause_reason=job.pause_reason,
                 created_at=job.created_at,
@@ -643,6 +649,9 @@ class RetrospectiveGenerator:
                     generation=generation,
                     summary_id=summary_id,
                 )
+
+            # Track created summary ID for job reporting
+            job.summary_ids.append(summary_id)
 
             await self.lock_manager.release_lock(meta_path, SummaryStatus.COMPLETE)
             return "completed"

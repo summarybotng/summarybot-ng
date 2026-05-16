@@ -171,7 +171,7 @@ export function GoogleDriveSyncSettings({
   };
 
   // Sync preview for sample sync feature
-  const { data: syncPreview } = useSyncPreview(
+  const { data: syncPreview, isLoading: previewLoading, error: previewError } = useSyncPreview(
     guildId,
     3 // Preview 3 most recent
   );
@@ -430,7 +430,7 @@ export function GoogleDriveSyncSettings({
                           variant="outline"
                           size="sm"
                           onClick={() => setShowSyncPreview(true)}
-                          disabled={sampleSync.isPending || !syncStats?.summaries_available}
+                          disabled={sampleSync.isPending}
                         >
                           {sampleSync.isPending ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -451,7 +451,7 @@ export function GoogleDriveSyncSettings({
                     variant="default"
                     size="sm"
                     onClick={handleTriggerSync}
-                    disabled={triggerSync.isPending || !syncStats?.summaries_available}
+                    disabled={triggerSync.isPending}
                   >
                     {triggerSync.isPending ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -807,50 +807,78 @@ export function GoogleDriveSyncSettings({
 
               {/* Preview of what will be synced */}
               <div className="space-y-3">
-                <Label className="text-sm font-medium">Files to sync:</Label>
-                <div className="border rounded-lg bg-muted/30 p-3 font-mono text-sm">
-                  <div className="text-muted-foreground">
-                    {serverConfig?.folder_name || "SummaryBot Sync"}/
+                {previewLoading ? (
+                  <div className="flex items-center justify-center p-8">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                    <span>Loading preview...</span>
                   </div>
-                  <div className="ml-4">
-                    <div className="text-muted-foreground">conversations/</div>
-                    {syncPreview?.files?.length ? (
-                      <div className="ml-4 space-y-1">
-                        {/* Group by period folder */}
-                        {syncPreview.files.map((file, i) => (
-                          <div key={file.id} className="flex items-center gap-2">
-                            <Folder className="h-3 w-3 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">
-                              {file.period_folder}/
-                            </span>
-                            <span className="text-primary">{file.title}.md</span>
-                            <span className="text-xs text-muted-foreground">
-                              ({formatBytes(file.size_estimate)})
-                            </span>
+                ) : previewError ? (
+                  <div className="flex items-start gap-2 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                    <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-red-700">Failed to load preview</p>
+                      <p className="text-sm text-red-600/80">
+                        {previewError instanceof Error ? previewError.message : "Unable to fetch summaries for preview"}
+                      </p>
+                    </div>
+                  </div>
+                ) : syncPreview?.total_pending === 0 ? (
+                  <div className="flex items-start gap-2 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-amber-700">No summaries to sync</p>
+                      <p className="text-sm text-amber-600/80">
+                        Generate some summaries first, then come back to sync them to Drive.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <Label className="text-sm font-medium">Files to sync:</Label>
+                    <div className="border rounded-lg bg-muted/30 p-3 font-mono text-sm">
+                      <div className="text-muted-foreground">
+                        {serverConfig?.folder_name || "SummaryBot Sync"}/
+                      </div>
+                      <div className="ml-4">
+                        <div className="text-muted-foreground">conversations/</div>
+                        {syncPreview?.files?.length ? (
+                          <div className="ml-4 space-y-1">
+                            {syncPreview.files.map((file) => (
+                              <div key={file.id} className="flex items-center gap-2">
+                                <Folder className="h-3 w-3 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">
+                                  {file.period_folder}/
+                                </span>
+                                <span className="text-primary">{file.title}.md</span>
+                                <span className="text-xs text-muted-foreground">
+                                  ({formatBytes(file.size_estimate)})
+                                </span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        ) : (
+                          <div className="ml-4 text-muted-foreground italic">
+                            (preview unavailable)
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <div className="ml-4 text-muted-foreground italic">
-                        Loading preview...
-                      </div>
+                    </div>
+
+                    {syncPreview?.total_pending && syncPreview.total_pending > 3 && (
+                      <p className="text-sm text-muted-foreground">
+                        ...and {syncPreview.total_pending - 3} more files will be synced with "Sync All"
+                      </p>
                     )}
-                  </div>
-                </div>
 
-                {syncPreview?.total_pending && syncPreview.total_pending > 3 && (
-                  <p className="text-sm text-muted-foreground">
-                    ...and {syncPreview.total_pending - 3} more files will be synced with "Sync All"
-                  </p>
+                    <div className="flex items-start gap-2 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-sm">
+                      <HelpCircle className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+                      <p className="text-blue-700">
+                        Sample sync creates <strong>real files</strong> in your Drive so you can verify
+                        everything looks correct before syncing all {syncPreview?.total_pending || 0} files.
+                      </p>
+                    </div>
+                  </>
                 )}
-
-                <div className="flex items-start gap-2 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-sm">
-                  <HelpCircle className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
-                  <p className="text-blue-700">
-                    Sample sync creates <strong>real files</strong> in your Drive so you can verify
-                    everything looks correct before syncing all {syncPreview?.total_pending || 0} files.
-                  </p>
-                </div>
               </div>
 
               <DialogFooter className="gap-2">
@@ -859,7 +887,7 @@ export function GoogleDriveSyncSettings({
                 </Button>
                 <Button
                   onClick={handleSampleSync}
-                  disabled={sampleSync.isPending || !syncPreview?.files?.length}
+                  disabled={sampleSync.isPending || previewLoading || !syncPreview?.total_pending}
                 >
                   {sampleSync.isPending ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

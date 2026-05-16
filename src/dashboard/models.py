@@ -1149,6 +1149,12 @@ class JobCostResponse(BaseModel):
     tokens_output: int = 0
 
 
+class JobDateRange(BaseModel):
+    """Date range for job."""
+    start: Optional[datetime] = None
+    end: Optional[datetime] = None
+
+
 class JobListItem(BaseModel):
     """Brief job info for list view."""
     job_id: str
@@ -1159,11 +1165,19 @@ class JobListItem(BaseModel):
     schedule_id: Optional[str] = None
     progress: JobProgressResponse
     summary_id: Optional[str] = None
+    summary_ids: List[str] = []
     error: Optional[str] = None
     pause_reason: Optional[str] = None
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    # ADR-094: Additional job details for better visibility
+    date_range: Optional[JobDateRange] = None
+    channel_ids: List[str] = []
+    granularity: Optional[str] = None
+    source_key: Optional[str] = None
+    server_name: Optional[str] = None
+    cost: Optional[JobCostResponse] = None
 
 
 class JobDetailResponse(BaseModel):

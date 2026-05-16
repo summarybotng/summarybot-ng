@@ -838,12 +838,16 @@ async def generate_summary(
             logger.info(f"[{job_id}] Total messages collected: {len(all_messages)}")
 
             if not all_messages:
-                logger.warning(f"[{job_id}] No messages found in time range")
+                # Build descriptive error message with date range
+                start_str = start_time.strftime("%Y-%m-%d %H:%M") if start_time else "unknown"
+                end_str = end_time.strftime("%Y-%m-%d %H:%M") if end_time else "unknown"
+                error_msg = f"No messages found between {start_str} and {end_str} in {len(channel_ids)} channel(s)"
+                logger.warning(f"[{job_id}] {error_msg}")
                 _generation_tasks[task_id]["status"] = "failed"
-                _generation_tasks[task_id]["error"] = "No messages found in time range"
+                _generation_tasks[task_id]["error"] = error_msg
 
-                # ADR-013: Mark job as failed
-                job.fail("No messages found in time range")
+                # ADR-013: Mark job as failed with detailed message
+                job.fail(error_msg)
                 if job_repo:
                     try:
                         await job_repo.update(job)
@@ -3286,6 +3290,22 @@ from ..models import (
 
 def _job_to_list_item(job: SummaryJob) -> JobListItem:
     """Convert SummaryJob to JobListItem for API response."""
+    from ..models import JobDateRange, JobCostResponse
+
+    # Build date range if available
+    date_range = None
+    if job.period_start or job.period_end:
+        date_range = JobDateRange(start=job.period_start, end=job.period_end)
+
+    # Build cost if available
+    cost = None
+    if job.cost_usd or job.tokens_input or job.tokens_output:
+        cost = JobCostResponse(
+            cost_usd=job.cost_usd or 0.0,
+            tokens_input=job.tokens_input or 0,
+            tokens_output=job.tokens_output or 0,
+        )
+
     return JobListItem(
         job_id=job.id,
         guild_id=job.guild_id,
@@ -3301,11 +3321,19 @@ def _job_to_list_item(job: SummaryJob) -> JobListItem:
             current_period=job.current_period,
         ),
         summary_id=job.summary_id,
+        summary_ids=job.summary_ids or [],
         error=job.error,
         pause_reason=job.pause_reason,
         created_at=job.created_at,
         started_at=job.started_at,
         completed_at=job.completed_at,
+        # ADR-094: Additional details for job visibility
+        date_range=date_range,
+        channel_ids=job.channel_ids or [],
+        granularity=job.metadata.get("granularity") if job.metadata else None,
+        source_key=job.metadata.get("source_key") if job.metadata else None,
+        server_name=job.metadata.get("server_name") if job.metadata else None,
+        cost=cost,
     )
 
 

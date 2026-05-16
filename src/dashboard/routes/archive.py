@@ -934,13 +934,22 @@ async def generate_retrospective(request: GenerateRequest):
     server_name = request.server_id
 
     if is_whatsapp:
-        # For WhatsApp, get server name from source registry
-        registry = get_source_registry()
-        registry.discover_sources()
-        source_key = f"whatsapp:{request.server_id}"
-        existing_source = registry.get_source(source_key)
-        if existing_source:
-            server_name = existing_source.server_name
+        # For WhatsApp, get chat names from database imports
+        try:
+            from ...data.repositories import get_whatsapp_import_repository
+            whatsapp_repo = await get_whatsapp_import_repository()
+            imports = await whatsapp_repo.list_imports(guild_id=request.server_id, limit=10)
+            if imports:
+                # Use first chat name, or combine multiple if there are few
+                chat_names = [imp.chat_name for imp in imports if imp.chat_name]
+                if len(chat_names) == 1:
+                    server_name = chat_names[0]
+                elif len(chat_names) <= 3:
+                    server_name = ", ".join(chat_names)
+                else:
+                    server_name = f"{chat_names[0]} + {len(chat_names) - 1} more"
+        except Exception as e:
+            logger.warning(f"Failed to get WhatsApp chat names: {e}")
 
     elif is_slack:
         # For Slack, get workspace info from database

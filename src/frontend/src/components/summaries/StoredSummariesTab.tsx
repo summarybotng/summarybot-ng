@@ -1094,6 +1094,30 @@ function StoredSummaryDetailSheet({
             <SheetHeader>
               <div className="flex items-center justify-between gap-2">
                 <SheetTitle className="flex-1">{summary.title}</SheetTitle>
+                {/* Platform and source badges */}
+                <div className="flex items-center gap-2">
+                  {summary.archive_source_key && (() => {
+                    const platform = summary.archive_source_key.split(":")[0];
+                    const badges: Record<string, { label: string; className: string; icon: string }> = {
+                      whatsapp: { label: "WhatsApp", className: "bg-green-500/10 text-green-600 border-green-500/30", icon: "📱" },
+                      slack: { label: "Slack", className: "bg-purple-500/10 text-purple-600 border-purple-500/30", icon: "💬" },
+                      discord: { label: "Discord", className: "bg-indigo-500/10 text-indigo-600 border-indigo-500/30", icon: "🎮" },
+                    };
+                    const badge = badges[platform];
+                    return badge ? (
+                      <Badge variant="outline" className={badge.className}>
+                        <span className="mr-1">{badge.icon}</span>
+                        {badge.label}
+                      </Badge>
+                    ) : null;
+                  })()}
+                  {summary.source && (
+                    <Badge variant="outline" className="capitalize">
+                      {summary.source === "archive" ? <Archive className="mr-1 h-3 w-3" /> : <Clock className="mr-1 h-3 w-3" />}
+                      {summary.source}
+                    </Badge>
+                  )}
+                </div>
                 {/* ADR-020: Navigation buttons */}
                 {summary.navigation && onNavigate && (
                   <div className="flex items-center gap-1">

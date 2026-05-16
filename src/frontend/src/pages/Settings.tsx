@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Save, Loader2, Server, Globe, GitBranch, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ChannelSensitivitySettings } from "@/components/settings/ChannelSensitivitySettings";
+import { GoogleDriveSyncSettings } from "@/components/settings/GoogleDriveSyncSettings";
 import type { SummaryOptions } from "@/types";
 
 export function Settings() {
@@ -246,6 +247,14 @@ export function Settings() {
           channels={guild.channels}
           categories={guild.categories}
           animationDelay={0.2}
+        />
+      )}
+
+      {/* ADR-007/ADR-091: Google Drive Sync Settings */}
+      {guild && (
+        <GoogleDriveSyncSettings
+          guildId={guild.id}
+          animationDelay={0.25}
         />
       )}
 

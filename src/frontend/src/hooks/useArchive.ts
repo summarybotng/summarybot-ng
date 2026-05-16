@@ -268,6 +268,21 @@ export interface SyncResult {
   errors: string[];
 }
 
+// ADR-091: Sample sync preview
+export interface SyncPreviewFile {
+  id: string;
+  title: string;
+  channel_name: string;
+  created_at: string;
+  size_estimate: number;
+  period_folder: string;
+}
+
+export interface SampleSyncResult extends SyncResult {
+  files: SyncPreviewFile[];
+  drive_urls: string[];
+}
+
 export interface DriveStatus {
   connected: boolean;
   provider?: string;
@@ -477,6 +492,34 @@ export function useTriggerSyncAll() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["archive", "sync"] });
     },
+  });
+}
+
+// ADR-091: Sample sync - sync 3 most recent for preview
+export function useSampleSync() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ sourceKey, sampleSize = 3 }: { sourceKey: string; sampleSize?: number }) =>
+      api.post<SampleSyncResult>(
+        `/archive/sync/sample/${encodeURIComponent(sourceKey)}?sample_size=${sampleSize}`
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["archive", "sync"] });
+    },
+  });
+}
+
+// ADR-091: Preview what will be synced (dry run)
+export function useSyncPreview(serverId: string, limit: number = 3) {
+  return useQuery({
+    queryKey: ["archive", "sync", "preview", serverId, limit],
+    queryFn: () =>
+      api.get<{ files: SyncPreviewFile[]; total_pending: number }>(
+        `/archive/sync/server/${serverId}/preview?limit=${limit}`
+      ),
+    enabled: !!serverId,
+    staleTime: 30 * 1000,
   });
 }
 

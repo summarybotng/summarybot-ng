@@ -206,7 +206,7 @@ class GoogleOAuthFlow:
     GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
     SCOPES = [
         "https://www.googleapis.com/auth/drive.file",  # Create/access app files
-        "https://www.googleapis.com/auth/drive.metadata.readonly",  # Browse existing folders
+        "https://www.googleapis.com/auth/drive.readonly",  # List shared drives and browse folders
         "https://www.googleapis.com/auth/userinfo.email",  # ADR-007.1: Get user email
     ]
 
@@ -235,7 +235,7 @@ class GoogleOAuthFlow:
         """Get redirect URI from environment."""
         return os.environ.get(
             "GOOGLE_OAUTH_REDIRECT_URI",
-            "https://summarybot-ng.fly.dev/api/v1/archive/oauth/google/callback"
+            "https://summarybot.app/api/v1/archive/oauth/google/callback"
         )
 
     def is_configured(self) -> bool:

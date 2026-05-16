@@ -2300,9 +2300,9 @@ async def oauth_callback(
         # Exchange code for tokens
         tokens = await oauth.exchange_code(code, oauth_state)
 
-        # Redirect to frontend with success - the UI will detect this and open folder picker
+        # Redirect to frontend settings page - Google Drive sync is now in Settings (ADR-091)
         return RedirectResponse(
-            url=f"{base_url}/guilds/{oauth_state.server_id}/retrospective?oauth=success&select_folder=true",
+            url=f"{base_url}/guilds/{oauth_state.server_id}/settings?oauth=success&select_folder=true",
             status_code=302,
         )
 
@@ -2311,7 +2311,7 @@ async def oauth_callback(
         # Use server_id from oauth_state if available, otherwise redirect to home
         if oauth_state and oauth_state.server_id:
             return RedirectResponse(
-                url=f"{base_url}/guilds/{oauth_state.server_id}/retrospective?oauth=error&message={urllib.parse.quote(str(e))}",
+                url=f"{base_url}/guilds/{oauth_state.server_id}/settings?oauth=error&message={urllib.parse.quote(str(e))}",
                 status_code=302,
             )
         else:
@@ -2463,6 +2463,377 @@ async def get_sync_stats(server_id: str):
         last_sync=last_sync,
         summaries_query_url=summaries_query_url,
     )
+
+
+# ADR-091: Sync preview and sample sync endpoints
+
+
+class SyncPreviewFile(BaseModel):
+    """Preview of a file that will be synced."""
+    id: str
+    title: str
+    channel_name: str
+    created_at: str
+    size_estimate: int
+    period_folder: str
+
+
+class SyncPreviewResponse(BaseModel):
+    """Preview of files to be synced."""
+    files: List[SyncPreviewFile]
+    total_pending: int
+
+
+@router.get("/sync/server/{server_id}/preview", response_model=SyncPreviewResponse)
+async def get_sync_preview(server_id: str, limit: int = 3):
+    """
+    Preview what will be synced (ADR-091).
+
+    Returns the N most recent summaries that would be synced,
+    along with the total count of pending files.
+    """
+    from . import get_stored_summary_repository
+    from datetime import timedelta
+
+    repo = await get_stored_summary_repository()
+    if not repo:
+        return SyncPreviewResponse(files=[], total_pending=0)
+
+    # Get all summaries for this server (ordered by created_at desc)
+    all_summaries = await repo.find_by_guild(server_id, limit=10000)
+    total_pending = len(all_summaries)
+
+    # Get the most recent N for preview
+    recent = all_summaries[:limit]
+
+    # Get server config for period grouping
+    service = get_sync_service()
+    config = await service.get_server_config(server_id)
+    period_grouping = config.period_grouping if config else "week"
+
+    preview_files = []
+    for summary in recent:
+        # Generate period folder name
+        created = summary.created_at
+        if period_grouping == "week":
+            week_start = created - timedelta(days=created.weekday())
+            week_end = week_start + timedelta(days=6)
+            period_folder = f"{week_start.strftime('%Y-%m-%d')}--{week_end.strftime('%Y-%m-%d')}"
+        else:
+            month_start = created.replace(day=1)
+            next_month = (month_start + timedelta(days=32)).replace(day=1)
+            month_end = next_month - timedelta(days=1)
+            period_folder = f"{month_start.strftime('%Y-%m-%d')}--{month_end.strftime('%Y-%m-%d')}"
+
+        # Generate title from summary
+        channel_name = summary.channel_name or "general"
+        title = f"{channel_name}_{summary.id[:8]}"
+
+        # Estimate file size (rough: 1 byte per char of summary text)
+        size_estimate = len(summary.summary_result.summary_text) if summary.summary_result else 500
+
+        preview_files.append(SyncPreviewFile(
+            id=summary.id,
+            title=title,
+            channel_name=channel_name,
+            created_at=created.isoformat(),
+            size_estimate=size_estimate,
+            period_folder=period_folder,
+        ))
+
+    return SyncPreviewResponse(files=preview_files, total_pending=total_pending)
+
+
+class SampleSyncResultResponse(BaseModel):
+    """Result of a sample sync operation."""
+    status: str
+    files_synced: int
+    files_failed: int
+    bytes_uploaded: int
+    errors: List[str]
+    files: List[SyncPreviewFile]
+    drive_urls: List[str]
+
+
+@router.post("/sync/sample/{source_key}", response_model=SampleSyncResultResponse)
+async def trigger_sample_sync(source_key: str, sample_size: int = 3):
+    """
+    Sync a sample of files for preview (ADR-091).
+
+    Syncs only the N most recent summaries so the admin can verify
+    folder structure and format before syncing everything.
+    """
+    import httpx
+    from datetime import timedelta
+
+    service = get_sync_service()
+    oauth = get_oauth_flow()
+
+    # Parse source key
+    parts = source_key.split(":")
+    if len(parts) != 2:
+        raise HTTPException(400, f"Invalid source key: {source_key}")
+
+    source_type, server_id = parts
+
+    # Get server config
+    server_config = await service.get_server_config(server_id)
+    if not server_config or not server_config.enabled:
+        raise HTTPException(400, "Server sync not configured")
+
+    # Get OAuth tokens
+    tokens = await oauth.get_valid_tokens(server_config.oauth_token_id)
+    if not tokens:
+        raise HTTPException(400, "OAuth tokens expired. Please reconnect Google Drive.")
+
+    # Get summaries to sync
+    from . import get_stored_summary_repository
+    repo = await get_stored_summary_repository()
+    if not repo:
+        raise HTTPException(500, "Summary repository not available")
+
+    all_summaries = await repo.find_by_guild(server_id, limit=10000)
+    sample_summaries = all_summaries[:sample_size]
+
+    if not sample_summaries:
+        return SampleSyncResultResponse(
+            status="success",
+            files_synced=0,
+            files_failed=0,
+            bytes_uploaded=0,
+            errors=[],
+            files=[],
+            drive_urls=[],
+        )
+
+    # Sync the sample
+    files_synced = 0
+    files_failed = 0
+    bytes_uploaded = 0
+    errors = []
+    synced_files = []
+    drive_urls = []
+
+    period_grouping = server_config.period_grouping or "week"
+
+    async with httpx.AsyncClient() as client:
+        for summary in sample_summaries:
+            try:
+                # Generate period folder name
+                created = summary.created_at
+                if period_grouping == "week":
+                    week_start = created - timedelta(days=created.weekday())
+                    week_end = week_start + timedelta(days=6)
+                    period_folder = f"{week_start.strftime('%Y-%m-%d')}--{week_end.strftime('%Y-%m-%d')}"
+                else:
+                    month_start = created.replace(day=1)
+                    next_month = (month_start + timedelta(days=32)).replace(day=1)
+                    month_end = next_month - timedelta(days=1)
+                    period_folder = f"{month_start.strftime('%Y-%m-%d')}--{month_end.strftime('%Y-%m-%d')}"
+
+                # Create conversations folder if needed
+                conversations_folder_id = await _ensure_folder(
+                    client, tokens.access_token,
+                    "conversations",
+                    server_config.folder_id,
+                    server_config.drive_id,
+                )
+
+                # Create period folder if needed
+                period_folder_id = await _ensure_folder(
+                    client, tokens.access_token,
+                    period_folder,
+                    conversations_folder_id,
+                    server_config.drive_id,
+                )
+
+                # Generate markdown content
+                channel_name = summary.channel_name or "general"
+                title = f"{channel_name}_{summary.id[:8]}"
+                markdown_content = _generate_summary_markdown(summary)
+
+                # Upload file
+                file_id = await _upload_to_drive(
+                    client, tokens.access_token,
+                    f"{title}.md",
+                    markdown_content,
+                    period_folder_id,
+                    server_config.drive_id,
+                )
+
+                files_synced += 1
+                bytes_uploaded += len(markdown_content.encode())
+
+                synced_files.append(SyncPreviewFile(
+                    id=summary.id,
+                    title=title,
+                    channel_name=channel_name,
+                    created_at=created.isoformat(),
+                    size_estimate=len(markdown_content),
+                    period_folder=period_folder,
+                ))
+                drive_urls.append(f"https://drive.google.com/file/d/{file_id}/view")
+
+            except Exception as e:
+                files_failed += 1
+                errors.append(f"Failed to sync {summary.id}: {str(e)}")
+                logger.error(f"Sample sync error for {summary.id}: {e}")
+
+    return SampleSyncResultResponse(
+        status="success" if files_failed == 0 else "partial",
+        files_synced=files_synced,
+        files_failed=files_failed,
+        bytes_uploaded=bytes_uploaded,
+        errors=errors,
+        files=synced_files,
+        drive_urls=drive_urls,
+    )
+
+
+async def _ensure_folder(
+    client,
+    access_token: str,
+    folder_name: str,
+    parent_id: str,
+    drive_id: Optional[str] = None,
+) -> str:
+    """Ensure a folder exists, create if not. Returns folder ID."""
+    # Check if folder exists
+    params: Dict[str, Any] = {
+        "q": f"name='{folder_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+        "fields": "files(id,name)",
+    }
+    if drive_id:
+        params["corpora"] = "drive"
+        params["driveId"] = drive_id
+        params["includeItemsFromAllDrives"] = "true"
+        params["supportsAllDrives"] = "true"
+
+    response = await client.get(
+        "https://www.googleapis.com/drive/v3/files",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params=params,
+    )
+
+    if response.status_code == 200:
+        data = response.json()
+        files = data.get("files", [])
+        if files:
+            return files[0]["id"]
+
+    # Create folder
+    metadata: Dict[str, Any] = {
+        "name": folder_name,
+        "mimeType": "application/vnd.google-apps.folder",
+        "parents": [parent_id],
+    }
+
+    params = {"supportsAllDrives": "true"} if drive_id else {}
+    response = await client.post(
+        "https://www.googleapis.com/drive/v3/files",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        },
+        json=metadata,
+        params=params,
+    )
+
+    if response.status_code in (200, 201):
+        return response.json()["id"]
+
+    raise Exception(f"Failed to create folder {folder_name}: {response.text}")
+
+
+async def _upload_to_drive(
+    client,
+    access_token: str,
+    filename: str,
+    content: str,
+    parent_id: str,
+    drive_id: Optional[str] = None,
+) -> str:
+    """Upload a file to Google Drive. Returns file ID."""
+    import io
+
+    # Multipart upload
+    boundary = "---summarybot-boundary---"
+    metadata = {
+        "name": filename,
+        "parents": [parent_id],
+        "mimeType": "text/markdown",
+    }
+
+    body = (
+        f"--{boundary}\r\n"
+        f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+        f"{json.dumps(metadata)}\r\n"
+        f"--{boundary}\r\n"
+        f"Content-Type: text/markdown\r\n\r\n"
+        f"{content}\r\n"
+        f"--{boundary}--"
+    )
+
+    params: Dict[str, Any] = {"uploadType": "multipart"}
+    if drive_id:
+        params["supportsAllDrives"] = "true"
+
+    response = await client.post(
+        "https://www.googleapis.com/upload/drive/v3/files",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": f"multipart/related; boundary={boundary}",
+        },
+        content=body.encode("utf-8"),
+        params=params,
+    )
+
+    if response.status_code in (200, 201):
+        return response.json()["id"]
+
+    raise Exception(f"Failed to upload {filename}: {response.text}")
+
+
+def _generate_summary_markdown(summary) -> str:
+    """Generate markdown content for a summary."""
+    lines = []
+
+    # Header
+    lines.append(f"# {summary.channel_name or 'Summary'}")
+    lines.append("")
+    lines.append(f"**Date:** {summary.created_at.strftime('%Y-%m-%d')}")
+    lines.append(f"**Channel:** {summary.channel_name or 'Unknown'}")
+    if summary.message_count:
+        lines.append(f"**Messages:** {summary.message_count}")
+    lines.append("")
+
+    # Summary text
+    if summary.summary_result:
+        lines.append("## Summary")
+        lines.append("")
+        lines.append(summary.summary_result.summary_text or "")
+        lines.append("")
+
+        # Key points
+        if summary.summary_result.key_points:
+            lines.append("## Key Points")
+            lines.append("")
+            for point in summary.summary_result.key_points:
+                lines.append(f"- {point}")
+            lines.append("")
+
+        # Action items
+        if summary.summary_result.action_items:
+            lines.append("## Action Items")
+            lines.append("")
+            for item in summary.summary_result.action_items:
+                lines.append(f"- {item}")
+            lines.append("")
+
+    lines.append("---")
+    lines.append(f"*Generated by SummaryBot on {utc_now_naive().strftime('%Y-%m-%d %H:%M UTC')}*")
+
+    return "\n".join(lines)
 
 
 @router.put("/sync/server/{server_id}")

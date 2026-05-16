@@ -938,7 +938,7 @@ async def generate_retrospective(request: GenerateRequest):
         try:
             from ...data.repositories import get_whatsapp_import_repository
             whatsapp_repo = await get_whatsapp_import_repository()
-            imports = await whatsapp_repo.get_imports_for_guild(guild_id=request.server_id, limit=10)
+            imports, _total = await whatsapp_repo.get_imports_for_guild(guild_id=request.server_id, limit=10)
             if imports:
                 # Use first chat name, or combine multiple if there are few
                 chat_names = [imp.chat_name for imp in imports if imp.chat_name]

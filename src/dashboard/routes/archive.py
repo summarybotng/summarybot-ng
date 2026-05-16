@@ -2610,6 +2610,8 @@ async def trigger_sample_sync(source_key: str, sample_size: int = 3):
     all_summaries = await repo.find_by_guild(server_id, limit=10000)
     sample_summaries = all_summaries[:sample_size]
 
+    logger.info(f"Sample sync: Found {len(all_summaries)} summaries, syncing {len(sample_summaries)}")
+
     if not sample_summaries:
         return SampleSyncResultResponse(
             status="success",
@@ -2717,12 +2719,12 @@ async def _ensure_folder(
     params: Dict[str, Any] = {
         "q": f"name='{folder_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
         "fields": "files(id,name)",
+        "supportsAllDrives": "true",  # Always include for Shared Drives
+        "includeItemsFromAllDrives": "true",
     }
     if drive_id:
         params["corpora"] = "drive"
         params["driveId"] = drive_id
-        params["includeItemsFromAllDrives"] = "true"
-        params["supportsAllDrives"] = "true"
 
     response = await client.get(
         "https://www.googleapis.com/drive/v3/files",
@@ -2734,7 +2736,10 @@ async def _ensure_folder(
         data = response.json()
         files = data.get("files", [])
         if files:
+            logger.info(f"Found existing folder '{folder_name}' with ID {files[0]['id']}")
             return files[0]["id"]
+    else:
+        logger.warning(f"Folder search failed: {response.status_code} - {response.text}")
 
     # Create folder
     metadata: Dict[str, Any] = {
@@ -2743,7 +2748,7 @@ async def _ensure_folder(
         "parents": [parent_id],
     }
 
-    params = {"supportsAllDrives": "true"} if drive_id else {}
+    create_params: Dict[str, Any] = {"supportsAllDrives": "true"}
     response = await client.post(
         "https://www.googleapis.com/drive/v3/files",
         headers={
@@ -2751,12 +2756,15 @@ async def _ensure_folder(
             "Content-Type": "application/json",
         },
         json=metadata,
-        params=params,
+        params=create_params,
     )
 
     if response.status_code in (200, 201):
-        return response.json()["id"]
+        folder_id = response.json()["id"]
+        logger.info(f"Created folder '{folder_name}' with ID {folder_id}")
+        return folder_id
 
+    logger.error(f"Failed to create folder {folder_name}: {response.status_code} - {response.text}")
     raise Exception(f"Failed to create folder {folder_name}: {response.text}")
 
 
@@ -2769,8 +2777,6 @@ async def _upload_to_drive(
     drive_id: Optional[str] = None,
 ) -> str:
     """Upload a file to Google Drive. Returns file ID."""
-    import io
-
     # Multipart upload
     boundary = "---summarybot-boundary---"
     metadata = {
@@ -2789,9 +2795,13 @@ async def _upload_to_drive(
         f"--{boundary}--"
     )
 
-    params: Dict[str, Any] = {"uploadType": "multipart"}
-    if drive_id:
-        params["supportsAllDrives"] = "true"
+    # Always include supportsAllDrives for Shared Drive compatibility
+    params: Dict[str, Any] = {
+        "uploadType": "multipart",
+        "supportsAllDrives": "true",
+    }
+
+    logger.info(f"Uploading file '{filename}' to parent {parent_id}")
 
     response = await client.post(
         "https://www.googleapis.com/upload/drive/v3/files",
@@ -2804,8 +2814,11 @@ async def _upload_to_drive(
     )
 
     if response.status_code in (200, 201):
-        return response.json()["id"]
+        file_id = response.json()["id"]
+        logger.info(f"Uploaded file '{filename}' with ID {file_id}")
+        return file_id
 
+    logger.error(f"Failed to upload {filename}: {response.status_code} - {response.text}")
     raise Exception(f"Failed to upload {filename}: {response.text}")
 
 

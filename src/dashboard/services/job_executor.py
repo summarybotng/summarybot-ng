@@ -48,10 +48,8 @@ async def execute_job(job: SummaryJob) -> bool:
         asyncio.create_task(_execute_regenerate_job(job))
         return True
     elif job.job_type == JobType.RETROSPECTIVE:
-        # Retrospective jobs have their own execution path in archive/generator.py
-        # For now, we don't support retry of retrospective jobs
-        logger.warning(f"[{job.id}] Retrospective job retry not yet implemented")
-        return False
+        asyncio.create_task(_execute_retrospective_job(job))
+        return True
     else:
         logger.error(f"[{job.id}] Unknown job type: {job.job_type}")
         return False
@@ -361,3 +359,105 @@ async def _execute_regenerate_job(job: SummaryJob) -> None:
 
     # Execute as a manual job with the original's parameters
     await _execute_manual_job(job)
+
+
+async def _execute_retrospective_job(job: SummaryJob) -> None:
+    """
+    Execute a retrospective (archive) job.
+
+    Retrospective jobs generate summaries for historical periods using
+    the archive generator. This allows retry of failed archive jobs.
+    """
+    job_id = job.id
+    job_repo = await get_summary_job_repository()
+
+    logger.info(f"[{job_id}] Starting retrospective job execution")
+    logger.info(f"[{job_id}] Source: {job.source_key}, Date range: {job.date_range_start} to {job.date_range_end}")
+
+    # Parse source_key to determine platform (e.g., "whatsapp:123", "discord:456", "slack:789")
+    source_key = job.source_key or ""
+    platform = source_key.split(":")[0] if ":" in source_key else "discord"
+
+    try:
+        # Get archive generator
+        from ..routes.archive import get_generator, get_archive_root
+        from ..routes.archive import (
+            create_whatsapp_message_fetcher,
+            create_slack_message_fetcher,
+            create_message_fetcher,
+        )
+
+        generator = await get_generator()
+        if not generator:
+            raise ValueError("Archive generator not available")
+
+        # Check if job exists in generator's memory
+        existing_job = generator.get_job(job_id)
+        if not existing_job:
+            # Job not in memory - need to recreate from database parameters
+            from src.archive.models import SourceType, ArchiveSource, ArchiveScopeType
+
+            # Recreate the source from job parameters
+            source = ArchiveSource(
+                source_type=SourceType(platform),
+                server_id=job.guild_id,
+                server_name=job.server_name or "Unknown",
+                scope=ArchiveScopeType.GUILD,
+                channel_ids=job.channel_ids if job.channel_ids else None,
+            )
+
+            # Create a new job with the same parameters
+            new_job = await generator.create_job(
+                source=source,
+                start_date=job.date_range_start,
+                end_date=job.date_range_end,
+                granularity=job.granularity or "daily",
+                timezone="UTC",
+                skip_existing=False,  # Don't skip - we're retrying
+                force_regenerate=True,  # Force regeneration since we're retrying
+                summary_type=job.summary_type or "detailed",
+                perspective=job.metadata.get("perspective", "general"),
+            )
+
+            # Use the new job ID
+            actual_job_id = new_job.job_id
+            logger.info(f"[{job_id}] Created new archive job {actual_job_id} for retry")
+        else:
+            actual_job_id = job_id
+
+        # Create appropriate message fetcher based on platform
+        if platform == "whatsapp":
+            message_fetcher = create_whatsapp_message_fetcher(
+                archive_root=get_archive_root(),
+                group_id=job.guild_id,
+                chat_ids=job.channel_ids if job.channel_ids else None,
+            )
+        elif platform == "slack":
+            # Get Slack workspace ID from source_key
+            workspace_id = source_key.split(":")[1] if ":" in source_key else None
+            message_fetcher = create_slack_message_fetcher(
+                workspace_id=workspace_id,
+                channel_ids=job.channel_ids,
+            )
+        else:
+            # Discord
+            from ..routes import get_discord_bot
+            bot = get_discord_bot()
+            if not bot:
+                raise ValueError("Discord bot not available for retrospective job")
+            message_fetcher = create_message_fetcher(job.channel_ids)
+
+        # Run the job
+        logger.info(f"[{job_id}] Running archive job {actual_job_id}")
+        await generator.run_job(actual_job_id, message_fetcher=message_fetcher)
+
+        logger.info(f"[{job_id}] Retrospective job execution completed")
+
+    except Exception as e:
+        logger.error(f"[{job_id}] Retrospective job execution failed: {e}", exc_info=True)
+        job.fail(str(e))
+        if job_repo:
+            try:
+                await job_repo.update(job)
+            except Exception as update_err:
+                logger.warning(f"[{job_id}] Failed to update job failure: {update_err}")

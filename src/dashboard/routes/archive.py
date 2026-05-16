@@ -2493,55 +2493,70 @@ async def get_sync_preview(server_id: str, limit: int = 3):
     along with the total count of pending files.
     """
     from . import get_stored_summary_repository
-    from datetime import timedelta
 
-    repo = await get_stored_summary_repository()
-    if not repo:
+    try:
+        repo = await get_stored_summary_repository()
+        if not repo:
+            return SyncPreviewResponse(files=[], total_pending=0)
+
+        # Get all summaries for this server (ordered by created_at desc)
+        all_summaries = await repo.find_by_guild(server_id, limit=10000)
+        total_pending = len(all_summaries)
+
+        # Get the most recent N for preview
+        recent = all_summaries[:limit]
+
+        # Get server config for period grouping
+        period_grouping = "week"
+        try:
+            service = get_sync_service()
+            config = await service.get_server_config(server_id)
+            if config and hasattr(config, 'period_grouping') and config.period_grouping:
+                period_grouping = config.period_grouping
+        except Exception as e:
+            logger.warning(f"Failed to get server config for preview: {e}")
+
+        preview_files = []
+        for summary in recent:
+            try:
+                # Generate period folder name
+                created = summary.created_at
+                if period_grouping == "week":
+                    week_start = created - timedelta(days=created.weekday())
+                    week_end = week_start + timedelta(days=6)
+                    period_folder = f"{week_start.strftime('%Y-%m-%d')}--{week_end.strftime('%Y-%m-%d')}"
+                else:
+                    month_start = created.replace(day=1)
+                    next_month = (month_start + timedelta(days=32)).replace(day=1)
+                    month_end = next_month - timedelta(days=1)
+                    period_folder = f"{month_start.strftime('%Y-%m-%d')}--{month_end.strftime('%Y-%m-%d')}"
+
+                # Generate title from summary
+                channel_name = summary.channel_name or "general"
+                title = f"{channel_name}_{summary.id[:8]}"
+
+                # Estimate file size (rough: 1 byte per char of summary text)
+                size_estimate = 500
+                if summary.summary_result and summary.summary_result.summary_text:
+                    size_estimate = len(summary.summary_result.summary_text)
+
+                preview_files.append(SyncPreviewFile(
+                    id=summary.id,
+                    title=title,
+                    channel_name=channel_name,
+                    created_at=created.isoformat(),
+                    size_estimate=size_estimate,
+                    period_folder=period_folder,
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to process summary {summary.id} for preview: {e}")
+                continue
+
+        return SyncPreviewResponse(files=preview_files, total_pending=total_pending)
+
+    except Exception as e:
+        logger.error(f"Failed to get sync preview for {server_id}: {e}")
         return SyncPreviewResponse(files=[], total_pending=0)
-
-    # Get all summaries for this server (ordered by created_at desc)
-    all_summaries = await repo.find_by_guild(server_id, limit=10000)
-    total_pending = len(all_summaries)
-
-    # Get the most recent N for preview
-    recent = all_summaries[:limit]
-
-    # Get server config for period grouping
-    service = get_sync_service()
-    config = await service.get_server_config(server_id)
-    period_grouping = config.period_grouping if config else "week"
-
-    preview_files = []
-    for summary in recent:
-        # Generate period folder name
-        created = summary.created_at
-        if period_grouping == "week":
-            week_start = created - timedelta(days=created.weekday())
-            week_end = week_start + timedelta(days=6)
-            period_folder = f"{week_start.strftime('%Y-%m-%d')}--{week_end.strftime('%Y-%m-%d')}"
-        else:
-            month_start = created.replace(day=1)
-            next_month = (month_start + timedelta(days=32)).replace(day=1)
-            month_end = next_month - timedelta(days=1)
-            period_folder = f"{month_start.strftime('%Y-%m-%d')}--{month_end.strftime('%Y-%m-%d')}"
-
-        # Generate title from summary
-        channel_name = summary.channel_name or "general"
-        title = f"{channel_name}_{summary.id[:8]}"
-
-        # Estimate file size (rough: 1 byte per char of summary text)
-        size_estimate = len(summary.summary_result.summary_text) if summary.summary_result else 500
-
-        preview_files.append(SyncPreviewFile(
-            id=summary.id,
-            title=title,
-            channel_name=channel_name,
-            created_at=created.isoformat(),
-            size_estimate=size_estimate,
-            period_folder=period_folder,
-        ))
-
-    return SyncPreviewResponse(files=preview_files, total_pending=total_pending)
 
 
 class SampleSyncResultResponse(BaseModel):

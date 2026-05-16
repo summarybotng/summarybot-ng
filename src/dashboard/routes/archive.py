@@ -374,13 +374,18 @@ def get_source_registry():
     return SourceRegistry(get_archive_root())
 
 
-def create_whatsapp_message_fetcher(archive_root: Path, group_id: str):
+def create_whatsapp_message_fetcher(archive_root: Path, group_id: str, chat_ids: Optional[List[str]] = None):
     """
     Create a message fetcher callback for WhatsApp sources.
 
     This fetches messages from:
     1. File-based archive (legacy WhatsApp imports)
     2. Database imports (ADR-081 ingest_messages table)
+
+    Args:
+        archive_root: Root path for file-based archives
+        group_id: Discord guild ID that owns the WhatsApp imports
+        chat_ids: Optional list of specific chat IDs to filter by
     """
     from src.archive.importers.whatsapp import WhatsAppImporter
 
@@ -406,25 +411,53 @@ def create_whatsapp_message_fetcher(archive_root: Path, group_id: str):
                     start_iso = start_time.isoformat() if hasattr(start_time, 'isoformat') else str(start_time)
                     end_iso = end_time.isoformat() if hasattr(end_time, 'isoformat') else str(end_time)
 
-                    rows = await conn.fetch_all(
-                        """
-                        SELECT
-                            m.id,
-                            m.sender_id,
-                            m.sender_name,
-                            m.timestamp,
-                            m.content
-                        FROM ingest_messages m
-                        JOIN whatsapp_imports wi ON m.batch_id = wi.id
-                        WHERE wi.chat_id = ?
-                          AND m.timestamp >= ?
-                          AND m.timestamp <= ?
-                          AND m.content IS NOT NULL
-                          AND m.content != ''
-                        ORDER BY m.timestamp ASC
-                        """,
-                        (group_id, start_iso, end_iso)
-                    )
+                    # Fix: Query by guild_id, not chat_id
+                    # group_id is the Discord guild ID that owns the WhatsApp imports
+                    # Optionally filter by specific chat_ids if provided
+                    if chat_ids:
+                        placeholders = ",".join("?" * len(chat_ids))
+                        rows = await conn.fetch_all(
+                            f"""
+                            SELECT
+                                m.id,
+                                m.sender_id,
+                                m.sender_name,
+                                m.timestamp,
+                                m.content,
+                                m.channel_id
+                            FROM ingest_messages m
+                            JOIN whatsapp_imports wi ON m.batch_id = wi.id
+                            WHERE wi.guild_id = ?
+                              AND wi.chat_id IN ({placeholders})
+                              AND m.timestamp >= ?
+                              AND m.timestamp <= ?
+                              AND m.content IS NOT NULL
+                              AND m.content != ''
+                            ORDER BY m.timestamp ASC
+                            """,
+                            (group_id, *chat_ids, start_iso, end_iso)
+                        )
+                    else:
+                        rows = await conn.fetch_all(
+                            """
+                            SELECT
+                                m.id,
+                                m.sender_id,
+                                m.sender_name,
+                                m.timestamp,
+                                m.content,
+                                m.channel_id
+                            FROM ingest_messages m
+                            JOIN whatsapp_imports wi ON m.batch_id = wi.id
+                            WHERE wi.guild_id = ?
+                              AND m.timestamp >= ?
+                              AND m.timestamp <= ?
+                              AND m.content IS NOT NULL
+                              AND m.content != ''
+                            ORDER BY m.timestamp ASC
+                            """,
+                            (group_id, start_iso, end_iso)
+                        )
 
                     # Convert to archive message format
                     for row in rows:
@@ -1010,9 +1043,11 @@ async def generate_retrospective(request: GenerateRequest):
 
         # Use appropriate message fetcher based on source type
         if is_whatsapp:
+            # Pass chat_ids to filter by specific chats if selected
             message_fetcher = create_whatsapp_message_fetcher(
                 archive_root=get_archive_root(),
                 group_id=request.server_id,
+                chat_ids=resolved_channel_ids if resolved_channel_ids else None,
             )
         elif is_slack:
             message_fetcher = create_slack_message_fetcher(

@@ -2712,13 +2712,14 @@ async def trigger_sample_sync(source_key: str, sample_size: int = 3):
                         drive_urls.append(f"https://drive.google.com/file/d/{existing_id}/view")
                         logger.info(f"Skipped {json_filename} - already exists")
                     else:
+                        from dataclasses import asdict
                         json_content = json.dumps({
                             "id": summary.id,
                             "guild_id": summary.guild_id,
                             "title": summary.title,
                             "created_at": summary.created_at.isoformat(),
                             "source": summary.source,
-                            "summary_result": summary.summary_result.model_dump() if summary.summary_result else None,
+                            "summary_result": asdict(summary.summary_result) if summary.summary_result else None,
                             "is_pinned": summary.is_pinned,
                             "is_archived": summary.is_archived,
                         }, indent=2, default=str)
@@ -2893,13 +2894,14 @@ async def sync_single_summary(summary_id: str, server_id: str):
                     logger.info(f"Skipped {json_filename} - already exists")
                 else:
                     # Generate JSON content
+                    from dataclasses import asdict
                     json_content = json.dumps({
                         "id": summary.id,
                         "guild_id": summary.guild_id,
                         "title": summary.title,
                         "created_at": summary.created_at.isoformat(),
                         "source": summary.source,
-                        "summary_result": summary.summary_result.model_dump() if summary.summary_result else None,
+                        "summary_result": asdict(summary.summary_result) if summary.summary_result else None,
                         "is_pinned": summary.is_pinned,
                         "is_archived": summary.is_archived,
                     }, indent=2, default=str)

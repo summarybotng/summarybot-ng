@@ -596,28 +596,44 @@ export function GoogleDriveSyncSettings({
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="include-json"
-                  checked={serverConfig.include_json || false}
-                  onCheckedChange={(checked) => {
-                    updateExportSettings.mutate({ include_json: checked });
-                  }}
-                />
-                <Label htmlFor="include-json" className="text-sm">
-                  Include JSON backup files
-                </Label>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
-                      JSON files contain complete data for import/restoration. Markdown
-                      files are always included for human readability.
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+              <div className="space-y-2">
+                <Label className="text-xs">File Formats</Label>
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="include-markdown"
+                      checked={serverConfig.include_markdown !== false}
+                      onCheckedChange={(checked) => {
+                        updateExportSettings.mutate({ include_markdown: checked });
+                      }}
+                    />
+                    <Label htmlFor="include-markdown" className="text-sm">
+                      Markdown (.md)
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="include-json"
+                      checked={serverConfig.include_json || false}
+                      onCheckedChange={(checked) => {
+                        updateExportSettings.mutate({ include_json: checked });
+                      }}
+                    />
+                    <Label htmlFor="include-json" className="text-sm">
+                      JSON (.json)
+                    </Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          JSON files contain complete data for import/restoration.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                </div>
               </div>
               <p className="text-xs text-muted-foreground">
                 Files organized in: conversations/
@@ -626,6 +642,94 @@ export function GoogleDriveSyncSettings({
                   : "weekly date ranges"}
                 /
               </p>
+            </div>
+          )}
+
+          {/* Sync Filters - ADR-091 */}
+          {serverConfig?.enabled && !serverConfig.using_fallback && (
+            <div className="border rounded-lg p-4 space-y-4">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <Settings2 className="h-4 w-4" />
+                Sync Filters
+                {syncStats?.filter_active && (
+                  <Badge variant="secondary" className="text-xs">Active</Badge>
+                )}
+              </h4>
+              <p className="text-xs text-muted-foreground">
+                Filter which summaries get synced to Drive. Leave empty to sync all.
+              </p>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs">Scope</Label>
+                  <Select
+                    value={serverConfig.filter_scope || ""}
+                    onValueChange={(value) => {
+                      updateExportSettings.mutate({
+                        filter_scope: value as "channel" | "category" | "server" | "",
+                      });
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="All scopes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">All scopes</SelectItem>
+                      <SelectItem value="channel">Single channel only</SelectItem>
+                      <SelectItem value="category">Category (2-10 channels)</SelectItem>
+                      <SelectItem value="server">Server-wide (10+ channels)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Source</Label>
+                  <Select
+                    value={serverConfig.filter_source || ""}
+                    onValueChange={(value) => {
+                      updateExportSettings.mutate({
+                        filter_source: value as "scheduled" | "manual" | "realtime" | "archive" | "",
+                      });
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="All sources" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">All sources</SelectItem>
+                      <SelectItem value="scheduled">Scheduled</SelectItem>
+                      <SelectItem value="manual">Manual</SelectItem>
+                      <SelectItem value="realtime">Realtime</SelectItem>
+                      <SelectItem value="archive">Archive imports</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Granularity</Label>
+                  <Select
+                    value={serverConfig.filter_granularity || ""}
+                    onValueChange={(value) => {
+                      updateExportSettings.mutate({
+                        filter_granularity: value as "daily" | "weekly" | "monthly" | "",
+                      });
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="All periods" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">All periods</SelectItem>
+                      <SelectItem value="daily">Daily (1 day)</SelectItem>
+                      <SelectItem value="weekly">Weekly (2-8 days)</SelectItem>
+                      <SelectItem value="monthly">Monthly (20+ days)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {syncStats?.filter_active && (
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  Filters active: {syncStats.summaries_available} of {syncStats.summaries_total} summaries match
+                </p>
+              )}
             </div>
           )}
 

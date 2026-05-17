@@ -40,10 +40,15 @@ class ServerSyncConfig:
     sync_on_generation: bool = True
     include_metadata: bool = True
     # ADR-091: Export configuration
-    export_filters: Optional[Dict[str, Any]] = None  # Filter criteria (source, date range, etc.)
-    include_json: bool = False  # Include JSON backup files (default: markdown only)
+    export_filters: Optional[Dict[str, Any]] = None  # Filter criteria
+    include_markdown: bool = True  # Include markdown files (default: yes)
+    include_json: bool = False  # Include JSON backup files (default: no)
     folder_structure: str = "by-period"  # "flat" | "by-period" | "by-channel"
     period_grouping: str = "week"  # "week" | "month"
+    # Filter fields (flattened for easier access)
+    filter_scope: Optional[str] = None  # "channel" | "category" | "server" | None (all)
+    filter_source: Optional[str] = None  # "scheduled" | "manual" | "realtime" | "archive" | None (all)
+    filter_granularity: Optional[str] = None  # "daily" | "weekly" | "monthly" | None (all)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -63,9 +68,13 @@ class ServerSyncConfig:
             "include_metadata": self.include_metadata,
             # ADR-091: Export configuration
             "export_filters": self.export_filters,
+            "include_markdown": self.include_markdown,
             "include_json": self.include_json,
             "folder_structure": self.folder_structure,
             "period_grouping": self.period_grouping,
+            "filter_scope": self.filter_scope,
+            "filter_source": self.filter_source,
+            "filter_granularity": self.filter_granularity,
         }
 
     @classmethod
@@ -94,9 +103,13 @@ class ServerSyncConfig:
             include_metadata=data.get("include_metadata", True),
             # ADR-091: Export configuration
             export_filters=data.get("export_filters"),
+            include_markdown=data.get("include_markdown", True),
             include_json=data.get("include_json", False),
             folder_structure=data.get("folder_structure", "by-period"),
             period_grouping=data.get("period_grouping", "week"),
+            filter_scope=data.get("filter_scope"),
+            filter_source=data.get("filter_source"),
+            filter_granularity=data.get("filter_granularity"),
         )
 
 

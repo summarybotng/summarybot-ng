@@ -2390,7 +2390,9 @@ async def get_server_sync_config(server_id: str):
 
 class SyncStatsResponse(BaseModel):
     """Sync statistics for a server. ADR-007.1: Now syncs database summaries as markdown + JSON."""
-    summaries_available: int  # Number of stored summaries that can be synced
+    summaries_available: int  # Number of stored summaries that can be synced (after filters)
+    summaries_total: int = 0  # Total summaries before filters
+    filter_active: bool = False  # Whether any filters are applied
     files_in_drive: int  # Number of files already in Drive folder (includes .md and .json)
     last_sync: Optional[str] = None
     summaries_query_url: str  # URL to view summaries in UI
@@ -2408,16 +2410,57 @@ async def get_sync_stats(server_id: str):
 
     # Count database summaries for this server (what gets synced)
     repo = await get_stored_summary_repository()
+    summaries_total = 0
     summaries_available = 0
+    filter_active = False
+
+    service = get_sync_service()
+    config = await service.get_server_config(server_id)
+
     if repo:
         summaries = await repo.find_by_guild(server_id, limit=10000)
-        summaries_available = len(summaries)
+        summaries_total = len(summaries)
+
+        # Apply filters if configured (using inline filter logic since helper is defined later)
+        filtered = summaries
+        if config:
+            filter_scope = getattr(config, 'filter_scope', None)
+            filter_source = getattr(config, 'filter_source', None)
+            filter_granularity = getattr(config, 'filter_granularity', None)
+
+            if filter_scope:
+                if filter_scope == "channel":
+                    filtered = [s for s in filtered if len(getattr(s, 'source_channel_ids', []) or []) == 1]
+                elif filter_scope == "category":
+                    filtered = [s for s in filtered if 2 <= len(getattr(s, 'source_channel_ids', []) or []) <= 10]
+                elif filter_scope == "server":
+                    filtered = [s for s in filtered if len(getattr(s, 'source_channel_ids', []) or []) > 10]
+
+            if filter_source:
+                filtered = [s for s in filtered if getattr(s, 'source', None) == filter_source]
+
+            if filter_granularity:
+                def matches_gran(s):
+                    start = getattr(s, 'start_time', None)
+                    end = getattr(s, 'end_time', None)
+                    if not start or not end:
+                        return True
+                    days = (end - start).days
+                    if filter_granularity == "daily":
+                        return days <= 1
+                    elif filter_granularity == "weekly":
+                        return 2 <= days <= 8
+                    elif filter_granularity == "monthly":
+                        return days > 20
+                    return True
+                filtered = [s for s in filtered if matches_gran(s)]
+
+        summaries_available = len(filtered)
+        filter_active = summaries_available != summaries_total
 
     # Get files in Drive folder
     files_in_drive = 0
     last_sync = None
-    service = get_sync_service()
-    config = await service.get_server_config(server_id)
 
     if config and config.enabled and config.folder_id:
         oauth = get_oauth_flow()
@@ -2459,6 +2502,8 @@ async def get_sync_stats(server_id: str):
 
     return SyncStatsResponse(
         summaries_available=summaries_available,
+        summaries_total=summaries_total,
+        filter_active=filter_active,
         files_in_drive=files_in_drive,
         last_sync=last_sync,
         summaries_query_url=summaries_query_url,
@@ -2482,6 +2527,62 @@ class SyncPreviewResponse(BaseModel):
     """Preview of files to be synced."""
     files: List[SyncPreviewFile]
     total_pending: int
+    filter_active: bool = False  # Whether any filters are applied
+
+
+def _apply_sync_filters(summaries: List, config) -> List:
+    """
+    Apply sync filters from server config (ADR-091).
+
+    Filters:
+    - scope: "channel" | "category" | "server" (based on source_channel_ids count)
+    - source: "scheduled" | "manual" | "realtime" | "archive"
+    - granularity: "daily" | "weekly" | "monthly"
+    """
+    if not config:
+        return summaries
+
+    filtered = summaries
+
+    # Filter by scope
+    filter_scope = getattr(config, 'filter_scope', None)
+    if filter_scope:
+        if filter_scope == "channel":
+            # Single channel summaries only
+            filtered = [s for s in filtered if len(getattr(s, 'source_channel_ids', []) or []) == 1]
+        elif filter_scope == "category":
+            # Multi-channel but not server-wide (2-10 channels)
+            filtered = [s for s in filtered if 2 <= len(getattr(s, 'source_channel_ids', []) or []) <= 10]
+        elif filter_scope == "server":
+            # Server-wide summaries (more than 10 channels or explicitly server scope)
+            filtered = [s for s in filtered if len(getattr(s, 'source_channel_ids', []) or []) > 10]
+
+    # Filter by source
+    filter_source = getattr(config, 'filter_source', None)
+    if filter_source:
+        filtered = [s for s in filtered if getattr(s, 'source', None) == filter_source]
+
+    # Filter by granularity (daily/weekly/monthly based on date range)
+    filter_granularity = getattr(config, 'filter_granularity', None)
+    if filter_granularity:
+        def matches_granularity(summary):
+            start = getattr(summary, 'start_time', None)
+            end = getattr(summary, 'end_time', None)
+            if not start or not end:
+                return True  # Include if we can't determine
+
+            duration = (end - start).days
+            if filter_granularity == "daily":
+                return duration <= 1
+            elif filter_granularity == "weekly":
+                return 2 <= duration <= 8
+            elif filter_granularity == "monthly":
+                return duration > 20
+            return True
+
+        filtered = [s for s in filtered if matches_granularity(s)]
+
+    return filtered
 
 
 @router.get("/sync/server/{server_id}/preview", response_model=SyncPreviewResponse)
@@ -2491,6 +2592,7 @@ async def get_sync_preview(server_id: str, limit: int = 3):
 
     Returns the N most recent summaries that would be synced,
     along with the total count of pending files.
+    Applies any configured filters.
     """
     from . import get_stored_summary_repository
 
@@ -2499,14 +2601,8 @@ async def get_sync_preview(server_id: str, limit: int = 3):
         if not repo:
             return SyncPreviewResponse(files=[], total_pending=0)
 
-        # Get all summaries for this server (ordered by created_at desc)
-        all_summaries = await repo.find_by_guild(server_id, limit=10000)
-        total_pending = len(all_summaries)
-
-        # Get the most recent N for preview
-        recent = all_summaries[:limit]
-
-        # Get server config for period grouping
+        # Get server config for filters and period grouping
+        config = None
         period_grouping = "week"
         try:
             service = get_sync_service()
@@ -2515,6 +2611,17 @@ async def get_sync_preview(server_id: str, limit: int = 3):
                 period_grouping = config.period_grouping
         except Exception as e:
             logger.warning(f"Failed to get server config for preview: {e}")
+
+        # Get all summaries for this server
+        all_summaries = await repo.find_by_guild(server_id, limit=10000)
+
+        # Apply filters from config
+        filtered_summaries = _apply_sync_filters(all_summaries, config)
+        total_pending = len(filtered_summaries)
+        filter_active = len(filtered_summaries) != len(all_summaries)
+
+        # Get the most recent N for preview
+        recent = filtered_summaries[:limit]
 
         preview_files = []
         for summary in recent:
@@ -2554,11 +2661,11 @@ async def get_sync_preview(server_id: str, limit: int = 3):
                 logger.warning(f"Failed to process summary {summary.id} for preview: {e}")
                 continue
 
-        return SyncPreviewResponse(files=preview_files, total_pending=total_pending)
+        return SyncPreviewResponse(files=preview_files, total_pending=total_pending, filter_active=filter_active)
 
     except Exception as e:
         logger.error(f"Failed to get sync preview for {server_id}: {e}")
-        return SyncPreviewResponse(files=[], total_pending=0)
+        return SyncPreviewResponse(files=[], total_pending=0, filter_active=False)
 
 
 class SampleSyncResultResponse(BaseModel):
@@ -2609,9 +2716,12 @@ async def trigger_sample_sync(source_key: str, sample_size: int = 3):
         raise HTTPException(500, "Summary repository not available")
 
     all_summaries = await repo.find_by_guild(server_id, limit=10000)
-    sample_summaries = all_summaries[:sample_size]
 
-    logger.info(f"Sample sync: Found {len(all_summaries)} summaries, syncing {len(sample_summaries)}")
+    # Apply filters from server config
+    filtered_summaries = _apply_sync_filters(all_summaries, server_config)
+    sample_summaries = filtered_summaries[:sample_size]
+
+    logger.info(f"Sample sync: Found {len(all_summaries)} summaries, {len(filtered_summaries)} after filters, syncing {len(sample_summaries)}")
 
     if not sample_summaries:
         return SampleSyncResultResponse(
@@ -3272,9 +3382,14 @@ async def configure_server_sync(
 class UpdateExportSettingsRequest(BaseModel):
     """ADR-091: Request to update export settings only."""
     export_filters: Optional[Dict[str, Any]] = None
+    include_markdown: Optional[bool] = None
     include_json: Optional[bool] = None
     folder_structure: Optional[str] = None
     period_grouping: Optional[str] = None
+    # Filter settings
+    filter_scope: Optional[str] = None  # "channel" | "category" | "server" | None (all)
+    filter_source: Optional[str] = None  # "scheduled" | "manual" | "realtime" | "archive" | None
+    filter_granularity: Optional[str] = None  # "daily" | "weekly" | "monthly" | None
 
 
 @router.patch("/sync/server/{server_id}/export-settings")
@@ -3297,12 +3412,21 @@ async def update_export_settings(
     # Update only provided fields
     if request.export_filters is not None:
         config.export_filters = request.export_filters
+    if request.include_markdown is not None:
+        config.include_markdown = request.include_markdown
     if request.include_json is not None:
         config.include_json = request.include_json
     if request.folder_structure is not None:
         config.folder_structure = request.folder_structure
     if request.period_grouping is not None:
         config.period_grouping = request.period_grouping
+    # Filter settings - use empty string to clear (None means don't update)
+    if request.filter_scope is not None:
+        config.filter_scope = request.filter_scope if request.filter_scope else None
+    if request.filter_source is not None:
+        config.filter_source = request.filter_source if request.filter_source else None
+    if request.filter_granularity is not None:
+        config.filter_granularity = request.filter_granularity if request.filter_granularity else None
 
     # Save updated config
     success = await service.save_server_config(server_id, config)
@@ -3314,9 +3438,13 @@ async def update_export_settings(
         "success": True,
         "server_id": server_id,
         "export_filters": config.export_filters,
+        "include_markdown": config.include_markdown,
         "include_json": config.include_json,
         "folder_structure": config.folder_structure,
         "period_grouping": config.period_grouping,
+        "filter_scope": config.filter_scope,
+        "filter_source": config.filter_source,
+        "filter_granularity": config.filter_granularity,
         "message": "Export settings updated",
     }
 

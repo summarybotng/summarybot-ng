@@ -317,17 +317,27 @@ export interface ServerSyncConfig {
   using_fallback: boolean;
   // ADR-091: Export configuration
   export_filters?: Record<string, unknown>;
+  include_markdown?: boolean;
   include_json?: boolean;
   folder_structure?: "flat" | "by-period" | "by-channel";
   period_grouping?: "week" | "month";
+  // Filter settings
+  filter_scope?: "channel" | "category" | "server" | null;
+  filter_source?: "scheduled" | "manual" | "realtime" | "archive" | null;
+  filter_granularity?: "daily" | "weekly" | "monthly" | null;
 }
 
 // ADR-091: Export settings update request
 export interface ExportSettingsUpdate {
   export_filters?: Record<string, unknown>;
+  include_markdown?: boolean;
   include_json?: boolean;
   folder_structure?: "flat" | "by-period" | "by-channel";
   period_grouping?: "week" | "month";
+  // Filter settings
+  filter_scope?: "channel" | "category" | "server" | "";
+  filter_source?: "scheduled" | "manual" | "realtime" | "archive" | "";
+  filter_granularity?: "daily" | "weekly" | "monthly" | "";
 }
 
 export interface DriveFolder {
@@ -382,9 +392,11 @@ export function useServerSyncConfig(serverId: string) {
   });
 }
 
-// ADR-007.1: Sync statistics
+/// ADR-007.1: Sync statistics
 export interface SyncStats {
   summaries_available: number;
+  summaries_total: number;
+  filter_active: boolean;
   files_in_drive: number;
   last_sync?: string;
   summaries_query_url: string;

@@ -662,10 +662,10 @@ export function GoogleDriveSyncSettings({
                 <div className="space-y-2">
                   <Label className="text-xs">Scope</Label>
                   <Select
-                    value={serverConfig.filter_scope || ""}
+                    value={serverConfig.filter_scope || "__all__"}
                     onValueChange={(value) => {
                       updateExportSettings.mutate({
-                        filter_scope: value as "channel" | "category" | "server" | "",
+                        filter_scope: value === "__all__" ? "" : value as "channel" | "category" | "server",
                       });
                     }}
                   >
@@ -673,7 +673,7 @@ export function GoogleDriveSyncSettings({
                       <SelectValue placeholder="All scopes" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All scopes</SelectItem>
+                      <SelectItem value="__all__">All scopes</SelectItem>
                       <SelectItem value="channel">Single channel only</SelectItem>
                       <SelectItem value="category">Category (2-10 channels)</SelectItem>
                       <SelectItem value="server">Server-wide (10+ channels)</SelectItem>
@@ -683,10 +683,10 @@ export function GoogleDriveSyncSettings({
                 <div className="space-y-2">
                   <Label className="text-xs">Source</Label>
                   <Select
-                    value={serverConfig.filter_source || ""}
+                    value={serverConfig.filter_source || "__all__"}
                     onValueChange={(value) => {
                       updateExportSettings.mutate({
-                        filter_source: value as "scheduled" | "manual" | "realtime" | "archive" | "",
+                        filter_source: value === "__all__" ? "" : value as "scheduled" | "manual" | "realtime" | "archive",
                       });
                     }}
                   >
@@ -694,7 +694,7 @@ export function GoogleDriveSyncSettings({
                       <SelectValue placeholder="All sources" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All sources</SelectItem>
+                      <SelectItem value="__all__">All sources</SelectItem>
                       <SelectItem value="scheduled">Scheduled</SelectItem>
                       <SelectItem value="manual">Manual</SelectItem>
                       <SelectItem value="realtime">Realtime</SelectItem>
@@ -705,10 +705,10 @@ export function GoogleDriveSyncSettings({
                 <div className="space-y-2">
                   <Label className="text-xs">Granularity</Label>
                   <Select
-                    value={serverConfig.filter_granularity || ""}
+                    value={serverConfig.filter_granularity || "__all__"}
                     onValueChange={(value) => {
                       updateExportSettings.mutate({
-                        filter_granularity: value as "daily" | "weekly" | "monthly" | "",
+                        filter_granularity: value === "__all__" ? "" : value as "daily" | "weekly" | "monthly",
                       });
                     }}
                   >
@@ -716,7 +716,7 @@ export function GoogleDriveSyncSettings({
                       <SelectValue placeholder="All periods" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All periods</SelectItem>
+                      <SelectItem value="__all__">All periods</SelectItem>
                       <SelectItem value="daily">Daily (1 day)</SelectItem>
                       <SelectItem value="weekly">Weekly (2-8 days)</SelectItem>
                       <SelectItem value="monthly">Monthly (20+ days)</SelectItem>

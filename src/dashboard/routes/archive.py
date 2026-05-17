@@ -2710,6 +2710,107 @@ async def trigger_sample_sync(source_key: str, sample_size: int = 3):
     )
 
 
+class SingleSyncResponse(BaseModel):
+    """Result of syncing a single summary to Drive."""
+    success: bool
+    drive_url: Optional[str] = None
+    error: Optional[str] = None
+
+
+@router.post("/sync/summary/{summary_id}", response_model=SingleSyncResponse)
+async def sync_single_summary(summary_id: str, server_id: str):
+    """
+    Sync a single summary to Google Drive (ADR-091).
+
+    Push an individual summary to Drive immediately, similar to Push to Discord.
+    """
+    import httpx
+
+    service = get_sync_service()
+    oauth = get_oauth_flow()
+
+    # Get server config
+    server_config = await service.get_server_config(server_id)
+    if not server_config or not server_config.enabled:
+        return SingleSyncResponse(success=False, error="Server sync not configured")
+
+    # Get OAuth tokens
+    tokens = await oauth.get_valid_tokens(server_config.oauth_token_id)
+    if not tokens:
+        return SingleSyncResponse(success=False, error="OAuth tokens expired. Please reconnect Google Drive.")
+
+    # Get the summary
+    from . import get_stored_summary_repository
+    repo = await get_stored_summary_repository()
+    if not repo:
+        return SingleSyncResponse(success=False, error="Summary repository not available")
+
+    summary = await repo.get(summary_id)
+    if not summary:
+        return SingleSyncResponse(success=False, error=f"Summary {summary_id} not found")
+
+    # Verify summary belongs to this server
+    if summary.guild_id != server_id:
+        return SingleSyncResponse(success=False, error="Summary does not belong to this server")
+
+    period_grouping = server_config.period_grouping or "week"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # Generate period folder name
+            created = summary.created_at
+            if period_grouping == "week":
+                week_start = created - timedelta(days=created.weekday())
+                week_end = week_start + timedelta(days=6)
+                period_folder = f"{week_start.strftime('%Y-%m-%d')}--{week_end.strftime('%Y-%m-%d')}"
+            else:
+                month_start = created.replace(day=1)
+                next_month = (month_start + timedelta(days=32)).replace(day=1)
+                month_end = next_month - timedelta(days=1)
+                period_folder = f"{month_start.strftime('%Y-%m-%d')}--{month_end.strftime('%Y-%m-%d')}"
+
+            # Create conversations folder if needed
+            conversations_folder_id = await _ensure_folder(
+                client, tokens.access_token,
+                "conversations",
+                server_config.folder_id,
+                server_config.drive_id,
+            )
+
+            # Create period folder if needed
+            period_folder_id = await _ensure_folder(
+                client, tokens.access_token,
+                period_folder,
+                conversations_folder_id,
+                server_config.drive_id,
+            )
+
+            # Generate markdown content
+            channel_name = "general"
+            if summary.summary_result and summary.summary_result.context:
+                channel_name = summary.summary_result.context.channel_name or "general"
+            title = f"{channel_name}_{summary.id[:8]}"
+            markdown_content = _generate_summary_markdown(summary)
+
+            # Upload file
+            file_id = await _upload_to_drive(
+                client, tokens.access_token,
+                f"{title}.md",
+                markdown_content,
+                period_folder_id,
+                server_config.drive_id,
+            )
+
+            drive_url = f"https://drive.google.com/file/d/{file_id}/view"
+            logger.info(f"Synced single summary {summary_id} to Drive: {drive_url}")
+
+            return SingleSyncResponse(success=True, drive_url=drive_url)
+
+    except Exception as e:
+        logger.error(f"Failed to sync summary {summary_id} to Drive: {e}")
+        return SingleSyncResponse(success=False, error=str(e))
+
+
 async def _ensure_folder(
     client,
     access_token: str,

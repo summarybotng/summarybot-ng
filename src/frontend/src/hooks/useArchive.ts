@@ -510,6 +510,21 @@ export function useSampleSync() {
   });
 }
 
+// ADR-091: Push a single summary to Google Drive
+export function usePushToDrive() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ summaryId, serverId }: { summaryId: string; serverId: string }) =>
+      api.post<{ success: boolean; drive_url?: string; error?: string }>(
+        `/archive/sync/summary/${summaryId}?server_id=${serverId}`
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["archive", "sync"] });
+    },
+  });
+}
+
 // ADR-091: Preview what will be synced (dry run)
 export function useSyncPreview(serverId: string, limit: number = 3) {
   return useQuery({

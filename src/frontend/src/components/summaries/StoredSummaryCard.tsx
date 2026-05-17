@@ -72,6 +72,7 @@ interface StoredSummaryCardProps {
   onView: () => void;
   onPush: () => void;
   onPushDM: () => void;  // ADR-047: Push to Discord DM
+  onPushToDrive?: () => void;  // ADR-091: Push to Google Drive
   onEmail: () => void;  // ADR-030: Email delivery
   onPin: () => void;
   onArchive: () => void;
@@ -87,6 +88,7 @@ export function StoredSummaryCard({
   onView,
   onPush,
   onPushDM,
+  onPushToDrive,
   onEmail,
   onPin,
   onArchive,
@@ -161,6 +163,7 @@ export function StoredSummaryCard({
                   onView,
                   onPush,
                   onPushDM,
+                  onPushToDrive,
                   onEmail,
                   onPin,
                   onArchive,

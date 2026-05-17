@@ -25,12 +25,14 @@ import {
   Eye,
   MoreVertical,
   ChevronDown,
+  Cloud,
 } from "lucide-react";
 
 export interface SummaryActionHandlers {
   onView?: () => void;
   onPush: () => void;
   onPushDM: () => void;  // ADR-047: Push to Discord DM
+  onPushToDrive?: () => void;  // ADR-091: Push to Google Drive
   onEmail: () => void;
   onRegenerate?: () => void;
   onPin: () => void;
@@ -93,6 +95,12 @@ export function SummaryActions({
             <Mail className="mr-2 h-4 w-4" />
             Send to Email
           </DropdownMenuItem>
+          {handlers.onPushToDrive && (
+            <DropdownMenuItem onClick={handleClick(handlers.onPushToDrive)}>
+              <Cloud className="mr-2 h-4 w-4" />
+              Push to Drive
+            </DropdownMenuItem>
+          )}
           {handlers.onRegenerate && (
             <DropdownMenuItem onClick={handleClick(handlers.onRegenerate)}>
               <RefreshCw className="mr-2 h-4 w-4" />
@@ -136,6 +144,12 @@ export function SummaryActions({
         <Mail className="mr-2 h-4 w-4" />
         Send to Email
       </Button>
+      {handlers.onPushToDrive && (
+        <Button variant="outline" onClick={handleClick(handlers.onPushToDrive)} className="w-full sm:w-auto">
+          <Cloud className="mr-2 h-4 w-4" />
+          Push to Drive
+        </Button>
+      )}
       {handlers.onRegenerate && (
         <Button
           variant="outline"

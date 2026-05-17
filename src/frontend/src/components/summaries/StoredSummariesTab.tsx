@@ -10,6 +10,7 @@ import { useState, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, usePushToDM, useSendToEmail, useRegenerateSummary, useSummaryWikiPages, type SummarySourceType, type RegenerateOptions } from "@/hooks/useStoredSummaries";
+import { usePushToDrive, useServerSyncConfig } from "@/hooks/useArchive";
 import { useGuild } from "@/hooks/useGuilds";
 import { useAuthStore } from "@/stores/authStore";
 import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
@@ -394,6 +395,8 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
   const pushMutation = usePushToChannel(guildId);
   const dmMutation = usePushToDM(guildId);  // ADR-047
   const emailMutation = useSendToEmail(guildId);  // ADR-030
+  const pushToDriveMutation = usePushToDrive();  // ADR-091
+  const { data: serverSyncConfig } = useServerSyncConfig(guildId);  // ADR-091
   const regenerateMutation = useRegenerateSummary(guildId);
 
   // Refresh both list and calendar views
@@ -478,6 +481,46 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
       toast({
         title: "Error",
         description: "Failed to delete summary",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // ADR-091: Push single summary to Google Drive
+  const handlePushToDrive = async (summary: StoredSummary) => {
+    if (!serverSyncConfig?.enabled) {
+      toast({
+        title: "Drive not configured",
+        description: "Configure Google Drive sync in Settings first",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      const result = await pushToDriveMutation.mutateAsync({
+        summaryId: summary.id,
+        serverId: guildId,
+      });
+      if (result.success) {
+        toast({
+          title: "Pushed to Drive",
+          description: result.drive_url ? (
+            <a href={result.drive_url} target="_blank" rel="noopener noreferrer" className="underline">
+              View in Drive
+            </a>
+          ) : "Summary synced to Google Drive",
+        });
+      } else {
+        toast({
+          title: "Push failed",
+          description: result.error || "Failed to sync to Drive",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({
+        title: "Error",
+        description: "Failed to push to Drive",
         variant: "destructive",
       });
     }
@@ -825,6 +868,7 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
                         onView={() => setSelectedSummary(summary.id)}
                         onPush={() => setPushModalSummary(summary)}
                         onPushDM={() => setDmModalSummary(summary)}
+                        onPushToDrive={serverSyncConfig?.enabled ? () => handlePushToDrive(summary) : undefined}
                         onEmail={() => setEmailModalSummary(summary)}
                         onPin={() => handlePin(summary)}
                         onArchive={() => handleArchive(summary)}
@@ -893,6 +937,12 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
             setDmModalSummary(summary);
           }
         }}
+        onPushToDrive={serverSyncConfig?.enabled ? (summaryId) => {
+          const summary = summaries.find((s) => s.id === summaryId);
+          if (summary) {
+            handlePushToDrive(summary);
+          }
+        } : undefined}
         onEmail={(summaryId) => {
           const summary = summaries.find((s) => s.id === summaryId);
           if (summary) {
@@ -1038,6 +1088,7 @@ function StoredSummaryDetailSheet({
   onOpenChange,
   onPush,
   onPushDM,
+  onPushToDrive,
   onEmail,
   onPin,
   onArchive,
@@ -1052,6 +1103,7 @@ function StoredSummaryDetailSheet({
   onOpenChange: (open: boolean) => void;
   onPush: (summaryId: string) => void;
   onPushDM: (summaryId: string) => void;
+  onPushToDrive?: (summaryId: string) => void;
   onEmail: (summaryId: string) => void;
   onPin: (summary: StoredSummaryDetail) => void;
   onArchive: (summary: StoredSummaryDetail) => void;
@@ -1173,6 +1225,7 @@ function StoredSummaryDetailSheet({
                 handlers={{
                   onPush: () => onPush(summary.id),
                   onPushDM: () => onPushDM(summary.id),
+                  onPushToDrive: onPushToDrive ? () => onPushToDrive(summary.id) : undefined,
                   onEmail: () => onEmail(summary.id),
                   onRegenerate: () => setRegenerateDialogOpen(true),
                   onPin: () => onPin(summary),

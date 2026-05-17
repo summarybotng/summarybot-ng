@@ -446,29 +446,20 @@ export function GoogleDriveSyncSettings({
                     </Tooltip>
                   </TooltipProvider>
 
-                  {/* Push Now - primary sync action */}
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={handleTriggerSync}
-                          disabled={triggerSync.isPending || !syncStats?.summaries_available}
-                        >
-                          {triggerSync.isPending ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Cloud className="mr-2 h-4 w-4" />
-                          )}
-                          Push Now ({syncStats?.summaries_available || 0})
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Sync all summaries to Google Drive now</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  {/* Full sync button */}
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleTriggerSync}
+                    disabled={triggerSync.isPending}
+                  >
+                    {triggerSync.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                    )}
+                    Sync All ({syncStats?.summaries_available || 0})
+                  </Button>
 
                   <Button
                     variant="ghost"
@@ -544,7 +535,7 @@ export function GoogleDriveSyncSettings({
                 <p className="text-xs text-amber-600 flex items-center gap-1">
                   <AlertTriangle className="h-3 w-3" />
                   {syncStats.summaries_available > syncStats.files_in_drive
-                    ? `${syncStats.summaries_available - syncStats.files_in_drive} summaries not yet synced. Click "Push Now" to upload.`
+                    ? `${syncStats.summaries_available - syncStats.files_in_drive} summaries not yet synced. Click "Sync All" to upload.`
                     : "Drive has more files than expected (may include subfolders or manual uploads)."}
                 </p>
               )}

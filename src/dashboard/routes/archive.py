@@ -2665,34 +2665,84 @@ async def trigger_sample_sync(source_key: str, sample_size: int = 3):
                     server_config.drive_id,
                 )
 
-                # Generate markdown content
+                # Generate title
                 channel_name = "general"
                 if summary.summary_result and summary.summary_result.context:
                     channel_name = summary.summary_result.context.channel_name or "general"
                 title = f"{channel_name}_{summary.id[:8]}"
-                markdown_content = _generate_summary_markdown(summary)
 
-                # Upload file
-                file_id = await _upload_to_drive(
-                    client, tokens.access_token,
-                    f"{title}.md",
-                    markdown_content,
-                    period_folder_id,
-                    server_config.drive_id,
-                )
+                # Get format settings (defaults: markdown=true, json=false)
+                include_markdown = getattr(server_config, 'include_markdown', True)
+                include_json = getattr(server_config, 'include_json', False)
+                if not include_markdown and not include_json:
+                    include_markdown = True
 
-                files_synced += 1
-                bytes_uploaded += len(markdown_content.encode())
+                summary_synced = False
+                summary_size = 0
+
+                # Upload markdown if enabled
+                if include_markdown:
+                    md_filename = f"{title}.md"
+                    existing_id = await _file_exists_in_drive(
+                        client, tokens.access_token,
+                        md_filename, period_folder_id, server_config.drive_id
+                    )
+                    if existing_id:
+                        drive_urls.append(f"https://drive.google.com/file/d/{existing_id}/view")
+                        logger.info(f"Skipped {md_filename} - already exists")
+                    else:
+                        markdown_content = _generate_summary_markdown(summary)
+                        file_id = await _upload_to_drive(
+                            client, tokens.access_token,
+                            md_filename, markdown_content,
+                            period_folder_id, server_config.drive_id,
+                        )
+                        drive_urls.append(f"https://drive.google.com/file/d/{file_id}/view")
+                        summary_synced = True
+                        summary_size += len(markdown_content.encode())
+
+                # Upload JSON if enabled
+                if include_json:
+                    json_filename = f"{title}.json"
+                    existing_id = await _file_exists_in_drive(
+                        client, tokens.access_token,
+                        json_filename, period_folder_id, server_config.drive_id
+                    )
+                    if existing_id:
+                        drive_urls.append(f"https://drive.google.com/file/d/{existing_id}/view")
+                        logger.info(f"Skipped {json_filename} - already exists")
+                    else:
+                        json_content = json.dumps({
+                            "id": summary.id,
+                            "guild_id": summary.guild_id,
+                            "title": summary.title,
+                            "created_at": summary.created_at.isoformat(),
+                            "source": summary.source,
+                            "summary_result": summary.summary_result.model_dump() if summary.summary_result else None,
+                            "is_pinned": summary.is_pinned,
+                            "is_archived": summary.is_archived,
+                        }, indent=2, default=str)
+                        file_id = await _upload_to_drive_json(
+                            client, tokens.access_token,
+                            json_filename, json_content,
+                            period_folder_id, server_config.drive_id,
+                        )
+                        drive_urls.append(f"https://drive.google.com/file/d/{file_id}/view")
+                        summary_synced = True
+                        summary_size += len(json_content.encode())
+
+                if summary_synced:
+                    files_synced += 1
+                    bytes_uploaded += summary_size
 
                 synced_files.append(SyncPreviewFile(
                     id=summary.id,
                     title=title,
                     channel_name=channel_name,
                     created_at=created.isoformat(),
-                    size_estimate=len(markdown_content),
+                    size_estimate=summary_size,
                     period_folder=period_folder,
                 ))
-                drive_urls.append(f"https://drive.google.com/file/d/{file_id}/view")
 
             except Exception as e:
                 files_failed += 1
@@ -2713,7 +2763,10 @@ async def trigger_sample_sync(source_key: str, sample_size: int = 3):
 class SingleSyncResponse(BaseModel):
     """Result of syncing a single summary to Drive."""
     success: bool
-    drive_url: Optional[str] = None
+    drive_url: Optional[str] = None  # Primary URL (markdown if enabled, else json)
+    drive_urls: List[str] = []  # All URLs (md and/or json)
+    files_synced: int = 0
+    files_skipped: int = 0  # Already existed
     error: Optional[str] = None
 
 
@@ -2723,6 +2776,8 @@ async def sync_single_summary(summary_id: str, server_id: str):
     Sync a single summary to Google Drive (ADR-091).
 
     Push an individual summary to Drive immediately, similar to Push to Discord.
+    Respects include_markdown and include_json settings.
+    Skips files that already exist to avoid duplicates.
     """
     import httpx
 
@@ -2733,6 +2788,14 @@ async def sync_single_summary(summary_id: str, server_id: str):
     server_config = await service.get_server_config(server_id)
     if not server_config or not server_config.enabled:
         return SingleSyncResponse(success=False, error="Server sync not configured")
+
+    # Get format settings (defaults: markdown=true, json=false)
+    include_markdown = getattr(server_config, 'include_markdown', True)
+    include_json = getattr(server_config, 'include_json', False)
+
+    # At least one format must be enabled
+    if not include_markdown and not include_json:
+        include_markdown = True  # Default to markdown
 
     # Get OAuth tokens
     tokens = await oauth.get_valid_tokens(server_config.oauth_token_id)
@@ -2785,26 +2848,79 @@ async def sync_single_summary(summary_id: str, server_id: str):
                 server_config.drive_id,
             )
 
-            # Generate markdown content
+            # Generate filename base
             channel_name = "general"
             if summary.summary_result and summary.summary_result.context:
                 channel_name = summary.summary_result.context.channel_name or "general"
             title = f"{channel_name}_{summary.id[:8]}"
-            markdown_content = _generate_summary_markdown(summary)
 
-            # Upload file
-            file_id = await _upload_to_drive(
-                client, tokens.access_token,
-                f"{title}.md",
-                markdown_content,
-                period_folder_id,
-                server_config.drive_id,
+            drive_urls = []
+            files_synced = 0
+            files_skipped = 0
+
+            # Upload markdown if enabled
+            if include_markdown:
+                md_filename = f"{title}.md"
+                existing_id = await _file_exists_in_drive(
+                    client, tokens.access_token,
+                    md_filename, period_folder_id, server_config.drive_id
+                )
+                if existing_id:
+                    # File already exists, add URL but don't re-upload
+                    drive_urls.append(f"https://drive.google.com/file/d/{existing_id}/view")
+                    files_skipped += 1
+                    logger.info(f"Skipped {md_filename} - already exists")
+                else:
+                    markdown_content = _generate_summary_markdown(summary)
+                    file_id = await _upload_to_drive(
+                        client, tokens.access_token,
+                        md_filename, markdown_content,
+                        period_folder_id, server_config.drive_id,
+                    )
+                    drive_urls.append(f"https://drive.google.com/file/d/{file_id}/view")
+                    files_synced += 1
+
+            # Upload JSON if enabled
+            if include_json:
+                json_filename = f"{title}.json"
+                existing_id = await _file_exists_in_drive(
+                    client, tokens.access_token,
+                    json_filename, period_folder_id, server_config.drive_id
+                )
+                if existing_id:
+                    drive_urls.append(f"https://drive.google.com/file/d/{existing_id}/view")
+                    files_skipped += 1
+                    logger.info(f"Skipped {json_filename} - already exists")
+                else:
+                    # Generate JSON content
+                    json_content = json.dumps({
+                        "id": summary.id,
+                        "guild_id": summary.guild_id,
+                        "title": summary.title,
+                        "created_at": summary.created_at.isoformat(),
+                        "source": summary.source,
+                        "summary_result": summary.summary_result.model_dump() if summary.summary_result else None,
+                        "is_pinned": summary.is_pinned,
+                        "is_archived": summary.is_archived,
+                    }, indent=2, default=str)
+                    file_id = await _upload_to_drive_json(
+                        client, tokens.access_token,
+                        json_filename, json_content,
+                        period_folder_id, server_config.drive_id,
+                    )
+                    drive_urls.append(f"https://drive.google.com/file/d/{file_id}/view")
+                    files_synced += 1
+
+            primary_url = drive_urls[0] if drive_urls else None
+            logger.info(f"Synced summary {summary_id}: {files_synced} files synced, {files_skipped} skipped")
+
+            return SingleSyncResponse(
+                success=True,
+                drive_url=primary_url,
+                drive_urls=drive_urls,
+                files_synced=files_synced,
+                files_skipped=files_skipped,
             )
-
-            drive_url = f"https://drive.google.com/file/d/{file_id}/view"
-            logger.info(f"Synced single summary {summary_id} to Drive: {drive_url}")
-
-            return SingleSyncResponse(success=True, drive_url=drive_url)
 
     except Exception as e:
         logger.error(f"Failed to sync summary {summary_id} to Drive: {e}")
@@ -2872,6 +2988,39 @@ async def _ensure_folder(
     raise Exception(f"Failed to create folder {folder_name}: {response.text}")
 
 
+async def _file_exists_in_drive(
+    client,
+    access_token: str,
+    filename: str,
+    parent_id: str,
+    drive_id: Optional[str] = None,
+) -> Optional[str]:
+    """Check if a file exists in Drive. Returns file ID if exists, None otherwise."""
+    params: Dict[str, Any] = {
+        "q": f"name='{filename}' and '{parent_id}' in parents and trashed=false",
+        "fields": "files(id,name)",
+        "supportsAllDrives": "true",
+        "includeItemsFromAllDrives": "true",
+    }
+    if drive_id:
+        params["corpora"] = "drive"
+        params["driveId"] = drive_id
+
+    response = await client.get(
+        "https://www.googleapis.com/drive/v3/files",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params=params,
+    )
+
+    if response.status_code == 200:
+        data = response.json()
+        files = data.get("files", [])
+        if files:
+            logger.info(f"File '{filename}' already exists with ID {files[0]['id']}")
+            return files[0]["id"]
+    return None
+
+
 async def _upload_to_drive(
     client,
     access_token: str,
@@ -2924,6 +3073,58 @@ async def _upload_to_drive(
 
     logger.error(f"Failed to upload {filename}: {response.status_code} - {response.text}")
     raise Exception(f"Failed to upload {filename}: {response.text}")
+
+
+async def _upload_to_drive_json(
+    client,
+    access_token: str,
+    filename: str,
+    content: str,
+    parent_id: str,
+    drive_id: Optional[str] = None,
+) -> str:
+    """Upload a JSON file to Google Drive. Returns file ID."""
+    boundary = "---summarybot-boundary---"
+    metadata = {
+        "name": filename,
+        "parents": [parent_id],
+        "mimeType": "application/json",
+    }
+
+    body = (
+        f"--{boundary}\r\n"
+        f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+        f"{json.dumps(metadata)}\r\n"
+        f"--{boundary}\r\n"
+        f"Content-Type: application/json\r\n\r\n"
+        f"{content}\r\n"
+        f"--{boundary}--"
+    )
+
+    params: Dict[str, Any] = {
+        "uploadType": "multipart",
+        "supportsAllDrives": "true",
+    }
+
+    logger.info(f"Uploading JSON file '{filename}' to parent {parent_id}")
+
+    response = await client.post(
+        "https://www.googleapis.com/upload/drive/v3/files",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": f"multipart/related; boundary={boundary}",
+        },
+        content=body.encode("utf-8"),
+        params=params,
+    )
+
+    if response.status_code in (200, 201):
+        file_id = response.json()["id"]
+        logger.info(f"Uploaded JSON file '{filename}' with ID {file_id}")
+        return file_id
+
+    logger.error(f"Failed to upload JSON {filename}: {response.status_code} - {response.text}")
+    raise Exception(f"Failed to upload JSON {filename}: {response.text}")
 
 
 def _generate_summary_markdown(summary) -> str:

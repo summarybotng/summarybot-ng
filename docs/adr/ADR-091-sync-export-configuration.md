@@ -35,23 +35,37 @@ interface SyncExportConfig {
     source?: "realtime" | "scheduled" | "archive" | "manual" | "imported";
     platform?: "discord" | "slack" | "whatsapp";
     granularity?: "daily" | "weekly" | "monthly";
-    channels?: string[];           // Specific channel IDs
-    createdAfter?: string;         // ISO date
-    createdBefore?: string;        // ISO date
+    scope?: "server" | "channel";   // Server-wide vs single-channel
+    channels?: string[];            // Specific channel IDs
+    createdAfter?: string;          // ISO date
+    createdBefore?: string;         // ISO date
     hasKeyPoints?: boolean;
     hasActionItems?: boolean;
     minMessageCount?: number;
     tags?: string[];
+    syncEligible?: boolean;         // Only summaries marked for sync
   };
 
   // Format options
-  includeJson: boolean;            // Default: false (markdown only)
+  includeMarkdown: boolean;        // Default: true
+  includeJson: boolean;            // Default: false
 
   // Folder structure
   folderStructure: "flat" | "by-period" | "by-channel";
   periodGrouping: "week" | "month";  // When folderStructure = "by-period"
 }
 ```
+
+### Common Filter Presets
+
+| Preset | Filters | Use Case |
+|--------|---------|----------|
+| Weekly Channel Summaries | `granularity: "weekly", scope: "channel"` | Individual channel reports |
+| Server-wide Weeklies | `granularity: "weekly", scope: "server"` | Cross-channel rollups |
+| Scheduled Only | `source: "scheduled"` | Automated summaries only |
+| Manual Exports | `source: "manual"` | User-triggered summaries |
+| With Action Items | `hasActionItems: true` | Actionable summaries |
+| Sync-Eligible Only | `syncEligible: true` | Per-summary opt-in |
 
 ### 2. Folder Structure
 
@@ -83,14 +97,96 @@ SummaryBot Sync/
 | Option | Files Created | Use Case |
 |--------|--------------|----------|
 | Markdown only (default) | `.md` | Human-readable backup, Drive preview |
-| Markdown + JSON | `.md` + `.json` | Full backup with restoration capability |
+| JSON only | `.json` | Machine-readable, restoration capability |
+| Markdown + JSON | `.md` + `.json` | Full backup with both formats |
 
-JSON excluded by default because:
+**Default settings**:
+- `includeMarkdown: true` - Human-readable format
+- `includeJson: false` - Machine-readable backup (opt-in)
+
+**Rationale for defaults**:
 - Most users want human-readable files in Drive
 - JSON doubles storage and sync time
-- Users who need full backup can enable it
+- Users who need full backup can enable JSON
+- Sample sync respects both toggles for accurate preview
 
-### 4. UI Configuration
+**Sample sync behavior**:
+- Sample sync includes both MD and JSON if configured
+- Allows admin to verify both file types before full sync
+
+### 4. Sync Eligibility at Creation
+
+Summaries can be marked as "sync eligible" at the point of creation, providing per-summary control over what gets synced.
+
+#### Discord Push Options
+
+When pushing a summary to Discord, add sync eligibility toggle:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Push Summary to Discord                                     │
+├─────────────────────────────────────────────────────────────┤
+│ Channel: #dev-updates                                       │
+│ Format:  [Detailed ▼]                                       │
+│                                                             │
+│ [x] Available for Google Drive sync                         │
+│     └─ This summary will be included in the next sync       │
+│                                                             │
+│ [Cancel]  [Push to Discord]                                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Scheduler Configuration
+
+Scheduled summaries can have a default sync eligibility:
+
+```yaml
+# Schedule configuration
+schedule:
+  name: "Weekly Dev Summary"
+  cron: "0 9 * * 1"  # Monday 9am
+  channels: ["#dev-general"]
+  granularity: "weekly"
+  sync_eligible: true  # Default: respect server settings
+```
+
+#### Resolution Hierarchy
+
+Sync eligibility is determined by:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│             Sync Eligibility Resolution                      │
+├─────────────────────────────────────────────────────────────┤
+│  1. Server sync settings (always takes precedence)          │
+│     └─► If server filters exclude the summary, skip         │
+│     └─► Server-level filters are the final authority        │
+│                                                             │
+│  2. Per-summary sync_eligible flag                          │
+│     └─► Set at creation (push/scheduler)                    │
+│     └─► Can be toggled later in summary details             │
+│     └─► Default: true (opt-out model)                       │
+│                                                             │
+│  3. Implicit eligibility                                    │
+│     └─► All summaries eligible unless explicitly excluded   │
+│     └─► Older summaries without flag treated as eligible    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Opt-out model rationale**:
+- Most summaries should be synced by default
+- Users explicitly exclude sensitive content
+- Server settings provide additional layer of control
+- Prevents accidentally missing important summaries
+
+#### Database Extension
+
+```sql
+-- Add sync eligibility to stored summaries
+ALTER TABLE stored_summaries ADD COLUMN sync_eligible INTEGER DEFAULT 1;
+```
+
+### 5. UI Configuration
 
 Add sync configuration panel in **Settings page** (not Retrospective - sync configuration is a settings concern):
 
@@ -101,20 +197,33 @@ Add sync configuration panel in **Settings page** (not Retrospective - sync conf
 │ Connected as: admin@example.com                             │
 │ Folder: Shared Drives > Engineering > SummaryBot            │
 │                                                             │
-│ Export Settings                                             │
+│ Filter Settings                                             │
 │ ┌─────────────────────────────────────────────────────────┐ │
-│ │ Content: [All Summaries ▼] [Edit Filters]               │ │
-│ │ Format:  [x] Markdown  [ ] Include JSON backup          │ │
-│ │ Organize: [By Period ▼] → [Weekly ▼]                    │ │
-│ │ Include:  [x] Conversations  [ ] Wiki Pages             │ │
+│ │ Preset:   [Weekly Channel Summaries ▼] [Custom...]      │ │
+│ │ Scope:    [x] Channel  [ ] Server-wide                  │ │
+│ │ Period:   [Weekly ▼]                                    │ │
+│ │ Source:   [x] Scheduled  [x] Manual  [ ] Archive        │ │
+│ │ Eligible: [x] Only sync-eligible summaries              │ │
 │ └─────────────────────────────────────────────────────────┘ │
 │                                                             │
-│ Stats: 247 summaries available (12 new since last sync)    │
+│ Export Format                                               │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ [x] Markdown (.md)    Human-readable format             │ │
+│ │ [ ] JSON (.json)      Machine-readable backup           │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                                                             │
+│ Folder Organization                                         │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ Structure: [By Period ▼]  Period: [Weekly ▼]            │ │
+│ │ Include:   [x] Conversations  [ ] Wiki Pages            │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                                                             │
+│ Stats: 247 summaries matching filters (12 new)              │
 │                                                             │
 │ [Sync Sample (3)]  [Sync All (247)]  Last: 2026-05-09      │
 │                                                             │
-│ ℹ️  "Sync Sample" uploads 3 recent files so you can verify │
-│     folder structure and format before syncing everything.  │
+│ ℹ️  "Sync Sample" uploads 3 files (MD + JSON if enabled)   │
+│     so you can verify format before syncing everything.     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -125,12 +234,13 @@ Add sync configuration panel in **Settings page** (not Retrospective - sync conf
 - Users configure it once and forget about it
 - Consistent with other integration settings (prompt repos, channel sensitivity)
 
-### 5. Database Schema
+### 6. Database Schema
 
 Extend `sync_server_configs` table:
 
 ```sql
 ALTER TABLE sync_server_configs ADD COLUMN export_filters TEXT;  -- JSON
+ALTER TABLE sync_server_configs ADD COLUMN include_markdown INTEGER DEFAULT 1;
 ALTER TABLE sync_server_configs ADD COLUMN include_json INTEGER DEFAULT 0;
 ALTER TABLE sync_server_configs ADD COLUMN folder_structure TEXT DEFAULT 'by-period';
 ALTER TABLE sync_server_configs ADD COLUMN period_grouping TEXT DEFAULT 'week';
@@ -138,7 +248,13 @@ ALTER TABLE sync_server_configs ADD COLUMN include_wiki INTEGER DEFAULT 0;
 ALTER TABLE sync_server_configs ADD COLUMN include_conversations INTEGER DEFAULT 1;
 ```
 
-### 6. Incremental Sync
+Add sync eligibility to stored summaries:
+
+```sql
+ALTER TABLE stored_summaries ADD COLUMN sync_eligible INTEGER DEFAULT 1;
+```
+
+### 7. Incremental Sync
 
 Track what's been synced to avoid re-uploading:
 
@@ -160,7 +276,7 @@ On sync:
 3. Upload only new/updated summaries
 4. Record in `sync_history`
 
-### 7. Sync Sample Preview
+### 8. Sync Sample Preview
 
 Allow admins to preview what will be synced before committing to a full sync:
 
@@ -231,7 +347,7 @@ async def sync_sample(
 - Builds confidence in sync configuration
 - Low-risk way to test new filter settings
 
-### 8. Period Folder Logic
+### 9. Period Folder Logic
 
 ```python
 def get_period_folder_name(date: datetime, grouping: str) -> str:
@@ -251,30 +367,49 @@ def get_period_folder_name(date: datetime, grouping: str) -> str:
 ## Implementation
 
 ### Phase 1: Core Export Configuration
-- [ ] Add `SyncExportConfig` model
+- [ ] Add `SyncExportConfig` model with filters
 - [ ] Extend `ServerSyncConfig` with export settings
-- [ ] Create migration for new columns
+- [ ] Create migration for new columns (include_markdown, include_json, filters)
 - [ ] Update sync trigger to use filters
+- [ ] Add filter presets (Weekly Channel, Server-wide, etc.)
 
-### Phase 2: Folder Structure
-- [ ] Implement period folder creation in Drive
-- [ ] Add `conversations/` and `wiki/` top-level folders
-- [ ] Place files in correct period folders
+### Phase 2: Format Options
+- [x] Implement markdown export
+- [ ] Add `include_markdown` toggle (default: true)
+- [ ] Add `include_json` toggle (default: false)
+- [ ] Sample sync respects both format toggles
+- [ ] Upload both file types when both enabled
 
-### Phase 3: Incremental Sync
+### Phase 3: Folder Structure
+- [x] Implement period folder creation in Drive
+- [x] Add `conversations/` top-level folder
+- [ ] Add `wiki/` top-level folder
+- [x] Place files in correct period folders
+
+### Phase 4: Incremental Sync
 - [ ] Create `sync_history` table
 - [ ] Track synced files by Drive file ID
 - [ ] Only sync new/updated summaries
 
-### Phase 4: UI
-- [x] Add export settings panel to Settings page (moved from Retrospective)
-- [ ] Integrate summary filter picker
+### Phase 5: UI Filters
+- [x] Add export settings panel to Settings page
+- [ ] Add filter preset dropdown
+- [ ] Add scope filter (channel vs server-wide)
+- [ ] Add source filter (scheduled, manual, archive)
+- [ ] Add sync-eligible filter checkbox
 - [ ] Show new-since-last-sync count
-- [ ] Add "Sync Sample" button with preview
-- [ ] Disable My Drive selection for tenanted servers
-- [ ] Show warning when Shared Drive required
+- [x] Add "Sync Sample" button with preview
+- [x] Disable My Drive selection for tenanted servers
+- [x] Show warning when Shared Drive required
 
-### Phase 5: Domain Validation (Future)
+### Phase 6: Sync Eligibility at Creation
+- [ ] Add `sync_eligible` column to stored_summaries
+- [ ] Add sync eligibility toggle to Discord push dialog
+- [ ] Add sync_eligible option to scheduler configuration
+- [ ] Default to true (opt-out model)
+- [ ] Server settings take precedence over per-summary flag
+
+### Phase 7: Domain Validation (Future)
 - [ ] Add Google Admin SDK scope for domain lookup
 - [ ] Validate Shared Drive ownership matches user domain
 - [ ] Block sync to external organization drives
@@ -284,12 +419,16 @@ def get_period_folder_name(date: datetime, grouping: str) -> str:
 
 ### Positive
 - Users control what gets synced (reduce noise)
+- Filter presets simplify common use cases (weekly channel summaries)
+- Per-summary sync eligibility for fine-grained control
+- Both MD and JSON formats available (toggle independently)
 - Organized folder structure (easier to navigate)
 - Smaller sync payloads (only markdown by default)
 - Wiki and conversations separated (clearer purpose)
 - Incremental sync (faster, less API usage)
 - Shared Drive requirement ensures data ownership continuity
-- Sample sync reduces configuration errors
+- Sample sync with format preview reduces configuration errors
+- Scheduler/push integration for sync-at-creation decisions
 - Domain validation (future) prevents data leakage
 
 ### Negative

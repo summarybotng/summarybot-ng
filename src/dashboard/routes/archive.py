@@ -7,7 +7,7 @@ Phase 10: Frontend UI - Backend API
 import json
 import logging
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -2532,7 +2532,9 @@ async def get_sync_preview(server_id: str, limit: int = 3):
                     period_folder = f"{month_start.strftime('%Y-%m-%d')}--{month_end.strftime('%Y-%m-%d')}"
 
                 # Generate title from summary
-                channel_name = summary.channel_name or "general"
+                channel_name = "general"
+                if summary.summary_result and summary.summary_result.context:
+                    channel_name = summary.summary_result.context.channel_name or "general"
                 title = f"{channel_name}_{summary.id[:8]}"
 
                 # Estimate file size (rough: 1 byte per char of summary text)
@@ -2579,7 +2581,6 @@ async def trigger_sample_sync(source_key: str, sample_size: int = 3):
     folder structure and format before syncing everything.
     """
     import httpx
-    from datetime import timedelta
 
     service = get_sync_service()
     oauth = get_oauth_flow()
@@ -2665,7 +2666,9 @@ async def trigger_sample_sync(source_key: str, sample_size: int = 3):
                 )
 
                 # Generate markdown content
-                channel_name = summary.channel_name or "general"
+                channel_name = "general"
+                if summary.summary_result and summary.summary_result.context:
+                    channel_name = summary.summary_result.context.channel_name or "general"
                 title = f"{channel_name}_{summary.id[:8]}"
                 markdown_content = _generate_summary_markdown(summary)
 
@@ -2826,13 +2829,22 @@ def _generate_summary_markdown(summary) -> str:
     """Generate markdown content for a summary."""
     lines = []
 
+    # Get channel name safely from nested structure
+    channel_name = "Summary"
+    if summary.summary_result and summary.summary_result.context:
+        channel_name = summary.summary_result.context.channel_name or "Summary"
+
     # Header
-    lines.append(f"# {summary.channel_name or 'Summary'}")
+    lines.append(f"# {channel_name}")
     lines.append("")
     lines.append(f"**Date:** {summary.created_at.strftime('%Y-%m-%d')}")
-    lines.append(f"**Channel:** {summary.channel_name or 'Unknown'}")
-    if summary.message_count:
-        lines.append(f"**Messages:** {summary.message_count}")
+    lines.append(f"**Channel:** {channel_name}")
+    # message_count may be in summary_result.context
+    message_count = None
+    if summary.summary_result and summary.summary_result.context:
+        message_count = getattr(summary.summary_result.context, 'message_count', None)
+    if message_count:
+        lines.append(f"**Messages:** {message_count}")
     lines.append("")
 
     # Summary text

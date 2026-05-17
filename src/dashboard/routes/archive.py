@@ -2195,9 +2195,14 @@ class ServerSyncConfigResponse(BaseModel):
     using_fallback: bool = False
     # ADR-091: Export configuration
     export_filters: Optional[Dict[str, Any]] = None
+    include_markdown: bool = True  # Include markdown files (default: yes)
     include_json: bool = False
     folder_structure: str = "by-period"
     period_grouping: str = "week"
+    # ADR-091: Filter fields
+    filter_scope: Optional[str] = None  # "channel" | "category" | "server" | None (all)
+    filter_source: Optional[str] = None  # "scheduled" | "manual" | "realtime" | "archive" | None (all)
+    filter_granularity: Optional[str] = None  # "daily" | "weekly" | "monthly" | None (all)
 
 
 class ConfigureServerSyncRequest(BaseModel):
@@ -2212,9 +2217,14 @@ class ConfigureServerSyncRequest(BaseModel):
     include_metadata: bool = True
     # ADR-091: Export configuration
     export_filters: Optional[Dict[str, Any]] = None
+    include_markdown: bool = True  # Include markdown files (default: yes)
     include_json: bool = False
     folder_structure: str = "by-period"
     period_grouping: str = "week"
+    # ADR-091: Filter fields
+    filter_scope: Optional[str] = None  # "channel" | "category" | "server" | None (all)
+    filter_source: Optional[str] = None  # "scheduled" | "manual" | "realtime" | "archive" | None (all)
+    filter_granularity: Optional[str] = None  # "daily" | "weekly" | "monthly" | None (all)
 
 
 def get_oauth_flow():
@@ -2372,9 +2382,14 @@ async def get_server_sync_config(server_id: str):
             using_fallback=False,
             # ADR-091: Export configuration
             export_filters=config.export_filters,
+            include_markdown=config.include_markdown,
             include_json=config.include_json,
             folder_structure=config.folder_structure,
             period_grouping=config.period_grouping,
+            # ADR-091: Filter fields
+            filter_scope=config.filter_scope,
+            filter_source=config.filter_source,
+            filter_granularity=config.filter_granularity,
         )
 
     # Check if using fallback
@@ -2427,19 +2442,26 @@ async def get_sync_stats(server_id: str):
             filter_scope = getattr(config, 'filter_scope', None)
             filter_source = getattr(config, 'filter_source', None)
             filter_granularity = getattr(config, 'filter_granularity', None)
+            logger.debug(f"Sync stats filters - scope={filter_scope!r}, source={filter_source!r}, gran={filter_granularity!r}")
 
             if filter_scope:
+                before = len(filtered)
                 if filter_scope == "channel":
                     filtered = [s for s in filtered if len(getattr(s, 'source_channel_ids', []) or []) == 1]
                 elif filter_scope == "category":
                     filtered = [s for s in filtered if 2 <= len(getattr(s, 'source_channel_ids', []) or []) <= 10]
                 elif filter_scope == "server":
                     filtered = [s for s in filtered if len(getattr(s, 'source_channel_ids', []) or []) > 10]
+                logger.debug(f"Scope filter {filter_scope}: {before} -> {len(filtered)}")
 
             if filter_source:
-                filtered = [s for s in filtered if getattr(s, 'source', None) == filter_source]
+                before = len(filtered)
+                # Compare enum value to filter string
+                filtered = [s for s in filtered if getattr(s, 'source', None) and getattr(s, 'source').value == filter_source]
+                logger.debug(f"Source filter {filter_source}: {before} -> {len(filtered)}")
 
             if filter_granularity:
+                before = len(filtered)
                 def matches_gran(s):
                     start = getattr(s, 'start_time', None)
                     end = getattr(s, 'end_time', None)
@@ -2454,9 +2476,11 @@ async def get_sync_stats(server_id: str):
                         return days > 20
                     return True
                 filtered = [s for s in filtered if matches_gran(s)]
+                logger.debug(f"Granularity filter {filter_granularity}: {before} -> {len(filtered)}")
 
         summaries_available = len(filtered)
         filter_active = summaries_available != summaries_total
+        logger.info(f"Sync stats for {server_id}: {summaries_available}/{summaries_total} available, filter_active={filter_active}")
 
     # Get files in Drive folder
     files_in_drive = 0
@@ -2557,10 +2581,10 @@ def _apply_sync_filters(summaries: List, config) -> List:
             # Server-wide summaries (more than 10 channels or explicitly server scope)
             filtered = [s for s in filtered if len(getattr(s, 'source_channel_ids', []) or []) > 10]
 
-    # Filter by source
+    # Filter by source (compare enum value to filter string)
     filter_source = getattr(config, 'filter_source', None)
     if filter_source:
-        filtered = [s for s in filtered if getattr(s, 'source', None) == filter_source]
+        filtered = [s for s in filtered if getattr(s, 'source', None) and getattr(s, 'source').value == filter_source]
 
     # Filter by granularity (daily/weekly/monthly based on date range)
     filter_granularity = getattr(config, 'filter_granularity', None)

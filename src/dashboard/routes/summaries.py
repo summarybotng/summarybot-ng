@@ -541,7 +541,7 @@ async def _run_split_job(
     """
     from ...message_processing import MessageProcessor
     from ...models.summary import SummaryOptions, SummaryLength
-    from ...models.job import SummaryJob, JobType, JobStatus
+    from ...models.summary_job import SummaryJob, JobType, JobStatus
 
     logger.info(f"[{job_id}] Starting split job for {len(channel_ids)} channel(s)")
 

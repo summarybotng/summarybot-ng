@@ -261,6 +261,16 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
                     await stored_summary_repo.mark_wiki_ingested(summary.id)
                     logger.info(f"Wiki ingested summary {summary.id} (attempt {attempt + 1})")
 
+                    # ADR-093: Mark vector ingestion if it happened
+                    if ingest_result.vector_ingested:
+                        await stored_summary_repo.mark_vector_ingested(
+                            summary.id, ingest_result.vector_unit_count
+                        )
+                        logger.info(
+                            f"Vector ingested summary {summary.id}: "
+                            f"{ingest_result.vector_unit_count} units"
+                        )
+
                     # ADR-076: Trigger auto-synthesis if enabled
                     await self._trigger_wiki_synthesis_if_enabled(
                         guild_id=summary.guild_id,

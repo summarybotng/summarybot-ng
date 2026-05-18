@@ -24,6 +24,7 @@ import {
   Settings2,
   AlertTriangle,
   BookOpen,
+  Boxes,
 } from "lucide-react";
 import { SummaryActions } from "./SummaryActions";
 import type { StoredSummary, SummarySourceType } from "@/types";
@@ -241,6 +242,13 @@ export function StoredSummaryCard({
               <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
                 <BookOpen className="mr-1 h-3 w-3" />
                 Wiki
+              </Badge>
+            )}
+            {/* ADR-093: RuVector ingested indicator */}
+            {summary.vector_ingested && (
+              <Badge variant="outline" className="bg-violet-500/10 text-violet-600 border-violet-500/30">
+                <Boxes className="mr-1 h-3 w-3" />
+                {summary.vector_unit_count || 0} units
               </Badge>
             )}
             {/* ADR-087: Continuity chain indicator */}

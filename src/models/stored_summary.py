@@ -114,6 +114,11 @@ class StoredSummary(BaseModel):
     wiki_ingested: bool = False
     wiki_ingested_at: Optional[datetime] = None
 
+    # ADR-093: RuVector ingestion tracking
+    vector_ingested: bool = False
+    vector_ingested_at: Optional[datetime] = None
+    vector_unit_count: int = 0  # Number of knowledge units extracted
+
     # ADR-073: Private channel content indicator
     contains_sensitive_channels: bool = False
 
@@ -340,6 +345,10 @@ class StoredSummary(BaseModel):
             # ADR-067: Wiki ingestion status
             "wiki_ingested": self.wiki_ingested,
             "wiki_ingested_at": self.wiki_ingested_at.isoformat() if self.wiki_ingested_at else None,
+            # ADR-093: RuVector ingestion status
+            "vector_ingested": self.vector_ingested,
+            "vector_ingested_at": self.vector_ingested_at.isoformat() if self.vector_ingested_at else None,
+            "vector_unit_count": self.vector_unit_count,
             # ADR-073: Private channel content indicator
             "contains_sensitive_channels": self.contains_sensitive_channels,
             # ADR-075: Split tracking
@@ -375,6 +384,10 @@ class StoredSummary(BaseModel):
             # ADR-067: Wiki ingestion status
             "wiki_ingested": self.wiki_ingested,
             "wiki_ingested_at": self.wiki_ingested_at.isoformat() if self.wiki_ingested_at else None,
+            # ADR-093: RuVector ingestion status
+            "vector_ingested": self.vector_ingested,
+            "vector_ingested_at": self.vector_ingested_at.isoformat() if self.vector_ingested_at else None,
+            "vector_unit_count": self.vector_unit_count,
             # ADR-073: Private channel content indicator
             "contains_sensitive_channels": self.contains_sensitive_channels,
             # ADR-075: Split tracking
@@ -419,6 +432,10 @@ class StoredSummary(BaseModel):
             # ADR-067: Wiki ingestion status
             wiki_ingested=data.get("wiki_ingested", False),
             wiki_ingested_at=datetime.fromisoformat(data["wiki_ingested_at"]) if data.get("wiki_ingested_at") else None,
+            # ADR-093: RuVector ingestion status
+            vector_ingested=data.get("vector_ingested", False),
+            vector_ingested_at=datetime.fromisoformat(data["vector_ingested_at"]) if data.get("vector_ingested_at") else None,
+            vector_unit_count=data.get("vector_unit_count", 0),
             # ADR-073: Private channel content indicator
             contains_sensitive_channels=data.get("contains_sensitive_channels", False),
             # ADR-075: Split tracking

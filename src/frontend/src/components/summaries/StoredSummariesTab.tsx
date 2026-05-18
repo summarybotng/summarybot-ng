@@ -65,6 +65,7 @@ import {
   Hash,
   Lock,
   BookOpen,  // ADR-086: Wiki navigation
+  Boxes,     // ADR-093: RuVector indicator
 } from "lucide-react";
 import {
   Select,
@@ -1462,6 +1463,35 @@ function StoredSummaryDetailSheet({
                         No wiki pages reference this summary yet.
                       </p>
                     )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* ADR-093: RuVector Knowledge Units */}
+              {summary.vector_ingested && (
+                <Card className="bg-violet-500/5 border-violet-500/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Boxes className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                      Knowledge Units
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Vectorized {summary.vector_ingested_at ? formatDateTime(summary.vector_ingested_at) : ""}
+                    </p>
+                    <p className="text-sm">
+                      <span className="font-medium">{summary.vector_unit_count || 0}</span> knowledge units extracted
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      View in{" "}
+                      <a
+                        href={`/guilds/${guildId}/ruvector`}
+                        className="text-primary hover:underline"
+                      >
+                        RuVector Explorer
+                      </a>
+                    </p>
                   </CardContent>
                 </Card>
               )}

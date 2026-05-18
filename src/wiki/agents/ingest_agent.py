@@ -46,6 +46,9 @@ class IngestResult:
     contradictions: List[Dict[str, Any]] = field(default_factory=list)
     success: bool = True
     error: Optional[str] = None
+    # ADR-093: RuVector tracking
+    vector_ingested: bool = False
+    vector_unit_count: int = 0
 
 
 class WikiIngestAgent:
@@ -136,6 +139,9 @@ class WikiIngestAgent:
             await self.repository.save_source(source)
 
             # ADR-057 Phase 4: Dual-write to RuVector if hook is configured
+            # ADR-093: Track vector ingestion in result
+            vector_ingested = False
+            vector_unit_count = 0
             if self.ruvector_hook:
                 try:
                     ruvector_result = await self.ruvector_hook.on_summary_ingested(
@@ -147,17 +153,24 @@ class WikiIngestAgent:
                         key_points=key_points,
                         action_items=action_items,
                     )
-                    logger.info(
-                        f"RuVector dual-write: {len(ruvector_result.units)} units, "
-                        f"{ruvector_result.edges_created} edges"
-                    )
+                    if ruvector_result:
+                        vector_ingested = True
+                        vector_unit_count = len(ruvector_result.units)
+                        logger.info(
+                            f"RuVector dual-write: {vector_unit_count} units, "
+                            f"{ruvector_result.edges_created} edges"
+                        )
                 except Exception as e:
                     logger.warning(f"RuVector dual-write failed (non-fatal): {e}")
 
             # 2. Identify topics to update
             topics = self._extract_topics(summary_text, key_points, technical_terms)
 
-            result = IngestResult(source_id=source.id)
+            result = IngestResult(
+                source_id=source.id,
+                vector_ingested=vector_ingested,
+                vector_unit_count=vector_unit_count,
+            )
 
             # 3. Update or create topic pages
             for topic in topics:

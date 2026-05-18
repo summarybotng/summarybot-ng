@@ -383,6 +383,10 @@ export interface StoredSummary {
   // ADR-086: Wiki ingestion status
   wiki_ingested?: boolean;
   wiki_ingested_at?: string;
+  // ADR-093: RuVector ingestion status
+  vector_ingested?: boolean;
+  vector_ingested_at?: string;
+  vector_unit_count?: number;
   // ADR-087: Continuity chain fields
   continuity_week_number?: number;
   previous_summary_id?: string;

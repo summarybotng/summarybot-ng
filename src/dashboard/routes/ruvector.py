@@ -1554,7 +1554,7 @@ async def clear_ruvector(
 
     USE WITH CAUTION - this cannot be undone.
     """
-    from ..audit import audit_log
+    from ...logging.audit_service import audit_log
 
     # Check admin role
     guild_roles = user.get("guild_roles", {})

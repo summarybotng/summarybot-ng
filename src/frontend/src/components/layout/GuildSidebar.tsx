@@ -1,3 +1,4 @@
+import type { ComponentType } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useGuild } from "@/hooks/useGuilds";
@@ -10,6 +11,7 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -40,24 +42,68 @@ import {
 
 // ADR-040: Jobs promoted to top-level navigation
 // ADR-078: Added Sources for platform-agnostic channel view
-const navItems = [
-  { icon: LayoutDashboard, label: "Overview", path: "" },
-  { icon: Layers, label: "Sources", path: "/sources" },
-  { icon: Hash, label: "Channels", path: "/channels" },
-  { icon: FileText, label: "Summaries", path: "/summaries" },
-  { icon: Briefcase, label: "Jobs", path: "/jobs", showJobsBadge: true },
-  { icon: Calendar, label: "Schedules", path: "/schedules" },
-  { icon: FileCode, label: "Prompts", path: "/prompt-templates" },
-  { icon: Webhook, label: "Webhooks", path: "/webhooks" },
-  { icon: Rss, label: "Feeds", path: "/feeds" },
-  { icon: AlertTriangle, label: "Errors", path: "/errors", showBadge: true },
-  { icon: BookOpen, label: "Wiki", path: "/wiki" },
-  { icon: Database, label: "RuVector", path: "/ruvector" },
-  { icon: BarChart3, label: "Coverage", path: "/coverage" },
-  { icon: MessageSquareText, label: "WhatsApp", path: "/whatsapp" },
-  { icon: Shield, label: "Audit Log", path: "/audit" },
-  { icon: Archive, label: "Retrospective", path: "/archive" },
-  { icon: Settings, label: "Settings", path: "/settings" },
+// Navigation organized into logical groups for better UX
+interface NavItem {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  path: string;
+  showBadge?: boolean;
+  showJobsBadge?: boolean;
+}
+
+interface NavGroup {
+  label?: string; // Optional - no label for first group
+  items: NavItem[];
+}
+
+const navGroups: NavGroup[] = [
+  {
+    // Core - no label, always visible at top
+    items: [
+      { icon: LayoutDashboard, label: "Overview", path: "" },
+      { icon: FileText, label: "Summaries", path: "/summaries" },
+      { icon: Briefcase, label: "Jobs", path: "/jobs", showJobsBadge: true },
+    ],
+  },
+  {
+    label: "Sources",
+    items: [
+      { icon: Layers, label: "All Sources", path: "/sources" },
+      { icon: Hash, label: "Channels", path: "/channels" },
+      { icon: MessageSquareText, label: "WhatsApp", path: "/whatsapp" },
+    ],
+  },
+  {
+    label: "Automation",
+    items: [
+      { icon: Calendar, label: "Schedules", path: "/schedules" },
+      { icon: Rss, label: "Feeds", path: "/feeds" },
+      { icon: Webhook, label: "Webhooks", path: "/webhooks" },
+    ],
+  },
+  {
+    label: "Knowledge",
+    items: [
+      { icon: BookOpen, label: "Wiki", path: "/wiki" },
+      { icon: Database, label: "RuVector", path: "/ruvector" },
+      { icon: BarChart3, label: "Coverage", path: "/coverage" },
+    ],
+  },
+  {
+    label: "History",
+    items: [
+      { icon: Archive, label: "Retrospective", path: "/archive" },
+      { icon: Shield, label: "Audit Log", path: "/audit" },
+    ],
+  },
+  {
+    label: "Settings",
+    items: [
+      { icon: FileCode, label: "Prompts", path: "/prompt-templates" },
+      { icon: AlertTriangle, label: "Errors", path: "/errors", showBadge: true },
+      { icon: Settings, label: "Settings", path: "/settings" },
+    ],
+  },
 ];
 
 export function GuildSidebar() {
@@ -116,46 +162,53 @@ export function GuildSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {navItems.map(({ icon: Icon, label, path, showBadge, showJobsBadge }) => (
-                <SidebarMenuItem key={path}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive(path)}
-                  >
-                    <Link
-                      to={`${basePath}${path}`}
-                      onClick={handleNavClick}
-                      className={cn(
-                        "flex items-center gap-3",
-                        isActive(path) && "bg-sidebar-primary text-sidebar-primary-foreground"
-                      )}
+        {navGroups.map((group, groupIndex) => (
+          <SidebarGroup key={group.label || "core"}>
+            {group.label && (
+              <SidebarGroupLabel className="text-xs font-medium text-sidebar-foreground/70 uppercase tracking-wider px-2">
+                {group.label}
+              </SidebarGroupLabel>
+            )}
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {group.items.map(({ icon: Icon, label, path, showBadge, showJobsBadge }) => (
+                  <SidebarMenuItem key={path}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive(path)}
                     >
-                      <Icon className="h-4 w-4" />
-                      <span className="flex-1">{label}</span>
-                      {/* ADR-040: Jobs badge showing active/failed count */}
-                      {showJobsBadge && activeJobCount && activeJobCount.total > 0 && (
-                        <Badge
-                          variant={activeJobCount.hasFailedJobs ? "destructive" : "secondary"}
-                          className="h-5 min-w-5 px-1.5 text-xs"
-                        >
-                          {activeJobCount.total > 99 ? "99+" : activeJobCount.total}
-                        </Badge>
-                      )}
-                      {showBadge && unresolvedErrorCount && unresolvedErrorCount > 0 && (
-                        <Badge variant="destructive" className="h-5 min-w-5 px-1.5 text-xs">
-                          {unresolvedErrorCount > 99 ? "99+" : unresolvedErrorCount}
-                        </Badge>
-                      )}
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+                      <Link
+                        to={`${basePath}${path}`}
+                        onClick={handleNavClick}
+                        className={cn(
+                          "flex items-center gap-3",
+                          isActive(path) && "bg-sidebar-primary text-sidebar-primary-foreground"
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                        <span className="flex-1">{label}</span>
+                        {/* ADR-040: Jobs badge showing active/failed count */}
+                        {showJobsBadge && activeJobCount && activeJobCount.total > 0 && (
+                          <Badge
+                            variant={activeJobCount.hasFailedJobs ? "destructive" : "secondary"}
+                            className="h-5 min-w-5 px-1.5 text-xs"
+                          >
+                            {activeJobCount.total > 99 ? "99+" : activeJobCount.total}
+                          </Badge>
+                        )}
+                        {showBadge && unresolvedErrorCount && unresolvedErrorCount > 0 && (
+                          <Badge variant="destructive" className="h-5 min-w-5 px-1.5 text-xs">
+                            {unresolvedErrorCount > 99 ? "99+" : unresolvedErrorCount}
+                          </Badge>
+                        )}
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
     </Sidebar>
   );

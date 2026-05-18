@@ -7,7 +7,7 @@
  * - Generate past (retrospective)
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,8 +21,18 @@ import { WizardProgress } from "./shared/WizardProgress";
 import { WhatStep } from "./steps/WhatStep";
 import { WhenStep } from "./steps/WhenStep";
 import { DeliveryStep } from "./steps/DeliveryStep";
-import type { WizardState, WizardStep, WhenType } from "./types";
+import type { WizardState, WizardStep, WhenType, Platform } from "./types";
 import { initialWizardState } from "./types";
+
+// LocalStorage key for persisting wizard selections
+const getStorageKey = (guildId: string) => `wizard_selection_${guildId}`;
+
+interface PersistedSelection {
+  platform: Platform;
+  scope: "channel" | "category" | "guild";
+  channelIds: string[];
+  categoryId: string;
+}
 
 interface SummaryWizardProps {
   open: boolean;
@@ -49,6 +59,50 @@ export function SummaryWizard({
   }));
   const [step, setStep] = useState<WizardStep>("what");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasRestoredSelection, setHasRestoredSelection] = useState(false);
+
+  // Restore selection from localStorage when wizard opens
+  useEffect(() => {
+    if (open && guildId && !hasRestoredSelection) {
+      try {
+        const saved = localStorage.getItem(getStorageKey(guildId));
+        if (saved) {
+          const selection: PersistedSelection = JSON.parse(saved);
+          setState((prev) => ({
+            ...prev,
+            platform: selection.platform || prev.platform,
+            scope: selection.scope || prev.scope,
+            channelIds: selection.channelIds || [],
+            categoryId: selection.categoryId || "",
+          }));
+        }
+      } catch (e) {
+        console.warn("Failed to restore wizard selection:", e);
+      }
+      setHasRestoredSelection(true);
+    }
+    // Reset restoration flag when dialog closes
+    if (!open) {
+      setHasRestoredSelection(false);
+    }
+  }, [open, guildId, hasRestoredSelection]);
+
+  // Save selection to localStorage when it changes
+  useEffect(() => {
+    if (guildId && hasRestoredSelection) {
+      const selection: PersistedSelection = {
+        platform: state.platform,
+        scope: state.scope,
+        channelIds: state.channelIds,
+        categoryId: state.categoryId,
+      };
+      try {
+        localStorage.setItem(getStorageKey(guildId), JSON.stringify(selection));
+      } catch (e) {
+        console.warn("Failed to save wizard selection:", e);
+      }
+    }
+  }, [guildId, state.platform, state.scope, state.channelIds, state.categoryId, hasRestoredSelection]);
 
   const handleChange = useCallback((updates: Partial<WizardState>) => {
     setState((prev) => ({ ...prev, ...updates }));
@@ -56,9 +110,18 @@ export function SummaryWizard({
 
   const handleClose = () => {
     onOpenChange(false);
-    // Reset after animation
+    // Reset step and non-selection state after animation
+    // Keep platform, scope, channelIds, categoryId to persist selection
     setTimeout(() => {
-      setState({ ...initialWizardState, whenType: initialWhenType });
+      setState((prev) => ({
+        ...initialWizardState,
+        whenType: initialWhenType,
+        // Preserve selection state
+        platform: prev.platform,
+        scope: prev.scope,
+        channelIds: prev.channelIds,
+        categoryId: prev.categoryId,
+      }));
       setStep("what");
     }, 200);
   };

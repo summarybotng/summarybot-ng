@@ -1167,12 +1167,22 @@ async def pause_job(job_id: str, reason: str = "user_requested"):
 
 @router.post("/jobs/{job_id}/resume")
 async def resume_job(job_id: str):
-    """Resume a paused job."""
+    """Resume a paused job.
+
+    After server restart, jobs are lost from memory but preserved in the database.
+    This endpoint will restore the job from DB if needed before resuming.
+    """
     import asyncio
     from src.archive.generator import JobStatus
 
     generator = await get_generator()
+
+    # Try in-memory first
     job = generator.get_job(job_id)
+
+    # If not in memory, try to restore from database (e.g., after server restart)
+    if not job:
+        job = await generator.restore_job_from_db(job_id)
 
     if not job:
         raise HTTPException(404, f"Job not found: {job_id}")

@@ -929,6 +929,67 @@ class RetrospectiveGenerator:
             logger.warning(f"Failed to get job {job_id} from database: {e}")
         return None
 
+    async def restore_job_from_db(self, job_id: str) -> Optional[GenerationJob]:
+        """Restore a GenerationJob from database after server restart.
+
+        This allows resuming jobs that were paused when the server restarted.
+        """
+        if not self.summary_job_repository:
+            logger.warning("Cannot restore job: no summary_job_repository")
+            return None
+
+        try:
+            db_job = await self.summary_job_repository.get(job_id)
+            if not db_job:
+                return None
+
+            # Only restore retrospective jobs
+            if db_job.job_type.value != "retrospective":
+                logger.warning(f"Cannot restore non-retrospective job: {db_job.job_type}")
+                return None
+
+            # Reconstruct ArchiveSource
+            source = ArchiveSource(
+                source_type=SourceType.DISCORD,  # TODO: support other types
+                server_id=db_job.guild_id,
+                server_name=db_job.server_name or db_job.guild_id,
+                channel_id=db_job.channel_ids[0] if db_job.channel_ids else None,
+            )
+
+            # Create GenerationJob with restored state
+            job = GenerationJob(
+                job_id=job_id,
+                source=source,
+                date_range=(db_job.date_range_start, db_job.date_range_end),
+                granularity=db_job.granularity or "daily",
+                timezone=db_job.metadata.get("timezone", "UTC") if db_job.metadata else "UTC",
+                status=JobStatus.PAUSED,  # Keep as paused until explicitly resumed
+                progress=GenerationProgress(
+                    total_periods=db_job.progress_total,
+                    completed=db_job.progress_current,
+                ),
+                cost=CostProgress(
+                    cost_usd=db_job.cost_usd,
+                    tokens_input=db_job.tokens_input,
+                    tokens_output=db_job.tokens_output,
+                ),
+                summary_type=db_job.summary_type,
+                perspective=db_job.perspective,
+                force_regenerate=db_job.force_regenerate,
+                pause_reason=db_job.pause_reason,
+                summary_ids=db_job.summary_ids or [],
+            )
+
+            # Add to in-memory jobs
+            self._jobs[job_id] = job
+            logger.info(f"Restored job {job_id} from database (progress: {job.progress.completed}/{job.progress.total_periods})")
+
+            return job
+
+        except Exception as e:
+            logger.error(f"Failed to restore job {job_id} from database: {e}")
+            return None
+
     def list_jobs(self, status: Optional[JobStatus] = None) -> List[GenerationJob]:
         """List jobs, optionally filtered by status."""
         jobs = list(self._jobs.values())

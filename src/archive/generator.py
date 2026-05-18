@@ -300,6 +300,17 @@ class RetrospectiveGenerator:
 
             # Convert internal job to database model
             start_date, end_date = job.date_range
+
+            # Build progress message with breakdown
+            parts = []
+            if job.progress.completed > 0:
+                parts.append(f"{job.progress.completed} generated")
+            if job.progress.skipped > 0:
+                parts.append(f"{job.progress.skipped} skipped (already exist)")
+            if job.progress.failed > 0:
+                parts.append(f"{job.progress.failed} failed")
+            progress_message = ", ".join(parts) if parts else "Starting..."
+
             db_job = SummaryJob(
                 id=job.job_id,
                 guild_id=job.source.server_id,
@@ -314,6 +325,7 @@ class RetrospectiveGenerator:
                 force_regenerate=job.force_regenerate,
                 progress_current=job.progress.completed + job.progress.failed + job.progress.skipped,
                 progress_total=job.progress.total_periods,
+                progress_message=progress_message,
                 current_period=job.progress.current_period,
                 cost_usd=job.cost.cost_usd,
                 tokens_input=job.cost.tokens_input,

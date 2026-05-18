@@ -39,6 +39,9 @@ class BackfillConfig:
     enable_resource_monitoring: bool = True
     cpu_threshold: float = 80.0
     memory_threshold: float = 85.0
+    # Toggle settings - what to populate
+    populate_wiki: bool = True  # Whether to populate wiki pages
+    populate_ruvector: bool = True  # Whether to populate RuVector knowledge units
 
 
 @dataclass
@@ -72,16 +75,19 @@ class WikiBackfillExecutor:
         """Execute the wiki backfill job."""
         try:
             config = self._parse_config(job)
+            logger.info(f"Wiki backfill {job.id} starting: populate_wiki={config.populate_wiki}, populate_ruvector={config.populate_ruvector}")
             progress = BackfillProgress()
 
             # Get summaries to process
             summaries = await self._get_summaries(job.guild_id, config)
             progress.total_summaries = len(summaries)
+            logger.info(f"Wiki backfill {job.id}: found {len(summaries)} summaries to process")
 
             if not summaries:
                 job.update_progress(0, total=0, message="No summaries to process")
                 job.complete()
                 await self.job_repo.update(job)
+                logger.info(f"Wiki backfill {job.id}: completed with 0 summaries")
                 return
 
             job.start()
@@ -112,6 +118,7 @@ class WikiBackfillExecutor:
                 for summary in batch:
                     progress.current_summary_id = summary.id
                     progress.current_summary_title = summary.title
+                    logger.debug(f"Wiki backfill {job.id}: processing summary {summary.id}")
 
                     try:
                         await self._process_summary(summary, config)
@@ -182,6 +189,9 @@ class WikiBackfillExecutor:
             enable_resource_monitoring=meta.get("enable_resource_monitoring", True),
             cpu_threshold=meta.get("cpu_threshold", 80.0),
             memory_threshold=meta.get("memory_threshold", 85.0),
+            # Toggle settings - what to populate
+            populate_wiki=meta.get("populate_wiki", True),
+            populate_ruvector=meta.get("populate_ruvector", True),
         )
 
     async def _get_summaries(
@@ -237,8 +247,7 @@ class WikiBackfillExecutor:
         summary: StoredSummary,
         config: BackfillConfig,
     ) -> None:
-        """Process a single summary into the wiki."""
-        # ADR-057 Phase 4: Use factory to get agent with RuVector dual-write
+        """Process a single summary into wiki and/or RuVector based on config."""
         from .agents import create_ingest_agent
 
         result = summary.summary_result
@@ -246,7 +255,10 @@ class WikiBackfillExecutor:
             logger.debug(f"No summary result for {summary.id}, skipping")
             return
 
-        agent = await create_ingest_agent(self.wiki_repo, enable_ruvector=True)
+        # Skip if neither wiki nor RuVector is enabled
+        if not config.populate_wiki and not config.populate_ruvector:
+            logger.debug(f"Both wiki and RuVector disabled, skipping {summary.id}")
+            return
 
         # Extract platform from archive_source_key or default to discord
         platform = "discord"
@@ -255,21 +267,52 @@ class WikiBackfillExecutor:
             if parts:
                 platform = parts[0]
 
-        await agent.ingest_summary(
-            guild_id=summary.guild_id,
-            summary_id=summary.id,
-            summary_text=result.summary_text or "",
-            key_points=result.key_points or [],
-            action_items=[a.description for a in (result.action_items or [])],
-            participants=[p.display_name for p in (result.participants or [])],
-            technical_terms=[t.term for t in (result.technical_terms or [])],
-            channel_name=summary.title or "Unknown",
-            timestamp=summary.created_at,
-            platform=platform,
+        # Create agent with RuVector only if that toggle is on
+        agent = await create_ingest_agent(
+            self.wiki_repo,
+            enable_ruvector=config.populate_ruvector,
         )
 
-        # Mark as ingested
-        await self.stored_summary_repo.mark_wiki_ingested(summary.id)
+        # Ingest to wiki (and optionally RuVector via hook)
+        if config.populate_wiki:
+            ingest_result = await agent.ingest_summary(
+                guild_id=summary.guild_id,
+                summary_id=summary.id,
+                summary_text=result.summary_text or "",
+                key_points=result.key_points or [],
+                action_items=[a.description for a in (result.action_items or [])],
+                participants=[p.display_name for p in (result.participants or [])],
+                technical_terms=[t.term for t in (result.technical_terms or [])],
+                channel_name=summary.title or "Unknown",
+                timestamp=summary.created_at,
+                platform=platform,
+            )
+            # Mark wiki as ingested
+            await self.stored_summary_repo.mark_wiki_ingested(summary.id)
+
+            # If RuVector was enabled and hook ran, mark vector ingested
+            if config.populate_ruvector and ingest_result and hasattr(ingest_result, 'vector_unit_count'):
+                await self.stored_summary_repo.mark_vector_ingested(
+                    summary.id,
+                    unit_count=ingest_result.vector_unit_count or 0,
+                )
+        elif config.populate_ruvector:
+            # RuVector only (no wiki) - call the hook directly
+            if agent.ruvector_hook and agent.ruvector_hook.enabled:
+                ruvector_result = await agent.ruvector_hook.on_summary_ingested(
+                    guild_id=summary.guild_id,
+                    summary_id=summary.id,
+                    summary_text=result.summary_text or "",
+                    channel_name=summary.title or "Unknown",
+                    summary_date=summary.created_at,
+                    key_points=result.key_points or [],
+                    action_items=[a.description for a in (result.action_items or [])],
+                )
+                if ruvector_result:
+                    await self.stored_summary_repo.mark_vector_ingested(
+                        summary.id,
+                        unit_count=ruvector_result.unit_count,
+                    )
 
     async def _wait_for_priority(self, job: SummaryJob) -> None:
         """Wait for higher-priority jobs to complete (priority yielding)."""

@@ -286,6 +286,15 @@ function JobCard({ job, onCancel, onRetry, onPause, onResume, isCancelling, isRe
             </div>
           )}
 
+          {/* Completion message for completed jobs */}
+          {job.status === "completed" && job.progress.message && (
+            <div className="mb-3 rounded-md bg-green-500/10 border border-green-500/30 p-2">
+              <p className="text-sm text-green-700 dark:text-green-400">
+                {job.progress.message}
+              </p>
+            </div>
+          )}
+
           {/* Error message for failed jobs */}
           {job.status === "failed" && job.error && (
             <div className="mb-3 rounded-md bg-red-500/10 border border-red-500/30 p-2">

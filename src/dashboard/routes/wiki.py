@@ -918,6 +918,9 @@ class BackfillRequest(BaseModel):
     delay_between_batches: float = Field(default=1.0, ge=0.5, le=10.0, description="Delay between batches in seconds")
     # ADR-080: Update threshold - minimum sources to update a page
     update_threshold: int = Field(default=2, ge=1, le=10, description="Minimum new sources to update a wiki page")
+    # Toggle overrides - if None, use guild settings
+    populate_wiki: Optional[bool] = Field(default=None, description="Override: populate wiki pages")
+    populate_ruvector: Optional[bool] = Field(default=None, description="Override: populate RuVector")
 
 
 class BackfillResponse(BaseModel):
@@ -984,19 +987,36 @@ async def start_wiki_backfill(
             detail={"code": "CONFLICT", "message": f"Wiki backfill already in progress: {existing.id}"},
         )
 
-    # ADR-080: Get allowed perspectives for filtering
+    # Get guild settings for backfill configuration
     allowed_perspectives = ["general"]
+    wiki_auto_ingest = True
+    wiki_ingest_to_vectors = False
     try:
         factory = get_repository_factory()
         conn = await factory.get_connection()
         row = await conn.fetch_one(
-            "SELECT wiki_allowed_perspectives FROM guild_configs WHERE guild_id = ?",
+            """SELECT wiki_allowed_perspectives, wiki_auto_ingest, wiki_ingest_to_vectors
+               FROM guild_configs WHERE guild_id = ?""",
             (guild_id,)
         )
-        if row and row.get('wiki_allowed_perspectives'):
-            allowed_perspectives = json.loads(row['wiki_allowed_perspectives'])
+        if row:
+            if row.get('wiki_allowed_perspectives'):
+                allowed_perspectives = json.loads(row['wiki_allowed_perspectives'])
+            wiki_auto_ingest = bool(row.get('wiki_auto_ingest', 1))
+            wiki_ingest_to_vectors = bool(row.get('wiki_ingest_to_vectors', 0))
     except Exception as e:
-        logger.debug(f"Could not get wiki_allowed_perspectives: {e}")
+        logger.debug(f"Could not get guild wiki settings: {e}")
+
+    # Use request overrides if provided, otherwise use guild settings
+    populate_wiki = request.populate_wiki if request.populate_wiki is not None else wiki_auto_ingest
+    populate_ruvector = request.populate_ruvector if request.populate_ruvector is not None else wiki_ingest_to_vectors
+
+    # Validate at least one target is enabled
+    if not populate_wiki and not populate_ruvector:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_REQUEST", "message": "At least one of Wiki Pages or RuVector must be enabled for backfill"},
+        )
 
     # Count summaries to process
     if request.mode == "unprocessed":
@@ -1043,6 +1063,9 @@ async def start_wiki_backfill(
             # ADR-080: Perspective filtering
             "allowed_perspectives": allowed_perspectives,
             "update_threshold": request.update_threshold,
+            # Toggle settings - what to populate
+            "populate_wiki": populate_wiki,
+            "populate_ruvector": populate_ruvector,
             "errors": [],
             "stats": {"ingested": 0, "skipped": 0, "failed": 0},
         },
@@ -1050,6 +1073,7 @@ async def start_wiki_backfill(
     await job_repo.save(job)
 
     # Start executor in background
+    logger.info(f"Starting wiki backfill {job.id}: populate_wiki={populate_wiki}, populate_ruvector={populate_ruvector}, summaries={total}")
     executor = WikiBackfillExecutor(wiki_repo, stored_repo, job_repo)
     asyncio.create_task(executor.execute(job))
 

@@ -50,37 +50,19 @@ async def create_ingest_agent(
             from ..ruvector import (
                 RuVectorIngestHook,
                 RuVectorIngestIntegration,
-                VectorStore,
-                KnowledgeExtractor,
                 EmbeddingService,
-                EdgeInferenceEngine,
-                CoherenceGate,
             )
 
             # Get database connection from repository
             connection = repository.connection
 
-            # Initialize RuVector components
+            # Initialize RuVector integration with correct parameters
             embedding_service = EmbeddingService()
-            vector_store = VectorStore(
-                connection=connection,
-                embedding_service=embedding_service,
-            )
-            knowledge_extractor = KnowledgeExtractor(
-                claude_client=llm_client,
-            )
-            edge_inference = EdgeInferenceEngine(vector_store=vector_store)
-            coherence_gate = CoherenceGate(
-                vector_store=vector_store,
-                claude_client=llm_client,
-            )
-
-            # Create integration
             integration = RuVectorIngestIntegration(
-                vector_store=vector_store,
-                knowledge_extractor=knowledge_extractor,
-                edge_inference=edge_inference,
-                coherence_gate=coherence_gate,
+                connection=connection,
+                claude_client=llm_client,
+                embedding_service=embedding_service,
+                enable_edge_inference=True,
             )
 
             # Create hook
@@ -91,7 +73,7 @@ async def create_ingest_agent(
         except ImportError as e:
             logger.debug(f"RuVector not available: {e}")
         except Exception as e:
-            logger.warning(f"Failed to initialize RuVector: {e}")
+            logger.warning(f"Failed to initialize RuVector: {e}", exc_info=True)
 
     return WikiIngestAgent(
         repository=repository,

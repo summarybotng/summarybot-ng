@@ -87,7 +87,7 @@ const navGroups: NavGroup[] = [
     items: [
       { icon: BookOpen, label: "Wiki", path: "/wiki" },
       { icon: Boxes, label: "RuVector Explorer", path: "/ruvector" },
-      { icon: ArrowDownToLine, label: "Populate", path: "/wiki?tab=populate" },
+      { icon: ArrowDownToLine, label: "Populate", path: "/populate" },
       { icon: BarChart3, label: "Coverage", path: "/coverage" },
     ],
   },
@@ -119,32 +119,10 @@ export function GuildSidebar() {
   const basePath = `/guilds/${id}`;
 
   const isActive = (path: string) => {
-    // Handle query params (e.g., /wiki?tab=populate)
-    const [pathname, queryString] = path.split("?");
-    const fullPath = `${basePath}${pathname}`;
+    const fullPath = `${basePath}${path}`;
 
     if (path === "") {
       return location.pathname === basePath || location.pathname === `${basePath}/`;
-    }
-
-    // If path has query params, check both pathname and params
-    if (queryString) {
-      const params = new URLSearchParams(queryString);
-      const tabParam = params.get("tab");
-      const currentParams = new URLSearchParams(location.search);
-      const currentTab = currentParams.get("tab");
-
-      // Active if pathname matches AND tab param matches
-      return location.pathname.startsWith(fullPath) && currentTab === tabParam;
-    }
-
-    // For paths without query params, also check we're not on a specific tab
-    // (e.g., /wiki should not be active when on /wiki?tab=populate)
-    if (pathname === "/wiki") {
-      const currentParams = new URLSearchParams(location.search);
-      const currentTab = currentParams.get("tab");
-      // Wiki is active only if no tab or tab is "content" or "settings" (not populate)
-      return location.pathname.startsWith(fullPath) && currentTab !== "populate";
     }
 
     return location.pathname.startsWith(fullPath);

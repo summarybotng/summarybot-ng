@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, AsyncIterator, TYPE_CHECKING
 
 from src.utils.time import utc_now_naive
+from src.logging.error_tracker import get_error_tracker
+from src.models.error_log import ErrorType, ErrorSeverity
 from .models import (
     SourceType,
     ArchiveSource,
@@ -685,6 +687,26 @@ class RetrospectiveGenerator:
         except Exception as e:
             logger.error(f"Error generating summary for {period_start}: {e}")
             await self.lock_manager.release_lock(meta_path, SummaryStatus.INCOMPLETE)
+
+            # Log to error tracker for dashboard visibility
+            try:
+                tracker = get_error_tracker()
+                await tracker.capture_error(
+                    error=e,
+                    error_type=ErrorType.SUMMARIZATION_ERROR,
+                    severity=ErrorSeverity.ERROR,
+                    guild_id=job.source.server_id,
+                    operation=f"Archive retrospective: {period_start}",
+                    details={
+                        "job_id": job.job_id,
+                        "period": str(period_start),
+                        "source_key": job.source.source_key,
+                        "granularity": job.granularity,
+                    },
+                )
+            except Exception as track_err:
+                logger.warning(f"Failed to track error: {track_err}")
+
             return "failed"
 
     async def _save_to_database(

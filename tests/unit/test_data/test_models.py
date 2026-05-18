@@ -236,23 +236,23 @@ class TestSummaryOptions:
         assert brief.get_max_tokens_for_length() == 2000
 
         detailed = SummaryOptions(summary_length=SummaryLength.DETAILED)
-        assert detailed.get_max_tokens_for_length() == 6000
+        assert detailed.get_max_tokens_for_length() == 4000
 
         comprehensive = SummaryOptions(summary_length=SummaryLength.COMPREHENSIVE)
-        assert comprehensive.get_max_tokens_for_length() == 10000
+        assert comprehensive.get_max_tokens_for_length() == 8000
 
     def test_get_max_tokens_scales_with_input(self):
         """Test that max tokens scales proportionally with input size."""
         detailed = SummaryOptions(summary_length=SummaryLength.DETAILED)
 
-        # Small input: uses minimum (2000)
+        # Small input: uses minimum (3000)
         small = detailed.get_max_tokens_for_length(input_char_count=1000)
-        assert small == 2000  # min for detailed
+        assert small == 3000  # min for detailed
 
-        # Medium input: scales with compression ratio (10:1)
-        # 100k chars = 25k tokens input, 25k/10 = 2500 output
+        # Medium input: scales with compression ratio (4:1)
+        # 100k chars = 25k tokens input, 25k/4 = 6250 output
         medium = detailed.get_max_tokens_for_length(input_char_count=100_000)
-        assert medium == 2500
+        assert medium == 6250
 
         # Large input: caps at maximum (12000)
         large = detailed.get_max_tokens_for_length(input_char_count=1_000_000)

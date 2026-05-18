@@ -526,17 +526,20 @@ class SummaryOptions(BaseModel):
         - Maximum caps at reasonable limits to control costs
         """
         # Compression ratios: how many input chars per output char
+        # Based on real data: 21k chars needed 2k+ tokens (ratio ~2.7:1)
+        # Using conservative ratios to avoid truncation retries
         compression_ratios = {
-            SummaryLength.BRIEF: 20,
-            SummaryLength.DETAILED: 10,
-            SummaryLength.COMPREHENSIVE: 5,
+            SummaryLength.BRIEF: 8,      # More condensed
+            SummaryLength.DETAILED: 4,   # Was 10, real data shows ~3:1
+            SummaryLength.COMPREHENSIVE: 2,  # Thorough coverage
         }
 
         # Minimum tokens to ensure proper structure
+        # Increased based on real data: 22k chars needed 2k+ tokens
         min_tokens = {
-            SummaryLength.BRIEF: 1000,
-            SummaryLength.DETAILED: 2000,
-            SummaryLength.COMPREHENSIVE: 4000,
+            SummaryLength.BRIEF: 1500,
+            SummaryLength.DETAILED: 3000,
+            SummaryLength.COMPREHENSIVE: 6000,
         }
 
         # Maximum caps
@@ -547,11 +550,11 @@ class SummaryOptions(BaseModel):
         }
 
         if input_char_count <= 0:
-            # No input size provided - use reasonable defaults
+            # No input size provided - use reasonable defaults (above minimums)
             default_tokens = {
                 SummaryLength.BRIEF: 2000,
-                SummaryLength.DETAILED: 6000,
-                SummaryLength.COMPREHENSIVE: 10000,
+                SummaryLength.DETAILED: 4000,
+                SummaryLength.COMPREHENSIVE: 8000,
             }
             return min(self.max_tokens, default_tokens[self.summary_length])
 

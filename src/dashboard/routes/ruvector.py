@@ -1572,10 +1572,10 @@ async def clear_ruvector(
 
     try:
         from src.wiki.ruvector.backfill import RuVectorBackfill
-        from src.wiki.ruvector import RuVectorStore
+        from src.wiki.ruvector import VectorStore
 
         conn = await get_database_connection()
-        vector_store = RuVectorStore(conn)
+        vector_store = VectorStore(conn)
         backfill = RuVectorBackfill(vector_store=vector_store)
 
         deleted_count = await backfill.clear_guild_data(guild_id, confirm=True)

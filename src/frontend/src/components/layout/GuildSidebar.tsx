@@ -86,8 +86,8 @@ const navGroups: NavGroup[] = [
     label: "Knowledge",
     items: [
       { icon: BookOpen, label: "Wiki", path: "/wiki" },
-      { icon: Boxes, label: "RuVector", path: "/ruvector" },
-      { icon: ArrowDownToLine, label: "Ingestion", path: "/wiki?tab=populate" },
+      { icon: Boxes, label: "RuVector Explorer", path: "/ruvector" },
+      { icon: ArrowDownToLine, label: "Populate", path: "/wiki?tab=populate" },
       { icon: BarChart3, label: "Coverage", path: "/coverage" },
     ],
   },

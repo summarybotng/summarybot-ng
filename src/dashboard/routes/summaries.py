@@ -3798,7 +3798,7 @@ async def pause_job(
     _check_guild_access(guild_id, user)
 
     job_repo = await get_summary_job_repository()
-    job = await job_repo.get_by_id(job_id)
+    job = await job_repo.get(job_id)
 
     if not job:
         raise HTTPException(
@@ -3851,7 +3851,7 @@ async def resume_job(
     _check_guild_access(guild_id, user)
 
     job_repo = await get_summary_job_repository()
-    job = await job_repo.get_by_id(job_id)
+    job = await job_repo.get(job_id)
 
     if not job:
         raise HTTPException(

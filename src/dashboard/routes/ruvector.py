@@ -1571,14 +1571,32 @@ async def clear_ruvector(
         )
 
     try:
-        from src.wiki.ruvector.backfill import RuVectorBackfill
-        from src.wiki.ruvector import VectorStore
-
         conn = await get_database_connection()
-        vector_store = VectorStore(conn)
-        backfill = RuVectorBackfill(vector_store=vector_store)
+        deleted_count = 0
 
-        deleted_count = await backfill.clear_guild_data(guild_id, confirm=True)
+        # Delete edges
+        edge_result = await conn.execute(
+            "DELETE FROM wiki_edges WHERE guild_id = ?", (guild_id,)
+        )
+        deleted_count += getattr(edge_result, 'rowcount', 0)
+
+        # Delete learning signals
+        signal_result = await conn.execute(
+            "DELETE FROM wiki_learning_signals WHERE guild_id = ?", (guild_id,)
+        )
+        deleted_count += getattr(signal_result, 'rowcount', 0)
+
+        # Delete coherence validations
+        validation_result = await conn.execute(
+            "DELETE FROM wiki_coherence_validations WHERE guild_id = ?", (guild_id,)
+        )
+        deleted_count += getattr(validation_result, 'rowcount', 0)
+
+        # Delete knowledge units
+        unit_result = await conn.execute(
+            "DELETE FROM wiki_knowledge_units WHERE guild_id = ?", (guild_id,)
+        )
+        deleted_count += getattr(unit_result, 'rowcount', 0)
 
         # Audit log
         await audit_log(

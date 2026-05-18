@@ -1519,3 +1519,86 @@ async def resolve_validation(
     except Exception as e:
         logger.exception(f"Resolve validation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# -------------------------------------------------------------------------
+# Admin Endpoints
+# -------------------------------------------------------------------------
+
+class ClearRuVectorResponse(BaseModel):
+    """Response from clearing RuVector data."""
+    success: bool
+    deleted_count: int
+    message: str
+
+
+@router.delete(
+    "/guilds/{guild_id}/clear",
+    response_model=ClearRuVectorResponse,
+    summary="Clear all RuVector data",
+    description="ADR-093: Delete all knowledge units, edges, and signals for a guild. Requires admin role.",
+)
+async def clear_ruvector(
+    guild_id: str = Path(..., description="Guild ID"),
+    confirm: bool = Query(False, description="Must be true to confirm deletion"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Clear all RuVector data for a guild.
+
+    This deletes:
+    - All knowledge units
+    - All edges between units
+    - All learning signals
+    - All coherence validations
+
+    USE WITH CAUTION - this cannot be undone.
+    """
+    from ..audit import audit_log
+
+    # Check admin role
+    guild_roles = user.get("guild_roles", {})
+    if guild_roles.get(guild_id) != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "FORBIDDEN", "message": "Admin access required to clear RuVector data"},
+        )
+
+    if not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "CONFIRMATION_REQUIRED", "message": "Set confirm=true to proceed with deletion"},
+        )
+
+    try:
+        from src.wiki.ruvector.backfill import RuVectorBackfill
+        from src.wiki.ruvector import RuVectorStore
+
+        conn = await get_database_connection()
+        vector_store = RuVectorStore(conn)
+        backfill = RuVectorBackfill(vector_store=vector_store)
+
+        deleted_count = await backfill.clear_guild_data(guild_id, confirm=True)
+
+        # Audit log
+        await audit_log(
+            "admin.ruvector.clear",
+            user_id=user.get("sub"),
+            user_name=user.get("username"),
+            guild_id=guild_id,
+            resource_type="ruvector",
+            action="clear",
+            details={"deleted_count": deleted_count},
+        )
+
+        logger.info(f"RuVector cleared for guild {guild_id} by {user.get('username')}: {deleted_count} records")
+
+        return ClearRuVectorResponse(
+            success=True,
+            deleted_count=deleted_count,
+            message=f"Cleared {deleted_count} RuVector records",
+        )
+
+    except Exception as e:
+        logger.exception(f"Clear RuVector failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -510,6 +510,17 @@ async function clearWiki(guildId: string): Promise<ClearWikiResult> {
   return api.delete<ClearWikiResult>(`/guilds/${guildId}/wiki`);
 }
 
+// ADR-093: Clear RuVector data
+interface ClearRuVectorResult {
+  success: boolean;
+  deleted_count: number;
+  message: string;
+}
+
+async function clearRuVector(guildId: string): Promise<ClearRuVectorResult> {
+  return api.delete<ClearRuVectorResult>(`/ruvector/guilds/${guildId}/clear?confirm=true`);
+}
+
 // ADR-069: WikiNavTree with filter support
 function WikiNavTree({ tree, currentPath, filters, filteredPagePaths }: {
   tree: WikiTree;
@@ -1757,6 +1768,7 @@ function PopulateWiki({ guildId }: { guildId: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showClearRuVectorConfirm, setShowClearRuVectorConfirm] = useState(false);
   const [backfillMode, setBackfillMode] = useState<"unprocessed" | "all">("unprocessed");
   // ADR-080: Update threshold - minimum sources to update a page
   const [updateThreshold, setUpdateThreshold] = useState(2);
@@ -1886,6 +1898,26 @@ function PopulateWiki({ guildId }: { guildId: string }) {
     onError: (error: Error) => {
       toast({
         title: "Failed to clear wiki",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // ADR-093: Clear RuVector mutation
+  const clearRuVectorMutation = useMutation({
+    mutationFn: () => clearRuVector(guildId),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["ruvector-stats", guildId] });
+      setShowClearRuVectorConfirm(false);
+      toast({
+        title: "RuVector cleared",
+        description: data.message,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to clear RuVector",
         description: error.message,
         variant: "destructive",
       });
@@ -2320,6 +2352,57 @@ function PopulateWiki({ guildId }: { guildId: string }) {
                   variant="outline"
                   onClick={() => setShowClearConfirm(false)}
                   disabled={clearMutation.isPending}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ADR-093: Clear RuVector Card */}
+      <Card className="border-destructive/50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-destructive">
+            <AlertTriangle className="h-5 w-5" />
+            Clear RuVector
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Delete all RuVector knowledge units, edges, and learning signals.
+            This action cannot be undone. You can re-populate from summaries afterwards.
+          </p>
+
+          {!showClearRuVectorConfirm ? (
+            <Button
+              variant="destructive"
+              onClick={() => setShowClearRuVectorConfirm(true)}
+              disabled={clearRuVectorMutation.isPending || isBackfillActive}
+            >
+              Clear All RuVector Data
+            </Button>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-destructive">
+                Are you sure? This will delete all knowledge units and relationships.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  onClick={() => clearRuVectorMutation.mutate()}
+                  disabled={clearRuVectorMutation.isPending}
+                >
+                  {clearRuVectorMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : null}
+                  Yes, Clear RuVector
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowClearRuVectorConfirm(false)}
+                  disabled={clearRuVectorMutation.isPending}
                 >
                   Cancel
                 </Button>

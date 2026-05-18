@@ -362,7 +362,16 @@ async def summary_exists_in_db(
         )
 
         if not row:
+            logger.debug(
+                f"No existing summary found for {target_date} with source_key={source.source_key}"
+            )
             return False
+
+        # Log when we find an existing summary
+        logger.info(
+            f"Found existing summary {row.get('id')} for {target_date} "
+            f"(source_key={source.source_key})"
+        )
 
         if require_complete:
             # Check if the summary is actually complete (has content)

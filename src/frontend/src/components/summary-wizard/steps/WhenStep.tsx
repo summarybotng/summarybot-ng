@@ -529,6 +529,23 @@ function PastOptions({ state, onChange }: Pick<StepProps, "state" | "onChange">)
         </div>
       )}
 
+      {/* Force Regenerate option */}
+      <div className="flex items-start space-x-3 p-3 rounded-md border bg-background">
+        <Checkbox
+          id="forceRegenerate"
+          checked={state.forceRegenerate}
+          onCheckedChange={(checked) => onChange({ forceRegenerate: !!checked })}
+        />
+        <div>
+          <label htmlFor="forceRegenerate" className="text-sm font-medium cursor-pointer">
+            Force regenerate existing summaries
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Delete and recreate summaries that already exist for these dates
+          </p>
+        </div>
+      </div>
+
       {/* Description of what will happen */}
       <div className="p-3 rounded-md bg-muted/50 text-sm text-muted-foreground">
         {state.pastGranularity === "single" && (

@@ -482,14 +482,17 @@ class RetrospectiveGenerator:
         message_fetcher: Callable,
     ) -> str:
         """Generate summary for a single period."""
+        logger.info(f"Processing period {period_start} for {job.source.source_key} (skip_existing={job.skip_existing}, force_regenerate={job.force_regenerate})")
 
         # ADR-019: force_regenerate deletes existing and regenerates
         if job.force_regenerate:
             await self._delete_existing(job.source, period_start)
         # ADR-019: Check database for existing summary (not disk)
-        elif job.skip_existing and await summary_exists_in_db(job.source, period_start):
-            logger.debug(f"Skipping existing (in DB): {period_start}")
-            return "skipped"
+        elif job.skip_existing:
+            exists = await summary_exists_in_db(job.source, period_start)
+            logger.info(f"Period {period_start}: summary_exists_in_db returned {exists}")
+            if exists:
+                return "skipped"
 
         # Create period info with UTC timezone-aware datetimes
         from datetime import timezone as tz
@@ -515,10 +518,12 @@ class RetrospectiveGenerator:
 
         # Acquire lock
         meta_path = self._get_meta_path(job.source, period_start)
+        logger.info(f"Period {period_start}: attempting lock at {meta_path}")
         lock_job_id = await self.lock_manager.acquire_lock(meta_path, job.job_id)
         if not lock_job_id:
-            logger.debug(f"Could not acquire lock for {period_start}")
+            logger.info(f"Period {period_start}: FAILED to acquire lock - skipping")
             return "skipped"
+        logger.info(f"Period {period_start}: lock acquired, proceeding")
 
         try:
             # Dry run - just estimate

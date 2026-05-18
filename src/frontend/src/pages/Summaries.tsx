@@ -290,7 +290,9 @@ export function Summaries() {
         // Lookback hours determines how many hours each summary covers
         lookback_hours: state.pastLookbackHours,
         summary_type: state.summaryLength,
-        skip_existing: true,
+        // When forceRegenerate is true, don't skip and delete existing
+        skip_existing: !state.forceRegenerate,
+        force_regenerate: state.forceRegenerate,
       };
 
       const result = await generateArchive.mutateAsync(archiveRequest);

@@ -3891,6 +3891,22 @@ async def resume_job(
 
     logger.info(f"Resumed job {job_id} by user {user.get('id')}")
 
+    # For retrospective jobs, we need to actually run the archive generator
+    if job.job_type.value == "retrospective":
+        import asyncio
+        from ..routes.archive import get_generator, create_message_fetcher
+
+        generator = await get_generator()
+        # Try to restore from DB if not in memory
+        gen_job = generator.get_job(job_id)
+        if not gen_job:
+            gen_job = await generator.restore_job_from_db(job_id)
+
+        if gen_job:
+            message_fetcher = create_message_fetcher(None)
+            asyncio.create_task(generator.run_job(job_id, message_fetcher=message_fetcher))
+            logger.info(f"Started retrospective job execution for {job_id}")
+
     return JobResumeResponse(
         success=True,
         job_id=job_id,

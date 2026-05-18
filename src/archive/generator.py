@@ -509,9 +509,18 @@ class RetrospectiveGenerator:
         else:
             duration_hours = 720
 
+        # Calculate actual time range for message fetching
+        # End time is end of period_end day
+        end_time = datetime.combine(period_end, datetime.max.time().replace(microsecond=0), tzinfo=tz.utc)
+        # Start time: look back duration_hours from end_time
+        # This is critical for weekly summaries where period_start == period_end
+        start_time = end_time - timedelta(hours=duration_hours)
+
+        logger.info(f"Period {period_start}: fetching {duration_hours}h from {start_time} to {end_time}")
+
         period = PeriodInfo(
-            start=datetime.combine(period_start, datetime.min.time(), tzinfo=tz.utc),
-            end=datetime.combine(period_end, datetime.max.time().replace(microsecond=0), tzinfo=tz.utc),
+            start=start_time,
+            end=end_time,
             timezone=job.timezone,
             duration_hours=duration_hours,
         )

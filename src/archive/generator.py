@@ -850,17 +850,23 @@ class RetrospectiveGenerator:
         """
         from .writer import delete_summary_file
 
-        # Delete from database
+        # Delete from database - match on source_key to only delete for this specific source
         try:
             if self.stored_summary_repository:
-                existing = await self.stored_summary_repository.find_by_guild(
-                    guild_id=source.server_id,
-                    limit=1,
-                    archive_period=target_date.isoformat(),
+                # Use direct query to match on archive_source_key
+                query = """
+                SELECT id FROM stored_summaries
+                WHERE guild_id = ?
+                  AND archive_period = ?
+                  AND archive_source_key = ?
+                """
+                rows = await self.stored_summary_repository.connection.fetch_all(
+                    query,
+                    (source.server_id, target_date.isoformat(), source.source_key)
                 )
-                for summary in existing:
-                    await self.stored_summary_repository.delete(summary.id)
-                    logger.info(f"Deleted existing summary from DB: {summary.id}")
+                for row in rows:
+                    await self.stored_summary_repository.delete(row['id'])
+                    logger.info(f"Deleted existing summary from DB: {row['id']}")
         except Exception as e:
             logger.warning(f"Failed to delete from DB: {e}")
 

@@ -324,20 +324,20 @@ async def summary_exists_in_db(
     require_complete: bool = True,
 ) -> bool:
     """
-    Check if a summary exists in the database for a date.
+    Check if a summary exists in the database for a date AND source.
 
     ADR-019: Database is the authoritative source for archive summaries.
     This should be used instead of summary_exists() for skip checks.
 
     Args:
-        source: Source information
+        source: Source information (includes source_key for scope matching)
         target_date: Date to check
         require_complete: If True, only count summaries with actual content
                          (non-empty summary_text and message_count > 0).
                          This prevents incomplete markers from blocking regeneration.
 
     Returns:
-        True if summary exists in database
+        True if summary exists in database for this specific source
     """
     try:
         from ..data.repositories import get_stored_summary_repository
@@ -346,34 +346,43 @@ async def summary_exists_in_db(
             # Fall back to disk check if DB unavailable
             return False
 
-        # Query by guild_id and archive_period
-        existing = await repo.find_by_guild(
-            guild_id=source.server_id,
-            limit=1,
-            archive_period=target_date.isoformat(),
+        # Query by guild_id, archive_period, AND archive_source_key
+        # This ensures we only match summaries for the same scope (guild/channel/category)
+        query = """
+        SELECT id, summary_json, message_count
+        FROM stored_summaries
+        WHERE guild_id = ?
+          AND archive_period = ?
+          AND archive_source_key = ?
+        LIMIT 1
+        """
+        row = await repo.connection.fetch_one(
+            query,
+            (source.server_id, target_date.isoformat(), source.source_key)
         )
 
-        if not existing:
+        if not row:
             return False
 
         if require_complete:
             # Check if the summary is actually complete (has content)
-            summary = existing[0]
-            summary_result = summary.summary_result
-
-            # A complete summary should have:
-            # 1. Non-empty summary_text
-            # 2. message_count > 0 (or at least some content)
-            if not summary_result:
+            import json
+            summary_json = row.get('summary_json')
+            if not summary_json:
                 return False
 
-            summary_text = summary_result.summary_text or ""
-            message_count = summary_result.message_count or 0
+            try:
+                summary_data = json.loads(summary_json) if isinstance(summary_json, str) else summary_json
+            except (json.JSONDecodeError, TypeError):
+                return False
+
+            summary_text = summary_data.get('summary_text', '') or ''
+            message_count = row.get('message_count') or summary_data.get('message_count') or 0
 
             # Consider incomplete if no summary text or no messages
             if len(summary_text.strip()) < 50 or message_count == 0:
                 logger.info(
-                    f"Found incomplete summary for {target_date} "
+                    f"Found incomplete summary for {target_date} ({source.source_key}) "
                     f"(text_len={len(summary_text)}, messages={message_count}), "
                     f"allowing regeneration"
                 )

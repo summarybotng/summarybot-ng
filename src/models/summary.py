@@ -506,18 +506,68 @@ class SummaryOptions(BaseModel):
     include_forwarded: bool = True  # Include forwarded messages
     reconstruct_threads: bool = True  # Reconstruct conversation threads from reply chains
     
-    def get_max_tokens_for_length(self) -> int:
-        """Get appropriate max tokens based on summary length.
+    def get_max_tokens_for_length(self, input_char_count: int = 0) -> int:
+        """Get appropriate max tokens based on summary length and input size.
 
-        Token limits increased in 2026 - LLM costs have dropped significantly
-        and context windows are larger. Starting higher avoids costly retries.
+        Args:
+            input_char_count: Number of characters in input text. If 0, uses
+                             conservative defaults.
+
+        Returns:
+            Estimated max tokens needed for the summary.
+
+        The output scales with input size using compression ratios:
+        - BRIEF: ~20:1 compression (very condensed)
+        - DETAILED: ~10:1 compression (moderate detail)
+        - COMPREHENSIVE: ~5:1 compression (thorough coverage)
+
+        Bounds:
+        - Minimum ensures enough space for structure (headers, sections)
+        - Maximum caps at reasonable limits to control costs
         """
-        token_mapping = {
-            SummaryLength.BRIEF: 2000,
-            SummaryLength.DETAILED: 8000,
-            SummaryLength.COMPREHENSIVE: 16000
+        # Compression ratios: how many input chars per output char
+        compression_ratios = {
+            SummaryLength.BRIEF: 20,
+            SummaryLength.DETAILED: 10,
+            SummaryLength.COMPREHENSIVE: 5,
         }
-        return min(self.max_tokens, token_mapping[self.summary_length])
+
+        # Minimum tokens to ensure proper structure
+        min_tokens = {
+            SummaryLength.BRIEF: 1000,
+            SummaryLength.DETAILED: 2000,
+            SummaryLength.COMPREHENSIVE: 4000,
+        }
+
+        # Maximum caps
+        max_tokens = {
+            SummaryLength.BRIEF: 4000,
+            SummaryLength.DETAILED: 12000,
+            SummaryLength.COMPREHENSIVE: 20000,
+        }
+
+        if input_char_count <= 0:
+            # No input size provided - use reasonable defaults
+            default_tokens = {
+                SummaryLength.BRIEF: 2000,
+                SummaryLength.DETAILED: 6000,
+                SummaryLength.COMPREHENSIVE: 10000,
+            }
+            return min(self.max_tokens, default_tokens[self.summary_length])
+
+        # Estimate input tokens (~4 chars per token)
+        input_tokens = input_char_count / 4
+
+        # Calculate output tokens based on compression ratio
+        ratio = compression_ratios[self.summary_length]
+        estimated_tokens = int(input_tokens / ratio)
+
+        # Apply bounds
+        bounded = max(min_tokens[self.summary_length],
+                     min(estimated_tokens, max_tokens[self.summary_length]))
+
+        # Also respect the instance max_tokens setting
+        return min(self.max_tokens, bounded)
     
     def get_system_prompt_additions(self) -> List[str]:
         """Get additional system prompt requirements based on options."""

@@ -493,15 +493,16 @@ class SummarizationEngine:
                 
                 prompt_data.user_prompt = optimized_user_prompt
             
-            # Configure Claude options
-            initial_max_tokens = options.get_max_tokens_for_length()
+            # Configure Claude options - scale max_tokens based on input size
+            input_char_count = len(prompt_data.user_prompt)
+            initial_max_tokens = options.get_max_tokens_for_length(input_char_count)
             claude_options = ClaudeOptions(
                 model=options.get_model_for_length(),
                 max_tokens=initial_max_tokens,
                 temperature=options.temperature
             )
 
-            logger.info(f"Summarization engine: summary_length={options.summary_length.value}, model={claude_options.model}, max_tokens={claude_options.max_tokens}")
+            logger.info(f"Summarization engine: summary_length={options.summary_length.value}, model={claude_options.model}, max_tokens={claude_options.max_tokens} (input={input_char_count} chars)")
             logger.info(f"System prompt length: {len(prompt_data.system_prompt)} chars, User prompt length: {len(prompt_data.user_prompt)} chars")
 
             # ADR-024: Use resilient engine for retry with model escalation
@@ -745,7 +746,8 @@ class SummarizationEngine:
             )
 
             input_tokens = prompt_data.estimated_tokens
-            output_tokens = options.get_max_tokens_for_length()
+            input_char_count = len(prompt_data.user_prompt)
+            output_tokens = options.get_max_tokens_for_length(input_char_count)
 
             cost_result = self.claude_client.estimate_cost(
                 input_tokens=input_tokens,

@@ -231,14 +231,32 @@ class TestSummaryOptions:
 
     def test_get_max_tokens_for_length(self):
         """Test getting max tokens based on summary length."""
+        # With no input size, uses conservative defaults
         brief = SummaryOptions(summary_length=SummaryLength.BRIEF)
-        assert brief.get_max_tokens_for_length() == 1000
+        assert brief.get_max_tokens_for_length() == 2000
 
         detailed = SummaryOptions(summary_length=SummaryLength.DETAILED)
-        assert detailed.get_max_tokens_for_length() == 4000
+        assert detailed.get_max_tokens_for_length() == 6000
 
         comprehensive = SummaryOptions(summary_length=SummaryLength.COMPREHENSIVE)
-        assert comprehensive.get_max_tokens_for_length() == 8000
+        assert comprehensive.get_max_tokens_for_length() == 10000
+
+    def test_get_max_tokens_scales_with_input(self):
+        """Test that max tokens scales proportionally with input size."""
+        detailed = SummaryOptions(summary_length=SummaryLength.DETAILED)
+
+        # Small input: uses minimum (2000)
+        small = detailed.get_max_tokens_for_length(input_char_count=1000)
+        assert small == 2000  # min for detailed
+
+        # Medium input: scales with compression ratio (10:1)
+        # 100k chars = 25k tokens input, 25k/10 = 2500 output
+        medium = detailed.get_max_tokens_for_length(input_char_count=100_000)
+        assert medium == 2500
+
+        # Large input: caps at maximum (12000)
+        large = detailed.get_max_tokens_for_length(input_char_count=1_000_000)
+        assert large == 12000  # max for detailed
 
     def test_get_system_prompt_additions(self):
         """Test getting system prompt additions."""

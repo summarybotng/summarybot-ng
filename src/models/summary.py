@@ -494,7 +494,7 @@ class SummaryOptions(BaseModel):
     min_messages: int = 5
     summarization_model: str = field(default_factory=_get_default_model)
     temperature: float = 0.3
-    max_tokens: int = 8000  # Default to max to not limit comprehensive summaries
+    max_tokens: int = 16000  # Default to max to not limit comprehensive summaries
     extract_action_items: bool = True
     extract_technical_terms: bool = True
     extract_key_points: bool = True
@@ -507,11 +507,15 @@ class SummaryOptions(BaseModel):
     reconstruct_threads: bool = True  # Reconstruct conversation threads from reply chains
     
     def get_max_tokens_for_length(self) -> int:
-        """Get appropriate max tokens based on summary length."""
+        """Get appropriate max tokens based on summary length.
+
+        Token limits increased in 2026 - LLM costs have dropped significantly
+        and context windows are larger. Starting higher avoids costly retries.
+        """
         token_mapping = {
-            SummaryLength.BRIEF: 1000,
-            SummaryLength.DETAILED: 4000,
-            SummaryLength.COMPREHENSIVE: 8000
+            SummaryLength.BRIEF: 2000,
+            SummaryLength.DETAILED: 8000,
+            SummaryLength.COMPREHENSIVE: 16000
         }
         return min(self.max_tokens, token_mapping[self.summary_length])
     

@@ -208,12 +208,20 @@ export function Summaries() {
       channel_ids: state.scope === "channel" ? state.channelIds : undefined,
       category_id: state.scope === "category" ? state.categoryId : undefined,
       platform: state.platform,
+      split_mode: state.splitMode,  // ADR-094: Split mode for multi-channel summaries
       ...(state.promptTemplateId && { prompt_template_id: state.promptTemplateId }),
     };
 
     const result = await generateSummary.mutateAsync(request);
     setActiveTaskId(result.task_id);
-    toast({ title: "Generating", description: "Your summary is being generated..." });
+    // ADR-094: Show appropriate message based on split mode
+    const isSplit = state.splitMode !== "consolidated" && (state.scope === "category" || state.scope === "guild");
+    toast({
+      title: "Generating",
+      description: isSplit
+        ? "Your summaries are being generated..."
+        : "Your summary is being generated..."
+    });
   }, [generateSummary, toast]);
 
   const handleWizardCreateSchedule = useCallback(async (state: WizardState) => {

@@ -338,6 +338,7 @@ export interface GenerateRequest {
   options?: Partial<SummaryOptions>;
   prompt_template_id?: string;  // ADR-034: Custom template ID
   platform?: "discord" | "slack";  // ADR-043: Platform to fetch messages from
+  split_mode?: "by-channel" | "by-category" | "consolidated";  // ADR-094: Split mode for multi-channel
 }
 
 // ADR-005, ADR-008: Stored Summary types

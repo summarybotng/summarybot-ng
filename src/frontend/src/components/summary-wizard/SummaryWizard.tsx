@@ -21,7 +21,7 @@ import { WizardProgress } from "./shared/WizardProgress";
 import { WhatStep } from "./steps/WhatStep";
 import { WhenStep } from "./steps/WhenStep";
 import { DeliveryStep } from "./steps/DeliveryStep";
-import type { WizardState, WizardStep, WhenType, Platform } from "./types";
+import type { WizardState, WizardStep, WhenType, Platform, SplitMode } from "./types";
 import { initialWizardState } from "./types";
 
 // LocalStorage key for persisting wizard selections
@@ -32,6 +32,7 @@ interface PersistedSelection {
   scope: "channel" | "category" | "guild";
   channelIds: string[];
   categoryId: string;
+  splitMode: SplitMode;  // ADR-094
 }
 
 interface SummaryWizardProps {
@@ -74,6 +75,7 @@ export function SummaryWizard({
             scope: selection.scope || prev.scope,
             channelIds: selection.channelIds || [],
             categoryId: selection.categoryId || "",
+            splitMode: selection.splitMode || prev.splitMode,  // ADR-094
           }));
         }
       } catch (e) {
@@ -95,6 +97,7 @@ export function SummaryWizard({
         scope: state.scope,
         channelIds: state.channelIds,
         categoryId: state.categoryId,
+        splitMode: state.splitMode,  // ADR-094
       };
       try {
         localStorage.setItem(getStorageKey(guildId), JSON.stringify(selection));
@@ -102,7 +105,7 @@ export function SummaryWizard({
         console.warn("Failed to save wizard selection:", e);
       }
     }
-  }, [guildId, state.platform, state.scope, state.channelIds, state.categoryId, hasRestoredSelection]);
+  }, [guildId, state.platform, state.scope, state.channelIds, state.categoryId, state.splitMode, hasRestoredSelection]);
 
   const handleChange = useCallback((updates: Partial<WizardState>) => {
     setState((prev) => ({ ...prev, ...updates }));
@@ -111,7 +114,7 @@ export function SummaryWizard({
   const handleClose = () => {
     onOpenChange(false);
     // Reset step and non-selection state after animation
-    // Keep platform, scope, channelIds, categoryId to persist selection
+    // Keep platform, scope, channelIds, categoryId, splitMode to persist selection
     setTimeout(() => {
       setState((prev) => ({
         ...initialWizardState,
@@ -121,6 +124,7 @@ export function SummaryWizard({
         scope: prev.scope,
         channelIds: prev.channelIds,
         categoryId: prev.categoryId,
+        splitMode: prev.splitMode,  // ADR-094
       }));
       setStep("what");
     }, 200);

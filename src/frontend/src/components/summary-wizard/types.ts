@@ -17,12 +17,16 @@ export type ScheduleFrequency =
 
 export type TimeRange = "4h" | "8h" | "24h" | "48h" | "custom";
 
+// ADR-094: Split mode for multi-channel summaries
+export type SplitMode = "by-channel" | "by-category" | "consolidated";
+
 export interface WizardState {
   // Step 1: What
   platform: Platform;
   scope: "channel" | "category" | "guild";
   channelIds: string[];
   categoryId: string;
+  splitMode: SplitMode;  // ADR-094: How to split multi-channel summaries
 
   // Step 2: When
   whenType: WhenType;
@@ -73,6 +77,7 @@ export const initialWizardState: WizardState = {
   scope: "channel",
   channelIds: [],
   categoryId: "",
+  splitMode: "by-channel",  // ADR-094: Default to split for better focus
 
   // Step 2
   whenType: "now",

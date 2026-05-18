@@ -405,6 +405,13 @@ class SummaryScope(str, Enum):
     GUILD = "guild"          # All enabled channels in the guild
 
 
+class SplitMode(str, Enum):
+    """ADR-094: Split mode for multi-channel summaries."""
+    BY_CHANNEL = "by-channel"       # One summary per channel (default)
+    BY_CATEGORY = "by-category"     # One summary per category (guild scope only)
+    CONSOLIDATED = "consolidated"   # Single combined summary (legacy)
+
+
 class GenerateSummaryRequest(BaseModel):
     """Request to generate summary."""
     scope: SummaryScope = SummaryScope.CHANNEL  # Default to channel for backwards compatibility
@@ -414,6 +421,7 @@ class GenerateSummaryRequest(BaseModel):
     options: Optional[SummaryOptionsResponse] = None
     prompt_template_id: Optional[str] = None  # ADR-034: Custom template ID
     platform: str = "discord"  # "discord" or "slack" - which platform to fetch messages from
+    split_mode: SplitMode = SplitMode.BY_CHANNEL  # ADR-094: Default to split for better focus
 
 
 class GenerateSummaryResponse(BaseModel):

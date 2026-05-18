@@ -521,6 +521,142 @@ async def get_summary_prompt(
     )
 
 
+async def _run_split_job(
+    job_id: str,
+    guild_id: str,
+    channel_ids: list,
+    start_time,
+    end_time,
+    body,
+    is_slack: bool,
+    is_whatsapp: bool,
+    slack_workspace,
+    guild,
+    engine,
+    user: dict,
+):
+    """
+    ADR-094: Run a split job for a subset of channels.
+    This is a simplified version that reuses the core generation logic.
+    """
+    from ...message_processing import MessageProcessor
+    from ...models.summary import SummaryOptions, SummaryLength
+    from ...models.job import SummaryJob, JobType, JobStatus
+
+    logger.info(f"[{job_id}] Starting split job for {len(channel_ids)} channel(s)")
+
+    # Get job from repo
+    job_repo = await get_summary_job_repository()
+    job = await job_repo.get(job_id) if job_repo else None
+
+    if job:
+        job.start()
+        job.update_progress(0, len(channel_ids) + 2, "Fetching messages")
+        await job_repo.update(job)
+
+    try:
+        # Get platform fetcher
+        platform = body.platform if body else "discord"
+        fetcher = await get_platform_fetcher(platform, guild_id)
+
+        if not fetcher:
+            raise ValueError(f"Platform '{platform}' not available")
+
+        try:
+            # Fetch messages
+            fetch_result = await fetcher.fetch_messages(
+                channel_ids=channel_ids,
+                start_time=start_time,
+                end_time=end_time,
+                job_id=job_id,
+            )
+            all_messages = fetch_result.messages
+            channel_name_map = fetch_result.channel_names
+        finally:
+            await fetcher.close()
+
+        if not all_messages:
+            error_msg = f"No messages found in {len(channel_ids)} channel(s)"
+            logger.warning(f"[{job_id}] {error_msg}")
+            _generation_tasks[job_id]["status"] = "failed"
+            _generation_tasks[job_id]["error"] = error_msg
+            if job:
+                job.fail(error_msg)
+                await job_repo.update(job)
+            return
+
+        # Get options
+        requested_length = body.options.summary_length if body.options else "detailed"
+        options = SummaryOptions(
+            summary_length=SummaryLength(requested_length),
+            extract_action_items=body.options.include_action_items if body.options else True,
+            extract_technical_terms=body.options.include_technical_terms if body.options else True,
+            min_messages=1,
+        )
+
+        # Build context
+        from ...summarization import SummaryContext
+        channel_name = channel_name_map.get(channel_ids[0], "channel") if len(channel_ids) == 1 else "multiple channels"
+        server_name = guild.name if guild else guild_id
+
+        context = SummaryContext(
+            guild_id=guild_id,
+            server_name=server_name,
+            channel_id=channel_ids[0] if len(channel_ids) == 1 else None,
+            channel_name=channel_name,
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        # Generate summary
+        if job:
+            job.update_progress(len(channel_ids), None, "Generating summary")
+            await job_repo.update(job)
+
+        summary_result = await engine.summarize(
+            messages=all_messages,
+            options=options,
+            context=context,
+        )
+
+        if not summary_result:
+            raise ValueError("Summary generation returned no result")
+
+        # Store summary
+        from ...models.stored_summary import StoredSummary, SummarySource
+        stored_repo = await get_stored_summary_repository()
+
+        stored = StoredSummary(
+            guild_id=guild_id,
+            source_channel_ids=channel_ids,
+            summary_result=summary_result,
+            title=f"{channel_name} - {start_time.strftime('%Y-%m-%d') if start_time else 'Summary'}",
+            source=SummarySource.MANUAL,
+        )
+
+        await stored_repo.save(stored)
+        logger.info(f"[{job_id}] Stored summary {stored.id}")
+
+        # Update task status
+        _generation_tasks[job_id]["status"] = "completed"
+        _generation_tasks[job_id]["summary_id"] = stored.id
+
+        if job:
+            job.complete(stored.id)
+            await job_repo.update(job)
+
+    except Exception as e:
+        logger.error(f"[{job_id}] Split job failed: {e}")
+        _generation_tasks[job_id]["status"] = "failed"
+        _generation_tasks[job_id]["error"] = str(e)
+        if job:
+            job.fail(str(e))
+            try:
+                await job_repo.update(job)
+            except Exception:
+                pass
+
+
 @router.post(
     "/guilds/{guild_id}/summaries/generate",
     response_model=GenerateSummaryResponse,
@@ -677,6 +813,119 @@ async def generate_summary(
                 },
             )
 
+    # ADR-094: Handle split mode for multi-channel summaries
+    from ..models import SplitMode
+    split_mode = body.split_mode
+
+    # Check if we need to split into multiple jobs
+    should_split = (
+        split_mode != SplitMode.CONSOLIDATED and
+        len(channel_ids) > 1 and
+        body.scope in [SummaryScope.CATEGORY, SummaryScope.GUILD]
+    )
+
+    if should_split:
+        # Create multiple jobs - one per channel or category
+        if split_mode == SplitMode.BY_CHANNEL:
+            # Split by individual channels
+            split_targets = [[ch_id] for ch_id in channel_ids]
+        elif split_mode == SplitMode.BY_CATEGORY and guild:
+            # Split by category - group channels by their category_id
+            from collections import defaultdict
+            channels_by_category = defaultdict(list)
+            for ch_id in channel_ids:
+                ch = guild.get_channel(int(ch_id))
+                if ch:
+                    cat_id = str(ch.category_id) if ch.category_id else "uncategorized"
+                    channels_by_category[cat_id].append(ch_id)
+            split_targets = list(channels_by_category.values())
+        else:
+            # Fallback to single consolidated job
+            split_targets = [channel_ids]
+
+        # Create batch ID for tracking multiple jobs
+        import secrets
+        batch_id = f"batch_{secrets.token_urlsafe(12)}"
+
+        job_ids = []
+        for target_channels in split_targets:
+            # Create a job for each split target
+            job_id = f"job_{secrets.token_urlsafe(16)}"
+            job_ids.append(job_id)
+
+            # Create job record
+            now = utc_now_naive()
+            if body.time_range.type == "hours":
+                start_time = now - timedelta(hours=body.time_range.value or 24)
+                end_time = now
+            elif body.time_range.type == "days":
+                start_time = now - timedelta(days=body.time_range.value or 1)
+                end_time = now
+            else:
+                start_time = body.time_range.start or (now - timedelta(hours=24))
+                end_time = body.time_range.end or now
+
+            job = SummaryJob(
+                id=job_id,
+                guild_id=guild_id,
+                job_type=JobType.MANUAL,
+                status=JobStatus.PENDING,
+                scope="channel",  # Each split job is channel scope
+                channel_ids=target_channels,
+                category_id=None,
+                period_start=start_time,
+                period_end=end_time,
+                created_by=user.get("sub"),
+                metadata={
+                    "summary_length": body.options.summary_length if body.options else "detailed",
+                    "include_action_items": body.options.include_action_items if body.options else True,
+                    "include_technical_terms": body.options.include_technical_terms if body.options else True,
+                    "batch_id": batch_id,
+                    "split_mode": split_mode.value,
+                    "original_scope": body.scope.value,
+                },
+            )
+
+            # Persist and start job
+            job_repo = await get_summary_job_repository()
+            if job_repo:
+                await job_repo.save(job)
+
+            # Store in-memory
+            _generation_tasks[job_id] = {
+                "status": "processing",
+                "guild_id": guild_id,
+                "channel_ids": target_channels,
+                "started_at": utc_now_naive(),
+                "summary_id": None,
+                "error": None,
+                "batch_id": batch_id,
+            }
+
+            # Start generation in background (import the helper at top of function)
+            asyncio.create_task(_run_split_job(
+                job_id=job_id,
+                guild_id=guild_id,
+                channel_ids=target_channels,
+                start_time=start_time,
+                end_time=end_time,
+                body=body,
+                is_slack=is_slack,
+                is_whatsapp=is_whatsapp,
+                slack_workspace=slack_workspace if is_slack else None,
+                guild=guild,
+                engine=engine,
+                user=user,
+            ))
+
+        logger.info(f"[{batch_id}] Created {len(job_ids)} split jobs: {job_ids}")
+
+        return GenerateSummaryResponse(
+            task_id=job_ids[0],  # Return first job ID for backwards compatibility
+            status="processing",
+        )
+
+    # Original single-job logic for consolidated mode or single channel
     # Create job ID (ADR-013: use job_ prefix for unified job tracking)
     import secrets
     job_id = f"job_{secrets.token_urlsafe(16)}"

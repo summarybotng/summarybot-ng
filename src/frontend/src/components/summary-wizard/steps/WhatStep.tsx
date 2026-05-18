@@ -17,7 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { AlertCircle, AlertTriangle } from "lucide-react";
-import type { StepProps, Platform } from "../types";
+import type { StepProps, Platform, SplitMode } from "../types";
 
 export function WhatStep({ state, onChange, guildId }: StepProps) {
   const { data: guild, isLoading: guildLoading } = useGuild(guildId);
@@ -192,6 +192,46 @@ export function WhatStep({ state, onChange, guildId }: StepProps) {
           />
         )}
       </div>
+
+      {/* ADR-094: Split Mode for Multi-Channel Summaries */}
+      {state.platform === "discord" && (state.scope === "category" || state.scope === "guild") && (
+        <div>
+          <Label className="text-sm font-medium">Summary splitting</Label>
+          <p className="text-xs text-muted-foreground mb-2">
+            How should summaries be generated for multiple channels?
+          </p>
+          <Select
+            value={state.splitMode}
+            onValueChange={(value: SplitMode) => onChange({ splitMode: value })}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="by-channel">
+                <div className="flex flex-col items-start">
+                  <span>Separate per channel</span>
+                  <span className="text-xs text-muted-foreground">Each channel gets its own focused summary</span>
+                </div>
+              </SelectItem>
+              {state.scope === "guild" && (
+                <SelectItem value="by-category">
+                  <div className="flex flex-col items-start">
+                    <span>Separate per category</span>
+                    <span className="text-xs text-muted-foreground">One summary per Discord category</span>
+                  </div>
+                </SelectItem>
+              )}
+              <SelectItem value="consolidated">
+                <div className="flex flex-col items-start">
+                  <span>Single combined summary</span>
+                  <span className="text-xs text-muted-foreground">All channels merged into one summary</span>
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {/* ADR-046: Privacy Warning for Private Channels */}
       {state.platform === "discord" && privacyWarnings.length > 0 && (

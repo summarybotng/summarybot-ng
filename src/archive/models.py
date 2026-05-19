@@ -75,8 +75,20 @@ class ArchiveSource:
 
     @property
     def source_key(self) -> str:
-        """Unique key for this source (used in cost tracking, etc.)."""
-        return f"{self.source_type.value}:{self.server_id}"
+        """Unique key for this source (used in cost tracking, skip checks, etc.).
+
+        ADR-096: Include channel_id for per-channel summaries to ensure
+        each channel's summary can be uniquely identified and regenerated.
+        """
+        base_key = f"{self.source_type.value}:{self.server_id}"
+        # Per-channel: include channel_id
+        if self.channel_id:
+            return f"{base_key}:channel:{self.channel_id}"
+        # Per-category: include category_id
+        if self.category_id:
+            return f"{base_key}:category:{self.category_id}"
+        # Guild-wide
+        return base_key
 
     @property
     def folder_name(self) -> str:

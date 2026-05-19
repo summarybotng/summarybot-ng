@@ -47,7 +47,8 @@ class LockManager:
     async def acquire_lock(
         self,
         meta_path: Path,
-        job_id: Optional[str] = None
+        job_id: Optional[str] = None,
+        force_acquire: bool = False,
     ) -> Optional[str]:
         """
         Attempt to acquire lock for generation.
@@ -55,6 +56,9 @@ class LockManager:
         Args:
             meta_path: Path to the .meta.json file
             job_id: Optional job ID (generated if not provided)
+            force_acquire: If True, ignore "complete" status check. Used when
+                          the database check has already confirmed the summary
+                          doesn't exist (e.g., after manual deletion).
 
         Returns:
             Job ID if lock acquired, None if already locked
@@ -66,10 +70,13 @@ class LockManager:
             if meta_path.exists():
                 meta = self._read_meta(meta_path)
 
-                # Already complete
+                # Already complete - unless force_acquire is set (e.g., DB entry was deleted)
                 if meta.get("status") == SummaryStatus.COMPLETE.value:
-                    logger.debug(f"Summary already complete: {meta_path}")
-                    return None
+                    if force_acquire:
+                        logger.info(f"Overriding complete status (force_acquire): {meta_path}")
+                    else:
+                        logger.debug(f"Summary already complete: {meta_path}")
+                        return None
 
                 # Check existing lock
                 if meta.get("status") == SummaryStatus.GENERATING.value:

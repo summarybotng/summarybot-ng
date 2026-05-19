@@ -2796,22 +2796,60 @@ async def delete_stored_summary(
             from pathlib import Path
             import os
             from ...archive.writer import delete_summary_file
-            from ...archive.models import SourceType, ArchiveSource
+            from ...archive.models import SourceType, ArchiveSource, ArchiveScopeType
 
             # Parse archive_period to date
             period_date = dt.strptime(stored.archive_period, "%Y-%m-%d").date()
+
+            # ADR-096: Properly reconstruct ArchiveSource for per-channel summaries
+            # Extract channel_id from archive_source_key if it's a per-channel summary
+            channel_id = None
+            channel_name = None
+            scope = ArchiveScopeType.GUILD  # Default to guild scope
+
+            # Parse archive_source_key for scope information
+            # Format: "discord:{server_id}:channel:{channel_id}" or "discord:{server_id}"
+            if stored.archive_source_key:
+                parts = stored.archive_source_key.split(":")
+                if len(parts) >= 4 and parts[2] == "channel":
+                    channel_id = parts[3]
+                    scope = ArchiveScopeType.CHANNEL
+                elif len(parts) >= 4 and parts[2] == "category":
+                    # Category scope - not handled for disk delete, fall back to guild
+                    pass
+
+            # Fallback: if we have exactly one source_channel_id, it's likely per-channel
+            if not channel_id and stored.source_channel_ids and len(stored.source_channel_ids) == 1:
+                if stored.archive_granularity:  # Per-channel only used with archive summaries
+                    channel_id = stored.source_channel_ids[0]
+                    scope = ArchiveScopeType.CHANNEL
+
+            # Get channel name if we have a channel_id
+            if channel_id:
+                try:
+                    from . import get_discord_bot
+                    bot = get_discord_bot()
+                    if bot:
+                        channel = bot.get_channel(int(channel_id))
+                        if channel:
+                            channel_name = getattr(channel, 'name', f"channel-{channel_id[-4:]}")
+                except Exception:
+                    channel_name = f"channel-{channel_id[-4:]}"
 
             # Create ArchiveSource from stored summary data
             source = ArchiveSource(
                 source_type=SourceType.DISCORD,
                 server_id=guild_id,
                 server_name=guild_id,  # Name not needed for path
+                channel_id=channel_id,
+                channel_name=channel_name or (f"channel-{channel_id[-4:]}" if channel_id else None),
+                scope=scope,
             )
 
             archive_root = Path(os.environ.get("ARCHIVE_ROOT", "./summarybot-archive"))
             disk_deleted = delete_summary_file(archive_root, source, period_date)
             if disk_deleted:
-                logger.info(f"Deleted disk file for archive summary {summary_id}")
+                logger.info(f"Deleted disk file for archive summary {summary_id} (source_key={source.source_key})")
         except Exception as e:
             logger.warning(f"Failed to delete disk file for {summary_id}: {e}")
 

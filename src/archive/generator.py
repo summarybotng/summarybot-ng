@@ -502,9 +502,12 @@ class RetrospectiveGenerator:
             if bot:
                 guild = bot.get_guild(int(job.source.server_id))
                 if guild:
-                    # Include all text-based channels: text, news/announcement, forum, voice text
+                    # Include all text-based channels: text, news/announcement, forum, voice text, stage
+                    # ADR-096 fix: Include all channel types that can have text messages
                     for ch in guild.channels:
-                        if isinstance(ch, (discord.TextChannel, discord.ForumChannel, discord.VoiceChannel)):
+                        # Check for common text channel types + any channel with name attribute
+                        # This catches: TextChannel, NewsChannel (announcements), ForumChannel, VoiceChannel, StageChannel
+                        if hasattr(ch, 'name') and hasattr(ch, 'id') and not isinstance(ch, discord.CategoryChannel):
                             channel_map[str(ch.id)] = ch
         except Exception as e:
             logger.warning(f"Failed to get channels from bot: {e}")
@@ -516,12 +519,12 @@ class RetrospectiveGenerator:
                 for cid in job.source.channel_ids
             ]
 
-        # Otherwise, return all readable text channels from bot
-        if guild:
+        # Otherwise, return all readable channels from bot (using channel_map which includes all types)
+        if guild and channel_map:
             return [
                 (str(ch.id), ch.name)
-                for ch in guild.text_channels
-                if ch.permissions_for(guild.me).read_message_history
+                for ch in channel_map.values()
+                if hasattr(ch, 'permissions_for') and ch.permissions_for(guild.me).read_message_history
             ]
 
         return []
@@ -579,15 +582,23 @@ class RetrospectiveGenerator:
         source = source_override or job.source
         logger.info(f"Processing period {period_start} for {source.source_key} (skip_existing={job.skip_existing}, force_regenerate={job.force_regenerate})")
 
+        # Track whether we should force lock acquisition (when DB says summary doesn't exist)
+        force_lock_acquire = False
+
         # ADR-019: force_regenerate deletes existing and regenerates
         if job.force_regenerate:
             await self._delete_existing(source, period_start)
+            force_lock_acquire = True  # After deletion, force lock acquisition
         # ADR-019: Check database for existing summary (not disk)
         elif job.skip_existing:
             exists = await summary_exists_in_db(source, period_start)
             logger.info(f"Period {period_start}: summary_exists_in_db returned {exists}")
             if exists:
                 return "skipped"
+            else:
+                # Database says it doesn't exist, so any disk files are stale
+                # Force lock acquisition to override "complete" status on disk
+                force_lock_acquire = True
 
         # Create period info with UTC timezone-aware datetimes
         from datetime import timezone as tz
@@ -622,8 +633,8 @@ class RetrospectiveGenerator:
 
         # Acquire lock
         meta_path = self._get_meta_path(source, period_start)
-        logger.info(f"Period {period_start}: attempting lock at {meta_path}")
-        lock_job_id = await self.lock_manager.acquire_lock(meta_path, job.job_id)
+        logger.info(f"Period {period_start}: attempting lock at {meta_path} (force={force_lock_acquire})")
+        lock_job_id = await self.lock_manager.acquire_lock(meta_path, job.job_id, force_acquire=force_lock_acquire)
         if not lock_job_id:
             logger.info(f"Period {period_start}: FAILED to acquire lock - skipping")
             return "skipped"

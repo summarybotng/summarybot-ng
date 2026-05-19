@@ -513,7 +513,7 @@ class RetrospectiveGenerator:
             logger.warning(f"Failed to get channels from bot: {e}")
 
         # If source has explicit channel_ids, use those with looked-up names
-        # ADR-096 fix: Use fetch_channel() API call if not in cache
+        # ADR-096 fix: Use bot.get_or_fetch_channel() to fetch from API if not in cache
         if job.source.channel_ids:
             result = []
             for cid in job.source.channel_ids:
@@ -521,14 +521,18 @@ class RetrospectiveGenerator:
                     # Found in cache
                     result.append((cid, channel_map[cid].name))
                 else:
-                    # Not in cache - try API fetch
+                    # Not in cache - try API fetch via bot's helper method
                     channel_name = f"channel-{cid[-4:]}"  # fallback
                     try:
-                        if bot and bot.client:
-                            channel = await bot.client.fetch_channel(int(cid))
+                        if bot:
+                            channel = await bot.get_or_fetch_channel(int(cid))
                             if channel and hasattr(channel, 'name'):
                                 channel_name = channel.name
                                 logger.info(f"Fetched channel name via API: {cid} -> {channel_name}")
+                            else:
+                                logger.warning(f"Channel {cid} not found or has no name attribute")
+                        else:
+                            logger.warning(f"Bot not available for channel fetch: {cid}")
                     except Exception as e:
                         logger.warning(f"Failed to fetch channel {cid}: {e}")
                     result.append((cid, channel_name))

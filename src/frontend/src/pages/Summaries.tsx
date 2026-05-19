@@ -293,6 +293,8 @@ export function Summaries() {
         // When forceRegenerate is true, don't skip and delete existing
         skip_existing: !state.forceRegenerate,
         force_regenerate: state.forceRegenerate,
+        // ADR-096: Per-channel mode for weekly summaries
+        per_channel: state.perChannel,
       };
 
       const result = await generateArchive.mutateAsync(archiveRequest);

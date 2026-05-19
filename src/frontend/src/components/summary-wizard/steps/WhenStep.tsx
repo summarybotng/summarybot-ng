@@ -529,6 +529,26 @@ function PastOptions({ state, onChange }: Pick<StepProps, "state" | "onChange">)
         </div>
       )}
 
+      {/* Per-channel option for weekly */}
+      {state.pastGranularity === "weekly" && (
+        <div className="flex items-start space-x-3 p-3 rounded-md border bg-background">
+          <Checkbox
+            id="perChannel"
+            checked={state.perChannel}
+            onCheckedChange={(checked) => onChange({ perChannel: !!checked })}
+          />
+          <div>
+            <label htmlFor="perChannel" className="text-sm font-medium cursor-pointer">
+              Generate per-channel summaries
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Create one summary per channel instead of one combined server summary.
+              Better for active servers with many channels.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Force Regenerate option */}
       <div className="flex items-start space-x-3 p-3 rounded-md border bg-background">
         <Checkbox

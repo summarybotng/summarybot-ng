@@ -13,13 +13,17 @@ The summarization engine used fixed `max_tokens` values based solely on summary 
 
 ### Observed Data
 
-A 21,903 character input with `max_tokens=2000` was truncated at exactly 2000/2000 tokens, requiring a retry at 4000. This revealed the actual compression ratio was ~3:1, not the assumed 10:1.
+**Initial observation** (v1): A 21,903 character input with `max_tokens=2000` was truncated at exactly 2000/2000 tokens, requiring a retry at 4000. This revealed the actual compression ratio was ~3:1, not the assumed 10:1.
+
+**Production data** (v2): A 30,107 character weekly guild summary with `max_tokens=3000` was truncated, then again at 6000, finally succeeding at 12000. This revealed weekly multi-channel summaries have nearly 1:1 compression due to per-channel breakdowns.
 
 ```
-Input: 21,903 chars → ~5,500 tokens
-Output needed: 2,000+ tokens (truncated)
-Actual ratio: 21,903 / (2,000 × 4) ≈ 2.7:1
+Input: 30,107 chars → ~7,500 tokens
+Output needed: 8,000+ tokens (truncated at 3k and 6k)
+Actual ratio: 7,500 / 8,000 ≈ 0.94:1 (nearly 1:1!)
 ```
+
+Weekly summaries spanning many channels produce verbose output with channel-by-channel analysis, requiring much more output tokens than single-channel summaries.
 
 ## Decision
 
@@ -39,22 +43,24 @@ def get_max_tokens_for_length(self, input_char_count: int = 0) -> int:
     return clamp(estimated_output, min_tokens, max_tokens)
 ```
 
-### Parameters
+### Parameters (v3 - Updated 2026-05-18)
 
 | Length | Compression Ratio | Min Tokens | Max Tokens |
 |--------|-------------------|------------|------------|
-| Brief | 8:1 | 1,500 | 4,000 |
-| Detailed | 4:1 | 3,000 | 12,000 |
-| Comprehensive | 2:1 | 6,000 | 20,000 |
+| Brief | 4:1 | 2,000 | 6,000 |
+| Detailed | **1:1** | 4,000 | 16,000 |
+| Comprehensive | 1:1 | 8,000 | 24,000 |
+
+**Note**: Detailed uses 1:1 ratio because weekly guild-wide summaries produce verbose per-channel breakdowns that don't compress at all. Real data: 33k chars (8.3k tokens) was truncated at 6.9k output tokens.
 
 ### Examples
 
 | Input Size | Length | Calculation | Result |
 |------------|--------|-------------|--------|
-| 20k chars | Detailed | 5k tokens / 4 = 1,250 → min 3,000 | 3,000 |
-| 100k chars | Detailed | 25k tokens / 4 = 6,250 | 6,250 |
-| 500k chars | Detailed | 125k tokens / 4 = 31,250 → max 12,000 | 12,000 |
-| 20k chars | Brief | 5k tokens / 8 = 625 → min 1,500 | 1,500 |
+| 33k chars | Detailed | 8.3k tokens / 1 = 8,300 | 8,300 |
+| 100k chars | Detailed | 25k tokens / 1 = 25,000 → max 16,000 | 16,000 |
+| 20k chars | Brief | 5k tokens / 4 = 1,250 → min 2,000 | 2,000 |
+| 50k chars | Comprehensive | 12.5k tokens / 1 = 12,500 | 12,500 |
 
 ### Fallback
 
@@ -110,3 +116,4 @@ The cost of one truncation retry (wasted API call) far exceeds the cost of sligh
 
 - Commit: `feat: Scale max_tokens proportionally with input size`
 - Commit: `fix: Adjust token scaling based on real data`
+- Commit: `fix: Further reduce compression ratios based on production data (v2)`

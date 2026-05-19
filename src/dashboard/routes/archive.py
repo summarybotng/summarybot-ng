@@ -45,8 +45,8 @@ def get_model_for_summary_type(summary_type: str, explicit_model: Optional[str] 
 
     model_map = {
         "brief": "anthropic/claude-3-haiku",
-        "detailed": "anthropic/claude-3.5-sonnet",
-        "comprehensive": "anthropic/claude-3.5-sonnet",
+        "detailed": "anthropic/claude-sonnet-4.5",  # Updated 2026-05: use current model name
+        "comprehensive": "anthropic/claude-sonnet-4.5",
     }
     return model_map.get(summary_type, "anthropic/claude-3-haiku")
 
@@ -76,6 +76,9 @@ class GenerateRequest(BaseModel):
     # Summary options (same as regular summaries)
     summary_type: str = "detailed"  # brief, detailed, comprehensive
     perspective: str = "general"  # general, developer, marketing, product, finance, executive, support
+    # ADR-096: Per-channel mode - generate one summary per channel
+    per_channel: bool = False
+    min_channel_messages: int = 5  # Skip channels with fewer messages
 
 
 class BackfillReportRequest(BaseModel):
@@ -1028,6 +1031,7 @@ async def generate_retrospective(request: GenerateRequest):
     )
 
     generator = await get_generator()
+    logger.info(f"Creating job with per_channel={request.per_channel}, granularity={request.granularity}")
     job = await generator.create_job(
         source=source,
         start_date=request.date_range.start,
@@ -1044,6 +1048,9 @@ async def generate_retrospective(request: GenerateRequest):
         perspective=request.perspective or "general",
         schedule_days=request.schedule_days,
         lookback_hours=request.lookback_hours,
+        # ADR-096: Per-channel mode
+        per_channel=request.per_channel or False,
+        min_channel_messages=request.min_channel_messages or 5,
     )
 
     # Start job in background if not dry run

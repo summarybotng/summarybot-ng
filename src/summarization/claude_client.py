@@ -151,12 +151,10 @@ class ClaudeClient:
         self._min_request_interval = 0.1  # Minimum seconds between requests
 
     # Fallback model preferences for comprehensive summaries (in priority order)
-    # Updated 2026-01 to match current OpenRouter model IDs
+    # Updated 2026-05: removed deprecated models that return 404 on OpenRouter
     COMPREHENSIVE_MODEL_FALLBACKS = [
         'anthropic/claude-sonnet-4.5',   # Latest Sonnet
         'anthropic/claude-sonnet-4',     # Sonnet 4
-        'anthropic/claude-3.7-sonnet',   # Sonnet 3.7
-        'anthropic/claude-3.5-sonnet',   # Sonnet 3.5
         'anthropic/claude-3.5-haiku',    # Haiku 3.5 (fallback)
         'anthropic/claude-3-haiku',      # Haiku 3 (last resort)
     ]

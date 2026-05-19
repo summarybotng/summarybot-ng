@@ -119,6 +119,9 @@ class GenerationJob:
     # Weekly options
     schedule_days: Optional[List[int]] = None  # For weekly: which days to generate (0=Sun, 6=Sat)
     lookback_hours: Optional[int] = None  # How many hours to look back for each summary
+    # ADR-096: Per-channel mode for weekly summaries
+    per_channel: bool = False  # Generate one summary per channel instead of guild-wide
+    min_channel_messages: int = 5  # Skip channels with fewer messages
 
     # Results
     summary_ids: List[str] = field(default_factory=list)  # IDs of created summaries
@@ -229,6 +232,8 @@ class RetrospectiveGenerator:
         perspective: str = "general",
         schedule_days: Optional[List[int]] = None,
         lookback_hours: Optional[int] = None,
+        per_channel: bool = False,
+        min_channel_messages: int = 5,
     ) -> GenerationJob:
         """
         Create a new generation job.
@@ -248,6 +253,8 @@ class RetrospectiveGenerator:
             perspective: Perspective/audience (general, developer, etc.)
             schedule_days: For weekly granularity - which days to generate (0=Sun, 6=Sat)
             lookback_hours: How many hours to look back for each summary
+            per_channel: ADR-096 - Generate one summary per channel instead of guild-wide
+            min_channel_messages: Skip channels with fewer than this many messages
 
         Returns:
             Created job
@@ -279,6 +286,8 @@ class RetrospectiveGenerator:
             perspective=perspective,
             schedule_days=schedule_days,
             lookback_hours=lookback_hours,
+            per_channel=per_channel,
+            min_channel_messages=min_channel_messages,
         )
 
         if max_cost_usd:
@@ -381,6 +390,15 @@ class RetrospectiveGenerator:
             start_date, end_date = job.date_range
             periods = list(self._generate_periods(start_date, end_date, job.granularity, job.schedule_days))
 
+            logger.info(f"Job {job_id}: per_channel={job.per_channel}, granularity={job.granularity}, periods={len(periods)}")
+
+            # ADR-096: Per-channel mode - get channel list for iteration
+            if job.per_channel:
+                channels = await self._get_channels_for_job(job, message_fetcher)
+                logger.info(f"Per-channel mode: {len(channels)} channels × {len(periods)} periods")
+            else:
+                channels = [None]  # Single iteration for guild-wide mode
+
             for period_start, period_end in periods:
                 # Check for cancellation/pause
                 if job.status == JobStatus.CANCELLED:
@@ -395,34 +413,53 @@ class RetrospectiveGenerator:
                     logger.warning(f"Job {job_id} paused: budget exceeded")
                     break
 
-                job.progress.current_period = period_start.isoformat()
+                # ADR-096: Iterate over channels (or single None for guild-wide)
+                for channel_info in channels:
+                    if job.status in (JobStatus.CANCELLED, JobStatus.PAUSED):
+                        break
 
-                try:
-                    result = await self._generate_period(
-                        job=job,
-                        period_start=period_start,
-                        period_end=period_end,
-                        message_fetcher=message_fetcher,
-                    )
+                    # Create period-specific source for per-channel mode
+                    if channel_info:
+                        channel_id, channel_name = channel_info
+                        period_source = ArchiveSource(
+                            source_type=job.source.source_type,
+                            server_id=job.source.server_id,
+                            server_name=job.source.server_name,
+                            channel_id=channel_id,
+                            channel_name=channel_name,
+                        )
+                        job.progress.current_period = f"{period_start.isoformat()} #{channel_name}"
+                    else:
+                        period_source = job.source
+                        job.progress.current_period = period_start.isoformat()
 
-                    if result == "completed":
-                        job.progress.completed += 1
-                    elif result == "skipped":
-                        job.progress.skipped += 1
-                    elif result == "failed":
+                    try:
+                        result = await self._generate_period(
+                            job=job,
+                            period_start=period_start,
+                            period_end=period_end,
+                            message_fetcher=message_fetcher,
+                            source_override=period_source if channel_info else None,
+                        )
+
+                        if result == "completed":
+                            job.progress.completed += 1
+                        elif result == "skipped":
+                            job.progress.skipped += 1
+                        elif result == "failed":
+                            job.progress.failed += 1
+
+                    except Exception as e:
+                        logger.error(f"Error generating {period_start} {channel_info}: {e}")
                         job.progress.failed += 1
 
-                except Exception as e:
-                    logger.error(f"Error generating {period_start}: {e}")
-                    job.progress.failed += 1
+                    # Progress callback
+                    if progress_callback:
+                        await progress_callback(job)
 
-                # Progress callback
-                if progress_callback:
-                    await progress_callback(job)
-
-                # ADR-013: Persist progress periodically (every 5 periods)
-                if (job.progress.completed + job.progress.skipped + job.progress.failed) % 5 == 0:
-                    await self._persist_job(job)
+                    # ADR-013: Persist progress periodically (every 5 periods)
+                    if (job.progress.completed + job.progress.skipped + job.progress.failed) % 5 == 0:
+                        await self._persist_job(job)
 
             # Mark complete if not paused/cancelled
             if job.status == JobStatus.RUNNING:
@@ -443,6 +480,46 @@ class RetrospectiveGenerator:
             await self._persist_job(job)  # ADR-013
 
         return job
+
+    async def _get_channels_for_job(
+        self,
+        job: GenerationJob,
+        message_fetcher: Callable,
+    ) -> List[tuple]:
+        """
+        ADR-096: Get list of channels for per-channel mode.
+
+        Returns list of (channel_id, channel_name) tuples.
+        """
+        # Get channel info from Discord bot
+        guild = None
+        channel_map = {}  # id -> channel object
+        try:
+            from src.discord_bot.factory import get_discord_bot
+            bot = get_discord_bot()
+            if bot:
+                guild = bot.get_guild(int(job.source.server_id))
+                if guild:
+                    channel_map = {str(ch.id): ch for ch in guild.text_channels}
+        except Exception as e:
+            logger.warning(f"Failed to get channels from bot: {e}")
+
+        # If source has explicit channel_ids, use those with looked-up names
+        if job.source.channel_ids:
+            return [
+                (cid, channel_map[cid].name if cid in channel_map else f"channel-{cid[-4:]}")
+                for cid in job.source.channel_ids
+            ]
+
+        # Otherwise, return all readable channels from bot
+        if guild:
+            return [
+                (str(ch.id), ch.name)
+                for ch in guild.text_channels
+                if ch.permissions_for(guild.me).read_message_history
+            ]
+
+        return []
 
     async def _trigger_sync(self, job: GenerationJob) -> None:
         """Trigger Google Drive sync after job completion."""
@@ -482,16 +559,27 @@ class RetrospectiveGenerator:
         period_start: date,
         period_end: date,
         message_fetcher: Callable,
+        source_override: Optional[ArchiveSource] = None,
     ) -> str:
-        """Generate summary for a single period."""
-        logger.info(f"Processing period {period_start} for {job.source.source_key} (skip_existing={job.skip_existing}, force_regenerate={job.force_regenerate})")
+        """Generate summary for a single period.
+
+        Args:
+            job: The generation job
+            period_start: Start date of the period
+            period_end: End date of the period
+            message_fetcher: Callable to fetch messages
+            source_override: ADR-096 - Override source for per-channel mode
+        """
+        # ADR-096: Use override source for per-channel mode
+        source = source_override or job.source
+        logger.info(f"Processing period {period_start} for {source.source_key} (skip_existing={job.skip_existing}, force_regenerate={job.force_regenerate})")
 
         # ADR-019: force_regenerate deletes existing and regenerates
         if job.force_regenerate:
-            await self._delete_existing(job.source, period_start)
+            await self._delete_existing(source, period_start)
         # ADR-019: Check database for existing summary (not disk)
         elif job.skip_existing:
-            exists = await summary_exists_in_db(job.source, period_start)
+            exists = await summary_exists_in_db(source, period_start)
             logger.info(f"Period {period_start}: summary_exists_in_db returned {exists}")
             if exists:
                 return "skipped"
@@ -528,7 +616,7 @@ class RetrospectiveGenerator:
         )
 
         # Acquire lock
-        meta_path = self._get_meta_path(job.source, period_start)
+        meta_path = self._get_meta_path(source, period_start)
         logger.info(f"Period {period_start}: attempting lock at {meta_path}")
         lock_job_id = await self.lock_manager.acquire_lock(meta_path, job.job_id)
         if not lock_job_id:
@@ -540,22 +628,26 @@ class RetrospectiveGenerator:
             # Dry run - just estimate
             if job.dry_run:
                 estimate = self.cost_tracker.estimate_backfill_cost(
-                    job.source.source_key, 1
+                    source.source_key, 1
                 )
                 job.cost.cost_usd += estimate.estimated_cost_usd
                 return "completed"
 
             # Fetch messages
             messages = await message_fetcher(
-                job.source,
+                source,
                 period.start,
                 period.end,
             )
 
-            if not messages:
+            # ADR-096: Skip channels with too few messages in per-channel mode
+            if not messages or (source_override and len(messages) < job.min_channel_messages):
+                if source_override:
+                    logger.info(f"Period {period_start}: skipping {source.channel_name} ({len(messages) if messages else 0} messages < {job.min_channel_messages})")
+                    return "skipped"
                 # No messages - write incomplete marker
                 self.writer.write_incomplete_marker(
-                    source=job.source,
+                    source=source,
                     period=period,
                     reason_code="NO_MESSAGES",
                     reason_message="No messages found in this period",
@@ -565,9 +657,9 @@ class RetrospectiveGenerator:
                 return "completed"
 
             # Get API key for this source
-            manifest = self.source_registry.get_manifest(job.source.source_key)
+            manifest = self.source_registry.get_manifest(source.source_key)
             resolved_key = await self.api_key_resolver.get_key_for_source(
-                job.source.source_key,
+                source.source_key,
                 manifest.to_dict() if manifest else None,
             )
 
@@ -600,7 +692,7 @@ class RetrospectiveGenerator:
                 api_key=resolved_key.key,
                 summary_type=job.summary_type,
                 perspective=job.perspective,
-                guild_id=job.source.server_id or "",
+                guild_id=source.server_id or "",
             )
             duration = (utc_now_naive() - start_time).total_seconds()
 
@@ -613,7 +705,7 @@ class RetrospectiveGenerator:
 
             # Record cost
             cost_entry = CostEntry(
-                source_key=job.source.source_key,
+                source_key=source.source_key,
                 summary_id=f"sum_{uuid.uuid4().hex[:12]}",
                 timestamp=utc_now_naive(),
                 model=summary_result.model,
@@ -657,7 +749,7 @@ class RetrospectiveGenerator:
             summary_id = f"sum_{uuid.uuid4().hex[:12]}"
 
             self.writer.write_summary(
-                source=job.source,
+                source=source,
                 period=period,
                 content=summary_result.content,
                 statistics=statistics,
@@ -676,6 +768,7 @@ class RetrospectiveGenerator:
                     statistics=statistics,
                     generation=generation,
                     summary_id=summary_id,
+                    source_override=source,
                 )
 
             # Track created summary ID for job reporting
@@ -695,13 +788,14 @@ class RetrospectiveGenerator:
                     error=e,
                     error_type=ErrorType.SUMMARIZATION_ERROR,
                     severity=ErrorSeverity.ERROR,
-                    guild_id=job.source.server_id,
+                    guild_id=source.server_id,
                     operation=f"Archive retrospective: {period_start}",
                     details={
                         "job_id": job.job_id,
                         "period": str(period_start),
-                        "source_key": job.source.source_key,
+                        "source_key": source.source_key,
                         "granularity": job.granularity,
+                        "channel_id": source.channel_id,
                     },
                 )
             except Exception as track_err:
@@ -717,6 +811,7 @@ class RetrospectiveGenerator:
         statistics: SummaryStatistics,
         generation: GenerationInfo,
         summary_id: str,
+        source_override: Optional[ArchiveSource] = None,
     ) -> None:
         """
         ADR-008: Save archive summary to database for unified access.
@@ -734,15 +829,18 @@ class RetrospectiveGenerator:
         from ..models.summary import SummaryResult
         import os
 
+        # ADR-096: Use override source for per-channel mode
+        source = source_override or job.source
+
         try:
             # ADR-026: Determine guild_id for storage
             # - Discord: use server_id directly (it's the guild_id)
             # - Slack: use server_id (which is the linked Discord guild_id from workspace)
             # - WhatsApp/other: use PRIMARY_GUILD_ID to appear in main guild view
-            if job.source.source_type in (SourceType.DISCORD, SourceType.SLACK):
-                storage_guild_id = job.source.server_id or ""
+            if source.source_type in (SourceType.DISCORD, SourceType.SLACK):
+                storage_guild_id = source.server_id or ""
             else:
-                storage_guild_id = os.environ.get("PRIMARY_GUILD_ID", job.source.server_id or "")
+                storage_guild_id = os.environ.get("PRIMARY_GUILD_ID", source.server_id or "")
             # Build a SummaryResult object if we have raw content
             if hasattr(summary_result, 'to_summary_result'):
                 db_summary_result = summary_result.to_summary_result()
@@ -755,7 +853,7 @@ class RetrospectiveGenerator:
                 db_summary_result = SummaryResult(
                     id=summary_id,
                     guild_id=storage_guild_id,  # ADR-026: Use storage_guild_id
-                    channel_id=job.source.channel_id or "",
+                    channel_id=source.channel_id or "",
                     start_time=period.start,
                     end_time=period.end,
                     message_count=statistics.message_count,
@@ -790,12 +888,12 @@ class RetrospectiveGenerator:
 
             # ADR-017: Build source_channel_ids from all available channel info
             source_channel_ids = []
-            if job.source.channel_ids:
+            if source.channel_ids:
                 # Multiple channels (GUILD/CATEGORY scope)
-                source_channel_ids = job.source.channel_ids
-            elif job.source.channel_id:
+                source_channel_ids = source.channel_ids
+            elif source.channel_id:
                 # Single channel (CHANNEL scope)
-                source_channel_ids = [job.source.channel_id]
+                source_channel_ids = [source.channel_id]
 
             # Create StoredSummary with archive source
             # ADR-026: Use storage_guild_id so WhatsApp summaries appear under primary guild
@@ -804,12 +902,12 @@ class RetrospectiveGenerator:
                 guild_id=storage_guild_id,
                 source_channel_ids=source_channel_ids,
                 summary_result=db_summary_result,
-                title=f"{job.source.channel_name or job.source.server_name} - {period.start.strftime('%Y-%m-%d')}",
+                title=f"{source.channel_name or source.server_name} - {period.start.strftime('%Y-%m-%d')}",
                 # ADR-008: Archive-specific metadata
                 source=SummarySource.ARCHIVE,
                 archive_period=period.start.strftime('%Y-%m-%d'),
                 archive_granularity=job.granularity,
-                archive_source_key=job.source.source_key,
+                archive_source_key=source.source_key,
             )
 
             await self.stored_summary_repository.save(stored)

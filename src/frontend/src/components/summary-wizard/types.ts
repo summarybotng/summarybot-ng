@@ -51,6 +51,7 @@ export interface WizardState {
   pastScheduleDays: number[];  // For weekly: which days to generate (0=Sun, 6=Sat)
   pastLookbackHours: number;   // How many hours to look back for each summary
   forceRegenerate: boolean;    // Delete existing and regenerate
+  perChannel: boolean;         // ADR-096: Generate one summary per channel
 
   // Step 3: Delivery (recurring only)
   destinations: {
@@ -103,6 +104,7 @@ export const initialWizardState: WizardState = {
   pastScheduleDays: [6],      // Default to Saturday
   pastLookbackHours: 168,     // Default to 7 days
   forceRegenerate: false,     // Default to skip existing
+  perChannel: true,           // ADR-096: Default to per-channel for weekly
 
   // Delivery
   destinations: {

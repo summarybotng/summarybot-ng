@@ -525,28 +525,29 @@ class SummaryOptions(BaseModel):
         - Minimum ensures enough space for structure (headers, sections)
         - Maximum caps at reasonable limits to control costs
         """
-        # Compression ratios: how many input chars per output char
-        # Based on real data: 21k chars needed 2k+ tokens (ratio ~2.7:1)
-        # Using conservative ratios to avoid truncation retries
+        # Compression ratios: how many input tokens per output token
+        # Based on real data: 33k chars (8.3k tokens) truncated at 6.9k output tokens
+        # Weekly guild-wide summaries have 1:1 or worse ratio due to per-channel breakdowns
+        # Using 1:1 for detailed/comprehensive to avoid any truncation retries
         compression_ratios = {
-            SummaryLength.BRIEF: 8,      # More condensed
-            SummaryLength.DETAILED: 4,   # Was 10, real data shows ~3:1
-            SummaryLength.COMPREHENSIVE: 2,  # Thorough coverage
+            SummaryLength.BRIEF: 4,       # Condensed bullet points
+            SummaryLength.DETAILED: 1,    # Weekly summaries need 1:1
+            SummaryLength.COMPREHENSIVE: 1,  # Full coverage, 1:1
         }
 
         # Minimum tokens to ensure proper structure
-        # Increased based on real data: 22k chars needed 2k+ tokens
+        # Based on real data: 30k chars needed 8k+ tokens for detailed
         min_tokens = {
-            SummaryLength.BRIEF: 1500,
-            SummaryLength.DETAILED: 3000,
-            SummaryLength.COMPREHENSIVE: 6000,
+            SummaryLength.BRIEF: 2000,
+            SummaryLength.DETAILED: 4000,
+            SummaryLength.COMPREHENSIVE: 8000,
         }
 
-        # Maximum caps
+        # Maximum caps (increased to handle large weekly summaries)
         max_tokens = {
-            SummaryLength.BRIEF: 4000,
-            SummaryLength.DETAILED: 12000,
-            SummaryLength.COMPREHENSIVE: 20000,
+            SummaryLength.BRIEF: 6000,
+            SummaryLength.DETAILED: 16000,
+            SummaryLength.COMPREHENSIVE: 24000,
         }
 
         if input_char_count <= 0:

@@ -40,6 +40,9 @@ class EventHandler:
         logger.info(f"Bot ID: {self.bot.client.user.id}")
         logger.info(f"Connected to {len(self.bot.client.guilds)} guilds")
 
+        # ADR-096: One-time fix for per-channel summary titles with numeric IDs
+        await self._fix_numeric_summary_titles()
+
         # Log guild information
         for guild in self.bot.client.guilds:
             logger.info(f"  - {guild.name} (ID: {guild.id}, Members: {guild.member_count})")
@@ -73,6 +76,79 @@ class EventHandler:
             logger.info("Successfully synced slash commands to all guilds")
         except Exception as e:
             logger.error(f"Failed to sync commands: {e}", exc_info=True)
+
+    async def _fix_numeric_summary_titles(self) -> None:
+        """
+        ADR-096: Fix per-channel summary titles that have numeric or fallback channel IDs.
+
+        This fixes summaries created before the channel name lookup was implemented,
+        or when the channel wasn't in the bot's cache at generation time.
+        """
+        try:
+            import sqlite3
+            import os
+            import json
+
+            db_path = os.environ.get("DATABASE_PATH", "/app/data/summarybot.db")
+            if not os.path.exists(db_path):
+                return
+
+            # Build channel name lookup from all guilds
+            channel_names = {}
+            for guild in self.bot.client.guilds:
+                for ch in guild.text_channels:
+                    channel_names[str(ch.id)] = ch.name
+
+            if not channel_names:
+                return
+
+            conn = sqlite3.connect(db_path)
+
+            # Fix titles with pure numeric IDs (e.g., "1420188751384285297 - 2025-11-29")
+            # AND titles with fallback format (e.g., "channel-3067 - 2026-02-14")
+            cursor = conn.execute("""
+                SELECT id, title, source_channel_ids FROM stored_summaries
+                WHERE archive_granularity IS NOT NULL
+                AND (title GLOB '[0-9]* - [0-9]*' OR title GLOB 'channel-[0-9]* - [0-9]*')
+            """)
+
+            updates = []
+            for row in cursor:
+                summary_id, title, source_channel_ids_json = row
+                parts = title.split(' - ', 1)
+                if len(parts) != 2:
+                    continue
+
+                prefix, date_part = parts
+                channel_id = None
+
+                # Extract channel ID from title or source_channel_ids
+                if prefix.isdigit():
+                    # Pure numeric title
+                    channel_id = prefix
+                elif prefix.startswith('channel-') and source_channel_ids_json:
+                    # Fallback format - look up from source_channel_ids
+                    try:
+                        channel_ids = json.loads(source_channel_ids_json)
+                        if channel_ids and len(channel_ids) == 1:
+                            channel_id = channel_ids[0]
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                if channel_id and channel_id in channel_names:
+                    new_title = f"{channel_names[channel_id]} - {date_part}"
+                    if new_title != title:
+                        updates.append((new_title, summary_id))
+
+            if updates:
+                for new_title, summary_id in updates:
+                    conn.execute("UPDATE stored_summaries SET title = ? WHERE id = ?", (new_title, summary_id))
+                conn.commit()
+                logger.info(f"ADR-096: Fixed {len(updates)} summary titles with channel names")
+
+            conn.close()
+        except Exception as e:
+            logger.warning(f"ADR-096: Failed to fix summary titles: {e}")
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
         """

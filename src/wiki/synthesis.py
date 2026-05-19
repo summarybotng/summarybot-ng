@@ -19,10 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 # Model mapping for synthesis options (ADR-065)
+# Updated 2026-05: use current OpenRouter model names
 MODEL_MAP = {
     "haiku": "anthropic/claude-3-haiku",
-    "sonnet": "anthropic/claude-3.5-sonnet",
-    "opus": "anthropic/claude-3-opus",
+    "sonnet": "anthropic/claude-sonnet-4.5",
+    "opus": "anthropic/claude-opus-4.5",
 }
 
 

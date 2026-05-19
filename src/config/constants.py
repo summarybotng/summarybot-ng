@@ -42,13 +42,12 @@ MODEL_ALIASES = {
 
 # ADR-024: Model escalation chain for resilient summary generation
 # Ordered from cheapest/fastest to most capable
+# Updated 2026-05: removed deprecated model names (claude-3.5-sonnet, etc.)
 MODEL_ESCALATION_CHAIN = [
     "anthropic/claude-3-haiku",      # Tier 1: Fast/cheap
     "anthropic/claude-3.5-haiku",
-    "anthropic/claude-3.5-sonnet",   # Tier 2: Balanced
-    "anthropic/claude-3.7-sonnet",
-    "anthropic/claude-sonnet-4",     # Tier 3: Advanced
-    "anthropic/claude-sonnet-4.5",   # Tier 4: Best available
+    "anthropic/claude-sonnet-4",     # Tier 2: Balanced
+    "anthropic/claude-sonnet-4.5",   # Tier 3: Best available
 ]
 
 # Starting model index by summary type

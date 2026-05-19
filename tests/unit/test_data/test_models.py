@@ -245,18 +245,18 @@ class TestSummaryOptions:
         """Test that max tokens scales proportionally with input size."""
         detailed = SummaryOptions(summary_length=SummaryLength.DETAILED)
 
-        # Small input: uses minimum (3000)
+        # Small input: uses minimum (4000)
         small = detailed.get_max_tokens_for_length(input_char_count=1000)
-        assert small == 3000  # min for detailed
+        assert small == 4000  # min for detailed
 
-        # Medium input: scales with compression ratio (4:1)
-        # 100k chars = 25k tokens input, 25k/4 = 6250 output
-        medium = detailed.get_max_tokens_for_length(input_char_count=100_000)
-        assert medium == 6250
+        # Medium input: scales with compression ratio (1:1)
+        # 30k chars = 7.5k tokens input, 7.5k/1 = 7500 output
+        medium = detailed.get_max_tokens_for_length(input_char_count=30_000)
+        assert medium == 7500
 
-        # Large input: caps at maximum (12000)
+        # Large input: caps at maximum (16000)
         large = detailed.get_max_tokens_for_length(input_char_count=1_000_000)
-        assert large == 12000  # max for detailed
+        assert large == 16000  # max for detailed
 
     def test_get_system_prompt_additions(self):
         """Test getting system prompt additions."""

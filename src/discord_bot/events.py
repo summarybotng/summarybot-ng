@@ -94,10 +94,12 @@ class EventHandler:
                 return
 
             # Build channel name lookup from all guilds
+            # Include all channel types: text, news/announcement, forum, voice
             channel_names = {}
             for guild in self.bot.client.guilds:
-                for ch in guild.text_channels:
-                    channel_names[str(ch.id)] = ch.name
+                for ch in guild.channels:
+                    if hasattr(ch, 'name'):
+                        channel_names[str(ch.id)] = ch.name
 
             if not channel_names:
                 return

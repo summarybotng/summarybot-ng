@@ -491,6 +491,8 @@ class RetrospectiveGenerator:
 
         Returns list of (channel_id, channel_name) tuples.
         """
+        import discord
+
         # Get channel info from Discord bot
         guild = None
         channel_map = {}  # id -> channel object
@@ -500,7 +502,10 @@ class RetrospectiveGenerator:
             if bot:
                 guild = bot.get_guild(int(job.source.server_id))
                 if guild:
-                    channel_map = {str(ch.id): ch for ch in guild.text_channels}
+                    # Include all text-based channels: text, news/announcement, forum, voice text
+                    for ch in guild.channels:
+                        if isinstance(ch, (discord.TextChannel, discord.ForumChannel, discord.VoiceChannel)):
+                            channel_map[str(ch.id)] = ch
         except Exception as e:
             logger.warning(f"Failed to get channels from bot: {e}")
 
@@ -511,7 +516,7 @@ class RetrospectiveGenerator:
                 for cid in job.source.channel_ids
             ]
 
-        # Otherwise, return all readable channels from bot
+        # Otherwise, return all readable text channels from bot
         if guild:
             return [
                 (str(ch.id), ch.name)

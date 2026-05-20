@@ -499,8 +499,10 @@ class RetrospectiveGenerator:
         try:
             from src.discord_bot.factory import get_discord_bot
             bot = get_discord_bot()
+            logger.info(f"Channel lookup: bot={bot is not None}, bot.is_ready={bot.is_ready() if bot else 'N/A'}")
             if bot:
                 guild = bot.get_guild(int(job.source.server_id))
+                logger.info(f"Channel lookup: guild={guild.name if guild else 'NOT FOUND'} for server_id={job.source.server_id}")
                 if guild:
                     # Include all text-based channels: text, news/announcement, forum, voice text, stage
                     # ADR-096 fix: Include all channel types that can have text messages
@@ -509,6 +511,7 @@ class RetrospectiveGenerator:
                         # This catches: TextChannel, NewsChannel (announcements), ForumChannel, VoiceChannel, StageChannel
                         if hasattr(ch, 'name') and hasattr(ch, 'id') and not isinstance(ch, discord.CategoryChannel):
                             channel_map[str(ch.id)] = ch
+                    logger.info(f"Channel lookup: cached {len(channel_map)} channels from guild")
         except Exception as e:
             logger.warning(f"Failed to get channels from bot: {e}")
 
@@ -523,18 +526,19 @@ class RetrospectiveGenerator:
                 else:
                     # Not in cache - try API fetch via bot's helper method
                     channel_name = f"channel-{cid[-4:]}"  # fallback
+                    logger.info(f"Channel {cid} not in cache ({len(channel_map)} cached), attempting API fetch...")
                     try:
-                        if bot:
+                        if bot and bot.is_ready():
                             channel = await bot.get_or_fetch_channel(int(cid))
                             if channel and hasattr(channel, 'name'):
                                 channel_name = channel.name
                                 logger.info(f"Fetched channel name via API: {cid} -> {channel_name}")
                             else:
-                                logger.warning(f"Channel {cid} not found or has no name attribute")
+                                logger.warning(f"Channel {cid} fetch returned: {type(channel).__name__ if channel else 'None'}")
                         else:
-                            logger.warning(f"Bot not available for channel fetch: {cid}")
+                            logger.warning(f"Bot not available/ready for channel fetch: {cid} (bot={bot is not None}, ready={bot.is_ready() if bot else 'N/A'})")
                     except Exception as e:
-                        logger.warning(f"Failed to fetch channel {cid}: {e}")
+                        logger.warning(f"Failed to fetch channel {cid}: {type(e).__name__}: {e}")
                     result.append((cid, channel_name))
             return result
 

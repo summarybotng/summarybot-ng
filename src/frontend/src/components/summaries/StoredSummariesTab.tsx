@@ -664,7 +664,21 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
         setConfluenceError(result.error);
       }
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to publish to Confluence";
+      // API errors come as { detail: { code, message } } or { detail: string }
+      let errorMessage = "Failed to publish to Confluence";
+      if (error && typeof error === "object") {
+        const apiError = error as { detail?: { message?: string; code?: string } | string; message?: string };
+        if (typeof apiError.detail === "object" && apiError.detail?.message) {
+          errorMessage = apiError.detail.message;
+        } else if (typeof apiError.detail === "string") {
+          errorMessage = apiError.detail;
+        } else if (apiError.message) {
+          errorMessage = apiError.message;
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+
       if (errorMessage.includes("CONFLUENCE_NOT_CONFIGURED")) {
         setConfluenceError("Confluence is not configured. Contact your administrator.");
       } else {

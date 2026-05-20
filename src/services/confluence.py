@@ -582,7 +582,7 @@ async def get_confluence_service_for_guild(guild_id: str) -> ConfluencePublisher
 
     # Try to load per-guild settings from database
     try:
-        from ..data.sqlite.confluence_repository import get_confluence_repository
+        from ..data.repositories import get_confluence_repository
 
         repo = await get_confluence_repository()
         if repo:

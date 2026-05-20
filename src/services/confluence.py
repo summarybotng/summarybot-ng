@@ -481,7 +481,7 @@ class ConfluencePublisher:
                                         "content": [
                                             {
                                                 "type": "text",
-                                                "text": f"[{ref.get('id', i+1)}] {ref.get('author', 'Unknown')}: {ref.get('content', '')[:100]}...",
+                                                "text": f"[{ref.get('id', i+1)}] {ref.get('sender', 'Unknown')}: {ref.get('snippet', '')[:100]}...",
                                             }
                                         ],
                                     }

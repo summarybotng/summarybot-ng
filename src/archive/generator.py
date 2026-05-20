@@ -498,7 +498,7 @@ class RetrospectiveGenerator:
         bot = None  # Initialize before try block so it's accessible in fallback
         channel_map = {}  # id -> channel object
         try:
-            from src.discord_bot.factory import get_discord_bot
+            from src.dashboard.routes import get_discord_bot
             bot = get_discord_bot()
             logger.info(f"Channel lookup: bot={bot is not None}, bot.is_ready={bot.is_ready() if bot else 'N/A'}")
             if bot:

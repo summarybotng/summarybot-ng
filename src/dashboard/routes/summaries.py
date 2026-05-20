@@ -3705,6 +3705,14 @@ async def update_confluence_settings(
         _check_guild_access(guild_id, user)
         require_guild_admin(guild_id, user)
 
+        # Log received values for debugging
+        logger.info(
+            f"Confluence settings update for guild {guild_id}: "
+            f"enabled={body.enabled}, base_url={body.base_url!r}, "
+            f"space_key={body.space_key!r}, email={body.email!r}, "
+            f"has_token={body.api_token is not None and len(body.api_token or '') > 0}"
+        )
+
         from ...data.repositories import get_confluence_repository
         from ...data.sqlite.confluence_repository import ConfluenceSettings
         from ...services.confluence import clear_guild_confluence_cache

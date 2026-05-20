@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Loader2, ArrowLeft, ArrowRight, Sparkles, Calendar } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { WizardProgress } from "./shared/WizardProgress";
 import { WhatStep } from "./steps/WhatStep";
 import { WhenStep } from "./steps/WhenStep";
@@ -61,6 +62,7 @@ export function SummaryWizard({
   const [step, setStep] = useState<WizardStep>("what");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasRestoredSelection, setHasRestoredSelection] = useState(false);
+  const { toast } = useToast();
 
   // Restore selection from localStorage when wizard opens
   useEffect(() => {
@@ -198,8 +200,18 @@ export function SummaryWizard({
         await onGeneratePast(state);
       }
       handleClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Wizard submit error:", error);
+      // Extract error message from API response
+      const errorMessage = error?.response?.data?.detail
+        || error?.detail
+        || error?.message
+        || "An unexpected error occurred";
+      toast({
+        title: "Generation failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
     } finally {
       setIsSubmitting(false);
     }

@@ -88,7 +88,7 @@ Example output:
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
-                    "HTTP-Referer": "https://summarybot-ng.fly.dev",
+                    "HTTP-Referer": "https://summarybot.app",
                     "X-Title": "SummaryBot",
                 },
                 json={

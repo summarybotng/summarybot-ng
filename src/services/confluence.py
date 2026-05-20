@@ -588,7 +588,7 @@ class ConfluencePublisher:
 
         # Add link back to SummaryBot if we have the IDs
         if summary_id and guild_id:
-            dashboard_url = os.environ.get("DASHBOARD_URL", "https://summarybot-ng.fly.dev")
+            dashboard_url = os.environ.get("DASHBOARD_URL", "https://summarybot.app")
             summary_url = f"{dashboard_url}/guilds/{guild_id}/summaries?view={summary_id}"
             footer_content.append({
                 "type": "text",

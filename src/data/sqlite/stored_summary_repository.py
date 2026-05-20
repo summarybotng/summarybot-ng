@@ -68,8 +68,9 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             vector_ingested, vector_ingested_at, vector_unit_count,
             contains_sensitive_channels,
             split_from, split_private_id, split_public_id,
-            previous_summary_id, continuity_week_number
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            previous_summary_id, continuity_week_number,
+            scope_type, category_id, category_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -110,6 +111,10 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             # ADR-087: Continuity tracking
             summary.previous_summary_id,
             summary.continuity_week_number,
+            # ADR-098: Scope metadata
+            summary.scope_type,
+            summary.category_id,
+            summary.category_name,
         )
 
         await self.connection.execute(query, params)
@@ -345,6 +350,11 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         elif filter.has_continuity is False:
             conditions.append("continuity_week_number IS NULL")
 
+        # ADR-098: Scope type filter
+        if filter.scope_type and filter.scope_type != "all":
+            conditions.append("scope_type = ?")
+            params.append(filter.scope_type)
+
         where_clause = " AND ".join(conditions)
         return where_clause, params
 
@@ -393,6 +403,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         archive_granularity: Optional[str] = None,
         # ADR-087: Continuity chain filter
         has_continuity: Optional[bool] = None,
+        # ADR-098: Scope type filter
+        scope_type: Optional[str] = None,
     ) -> List[StoredSummary]:
         """Find stored summaries for a guild.
 
@@ -448,6 +460,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             contains_private_channels=contains_private_channels,
             archive_granularity=archive_granularity,
             has_continuity=has_continuity,
+            scope_type=scope_type,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 
@@ -544,8 +557,10 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         archive_granularity: Optional[str] = None,
         # ADR-087: Continuity chain filter
         has_continuity: Optional[bool] = None,
+        # ADR-098: Scope type filter
+        scope_type: Optional[str] = None,
     ) -> int:
-        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026, ADR-035, ADR-041, ADR-073, ADR-087)."""
+        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026, ADR-035, ADR-041, ADR-073, ADR-087, ADR-098)."""
         # CS-002: Use shared filter builder
         filter_obj = StoredSummaryFilter(
             guild_id=guild_id,
@@ -576,6 +591,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             contains_private_channels=contains_private_channels,
             archive_granularity=archive_granularity,
             has_continuity=has_continuity,
+            scope_type=scope_type,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 
@@ -819,6 +835,10 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             # ADR-087: Continuity tracking
             previous_summary_id=row.get('previous_summary_id'),
             continuity_week_number=row.get('continuity_week_number'),
+            # ADR-098: Scope metadata
+            scope_type=row.get('scope_type'),
+            category_id=row.get('category_id'),
+            category_name=row.get('category_name'),
         )
 
     def _dict_to_summary_result(self, data: Dict[str, Any]) -> SummaryResult:

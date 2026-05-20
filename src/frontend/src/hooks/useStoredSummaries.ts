@@ -77,6 +77,8 @@ interface StoredSummariesParams {
   hasAccessIssues?: boolean;
   // ADR-073: Private channels filter
   containsPrivateChannels?: boolean;
+  // ADR-098: Scope type filter
+  scopeType?: "guild" | "category" | "channel" | "all";
 }
 
 export function useStoredSummaries(
@@ -124,6 +126,8 @@ export function useStoredSummaries(
   if (params.hasAccessIssues !== undefined) queryParams.set("has_access_issues", params.hasAccessIssues.toString());
   // ADR-073: Private channels filter
   if (params.containsPrivateChannels !== undefined) queryParams.set("contains_private_channels", params.containsPrivateChannels.toString());
+  // ADR-098: Scope type filter
+  if (params.scopeType && params.scopeType !== "all") queryParams.set("scope_type", params.scopeType);
 
   const queryString = queryParams.toString();
 

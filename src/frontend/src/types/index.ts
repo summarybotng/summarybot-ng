@@ -391,6 +391,10 @@ export interface StoredSummary {
   // ADR-087: Continuity chain fields
   continuity_week_number?: number;
   previous_summary_id?: string;
+  // ADR-098: Scope metadata
+  scope_type?: "guild" | "category" | "channel";
+  category_id?: string;
+  category_name?: string;
 }
 
 // ADR-020: Navigation for prev/next summary

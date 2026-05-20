@@ -131,6 +131,11 @@ class StoredSummary(BaseModel):
     previous_summary_id: Optional[str] = None     # Link to prior week's summary in continuity chain
     continuity_week_number: Optional[int] = None  # Position in continuity chain (1, 2, 3, ...)
 
+    # ADR-098: Summary scope metadata
+    scope_type: Optional[str] = None      # 'guild', 'category', 'channel'
+    category_id: Optional[str] = None     # Category ID for category-scoped summaries
+    category_name: Optional[str] = None   # Category name for display
+
     def get_pushed_channel_ids(self) -> List[str]:
         """Get list of channel IDs this summary was pushed to."""
         return [d.channel_id for d in self.push_deliveries if d.success]
@@ -358,6 +363,10 @@ class StoredSummary(BaseModel):
             # ADR-087: Continuity tracking
             "previous_summary_id": self.previous_summary_id,
             "continuity_week_number": self.continuity_week_number,
+            # ADR-098: Scope metadata
+            "scope_type": self.scope_type,
+            "category_id": self.category_id,
+            "category_name": self.category_name,
         }
 
     def to_dict(self) -> Dict[str, Any]:
@@ -397,6 +406,10 @@ class StoredSummary(BaseModel):
             # ADR-087: Continuity tracking
             "previous_summary_id": self.previous_summary_id,
             "continuity_week_number": self.continuity_week_number,
+            # ADR-098: Scope metadata
+            "scope_type": self.scope_type,
+            "category_id": self.category_id,
+            "category_name": self.category_name,
         }
 
     @classmethod
@@ -445,4 +458,8 @@ class StoredSummary(BaseModel):
             # ADR-087: Continuity tracking
             previous_summary_id=data.get("previous_summary_id"),
             continuity_week_number=data.get("continuity_week_number"),
+            # ADR-098: Scope metadata
+            scope_type=data.get("scope_type"),
+            category_id=data.get("category_id"),
+            category_name=data.get("category_name"),
         )

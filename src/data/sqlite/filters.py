@@ -55,3 +55,5 @@ class StoredSummaryFilter:
     archive_granularity: Optional[str] = None  # 'daily' | 'weekly' | 'monthly'
     # ADR-087: Continuity chain filter
     has_continuity: Optional[bool] = None  # True = has continuity_week_number
+    # ADR-098: Scope type filter
+    scope_type: Optional[str] = None  # 'guild' | 'category' | 'channel'

@@ -841,7 +841,7 @@ class ErrorExportResponse(BaseModel):
 # ============================================================================
 
 class StoredSummaryListItem(BaseModel):
-    """Stored summary item in list (ADR-005, ADR-008, ADR-009, ADR-017)."""
+    """Stored summary item in list (ADR-005, ADR-008, ADR-009, ADR-017, ADR-098)."""
     id: str
     title: str
     source_channel_ids: List[str]
@@ -874,6 +874,10 @@ class StoredSummaryListItem(BaseModel):
     has_grounding: bool = False  # True if reference_index populated
     has_time_range: bool = True  # False if start_time/end_time missing
     can_regenerate: bool = True  # True if enough data for regeneration
+    # ADR-098: Scope metadata
+    scope_type: Optional[str] = None  # 'guild', 'category', 'channel'
+    category_id: Optional[str] = None
+    category_name: Optional[str] = None
 
 
 class StoredSummaryListResponse(BaseModel):
@@ -885,7 +889,7 @@ class StoredSummaryListResponse(BaseModel):
 
 
 class StoredSummaryDetailResponse(BaseModel):
-    """Full stored summary details (ADR-005, ADR-008)."""
+    """Full stored summary details (ADR-005, ADR-008, ADR-098)."""
     id: str
     title: str
     guild_id: str
@@ -926,6 +930,10 @@ class StoredSummaryDetailResponse(BaseModel):
     # ADR-074: Private channel info - which source channels are locked
     private_source_channels: Optional[List[Dict[str, str]]] = None  # [{channel_id, channel_name}]
     contains_sensitive_channels: bool = False  # ADR-073: Quick check flag
+    # ADR-098: Scope metadata
+    scope_type: Optional[str] = None  # 'guild', 'category', 'channel'
+    category_id: Optional[str] = None
+    category_name: Optional[str] = None
 
 
 class StoredSummaryUpdateRequest(BaseModel):

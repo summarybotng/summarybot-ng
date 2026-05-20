@@ -937,6 +937,19 @@ class RetrospectiveGenerator:
                 # Single channel (CHANNEL scope)
                 source_channel_ids = [source.channel_id]
 
+            # ADR-098: Derive scope_type from source
+            scope_type = source.scope.value if source.scope else "channel"
+            category_id = source.category_id
+            category_name = source.category_name
+
+            # ADR-098: Build title with scope context
+            if scope_type == "category" and category_name:
+                title = f"{category_name} Category - {period.start.strftime('%Y-%m-%d')}"
+            elif scope_type == "guild":
+                title = f"{source.server_name} Server - {period.start.strftime('%Y-%m-%d')}"
+            else:
+                title = f"{source.channel_name or source.server_name} - {period.start.strftime('%Y-%m-%d')}"
+
             # Create StoredSummary with archive source
             # ADR-026: Use storage_guild_id so WhatsApp summaries appear under primary guild
             stored = StoredSummary(
@@ -944,12 +957,16 @@ class RetrospectiveGenerator:
                 guild_id=storage_guild_id,
                 source_channel_ids=source_channel_ids,
                 summary_result=db_summary_result,
-                title=f"{source.channel_name or source.server_name} - {period.start.strftime('%Y-%m-%d')}",
+                title=title,
                 # ADR-008: Archive-specific metadata
                 source=SummarySource.ARCHIVE,
                 archive_period=period.start.strftime('%Y-%m-%d'),
                 archive_granularity=job.granularity,
                 archive_source_key=source.source_key,
+                # ADR-098: Scope metadata
+                scope_type=scope_type,
+                category_id=category_id,
+                category_name=category_name,
             )
 
             await self.stored_summary_repository.save(stored)

@@ -1460,6 +1460,8 @@ async def list_stored_summaries(
     archive_granularity: Optional[str] = Query(None, description="Filter by archive granularity (daily, weekly, monthly)"),
     # ADR-087: Continuity chain filter
     has_continuity: Optional[bool] = Query(None, description="Filter by continuity chain presence (weekly summaries with continuity_week_number)"),
+    # ADR-098: Scope type filter
+    scope_type: Optional[str] = Query(None, description="Filter by scope type (guild, category, channel)"),
     user: dict = Depends(get_current_user),
 ):
     """List stored summaries for a guild.
@@ -1471,6 +1473,7 @@ async def list_stored_summaries(
     ADR-035: Generation settings filtering by summary_length, perspective.
     ADR-041: Access issues filtering for partial coverage detection.
     ADR-073: Private channel content filtering.
+    ADR-098: Scope type filtering for guild, category, or channel summaries.
     """
     _check_guild_access(guild_id, user)
     _get_guild_or_404(guild_id)
@@ -1541,6 +1544,8 @@ async def list_stored_summaries(
         archive_granularity=archive_granularity,
         # ADR-087: Continuity chain filter
         has_continuity=has_continuity,
+        # ADR-098: Scope type filter
+        scope_type=scope_type,
     )
 
     total = await stored_repo.count_by_guild(
@@ -1580,6 +1585,8 @@ async def list_stored_summaries(
         archive_granularity=archive_granularity,
         # ADR-087: Continuity chain filter
         has_continuity=has_continuity,
+        # ADR-098: Scope type filter
+        scope_type=scope_type,
     )
 
     # ADR-046: Filter sensitive summaries for non-admin users
@@ -1921,6 +1928,10 @@ async def get_stored_summary(
         # ADR-074: Private channel info (based on actual references, not scope)
         private_source_channels=private_source_channels if private_source_channels else None,
         contains_sensitive_channels=actual_contains_sensitive,
+        # ADR-098: Scope metadata
+        scope_type=stored.scope_type,
+        category_id=stored.category_id,
+        category_name=stored.category_name,
     )
 
 

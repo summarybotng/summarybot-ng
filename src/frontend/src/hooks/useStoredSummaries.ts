@@ -134,6 +134,10 @@ export function useStoredSummaries(
         `/guilds/${guildId}/stored-summaries${queryString ? `?${queryString}` : ""}`
       ),
     enabled: !!guildId,
+    // Auto-refresh every 30 seconds to pick up new summaries from running jobs
+    refetchInterval: 30000,
+    // Don't refetch when window regains focus to avoid excessive requests
+    refetchOnWindowFocus: false,
   });
 }
 

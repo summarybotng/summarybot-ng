@@ -194,16 +194,33 @@ export function Channels() {
         </div>
       </motion.div>
 
-      {/* Locked channels being summarized warning */}
+      {/* ADR-097: Inaccessible channels warning - show first as it's most critical */}
+      {(() => {
+        const inaccessibleChannels = guild?.channels.filter(c => c.bot_can_read === false) || [];
+        if (inaccessibleChannels.length > 0) {
+          return (
+            <Alert className="border-red-500/50 bg-red-500/10">
+              <ShieldOff className="h-4 w-4 text-red-500" />
+              <AlertDescription className="text-red-700 dark:text-red-300">
+                <strong>{inaccessibleChannels.length} channel{inaccessibleChannels.length > 1 ? 's' : ''} not accessible to the bot.</strong>{" "}
+                These channels cannot be summarized. Grant the bot "Read Message History" permission to enable summarization.
+              </AlertDescription>
+            </Alert>
+          );
+        }
+        return null;
+      })()}
+
+      {/* Locked channels being summarized warning - amber since it's a caution, not error */}
       {(() => {
         const lockedSummarizing = guild?.channels.filter(c =>
           c.is_locked && (enabledChannels.has(c.id) || c.locked_override)
         ) || [];
         if (lockedSummarizing.length > 0) {
           return (
-            <Alert className="border-red-500/50 bg-red-500/10">
-              <AlertTriangle className="h-4 w-4 text-red-500" />
-              <AlertDescription className="text-red-700 dark:text-red-300">
+            <Alert className="border-amber-500/50 bg-amber-500/10">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <AlertDescription className="text-amber-700 dark:text-amber-300">
                 <strong>{lockedSummarizing.length} private channel{lockedSummarizing.length > 1 ? 's are' : ' is'} being summarized:</strong>{' '}
                 {lockedSummarizing.map(c => c.name).join(', ')}.
                 These summaries may contain sensitive content.
@@ -225,29 +242,14 @@ export function Channels() {
         </Alert>
       )}
 
-      {/* ADR-097: Inaccessible channels warning */}
-      {(() => {
-        const inaccessibleChannels = guild?.channels.filter(c => c.bot_can_read === false) || [];
-        if (inaccessibleChannels.length > 0) {
-          return (
-            <Alert className="border-red-500/50 bg-red-500/10">
-              <ShieldOff className="h-4 w-4 text-red-500" />
-              <AlertDescription className="text-red-700 dark:text-red-300">
-                <strong>{inaccessibleChannels.length} channel{inaccessibleChannels.length > 1 ? 's' : ''} not accessible to the bot.</strong>{" "}
-                These channels cannot be summarized. Grant the bot "Read Message History" permission to enable summarization.
-              </AlertDescription>
-            </Alert>
-          );
-        }
-        return null;
-      })()}
-
       <div className="space-y-4">
         {categories.map((category, categoryIndex) => {
           const channels = channelsByCategory[category];
           const enabledCount = channels.filter((ch) => enabledChannels.has(ch.id)).length;
           const allEnabled = enabledCount === channels.length;
           const isOpen = openCategories.has(category);
+          // ADR-097: Count inaccessible channels in this category
+          const inaccessibleCount = channels.filter((ch) => ch.bot_can_read === false).length;
 
           return (
             <motion.div
@@ -281,6 +283,13 @@ export function Channels() {
                         <span className="text-sm text-muted-foreground">
                           ({enabledCount}/{channels.length})
                         </span>
+                        {/* ADR-097: Show inaccessible count in header */}
+                        {inaccessibleCount > 0 && (
+                          <Badge variant="destructive" className="text-xs py-0 px-1.5">
+                            <ShieldOff className="h-3 w-3 mr-1" />
+                            {inaccessibleCount} no access
+                          </Badge>
+                        )}
                       </CollapsibleTrigger>
                       <div className="flex gap-2">
                         <Button

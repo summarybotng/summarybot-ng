@@ -219,6 +219,25 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
           </Select>
         </div>
 
+        {/* ADR-098: Scope type filter */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Scope:</span>
+          <Select
+            value={filters.scopeType || "all"}
+            onValueChange={(v) => onFiltersChange({ ...filters, scopeType: v === "all" ? undefined : v as "guild" | "category" | "channel" })}
+          >
+            <SelectTrigger className="w-[130px] h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Scopes</SelectItem>
+              <SelectItem value="guild">Server-wide</SelectItem>
+              <SelectItem value="category">Category</SelectItem>
+              <SelectItem value="channel">Single Channel</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         {/* ADR-026: Platform filter */}
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Platform:</span>

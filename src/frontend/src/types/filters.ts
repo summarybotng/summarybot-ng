@@ -94,6 +94,10 @@ export interface SummaryFilterCriteria {
   /** Filter by continuity chain presence (weekly summaries with continuity_week_number) */
   hasContinuity?: boolean;
 
+  // === Scope Type (ADR-098) ===
+  /** Filter by scope type (guild, category, channel) */
+  scopeType?: "guild" | "category" | "channel" | "all";
+
   // === Sorting (for list views, not feeds) ===
   sortBy?: SortByType;
   sortOrder?: SortOrderType;
@@ -197,6 +201,11 @@ export function criteriaToSearchParams(criteria: SummaryFilterCriteria): URLSear
     params.set("has_continuity", criteria.hasContinuity.toString());
   }
 
+  // ADR-098: Scope type filter
+  if (criteria.scopeType && criteria.scopeType !== "all") {
+    params.set("scope_type", criteria.scopeType);
+  }
+
   // Sorting
   if (criteria.sortBy) params.set("sort_by", criteria.sortBy);
   if (criteria.sortOrder) params.set("sort_order", criteria.sortOrder);
@@ -241,6 +250,8 @@ export function criteriaToApiBody(criteria: SummaryFilterCriteria): Record<strin
   if (criteria.granularity) body.archive_granularity = criteria.granularity;
   // ADR-087: Continuity chain filter
   if (criteria.hasContinuity !== undefined) body.has_continuity = criteria.hasContinuity;
+  // ADR-098: Scope type filter
+  if (criteria.scopeType && criteria.scopeType !== "all") body.scope_type = criteria.scopeType;
 
   return body;
 }
@@ -272,6 +283,7 @@ export function countActiveFilters(criteria: SummaryFilterCriteria): number {
     criteria.hasAccessIssues !== undefined,
     criteria.granularity,
     criteria.hasContinuity !== undefined,
+    criteria.scopeType && criteria.scopeType !== "all",
   ].filter(Boolean).length;
 }
 

@@ -167,7 +167,9 @@ export function WhatStep({ state, onChange, guildId }: StepProps) {
                 channels={slackChannels.map((ch) => ({
                   id: ch.id,
                   name: ch.name,
-                  type: ch.is_private ? 2 : 0,
+                  type: "text" as const,  // Slack channels are text-based
+                  category: null,
+                  enabled: true,
                 }))}
                 categories={[]}
                 allowedScopes={["channel"]}

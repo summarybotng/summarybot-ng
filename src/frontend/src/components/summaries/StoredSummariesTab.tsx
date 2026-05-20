@@ -389,6 +389,8 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
     hasAccessIssues: filters.hasAccessIssues,
     // ADR-073: Private channels filter
     containsPrivateChannels: filters.containsPrivateChannels,
+    // ADR-098: Scope type filter
+    scopeType: filters.scopeType,
   });
 
   const updateMutation = useUpdateStoredSummary(guildId);
@@ -1118,6 +1120,22 @@ function StoredSummaryDetailSheet({
   const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
   const [regenerateOptions, setRegenerateOptions] = useState<RegenerateOptions>({});
 
+  // Get original values from summary metadata for regenerate dialog
+  const originalModel = summary?.metadata?.model_used;
+  const originalLength = summary?.metadata?.summary_length || summary?.summary_length;
+  const originalPerspective = summary?.metadata?.perspective || summary?.perspective;
+
+  // Initialize regenerate options with original values when dialog opens
+  useEffect(() => {
+    if (regenerateDialogOpen && summary) {
+      setRegenerateOptions({
+        model: originalModel,
+        summary_length: originalLength,
+        perspective: originalPerspective,
+      });
+    }
+  }, [regenerateDialogOpen, summary, originalModel, originalLength, originalPerspective]);
+
   // ADR-086: Fetch wiki pages that reference this summary
   const { data: wikiPagesData } = useSummaryWikiPages(
     guildId,
@@ -1168,6 +1186,18 @@ function StoredSummaryDetailSheet({
                     <Badge variant="outline" className="capitalize">
                       {summary.source === "archive" ? <Archive className="mr-1 h-3 w-3" /> : <Clock className="mr-1 h-3 w-3" />}
                       {summary.source}
+                    </Badge>
+                  )}
+                  {/* ADR-098: Scope badge */}
+                  {summary.scope_type && (
+                    <Badge variant="outline" className={
+                      summary.scope_type === "guild" ? "bg-blue-500/10 text-blue-600 border-blue-500/30" :
+                      summary.scope_type === "category" ? "bg-amber-500/10 text-amber-600 border-amber-500/30" :
+                      "bg-gray-500/10 text-gray-600 border-gray-500/30"
+                    }>
+                      {summary.scope_type === "guild" ? "🌐 Server-wide" :
+                       summary.scope_type === "category" ? `📁 ${summary.category_name || "Category"}` :
+                       "#️⃣ Channel"}
                     </Badge>
                   )}
                 </div>
@@ -1246,7 +1276,7 @@ function StoredSummaryDetailSheet({
                   <DialogHeader>
                     <DialogTitle>Regenerate Summary</DialogTitle>
                     <DialogDescription>
-                      Customize regeneration settings or use defaults to add grounding references.
+                      Adjust generation settings or keep the original values. Regeneration adds grounding references.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
@@ -1257,11 +1287,13 @@ function StoredSummaryDetailSheet({
                         onValueChange={(v) => setRegenerateOptions(prev => ({ ...prev, model: v || undefined }))}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Use original model" />
+                          <SelectValue placeholder="Select model" />
                         </SelectTrigger>
                         <SelectContent>
                           {AVAILABLE_MODELS.map(m => (
-                            <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                            <SelectItem key={m.value} value={m.value}>
+                              {m.label}{m.value === originalModel ? " (Original)" : ""}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -1273,11 +1305,13 @@ function StoredSummaryDetailSheet({
                         onValueChange={(v) => setRegenerateOptions(prev => ({ ...prev, summary_length: v || undefined }))}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Use original length" />
+                          <SelectValue placeholder="Select length" />
                         </SelectTrigger>
                         <SelectContent>
                           {SUMMARY_LENGTHS.map(l => (
-                            <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
+                            <SelectItem key={l.value} value={l.value}>
+                              {l.label}{l.value === originalLength ? " (Original)" : ""}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -1289,11 +1323,13 @@ function StoredSummaryDetailSheet({
                         onValueChange={(v) => setRegenerateOptions(prev => ({ ...prev, perspective: v || undefined }))}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Use original perspective" />
+                          <SelectValue placeholder="Select perspective" />
                         </SelectTrigger>
                         <SelectContent>
                           {PERSPECTIVES.map(p => (
-                            <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                            <SelectItem key={p.value} value={p.value}>
+                              {p.label}{p.value === originalPerspective ? " (Original)" : ""}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>

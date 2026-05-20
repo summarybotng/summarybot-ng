@@ -3542,6 +3542,8 @@ async def publish_summary_to_confluence(
             existing_page_id=existing_pub.page_id if existing_pub else None,
             existing_version=existing_pub.page_version if existing_pub else None,
             force=body.force,
+            summary_id=summary_id,
+            guild_id=guild_id,
         )
 
         # Handle conflict

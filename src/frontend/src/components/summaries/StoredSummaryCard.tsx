@@ -74,6 +74,7 @@ interface StoredSummaryCardProps {
   onPush: () => void;
   onPushDM: () => void;  // ADR-047: Push to Discord DM
   onPushToDrive?: () => void;  // ADR-091: Push to Google Drive
+  onPublishConfluence?: () => void;  // ADR-099: Publish to Confluence
   onEmail: () => void;  // ADR-030: Email delivery
   onPin: () => void;
   onArchive: () => void;
@@ -90,6 +91,7 @@ export function StoredSummaryCard({
   onPush,
   onPushDM,
   onPushToDrive,
+  onPublishConfluence,
   onEmail,
   onPin,
   onArchive,
@@ -165,6 +167,7 @@ export function StoredSummaryCard({
                   onPush,
                   onPushDM,
                   onPushToDrive,
+                  onPublishConfluence,
                   onEmail,
                   onPin,
                   onArchive,

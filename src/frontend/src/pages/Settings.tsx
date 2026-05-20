@@ -22,6 +22,7 @@ import { Save, Loader2, Server, Globe, GitBranch, RefreshCw } from "lucide-react
 import { Input } from "@/components/ui/input";
 import { ChannelSensitivitySettings } from "@/components/settings/ChannelSensitivitySettings";
 import { GoogleDriveSyncSettings } from "@/components/settings/GoogleDriveSyncSettings";
+import { ConfluenceSettings } from "@/components/settings/ConfluenceSettings";
 import type { SummaryOptions } from "@/types";
 
 export function Settings() {
@@ -255,6 +256,14 @@ export function Settings() {
         <GoogleDriveSyncSettings
           guildId={guild.id}
           animationDelay={0.25}
+        />
+      )}
+
+      {/* ADR-099: Confluence Integration Settings */}
+      {guild && (
+        <ConfluenceSettings
+          guildId={guild.id}
+          animationDelay={0.3}
         />
       )}
 

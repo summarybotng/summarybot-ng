@@ -1128,6 +1128,89 @@ class SendToEmailResponse(BaseModel):
 
 
 # ============================================================================
+# ADR-099: Confluence Publishing Models
+# ============================================================================
+
+class PublishToConfluenceRequest(BaseModel):
+    """Request to publish a summary to Confluence (ADR-099)."""
+    force: bool = Field(
+        default=False,
+        description="Force update even if page was modified externally"
+    )
+
+
+class PublishToConfluenceResponse(BaseModel):
+    """Response for Confluence publish operation."""
+    success: bool
+    page_id: Optional[str] = None
+    page_url: Optional[str] = None
+    page_version: Optional[int] = None
+    error: Optional[str] = None
+    conflict: bool = Field(
+        default=False,
+        description="True if page was modified since last publish (use force to override)"
+    )
+    previously_published: bool = Field(
+        default=False,
+        description="True if this summary was already published to this page"
+    )
+
+
+class ConfluenceSettingsRequest(BaseModel):
+    """Request to update Confluence settings for a guild (ADR-099)."""
+    enabled: bool = Field(
+        default=False,
+        description="Whether Confluence publishing is enabled"
+    )
+    base_url: str = Field(
+        default="",
+        description="Confluence base URL (e.g., https://company.atlassian.net)"
+    )
+    space_key: str = Field(
+        default="",
+        description="Confluence space key (e.g., TEAM)"
+    )
+    parent_page_id: Optional[str] = Field(
+        default=None,
+        description="Optional parent page ID for hierarchy"
+    )
+    email: str = Field(
+        default="",
+        description="Service account email for Confluence API"
+    )
+    api_token: Optional[str] = Field(
+        default=None,
+        description="API token (only include when updating)"
+    )
+    page_title_template: str = Field(
+        default="{title}",
+        description="Template for page titles"
+    )
+
+
+class ConfluenceSettingsResponse(BaseModel):
+    """Response containing Confluence settings for a guild."""
+    guild_id: str
+    enabled: bool = False
+    base_url: str = ""
+    space_key: str = ""
+    parent_page_id: Optional[str] = None
+    email: str = ""
+    page_title_template: str = "{title}"
+    configured_by: Optional[str] = None
+    configured_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    is_configured: bool = Field(
+        default=False,
+        description="Whether all required fields are set"
+    )
+    has_api_token: bool = Field(
+        default=False,
+        description="Whether an API token is configured (token itself not returned)"
+    )
+
+
+# ============================================================================
 # ADR-013: Unified Job Tracking Models
 # ============================================================================
 

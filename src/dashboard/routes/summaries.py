@@ -47,6 +47,11 @@ from ..models import (
     SendToEmailRequest,
     SendToEmailResponse,
     EmailDeliveryResult,
+    # ADR-099: Confluence publishing
+    PublishToConfluenceRequest,
+    PublishToConfluenceResponse,
+    ConfluenceSettingsRequest,
+    ConfluenceSettingsResponse,
 )
 from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_stored_summary_repository, get_config_manager, get_task_scheduler, get_summary_job_repository, get_config_repository
 from ...data.base import SearchCriteria
@@ -3452,6 +3457,465 @@ async def send_summary_to_email(
         raise HTTPException(
             status_code=500,
             detail={"code": "EMAIL_FAILED", "message": f"Email delivery failed: {str(e)}"},
+        )
+
+
+# ==================== ADR-099: Confluence Publishing ====================
+
+@router.post(
+    "/guilds/{guild_id}/stored-summaries/{summary_id}/publish-confluence",
+    response_model=PublishToConfluenceResponse,
+    summary="Publish summary to Confluence",
+    description="Publish a stored summary to Atlassian Confluence (ADR-099).",
+    responses={
+        400: {"model": ErrorResponse, "description": "Summary has no content"},
+        404: {"model": ErrorResponse, "description": "Summary not found"},
+        409: {"model": ErrorResponse, "description": "Page version conflict"},
+        503: {"model": ErrorResponse, "description": "Confluence not configured"},
+    },
+)
+async def publish_summary_to_confluence(
+    body: PublishToConfluenceRequest,
+    guild_id: str = Path(..., description="Discord guild ID"),
+    summary_id: str = Path(..., description="Stored summary ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Publish a stored summary to Confluence.
+
+    ADR-099: Remote Platform Publishing - Confluence MVP.
+
+    Creates a new page or updates an existing one. If the page was modified
+    since the last publish, returns a conflict error unless force=True.
+
+    Admin-only in MVP (no Publisher role).
+    """
+    import logging
+    import secrets
+    logger = logging.getLogger(__name__)
+
+    try:
+        _check_guild_access(guild_id, user)
+        require_guild_admin(guild_id, user)  # Admin only in MVP
+
+        from ...services.confluence import get_confluence_service_for_guild
+        from ...data.sqlite.confluence_repository import get_confluence_repository, ConfluencePublication
+
+        # Check if Confluence is configured for this guild
+        confluence_service = await get_confluence_service_for_guild(guild_id)
+        if not confluence_service.is_configured():
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "CONFLUENCE_NOT_CONFIGURED",
+                    "message": "Confluence not configured. Set CONFLUENCE_ENABLED=true and configure CONFLUENCE_* environment variables.",
+                },
+            )
+
+        # Load summary
+        repo = await get_stored_summary_repository()
+        summary = await repo.get(summary_id)
+        if not summary or summary.guild_id != guild_id:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": f"Summary {summary_id} not found"},
+            )
+
+        # Verify summary has content
+        if not summary.summary_result:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "NO_CONTENT", "message": "Summary has no content to publish"},
+            )
+
+        # Check for existing publication
+        confluence_repo = await get_confluence_repository()
+        existing_pub = await confluence_repo.get_by_summary(summary_id) if confluence_repo else None
+
+        # Build page title
+        page_title = summary.title or f"Summary {summary_id[:8]}"
+
+        # Publish to Confluence
+        result = await confluence_service.publish_summary(
+            summary=summary.summary_result,
+            title=page_title,
+            existing_page_id=existing_pub.page_id if existing_pub else None,
+            existing_version=existing_pub.page_version if existing_pub else None,
+            force=body.force,
+        )
+
+        # Handle conflict
+        if result.conflict:
+            return PublishToConfluenceResponse(
+                success=False,
+                page_id=result.page_id,
+                page_url=result.page_url,
+                page_version=result.page_version,
+                error=result.error,
+                conflict=True,
+                previously_published=existing_pub is not None,
+            )
+
+        # Handle error
+        if not result.success:
+            return PublishToConfluenceResponse(
+                success=False,
+                error=result.error,
+                previously_published=existing_pub is not None,
+            )
+
+        # Save/update publication record
+        if confluence_repo:
+            if existing_pub:
+                # Update existing record
+                await confluence_repo.update_version(
+                    publication_id=existing_pub.id,
+                    new_version=result.page_version or 1,
+                    page_url=result.page_url,
+                )
+            else:
+                # Create new record
+                publication = ConfluencePublication(
+                    id=f"cfp_{secrets.token_urlsafe(16)}",
+                    summary_id=summary_id,
+                    guild_id=guild_id,
+                    page_id=result.page_id or "",
+                    page_url=result.page_url or "",
+                    page_version=result.page_version or 1,
+                    published_by=user.get("sub", "unknown"),
+                )
+                await confluence_repo.save(publication)
+
+        logger.info(
+            f"Published summary {summary_id} to Confluence page {result.page_id} "
+            f"(version {result.page_version})"
+        )
+
+        return PublishToConfluenceResponse(
+            success=True,
+            page_id=result.page_id,
+            page_url=result.page_url,
+            page_version=result.page_version,
+            previously_published=existing_pub is not None,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Confluence publish failed for summary {summary_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "CONFLUENCE_FAILED", "message": f"Confluence publish failed: {str(e)}"},
+        )
+
+
+# ==================== ADR-099: Confluence Settings ====================
+
+@router.get(
+    "/guilds/{guild_id}/settings/confluence",
+    response_model=ConfluenceSettingsResponse,
+    summary="Get Confluence settings",
+    description="Get Confluence publishing settings for a guild (ADR-099).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def get_confluence_settings(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Get Confluence settings for a guild.
+
+    ADR-099: Per-tenant Confluence configuration.
+    Admin-only endpoint.
+    """
+    try:
+        _check_guild_access(guild_id, user)
+        require_guild_admin(guild_id, user)
+
+        from ...data.sqlite.confluence_repository import get_confluence_repository
+
+        repo = await get_confluence_repository()
+        if not repo:
+            return ConfluenceSettingsResponse(
+                guild_id=guild_id,
+                enabled=False,
+                is_configured=False,
+                has_api_token=False,
+            )
+
+        settings = await repo.get_settings(guild_id)
+        if not settings:
+            return ConfluenceSettingsResponse(
+                guild_id=guild_id,
+                enabled=False,
+                is_configured=False,
+                has_api_token=False,
+            )
+
+        return ConfluenceSettingsResponse(
+            guild_id=settings.guild_id,
+            enabled=settings.enabled,
+            base_url=settings.base_url,
+            space_key=settings.space_key,
+            parent_page_id=settings.parent_page_id,
+            email=settings.email,
+            page_title_template=settings.page_title_template,
+            configured_by=settings.configured_by,
+            configured_at=settings.configured_at.isoformat() if settings.configured_at else None,
+            updated_at=settings.updated_at.isoformat() if settings.updated_at else None,
+            is_configured=settings.is_configured(),
+            has_api_token=bool(settings.api_token),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to get Confluence settings for guild {guild_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "SETTINGS_ERROR", "message": str(e)},
+        )
+
+
+@router.put(
+    "/guilds/{guild_id}/settings/confluence",
+    response_model=ConfluenceSettingsResponse,
+    summary="Update Confluence settings",
+    description="Update Confluence publishing settings for a guild (ADR-099).",
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid settings"},
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def update_confluence_settings(
+    body: ConfluenceSettingsRequest,
+    guild_id: str = Path(..., description="Discord guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Update Confluence settings for a guild.
+
+    ADR-099: Per-tenant Confluence configuration.
+    Admin-only endpoint.
+
+    Note: API token is only updated if provided in the request.
+    Omit or set to null to keep the existing token.
+    """
+    try:
+        _check_guild_access(guild_id, user)
+        require_guild_admin(guild_id, user)
+
+        from ...data.sqlite.confluence_repository import (
+            get_confluence_repository,
+            ConfluenceSettings,
+        )
+        from ...services.confluence import clear_guild_confluence_cache
+
+        repo = await get_confluence_repository()
+        if not repo:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "DATABASE_ERROR", "message": "Repository not available"},
+            )
+
+        # Get existing settings to preserve API token if not provided
+        existing = await repo.get_settings(guild_id)
+        api_token = body.api_token if body.api_token else (existing.api_token if existing else "")
+
+        # Validate URL format
+        base_url = body.base_url.rstrip("/") if body.base_url else ""
+        if base_url and not (base_url.startswith("https://") or base_url.startswith("http://")):
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_URL", "message": "Base URL must start with https:// or http://"},
+            )
+
+        from src.utils.time import utc_now_naive
+
+        settings = ConfluenceSettings(
+            guild_id=guild_id,
+            enabled=body.enabled,
+            base_url=base_url,
+            space_key=body.space_key.upper() if body.space_key else "",
+            parent_page_id=body.parent_page_id or None,
+            email=body.email,
+            api_token=api_token,
+            page_title_template=body.page_title_template or "{title}",
+            configured_by=user.get("sub", "unknown"),
+            configured_at=existing.configured_at if existing else utc_now_naive(),
+            updated_at=utc_now_naive(),
+        )
+
+        success = await repo.save_settings(settings)
+        if not success:
+            raise HTTPException(
+                status_code=500,
+                detail={"code": "SAVE_FAILED", "message": "Failed to save settings"},
+            )
+
+        # Clear cached publisher to force reload
+        clear_guild_confluence_cache(guild_id)
+
+        return ConfluenceSettingsResponse(
+            guild_id=settings.guild_id,
+            enabled=settings.enabled,
+            base_url=settings.base_url,
+            space_key=settings.space_key,
+            parent_page_id=settings.parent_page_id,
+            email=settings.email,
+            page_title_template=settings.page_title_template,
+            configured_by=settings.configured_by,
+            configured_at=settings.configured_at.isoformat() if settings.configured_at else None,
+            updated_at=settings.updated_at.isoformat() if settings.updated_at else None,
+            is_configured=settings.is_configured(),
+            has_api_token=bool(settings.api_token),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to update Confluence settings for guild {guild_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "SETTINGS_ERROR", "message": str(e)},
+        )
+
+
+@router.delete(
+    "/guilds/{guild_id}/settings/confluence",
+    summary="Delete Confluence settings",
+    description="Remove Confluence settings for a guild (ADR-099).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+    },
+)
+async def delete_confluence_settings(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Delete Confluence settings for a guild.
+
+    ADR-099: Per-tenant Confluence configuration.
+    Admin-only endpoint.
+    """
+    try:
+        _check_guild_access(guild_id, user)
+        require_guild_admin(guild_id, user)
+
+        from ...data.sqlite.confluence_repository import get_confluence_repository
+        from ...services.confluence import clear_guild_confluence_cache
+
+        repo = await get_confluence_repository()
+        if repo:
+            await repo.delete_settings(guild_id)
+            clear_guild_confluence_cache(guild_id)
+
+        return {"success": True, "message": "Confluence settings deleted"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to delete Confluence settings for guild {guild_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "SETTINGS_ERROR", "message": str(e)},
+        )
+
+
+@router.post(
+    "/guilds/{guild_id}/settings/confluence/test",
+    summary="Test Confluence connection",
+    description="Test Confluence connection with current settings (ADR-099).",
+    responses={
+        400: {"model": ErrorResponse, "description": "Not configured"},
+        403: {"model": ErrorResponse, "description": "No permission"},
+        503: {"model": ErrorResponse, "description": "Connection failed"},
+    },
+)
+async def test_confluence_connection(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Test Confluence connection for a guild.
+
+    ADR-099: Per-tenant Confluence configuration.
+    Verifies that the configured credentials can access Confluence.
+    """
+    try:
+        _check_guild_access(guild_id, user)
+        require_guild_admin(guild_id, user)
+
+        from ...services.confluence import get_confluence_service_for_guild
+
+        service = await get_confluence_service_for_guild(guild_id)
+        if not service.is_configured():
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "NOT_CONFIGURED",
+                    "message": "Confluence is not configured for this guild",
+                },
+            )
+
+        # Try to get space info to verify connection
+        try:
+            client = await service._get_client()
+            response = await client.get(
+                f"/spaces",
+                params={"keys": service.config.space_key}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                results = data.get("results", [])
+                if results:
+                    space = results[0]
+                    return {
+                        "success": True,
+                        "space_name": space.get("name"),
+                        "space_key": space.get("key"),
+                        "message": f"Successfully connected to space '{space.get('name')}'",
+                    }
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "code": "SPACE_NOT_FOUND",
+                            "message": f"Space '{service.config.space_key}' not found",
+                        },
+                    )
+            elif response.status_code == 401:
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "code": "AUTH_FAILED",
+                        "message": "Authentication failed. Check email and API token.",
+                    },
+                )
+            else:
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "code": "CONNECTION_FAILED",
+                        "message": f"Connection failed: {response.status_code}",
+                    },
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "CONNECTION_ERROR",
+                    "message": f"Connection error: {str(e)}",
+                },
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Confluence connection test failed for guild {guild_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "TEST_ERROR", "message": str(e)},
         )
 
 

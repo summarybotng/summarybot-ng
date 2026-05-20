@@ -26,6 +26,7 @@ import {
   MoreVertical,
   ChevronDown,
   Cloud,
+  FileText,
 } from "lucide-react";
 
 export interface SummaryActionHandlers {
@@ -33,6 +34,7 @@ export interface SummaryActionHandlers {
   onPush: () => void;
   onPushDM: () => void;  // ADR-047: Push to Discord DM
   onPushToDrive?: () => void;  // ADR-091: Push to Google Drive
+  onPublishConfluence?: () => void;  // ADR-099: Publish to Confluence
   onEmail: () => void;
   onRegenerate?: () => void;
   onPin: () => void;
@@ -101,6 +103,12 @@ export function SummaryActions({
               Push to Drive
             </DropdownMenuItem>
           )}
+          {handlers.onPublishConfluence && (
+            <DropdownMenuItem onClick={handleClick(handlers.onPublishConfluence)}>
+              <FileText className="mr-2 h-4 w-4" />
+              Publish to Confluence
+            </DropdownMenuItem>
+          )}
           {handlers.onRegenerate && (
             <DropdownMenuItem onClick={handleClick(handlers.onRegenerate)}>
               <RefreshCw className="mr-2 h-4 w-4" />
@@ -148,6 +156,12 @@ export function SummaryActions({
         <Button variant="outline" onClick={handleClick(handlers.onPushToDrive)} className="w-full sm:w-auto">
           <Cloud className="mr-2 h-4 w-4" />
           Push to Drive
+        </Button>
+      )}
+      {handlers.onPublishConfluence && (
+        <Button variant="outline" onClick={handleClick(handlers.onPublishConfluence)} className="w-full sm:w-auto">
+          <FileText className="mr-2 h-4 w-4" />
+          Confluence
         </Button>
       )}
       {handlers.onRegenerate && (

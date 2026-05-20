@@ -11,6 +11,7 @@ import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, usePushToDM, useSendToEmail, useRegenerateSummary, useSummaryWikiPages, type SummarySourceType, type RegenerateOptions } from "@/hooks/useStoredSummaries";
 import { usePushToDrive, useServerSyncConfig } from "@/hooks/useArchive";
+import { useConfluencePublish, type PublishToConfluenceResponse } from "@/hooks/useConfluencePublish";
 import { useGuild } from "@/hooks/useGuilds";
 import { useAuthStore } from "@/stores/authStore";
 import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
@@ -88,6 +89,7 @@ import { SummaryActions } from "./SummaryActions";
 import { PushToChannelModal } from "./PushToChannelModal";
 import { PushToDMModal } from "./PushToDMModal";
 import { SendToEmailModal, type SendToEmailRequest } from "./SendToEmailModal";
+import { PublishToConfluenceModal, type PublishToConfluenceRequest, type PublishToConfluenceResult } from "./PublishToConfluenceModal";
 import type { PushToDMRequest } from "@/types";
 import { SummaryFilters, type FilterState } from "./SummaryFilters";
 import { SummaryCalendar } from "./SummaryCalendar";
@@ -328,6 +330,9 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
   const [dmError, setDmError] = useState<string | null>(null);  // ADR-047
   const [emailModalSummary, setEmailModalSummary] = useState<StoredSummary | null>(null);  // ADR-030
   const [emailError, setEmailError] = useState<string | null>(null);  // ADR-030
+  const [confluenceModalSummary, setConfluenceModalSummary] = useState<StoredSummary | null>(null);  // ADR-099
+  const [confluenceError, setConfluenceError] = useState<string | null>(null);  // ADR-099
+  const [confluenceResult, setConfluenceResult] = useState<PublishToConfluenceResult | null>(null);  // ADR-099
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   // ADR-018: Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -401,6 +406,7 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
   const pushToDriveMutation = usePushToDrive();  // ADR-091
   const { data: serverSyncConfig } = useServerSyncConfig(guildId);  // ADR-091
   const regenerateMutation = useRegenerateSummary(guildId);
+  const confluenceMutation = useConfluencePublish(guildId);  // ADR-099
 
   // Refresh both list and calendar views
   const handleRefresh = async () => {
@@ -628,6 +634,38 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
         setEmailError("Email is not configured on the server. Contact your administrator.");
       } else {
         setEmailError(errorMessage);
+      }
+    }
+  };
+
+  // ADR-099: Confluence handling
+  const handleConfluence = async (request: PublishToConfluenceRequest) => {
+    if (!confluenceModalSummary) return;
+    setConfluenceError(null);
+    setConfluenceResult(null);
+    try {
+      const result = await confluenceMutation.mutateAsync({
+        summaryId: confluenceModalSummary.id,
+        request,
+      });
+      // Store result to show in modal (success or conflict)
+      setConfluenceResult(result as PublishToConfluenceResult);
+      if (result.success) {
+        toast({
+          title: result.previously_published ? "Confluence Updated" : "Published to Confluence",
+          description: result.page_url ? (
+            <a href={result.page_url} target="_blank" rel="noopener noreferrer" className="underline">
+              View in Confluence
+            </a>
+          ) : "Summary published successfully",
+        });
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to publish to Confluence";
+      if (errorMessage.includes("CONFLUENCE_NOT_CONFIGURED")) {
+        setConfluenceError("Confluence is not configured. Contact your administrator.");
+      } else {
+        setConfluenceError(errorMessage);
       }
     }
   };
@@ -872,6 +910,7 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
                         onPush={() => setPushModalSummary(summary)}
                         onPushDM={() => setDmModalSummary(summary)}
                         onPushToDrive={serverSyncConfig?.enabled ? () => handlePushToDrive(summary) : undefined}
+                        onPublishConfluence={() => setConfluenceModalSummary(summary)}
                         onEmail={() => setEmailModalSummary(summary)}
                         onPin={() => handlePin(summary)}
                         onArchive={() => handleArchive(summary)}
@@ -946,6 +985,12 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
             handlePushToDrive(summary);
           }
         } : undefined}
+        onPublishConfluence={(summaryId) => {
+          const summary = summaries.find((s) => s.id === summaryId);
+          if (summary) {
+            setConfluenceModalSummary(summary);
+          }
+        }}
         onEmail={(summaryId) => {
           const summary = summaries.find((s) => s.id === summaryId);
           if (summary) {
@@ -1006,6 +1051,25 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
           isPending={emailMutation.isPending}
           onSubmit={handleEmail}
           error={emailError}
+        />
+      )}
+
+      {/* ADR-099: Confluence Modal */}
+      {confluenceModalSummary && (
+        <PublishToConfluenceModal
+          open={!!confluenceModalSummary}
+          onOpenChange={(open) => {
+            if (!open) {
+              setConfluenceModalSummary(null);
+              setConfluenceError(null);
+              setConfluenceResult(null);
+            }
+          }}
+          summaryTitle={confluenceModalSummary.title}
+          isPending={confluenceMutation.isPending}
+          onSubmit={handleConfluence}
+          error={confluenceError}
+          result={confluenceResult}
         />
       )}
 
@@ -1092,6 +1156,7 @@ function StoredSummaryDetailSheet({
   onPush,
   onPushDM,
   onPushToDrive,
+  onPublishConfluence,
   onEmail,
   onPin,
   onArchive,
@@ -1107,6 +1172,7 @@ function StoredSummaryDetailSheet({
   onPush: (summaryId: string) => void;
   onPushDM: (summaryId: string) => void;
   onPushToDrive?: (summaryId: string) => void;
+  onPublishConfluence?: (summaryId: string) => void;
   onEmail: (summaryId: string) => void;
   onPin: (summary: StoredSummaryDetail) => void;
   onArchive: (summary: StoredSummaryDetail) => void;
@@ -1257,6 +1323,7 @@ function StoredSummaryDetailSheet({
                   onPush: () => onPush(summary.id),
                   onPushDM: () => onPushDM(summary.id),
                   onPushToDrive: onPushToDrive ? () => onPushToDrive(summary.id) : undefined,
+                  onPublishConfluence: onPublishConfluence ? () => onPublishConfluence(summary.id) : undefined,
                   onEmail: () => onEmail(summary.id),
                   onRegenerate: () => setRegenerateDialogOpen(true),
                   onPin: () => onPin(summary),

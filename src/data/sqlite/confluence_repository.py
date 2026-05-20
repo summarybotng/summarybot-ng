@@ -428,20 +428,4 @@ class SQLiteConfluenceRepository:
         )
 
 
-# Module-level repository accessor
-_confluence_repo: Optional[SQLiteConfluenceRepository] = None
-
-
-async def get_confluence_repository() -> Optional[SQLiteConfluenceRepository]:
-    """Get the Confluence repository singleton.
-
-    Returns:
-        SQLiteConfluenceRepository or None if not initialized
-    """
-    global _confluence_repo
-    if _confluence_repo is None:
-        from .connection import get_connection
-        conn = await get_connection()
-        if conn:
-            _confluence_repo = SQLiteConfluenceRepository(conn)
-    return _confluence_repo
+# Note: Use get_confluence_repository() from src.data.repositories to get an instance

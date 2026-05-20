@@ -3498,7 +3498,8 @@ async def publish_summary_to_confluence(
         require_guild_admin(guild_id, user)  # Admin only in MVP
 
         from ...services.confluence import get_confluence_service_for_guild
-        from ...data.sqlite.confluence_repository import get_confluence_repository, ConfluencePublication
+        from ...data.repositories import get_confluence_repository
+        from ...data.sqlite.confluence_repository import ConfluencePublication
 
         # Check if Confluence is configured for this guild
         confluence_service = await get_confluence_service_for_guild(guild_id)
@@ -3632,7 +3633,7 @@ async def get_confluence_settings(
         _check_guild_access(guild_id, user)
         require_guild_admin(guild_id, user)
 
-        from ...data.sqlite.confluence_repository import get_confluence_repository
+        from ...data.repositories import get_confluence_repository
 
         repo = await get_confluence_repository()
         if not repo:
@@ -3704,10 +3705,8 @@ async def update_confluence_settings(
         _check_guild_access(guild_id, user)
         require_guild_admin(guild_id, user)
 
-        from ...data.sqlite.confluence_repository import (
-            get_confluence_repository,
-            ConfluenceSettings,
-        )
+        from ...data.repositories import get_confluence_repository
+        from ...data.sqlite.confluence_repository import ConfluenceSettings
         from ...services.confluence import clear_guild_confluence_cache
 
         repo = await get_confluence_repository()
@@ -3801,7 +3800,7 @@ async def delete_confluence_settings(
         _check_guild_access(guild_id, user)
         require_guild_admin(guild_id, user)
 
-        from ...data.sqlite.confluence_repository import get_confluence_repository
+        from ...data.repositories import get_confluence_repository
         from ...services.confluence import clear_guild_confluence_cache
 
         repo = await get_confluence_repository()

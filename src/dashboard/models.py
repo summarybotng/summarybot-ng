@@ -177,6 +177,7 @@ class ChannelResponse(BaseModel):
     enabled: bool
     is_locked: bool = False
     locked_override: bool = False
+    bot_can_read: bool = True  # ADR-097: Whether bot has read_message_history permission
 
 
 class CategoryResponse(BaseModel):

@@ -288,6 +288,9 @@ async def get_guild(
         # Check locked status
         is_locked = _is_channel_locked(channel, guild)
 
+        # ADR-097: Check if bot can read message history (required for summarization)
+        bot_can_read = channel.permissions_for(guild.me).read_message_history
+
         # Determine enabled state from channel_settings or fallback to legacy
         settings = channel_settings_map.get(channel_id_str)
         if settings:
@@ -324,6 +327,7 @@ async def get_guild(
                 enabled=enabled,
                 is_locked=is_locked,
                 locked_override=locked_override,
+                bot_can_read=bot_can_read,  # ADR-097
             )
         )
 

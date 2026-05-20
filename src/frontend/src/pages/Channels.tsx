@@ -15,7 +15,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Hash, Volume2, MessageSquare, RefreshCw, ChevronDown, Check, Lock, AlertTriangle, Eye, Slack, Gamepad2 } from "lucide-react";
+import { Hash, Volume2, MessageSquare, RefreshCw, ChevronDown, Check, Lock, AlertTriangle, Eye, Slack, Gamepad2, ShieldOff } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import type { Channel } from "@/types";
@@ -225,6 +225,23 @@ export function Channels() {
         </Alert>
       )}
 
+      {/* ADR-097: Inaccessible channels warning */}
+      {(() => {
+        const inaccessibleChannels = guild?.channels.filter(c => c.bot_can_read === false) || [];
+        if (inaccessibleChannels.length > 0) {
+          return (
+            <Alert className="border-red-500/50 bg-red-500/10">
+              <ShieldOff className="h-4 w-4 text-red-500" />
+              <AlertDescription className="text-red-700 dark:text-red-300">
+                <strong>{inaccessibleChannels.length} channel{inaccessibleChannels.length > 1 ? 's' : ''} not accessible to the bot.</strong>{" "}
+                These channels cannot be summarized. Grant the bot "Read Message History" permission to enable summarization.
+              </AlertDescription>
+            </Alert>
+          );
+        }
+        return null;
+      })()}
+
       <div className="space-y-4">
         {categories.map((category, categoryIndex) => {
           const channels = channelsByCategory[category];
@@ -310,6 +327,13 @@ export function Channels() {
                               <div className="flex items-center gap-3">
                                 <Icon className="h-4 w-4 text-muted-foreground" />
                                 <span className="font-medium">{channel.name}</span>
+                                {/* ADR-097: Show if bot cannot read this channel */}
+                                {channel.bot_can_read === false && (
+                                  <Badge variant="destructive" className="text-xs py-0 px-1.5">
+                                    <ShieldOff className="h-3 w-3 mr-1" />
+                                    No Access
+                                  </Badge>
+                                )}
                                 {isLocked && (
                                   <div className="flex items-center gap-1">
                                     <Lock className="h-3 w-3 text-amber-500" />

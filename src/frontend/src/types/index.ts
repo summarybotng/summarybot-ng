@@ -49,6 +49,7 @@ export interface Channel {
   enabled: boolean;
   is_locked?: boolean;
   locked_override?: boolean;
+  bot_can_read?: boolean;  // ADR-097: Whether bot has read_message_history permission
 }
 
 export interface Category {

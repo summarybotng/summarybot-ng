@@ -1080,6 +1080,15 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
           open={!!confluenceModalSummary}
           onOpenChange={(open) => {
             if (!open) {
+              // If publish was successful, refetch the summary detail to update publication info
+              if (confluenceResult?.success) {
+                queryClient.invalidateQueries({
+                  queryKey: ["stored-summary", guildId, confluenceModalSummary.id],
+                });
+                queryClient.invalidateQueries({
+                  queryKey: ["stored-summaries", guildId],
+                });
+              }
               setConfluenceModalSummary(null);
               setConfluenceError(null);
               setConfluenceResult(null);

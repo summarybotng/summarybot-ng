@@ -585,8 +585,16 @@ async def get_confluence_service_for_guild(guild_id: str) -> ConfluencePublisher
         from ..data.repositories import get_confluence_repository
 
         repo = await get_confluence_repository()
+        logger.debug(f"Confluence repo for guild {guild_id}: repo={repo is not None}")
         if repo:
             settings = await repo.get_settings(guild_id)
+            logger.debug(
+                f"Confluence settings for guild {guild_id}: "
+                f"settings={settings is not None}, "
+                f"enabled={settings.enabled if settings else None}, "
+                f"has_token={bool(settings.api_token) if settings else None}, "
+                f"is_configured={settings.is_configured() if settings else None}"
+            )
             if settings and settings.is_configured():
                 config = ConfluenceConfig.from_settings(settings)
                 publisher = ConfluencePublisher(config)
@@ -596,8 +604,16 @@ async def get_confluence_service_for_guild(guild_id: str) -> ConfluencePublisher
                     f"url={config.base_url}, space={config.space_key}"
                 )
                 return publisher
+            elif settings:
+                # Settings exist but not fully configured - log why
+                logger.warning(
+                    f"Confluence settings for guild {guild_id} incomplete: "
+                    f"enabled={settings.enabled}, base_url={bool(settings.base_url)}, "
+                    f"space_key={bool(settings.space_key)}, email={bool(settings.email)}, "
+                    f"api_token={bool(settings.api_token)}"
+                )
     except Exception as e:
-        logger.warning(f"Failed to load Confluence settings for guild {guild_id}: {e}")
+        logger.exception(f"Failed to load Confluence settings for guild {guild_id}: {e}")
 
     # Fall back to global service
     logger.debug(f"Using fallback Confluence service for guild {guild_id}")

@@ -168,6 +168,7 @@ class ConfluencePublisher:
         scope_type: Optional[str] = None,
         category_name: Optional[str] = None,
         user_timezone: Optional[str] = None,
+        dashboard_base_url: Optional[str] = None,  # ADR-079: tenant-aware URL
     ) -> ConfluencePublishResult:
         """Publish a summary to Confluence.
 
@@ -210,6 +211,7 @@ class ConfluencePublisher:
                 guild_id=guild_id,
                 channel_names=channel_names,
                 user_timezone=user_timezone,
+                dashboard_base_url=dashboard_base_url,
             )
 
             # ADR-100: Generate labels for the page
@@ -393,6 +395,7 @@ class ConfluencePublisher:
         guild_id: Optional[str] = None,
         channel_names: Optional[List[str]] = None,
         user_timezone: Optional[str] = None,
+        dashboard_base_url: Optional[str] = None,  # ADR-079: tenant-aware URL
     ) -> Dict[str, Any]:
         """Format summary as Atlassian Document Format (ADF) JSON.
 
@@ -588,7 +591,7 @@ class ConfluencePublisher:
 
         # Add link back to SummaryBot if we have the IDs
         if summary_id and guild_id:
-            dashboard_url = os.environ.get("DASHBOARD_URL", "https://summarybot.app")
+            dashboard_url = dashboard_base_url or os.environ.get("DASHBOARD_URL", "https://summarybot.app")
             summary_url = f"{dashboard_url}/guilds/{guild_id}/summaries?view={summary_id}"
             footer_content.append({
                 "type": "text",

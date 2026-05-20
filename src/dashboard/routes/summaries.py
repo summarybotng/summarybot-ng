@@ -3513,6 +3513,7 @@ async def send_summary_to_email(
     },
 )
 async def publish_summary_to_confluence(
+    request: Request,
     body: PublishToConfluenceRequest,
     guild_id: str = Path(..., description="Discord guild ID"),
     summary_id: str = Path(..., description="Stored summary ID"),
@@ -3529,7 +3530,17 @@ async def publish_summary_to_confluence(
     """
     import logging
     import secrets
+    import os
     logger = logging.getLogger(__name__)
+
+    # ADR-079: Build tenant-aware dashboard URL for Confluence links
+    tenant = getattr(request.state, "tenant", None)
+    if tenant and tenant.subdomain:
+        dashboard_base_url = f"https://{tenant.subdomain}.summarybot.app"
+    elif tenant and tenant.custom_domain:
+        dashboard_base_url = f"https://{tenant.custom_domain}"
+    else:
+        dashboard_base_url = os.environ.get("DASHBOARD_URL", "https://summarybot.app")
 
     try:
         _check_guild_access(guild_id, user)
@@ -3601,6 +3612,7 @@ async def publish_summary_to_confluence(
             scope_type=summary.scope_type,
             category_name=summary.category_name,
             user_timezone=body.timezone,
+            dashboard_base_url=dashboard_base_url,  # ADR-079: tenant-aware URL
         )
 
         # Handle conflict

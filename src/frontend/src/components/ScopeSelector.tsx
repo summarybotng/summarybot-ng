@@ -62,7 +62,7 @@ export function ScopeSelector({
   const filteredChannels = useMemo(
     () =>
       textChannels.filter((c) =>
-        c.name.toLowerCase().includes(channelSearch.toLowerCase())
+        c.name?.toLowerCase().includes(channelSearch.toLowerCase())
       ),
     [textChannels, channelSearch]
   );

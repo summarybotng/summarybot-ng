@@ -164,13 +164,15 @@ export function WhatStep({ state, onChange, guildId }: StepProps) {
               <ScopeSelector
                 value={scopeValue}
                 onChange={handleScopeChange}
-                channels={slackChannels.map((ch) => ({
-                  id: ch.id,
-                  name: ch.name,
-                  type: "text" as const,  // Slack channels are text-based
-                  category: null,
-                  enabled: true,
-                }))}
+                channels={slackChannels
+                  .filter((ch) => ch.id && ch.name)  // Filter out channels without id or name
+                  .map((ch) => ({
+                    id: ch.id,
+                    name: ch.name || `channel-${ch.id}`,  // Fallback name
+                    type: "text" as const,  // Slack channels are text-based
+                    category: null,
+                    enabled: true,
+                  }))}
                 categories={[]}
                 allowedScopes={["channel"]}
               />

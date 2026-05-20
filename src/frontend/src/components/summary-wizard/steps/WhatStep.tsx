@@ -165,10 +165,10 @@ export function WhatStep({ state, onChange, guildId }: StepProps) {
                 value={scopeValue}
                 onChange={handleScopeChange}
                 channels={slackChannels
-                  .filter((ch) => ch.id && ch.name)  // Filter out channels without id or name
+                  .filter((ch) => ch.channel_id && ch.channel_name)  // Filter out channels without id or name
                   .map((ch) => ({
-                    id: ch.id,
-                    name: ch.name || `channel-${ch.id}`,  // Fallback name
+                    id: ch.channel_id,
+                    name: ch.channel_name || `channel-${ch.channel_id}`,  // Fallback name
                     type: "text" as const,  // Slack channels are text-based
                     category: null,
                     enabled: true,

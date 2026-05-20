@@ -5,6 +5,7 @@ This module handles publishing summaries to Atlassian Confluence using the REST 
 Supports per-tenant (guild) configuration stored in the database.
 """
 
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -227,7 +228,7 @@ class ConfluencePublisher:
             "title": title,
             "body": {
                 "representation": "atlas_doc_format",
-                "value": adf_content,
+                "value": json.dumps(adf_content),  # API expects JSON string
             },
         }
 
@@ -295,7 +296,7 @@ class ConfluencePublisher:
             "title": title,
             "body": {
                 "representation": "atlas_doc_format",
-                "value": adf_content,
+                "value": json.dumps(adf_content),  # API expects JSON string
             },
             "version": {
                 "number": current_version + 1,

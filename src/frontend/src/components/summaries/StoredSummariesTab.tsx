@@ -659,6 +659,9 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
             </a>
           ) : "Summary published successfully",
         });
+      } else if (!result.conflict && result.error) {
+        // API returned error but didn't throw - show the error
+        setConfluenceError(result.error);
       }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to publish to Confluence";

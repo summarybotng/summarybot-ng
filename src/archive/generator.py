@@ -495,6 +495,7 @@ class RetrospectiveGenerator:
 
         # Get channel info from Discord bot
         guild = None
+        bot = None  # Initialize before try block so it's accessible in fallback
         channel_map = {}  # id -> channel object
         try:
             from src.discord_bot.factory import get_discord_bot

@@ -395,7 +395,9 @@ class RetrospectiveGenerator:
             # ADR-096: Per-channel mode - get channel list for iteration
             if job.per_channel:
                 channels = await self._get_channels_for_job(job, message_fetcher)
-                logger.info(f"Per-channel mode: {len(channels)} channels × {len(periods)} periods")
+                # Update total to reflect channels × periods for accurate progress
+                job.progress.total_periods = len(periods) * len(channels)
+                logger.info(f"Per-channel mode: {len(channels)} channels × {len(periods)} periods = {job.progress.total_periods} total")
             else:
                 channels = [None]  # Single iteration for guild-wide mode
 

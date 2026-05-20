@@ -1,21 +1,28 @@
 """
-Confluence Publishing Service for ADR-099: Remote Platform Publishing.
+Confluence Publishing Service for ADR-099/ADR-100: Remote Platform Publishing.
 
 This module handles publishing summaries to Atlassian Confluence using the REST API.
 Supports per-tenant (guild) configuration stored in the database.
+
+ADR-100 Enhancements:
+- Omit source references (may contain sensitive details)
+- Include channel list in content and as page labels
+- Parse dates and convert to Confluence date chips
 """
 
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 import httpx
 
 from ..models.summary import SummaryResult
 from src.utils.time import utc_now_naive
+from .date_extractor import extract_dates_with_llm, build_adf_content_with_dates
 
 logger = logging.getLogger(__name__)
 
@@ -157,12 +164,19 @@ class ConfluencePublisher:
         force: bool = False,
         summary_id: Optional[str] = None,
         guild_id: Optional[str] = None,
+        channel_names: Optional[List[str]] = None,
+        scope_type: Optional[str] = None,
+        category_name: Optional[str] = None,
+        user_timezone: Optional[str] = None,
     ) -> ConfluencePublishResult:
         """Publish a summary to Confluence.
 
         Creates a new page or updates an existing one. Supports conflict detection
         when updating - if the page has been edited since last publish, returns
         conflict=True unless force=True.
+
+        ADR-100: Includes channel names as labels and in content,
+        parses dates for Confluence date chips.
 
         Args:
             summary: SummaryResult to publish
@@ -172,6 +186,10 @@ class ConfluencePublisher:
             force: If True, override conflict detection
             summary_id: Optional summary ID for link back to SummaryBot
             guild_id: Optional guild ID for link back to SummaryBot
+            channel_names: ADR-100: List of channel names for labels and content
+            scope_type: ADR-100: Summary scope (guild/category/channel)
+            category_name: ADR-100: Category name if category-scoped
+            user_timezone: User's timezone for footer timestamp (e.g., "America/New_York")
 
         Returns:
             ConfluencePublishResult with page details or error
@@ -185,12 +203,25 @@ class ConfluencePublisher:
         try:
             client = await self._get_client()
 
-            # Build ADF content
-            adf_content = self._format_adf_content(summary, summary_id, guild_id)
+            # ADR-100: Build ADF content with channel info and LLM date extraction
+            adf_content = await self._format_adf_content(
+                summary=summary,
+                summary_id=summary_id,
+                guild_id=guild_id,
+                channel_names=channel_names,
+                user_timezone=user_timezone,
+            )
+
+            # ADR-100: Generate labels for the page
+            labels = self._generate_labels(
+                channel_names=channel_names,
+                scope_type=scope_type,
+                category_name=category_name,
+            )
 
             if existing_page_id:
                 # Update existing page
-                return await self._update_page(
+                result = await self._update_page(
                     client=client,
                     page_id=existing_page_id,
                     title=title,
@@ -198,13 +229,21 @@ class ConfluencePublisher:
                     expected_version=existing_version,
                     force=force,
                 )
+                # Add labels after successful update
+                if result.success and result.page_id and labels:
+                    await self._set_page_labels(client, result.page_id, labels)
+                return result
             else:
                 # Create new page
-                return await self._create_page(
+                result = await self._create_page(
                     client=client,
                     title=title,
                     adf_content=adf_content,
                 )
+                # Add labels after successful creation
+                if result.success and result.page_id and labels:
+                    await self._set_page_labels(client, result.page_id, labels)
+                return result
 
         except httpx.HTTPStatusError as e:
             logger.exception(f"HTTP error publishing to Confluence: {e}")
@@ -347,52 +386,93 @@ class ConfluencePublisher:
                 return results[0]["id"]
         raise ValueError(f"Space '{self.config.space_key}' not found")
 
-    def _format_adf_content(
+    async def _format_adf_content(
         self,
         summary: SummaryResult,
         summary_id: Optional[str] = None,
         guild_id: Optional[str] = None,
+        channel_names: Optional[List[str]] = None,
+        user_timezone: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Format summary as Atlassian Document Format (ADF) JSON.
 
-        Creates a rich document with:
-        - Info panel with metadata
-        - Summary text
+        ADR-099/ADR-100: Creates a rich document with:
+        - Info panel with metadata and channel list
+        - Summary text with date chips (LLM-extracted)
         - Key points as bullet list
         - Action items as task list
         - Participants in expand section
-        - References in expand section
-        - Footer with link back to SummaryBot
+        - Footer with link back to SummaryBot (in user's timezone)
+
+        NOTE: References are intentionally omitted per ADR-100 (may contain sensitive info).
         """
         content: List[Dict[str, Any]] = []
 
         # Info panel with metadata
         metadata_text = self._build_metadata_text(summary)
+        info_panel_content: List[Dict[str, Any]] = [
+            {
+                "type": "paragraph",
+                "content": [{"type": "text", "text": metadata_text}],
+            }
+        ]
+
+        # ADR-100: Add channel list to info panel
+        if channel_names:
+            info_panel_content.append({
+                "type": "paragraph",
+                "content": [
+                    {"type": "text", "text": "Channels: ", "marks": [{"type": "strong"}]},
+                    {"type": "text", "text": ", ".join(f"#{name}" for name in channel_names)},
+                ],
+            })
+
         content.append({
             "type": "panel",
             "attrs": {"panelType": "info"},
-            "content": [
-                {
-                    "type": "paragraph",
-                    "content": [{"type": "text", "text": metadata_text}],
-                }
-            ],
+            "content": info_panel_content,
         })
 
-        # Summary text
+        # Summary text with LLM-based date extraction (ADR-100)
         if summary.summary_text:
             content.append({
                 "type": "heading",
                 "attrs": {"level": 2},
                 "content": [{"type": "text", "text": "Summary"}],
             })
-            # Split summary into paragraphs
-            for para in summary.summary_text.split("\n\n"):
-                if para.strip():
-                    content.append({
-                        "type": "paragraph",
-                        "content": [{"type": "text", "text": para.strip()}],
-                    })
+
+            # ADR-100: Use LLM to extract dates intelligently
+            context_year = summary.end_time.year if summary.end_time else (
+                summary.start_time.year if summary.start_time else datetime.utcnow().year
+            )
+            context_month = summary.end_time.month if summary.end_time else (
+                summary.start_time.month if summary.start_time else 6
+            )
+
+            # Extract dates from full summary text
+            extracted_dates = await extract_dates_with_llm(
+                summary.summary_text,
+                context_year=context_year,
+                context_month=context_month,
+            )
+
+            # Build content with date chips
+            if extracted_dates:
+                # Process full text with dates, then split into paragraphs
+                full_content = build_adf_content_with_dates(summary.summary_text, extracted_dates)
+                # Wrap in a single paragraph (ADF will handle line breaks)
+                content.append({
+                    "type": "paragraph",
+                    "content": full_content,
+                })
+            else:
+                # No dates extracted - use plain paragraphs
+                for para in summary.summary_text.split("\n\n"):
+                    if para.strip():
+                        content.append({
+                            "type": "paragraph",
+                            "content": [{"type": "text", "text": para.strip()}],
+                        })
 
         # Key points
         if summary.key_points:
@@ -474,44 +554,34 @@ class ConfluencePublisher:
                 ],
             })
 
-        # References in expand section
-        if summary.reference_index:
-            content.append({
-                "type": "expand",
-                "attrs": {"title": f"Source References ({len(summary.reference_index)})"},
-                "content": [
-                    {
-                        "type": "bulletList",
-                        "content": [
-                            {
-                                "type": "listItem",
-                                "content": [
-                                    {
-                                        "type": "paragraph",
-                                        "content": [
-                                            {
-                                                "type": "text",
-                                                "text": f"[{ref.get('id', i+1)}] {ref.get('sender', 'Unknown')}: {ref.get('snippet', '')[:100]}...",
-                                            }
-                                        ],
-                                    }
-                                ],
-                            }
-                            for i, ref in enumerate(summary.reference_index[:30])  # Limit refs
-                        ],
-                    }
-                ],
-            })
+        # ADR-100: References intentionally omitted - may contain sensitive information.
+        # Users can view detailed references in SummaryBot via the "View in SummaryBot" link.
 
         # Footer with generation info and link back to SummaryBot
         content.append({
             "type": "rule",
         })
 
+        # Format timestamp in user's timezone if provided
+        now_utc = utc_now_naive()
+        if user_timezone:
+            try:
+                from zoneinfo import ZoneInfo
+                tz = ZoneInfo(user_timezone)
+                # Get timezone abbreviation (e.g., "EDT", "PST")
+                local_time = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
+                tz_abbrev = local_time.strftime("%Z")
+                timestamp_str = local_time.strftime(f"%Y-%m-%d %H:%M {tz_abbrev}")
+            except Exception as e:
+                logger.warning(f"Failed to convert timezone {user_timezone}: {e}")
+                timestamp_str = now_utc.strftime("%Y-%m-%d %H:%M UTC")
+        else:
+            timestamp_str = now_utc.strftime("%Y-%m-%d %H:%M UTC")
+
         footer_content: List[Dict[str, Any]] = [
             {
                 "type": "text",
-                "text": f"Generated by SummaryBot at {utc_now_naive().strftime('%Y-%m-%d %H:%M UTC')}",
+                "text": f"Generated by SummaryBot at {timestamp_str}",
                 "marks": [{"type": "em"}],
             }
         ]
@@ -566,6 +636,100 @@ class ConfluencePublisher:
         if hasattr(item, 'priority') and item.priority:
             text = f"[{item.priority.upper()}] {text}"
         return text
+
+    # NOTE: _build_text_with_dates removed - now using LLM-based date_extractor.py
+
+    def _generate_labels(
+        self,
+        channel_names: Optional[List[str]] = None,
+        scope_type: Optional[str] = None,
+        category_name: Optional[str] = None,
+    ) -> List[str]:
+        """Generate Confluence labels for the page (ADR-100).
+
+        Args:
+            channel_names: List of Discord channel names
+            scope_type: Summary scope (guild/category/channel)
+            category_name: Category name if category-scoped
+
+        Returns:
+            List of labels (max 10 per Confluence best practice)
+        """
+        labels = ["summarybot"]  # Always include for filtering
+
+        if channel_names:
+            for name in channel_names[:5]:  # Limit to avoid too many labels
+                sanitized = self._sanitize_label(name)
+                if sanitized:
+                    labels.append(f"channel-{sanitized}")
+
+        if scope_type:
+            labels.append(f"scope-{scope_type}")
+
+        if category_name:
+            sanitized = self._sanitize_label(category_name)
+            if sanitized:
+                labels.append(f"category-{sanitized}")
+
+        return labels[:10]  # Confluence best practice: limit labels
+
+    def _sanitize_label(self, name: str) -> str:
+        """Sanitize a name for use as a Confluence label (ADR-100).
+
+        Confluence labels must be lowercase, no spaces, limited special chars.
+        """
+        # Lowercase, replace non-alphanumeric with hyphen, collapse multiple hyphens
+        sanitized = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+        # Collapse multiple hyphens
+        sanitized = re.sub(r'-+', '-', sanitized)
+        return sanitized[:40] if sanitized else ""
+
+    async def _set_page_labels(
+        self,
+        client: httpx.AsyncClient,
+        page_id: str,
+        labels: List[str],
+    ) -> bool:
+        """Set labels on a Confluence page (ADR-100).
+
+        NOTE: Must use v1 API - v2 API doesn't support adding labels yet.
+        See: https://community.atlassian.com/forums/Confluence-questions/Adding-a-label-to-a-page-via-REST-API-v2/qaq-p/3012451
+
+        Args:
+            client: HTTP client
+            page_id: Confluence page ID
+            labels: List of label names
+
+        Returns:
+            True if successful
+        """
+        try:
+            # Must use v1 API for labels - v2 doesn't support it
+            # v1 endpoint: POST /wiki/rest/api/content/{id}/label
+            v1_url = f"{self.config.base_url}/wiki/rest/api/content/{page_id}/label"
+            payload = [{"prefix": "global", "name": label} for label in labels]
+
+            # Create a separate request since we need different base URL
+            async with httpx.AsyncClient(
+                auth=(self.config.email, self.config.api_token),
+                headers={"Content-Type": "application/json"},
+                timeout=30.0,
+            ) as v1_client:
+                response = await v1_client.post(v1_url, json=payload)
+
+                if response.status_code in (200, 201):
+                    logger.info(f"Added labels to page {page_id}: {labels}")
+                    return True
+                else:
+                    # Labels are non-critical, just log warning
+                    logger.warning(
+                        f"Failed to add labels to page {page_id}: "
+                        f"{response.status_code} {response.text[:200]}"
+                    )
+                    return False
+        except Exception as e:
+            logger.warning(f"Error adding labels to page {page_id}: {e}")
+            return False
 
 
 # Module-level cache for per-guild publishers

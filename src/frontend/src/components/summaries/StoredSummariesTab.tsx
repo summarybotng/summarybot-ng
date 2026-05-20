@@ -407,6 +407,7 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
   const { data: serverSyncConfig } = useServerSyncConfig(guildId);  // ADR-091
   const regenerateMutation = useRegenerateSummary(guildId);
   const confluenceMutation = useConfluencePublish(guildId);  // ADR-099
+  const { timezone } = useTimezone();  // ADR-100: For Confluence footer timestamp
 
   // Refresh both list and calendar views
   const handleRefresh = async () => {
@@ -639,14 +640,16 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
   };
 
   // ADR-099: Confluence handling
+  // ADR-099/ADR-100: Confluence publishing with user timezone
   const handleConfluence = async (request: PublishToConfluenceRequest) => {
     if (!confluenceModalSummary) return;
     setConfluenceError(null);
     setConfluenceResult(null);
     try {
+      // ADR-100: Include user's timezone for footer timestamp
       const result = await confluenceMutation.mutateAsync({
         summaryId: confluenceModalSummary.id,
-        request,
+        request: { ...request, timezone },
       });
       // Store result to show in modal (success or conflict)
       setConfluenceResult(result as PublishToConfluenceResult);
@@ -1612,6 +1615,38 @@ function StoredSummaryDetailSheet({
                         RuVector Explorer
                       </a>
                     </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* ADR-099: Confluence Publication Link */}
+              {summary.confluence_publication && (
+                <Card className="bg-blue-500/5 border-blue-500/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      Published to Confluence
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Published {summary.confluence_publication.published_at ? formatDateTime(summary.confluence_publication.published_at) : ""}
+                      {summary.confluence_publication.last_updated_at && summary.confluence_publication.last_updated_at !== summary.confluence_publication.published_at && (
+                        <> • Updated {formatDateTime(summary.confluence_publication.last_updated_at)}</>
+                      )}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Version {summary.confluence_publication.page_version}
+                    </p>
+                    <a
+                      href={summary.confluence_publication.page_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+                    >
+                      View in Confluence
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
                   </CardContent>
                 </Card>
               )}

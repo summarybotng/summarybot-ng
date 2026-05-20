@@ -5,7 +5,7 @@ Summary routes for dashboard API.
 import logging
 import asyncio
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from ..auth import get_current_user, require_guild_admin, is_guild_admin
@@ -52,6 +52,7 @@ from ..models import (
     PublishToConfluenceResponse,
     ConfluenceSettingsRequest,
     ConfluenceSettingsResponse,
+    ConfluencePublicationInfo,
 )
 from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_stored_summary_repository, get_config_manager, get_task_scheduler, get_summary_job_repository, get_config_repository
 from ...data.base import SearchCriteria
@@ -1628,6 +1629,20 @@ async def list_stored_summaries(
             if task:
                 schedule_names[schedule_id] = task.name
 
+    # ADR-099: Build confluence publication lookup
+    confluence_publications: dict[str, str] = {}  # summary_id -> page_url
+    try:
+        from ...data.repositories import get_confluence_repository
+        confluence_repo = await get_confluence_repository()
+        if confluence_repo:
+            summary_ids = [s.id for s in summaries]
+            pubs = await confluence_repo.get_by_guild(guild_id)
+            for pub in pubs:
+                if pub.summary_id in summary_ids:
+                    confluence_publications[pub.summary_id] = pub.page_url
+    except Exception as e:
+        logger.warning(f"Failed to get Confluence publications for list: {e}")
+
     # Convert to response items
     items = []
     for s in summaries:
@@ -1635,6 +1650,10 @@ async def list_stored_summaries(
         # ADR-009: Add schedule_name if available
         if s.schedule_id and s.schedule_id in schedule_names:
             item_dict["schedule_name"] = schedule_names[s.schedule_id]
+        # ADR-099: Add Confluence publication status
+        if s.id in confluence_publications:
+            item_dict["is_published_confluence"] = True
+            item_dict["confluence_page_url"] = confluence_publications[s.id]
         items.append(StoredSummaryListItem(**item_dict))
 
     return StoredSummaryListResponse(
@@ -1895,6 +1914,23 @@ async def get_stored_summary(
         logger.warning(f"Failed to get private source channels: {e}")
         actual_contains_sensitive = stored.contains_sensitive_channels
 
+    # ADR-099: Get Confluence publication info if exists
+    confluence_publication = None
+    try:
+        from ...data.repositories import get_confluence_repository
+        confluence_repo = await get_confluence_repository()
+        confluence_pub = await confluence_repo.get_by_summary(summary_id)
+        if confluence_pub:
+            confluence_publication = ConfluencePublicationInfo(
+                page_id=confluence_pub.page_id,
+                page_url=confluence_pub.page_url,
+                page_version=confluence_pub.page_version,
+                published_at=confluence_pub.published_at,
+                last_updated_at=confluence_pub.last_updated_at,
+            )
+    except Exception as e:
+        logger.warning(f"Failed to get Confluence publication info: {e}")
+
     return StoredSummaryDetailResponse(
         id=stored.id,
         title=stored.title,
@@ -1937,6 +1973,8 @@ async def get_stored_summary(
         scope_type=stored.scope_type,
         category_id=stored.category_id,
         category_name=stored.category_name,
+        # ADR-099: Confluence publication
+        confluence_publication=confluence_publication,
     )
 
 
@@ -3535,6 +3573,21 @@ async def publish_summary_to_confluence(
         # Build page title
         page_title = summary.title or f"Summary {summary_id[:8]}"
 
+        # ADR-100: Get channel names for labels and content
+        channel_names: List[str] = []
+        try:
+            guild = _get_guild_or_404(guild_id)
+            for ch_id in summary.source_channel_ids or []:
+                try:
+                    channel = guild.get_channel(int(ch_id))
+                    if channel and hasattr(channel, 'name'):
+                        channel_names.append(channel.name)
+                except (ValueError, AttributeError):
+                    pass
+        except HTTPException:
+            # Guild not available, continue without channel names
+            pass
+
         # Publish to Confluence
         result = await confluence_service.publish_summary(
             summary=summary.summary_result,
@@ -3544,6 +3597,10 @@ async def publish_summary_to_confluence(
             force=body.force,
             summary_id=summary_id,
             guild_id=guild_id,
+            channel_names=channel_names if channel_names else None,
+            scope_type=summary.scope_type,
+            category_name=summary.category_name,
+            user_timezone=body.timezone,
         )
 
         # Handle conflict

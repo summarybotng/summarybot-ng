@@ -878,6 +878,9 @@ class StoredSummaryListItem(BaseModel):
     scope_type: Optional[str] = None  # 'guild', 'category', 'channel'
     category_id: Optional[str] = None
     category_name: Optional[str] = None
+    # ADR-099: Confluence publication status
+    is_published_confluence: bool = False
+    confluence_page_url: Optional[str] = None
 
 
 class StoredSummaryListResponse(BaseModel):
@@ -888,8 +891,18 @@ class StoredSummaryListResponse(BaseModel):
     limit: int
 
 
+# ADR-099: Confluence publication info for summary detail
+class ConfluencePublicationInfo(BaseModel):
+    """Info about a summary's Confluence publication."""
+    page_id: str
+    page_url: str
+    page_version: int
+    published_at: Optional[datetime] = None
+    last_updated_at: Optional[datetime] = None
+
+
 class StoredSummaryDetailResponse(BaseModel):
-    """Full stored summary details (ADR-005, ADR-008, ADR-098)."""
+    """Full stored summary details (ADR-005, ADR-008, ADR-098, ADR-099)."""
     id: str
     title: str
     guild_id: str
@@ -934,6 +947,8 @@ class StoredSummaryDetailResponse(BaseModel):
     scope_type: Optional[str] = None  # 'guild', 'category', 'channel'
     category_id: Optional[str] = None
     category_name: Optional[str] = None
+    # ADR-099: Confluence publication
+    confluence_publication: Optional[ConfluencePublicationInfo] = None
 
 
 class StoredSummaryUpdateRequest(BaseModel):
@@ -1132,10 +1147,14 @@ class SendToEmailResponse(BaseModel):
 # ============================================================================
 
 class PublishToConfluenceRequest(BaseModel):
-    """Request to publish a summary to Confluence (ADR-099)."""
+    """Request to publish a summary to Confluence (ADR-099/ADR-100)."""
     force: bool = Field(
         default=False,
         description="Force update even if page was modified externally"
+    )
+    timezone: Optional[str] = Field(
+        default=None,
+        description="User's timezone for footer timestamp (e.g., 'America/New_York')"
     )
 
 

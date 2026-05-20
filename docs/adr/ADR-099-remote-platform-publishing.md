@@ -1,7 +1,35 @@
 # ADR-099: Remote Platform Publishing
 
 ## Status
-Proposed
+Implemented (Phase 2 Complete)
+
+### Implementation Status
+
+**Phase 1 (Foundation)** - Partial
+- ✅ Database migrations for settings and publications
+- ⏳ Label system (deferred)
+- ⏳ Publisher role management (deferred - using admin-only for now)
+
+**Phase 2 (Confluence Integration)** - Complete
+- ✅ Confluence API client with API token auth
+- ✅ ADF content formatting (panels, date chips, status lozenges, task lists, expand)
+- ✅ Per-guild settings UI (Settings page)
+- ✅ Publish action with idempotency and conflict detection
+- ✅ Publication status in summary detail view
+- ✅ Confluence badge in summary list view
+- ✅ Test connection endpoint
+- ✅ ADR-100 enhancements: channel labels, timezone footer, date extraction
+
+**Phase 3 (Publishing UI)** - Partial
+- ✅ Publish modal with conflict handling
+- ✅ Publication status indicators
+- ⏳ Unpublish action (future)
+- ⏳ Bulk publish (future)
+
+**Phase 4 (Extensions)** - Future
+- ⏳ Auto-publish rules
+- ⏳ Notion integration
+- ⏳ SharePoint integration
 
 ## Context
 

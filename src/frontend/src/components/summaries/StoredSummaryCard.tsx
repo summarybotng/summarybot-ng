@@ -25,6 +25,7 @@ import {
   AlertTriangle,
   BookOpen,
   Boxes,
+  FileText,  // ADR-099: Confluence icon
 } from "lucide-react";
 import { SummaryActions } from "./SummaryActions";
 import type { StoredSummary, SummarySourceType } from "@/types";
@@ -252,6 +253,13 @@ export function StoredSummaryCard({
               <Badge variant="outline" className="bg-violet-500/10 text-violet-600 border-violet-500/30">
                 <Boxes className="mr-1 h-3 w-3" />
                 {summary.vector_unit_count || 0} units
+              </Badge>
+            )}
+            {/* ADR-099: Confluence published indicator */}
+            {summary.is_published_confluence && (
+              <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/30">
+                <FileText className="mr-1 h-3 w-3" />
+                Confluence
               </Badge>
             )}
             {/* ADR-087: Continuity chain indicator */}

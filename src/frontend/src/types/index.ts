@@ -395,6 +395,9 @@ export interface StoredSummary {
   scope_type?: "guild" | "category" | "channel";
   category_id?: string;
   category_name?: string;
+  // ADR-099: Confluence publication status (list view)
+  is_published_confluence?: boolean;
+  confluence_page_url?: string;
 }
 
 // ADR-020: Navigation for prev/next summary
@@ -427,6 +430,14 @@ export interface StoredSummaryDetail extends StoredSummary {
   navigation?: SummaryNavigation;
   // ADR-074: Private source channels - which locked channels are in this summary
   private_source_channels?: Array<{ channel_id: string; channel_name: string }>;
+  // ADR-099: Confluence publication info
+  confluence_publication?: {
+    page_id: string;
+    page_url: string;
+    page_version: number;
+    published_at?: string;
+    last_updated_at?: string;
+  };
 }
 
 export interface PushDelivery {

@@ -11,6 +11,7 @@ import { api } from "@/api/client";
 
 export interface PublishToConfluenceRequest {
   force?: boolean;
+  timezone?: string;  // ADR-100: User's timezone for footer (e.g., "America/New_York")
 }
 
 export interface PublishToConfluenceResponse {

@@ -500,7 +500,7 @@ class RetrospectiveGenerator:
         try:
             from src.dashboard.routes import get_discord_bot
             bot = get_discord_bot()
-            logger.info(f"Channel lookup: bot={bot is not None}, bot.is_ready={bot.is_ready() if bot else 'N/A'}")
+            logger.info(f"Channel lookup: bot={bot is not None}, bot.is_ready={bot.is_ready if bot else 'N/A'}")
             if bot:
                 guild = bot.get_guild(int(job.source.server_id))
                 logger.info(f"Channel lookup: guild={guild.name if guild else 'NOT FOUND'} for server_id={job.source.server_id}")
@@ -529,7 +529,7 @@ class RetrospectiveGenerator:
                     channel_name = f"channel-{cid[-4:]}"  # fallback
                     logger.info(f"Channel {cid} not in cache ({len(channel_map)} cached), attempting API fetch...")
                     try:
-                        if bot and bot.is_ready():
+                        if bot and bot.is_ready:
                             channel = await bot.get_or_fetch_channel(int(cid))
                             if channel and hasattr(channel, 'name'):
                                 channel_name = channel.name
@@ -537,7 +537,7 @@ class RetrospectiveGenerator:
                             else:
                                 logger.warning(f"Channel {cid} fetch returned: {type(channel).__name__ if channel else 'None'}")
                         else:
-                            logger.warning(f"Bot not available/ready for channel fetch: {cid} (bot={bot is not None}, ready={bot.is_ready() if bot else 'N/A'})")
+                            logger.warning(f"Bot not available/ready for channel fetch: {cid} (bot={bot is not None}, ready={bot.is_ready if bot else 'N/A'})")
                     except Exception as e:
                         logger.warning(f"Failed to fetch channel {cid}: {type(e).__name__}: {e}")
                     result.append((cid, channel_name))

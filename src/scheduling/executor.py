@@ -28,7 +28,7 @@ from ..models.task import TaskResult, DestinationType, ScheduledTask, Destinatio
 # ADR-051: Platform fetcher abstraction for multi-platform support
 from ..dashboard.platforms import get_platform_fetcher
 from ..models.summary import SummaryResult, SummarizationContext
-from ..models.stored_summary import StoredSummary
+from ..models.stored_summary import StoredSummary, SummarySource
 # ADR-087: Weekly continuity support
 from ..data.repositories import get_stored_summary_repository
 from ..models.error_log import ErrorType, ErrorSeverity

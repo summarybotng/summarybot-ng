@@ -881,6 +881,8 @@ class StoredSummaryListItem(BaseModel):
     # ADR-099: Confluence publication status
     is_published_confluence: bool = False
     confluence_page_url: Optional[str] = None
+    # ADR-087: Continuity chain (for list view badge)
+    continuity_week_number: Optional[int] = None
 
 
 class StoredSummaryListResponse(BaseModel):

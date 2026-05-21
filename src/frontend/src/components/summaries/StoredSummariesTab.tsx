@@ -1328,7 +1328,49 @@ function StoredSummaryDetailSheet({
                     ? `${formatDateTime(summary.start_time)} - ${formatDateTime(summary.end_time)}`
                     : `Created ${formatDateTime(summary.created_at)}`}
                 </div>
-                <div className="font-mono text-xs">ID: {summary.id}</div>
+                <div className="font-mono text-xs flex items-center gap-2">
+                  ID: {summary.id}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 w-5 p-0"
+                    onClick={() => {
+                      const url = `${window.location.origin}/guilds/${guildId}/summaries?view=${summary.id}`;
+                      navigator.clipboard.writeText(url);
+                      toast({ title: "Link copied", description: "Summary link copied to clipboard" });
+                    }}
+                    title="Copy link to summary"
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+                {/* Status chips */}
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {summary.continuity_week_number && (
+                    <Badge variant="outline" className="bg-cyan-500/10 text-cyan-600 border-cyan-500/30 text-xs">
+                      <GitBranch className="mr-1 h-3 w-3" />
+                      Week {summary.continuity_week_number}
+                    </Badge>
+                  )}
+                  {summary.confluence_publication && (
+                    <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/30 text-xs">
+                      <FileText className="mr-1 h-3 w-3" />
+                      Confluence
+                    </Badge>
+                  )}
+                  {summary.vector_ingested && (
+                    <Badge variant="outline" className="bg-violet-500/10 text-violet-600 border-violet-500/30 text-xs">
+                      <Boxes className="mr-1 h-3 w-3" />
+                      {summary.vector_unit_count || 0} units
+                    </Badge>
+                  )}
+                  {summary.wiki_ingested && (
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-xs">
+                      <BookOpen className="mr-1 h-3 w-3" />
+                      Wiki
+                    </Badge>
+                  )}
+                </div>
               </SheetDescription>
             </SheetHeader>
 
@@ -1446,11 +1488,11 @@ function StoredSummaryDetailSheet({
                             htmlFor="split-private"
                             className="text-sm font-medium leading-none cursor-pointer"
                           >
-                            Split into public/private summaries
+                            Split into public/restricted summaries
                           </label>
                           <p className="text-xs text-muted-foreground">
                             Creates two separate summaries: public content (replaces this summary) and
-                            private content (new linked summary). Public portion can be wiki-ingested.
+                            restricted content (new linked summary). Public portion can be wiki-ingested.
                           </p>
                         </div>
                       </div>
@@ -1718,13 +1760,13 @@ function StoredSummaryDetailSheet({
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {/* ADR-073/074: Privacy indicator - shown prominently if contains private channels */}
+                    {/* ADR-073/074: Privacy indicator - shown prominently if contains restricted channels */}
                     {summary.contains_sensitive_channels && (
                       <div className="p-2 bg-red-500/10 border border-red-500/30 rounded-md text-sm space-y-1">
                         <div className="flex items-center gap-2">
                           <Lock className="h-4 w-4 text-red-500" />
                           <span className="text-red-600 dark:text-red-400 font-medium">
-                            Contains content from private/locked channels
+                            Contains content from restricted channels
                           </span>
                         </div>
                         {summary.private_source_channels && summary.private_source_channels.length > 0 && (
@@ -1758,12 +1800,12 @@ function StoredSummaryDetailSheet({
                               >
                                 {(summary.split_public_id || summary.split_from)?.slice(0, 8)}...
                               </button>
-                              {" "}(this contains private content)
+                              {" "}(this contains restricted content)
                             </span>
                           )}
                           {summary.split_private_id && (
                             <span>
-                              Private portion available:{" "}
+                              Restricted portion available:{" "}
                               <button
                                 onClick={() => setSelectedSummaryId(summary.split_private_id || null)}
                                 className="underline hover:no-underline font-medium"

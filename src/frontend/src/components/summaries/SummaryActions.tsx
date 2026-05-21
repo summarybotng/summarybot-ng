@@ -144,14 +144,26 @@ export function SummaryActions({
         <Send className="mr-2 h-4 w-4" />
         Push to Channel
       </Button>
-      <Button variant="outline" onClick={handleClick(handlers.onPushDM)} className="w-full sm:w-auto">
-        <MessageCircle className="mr-2 h-4 w-4" />
-        Push to DM
-      </Button>
-      <Button variant="outline" onClick={handleClick(handlers.onEmail)} className="w-full sm:w-auto">
-        <Mail className="mr-2 h-4 w-4" />
-        Send to Email
-      </Button>
+      {/* Combined Send menu for DM and Email */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" className="w-full sm:w-auto">
+            <MessageCircle className="mr-2 h-4 w-4" />
+            Send
+            <ChevronDown className="ml-1 h-3 w-3" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuItem onClick={handleClick(handlers.onPushDM)}>
+            <MessageCircle className="mr-2 h-4 w-4" />
+            Discord DM
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleClick(handlers.onEmail)}>
+            <Mail className="mr-2 h-4 w-4" />
+            Email
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       {handlers.onPushToDrive && (
         <Button variant="outline" onClick={handleClick(handlers.onPushToDrive)} className="w-full sm:w-auto">
           <Cloud className="mr-2 h-4 w-4" />

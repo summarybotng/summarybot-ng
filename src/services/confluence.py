@@ -557,6 +557,35 @@ class ConfluencePublisher:
                 ],
             })
 
+        # ADR-100: Channels in expand section
+        if channel_names:
+            content.append({
+                "type": "expand",
+                "attrs": {"title": f"Channels ({len(channel_names)})"},
+                "content": [
+                    {
+                        "type": "bulletList",
+                        "content": [
+                            {
+                                "type": "listItem",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": f"#{name}",
+                                            }
+                                        ],
+                                    }
+                                ],
+                            }
+                            for name in channel_names
+                        ],
+                    }
+                ],
+            })
+
         # ADR-100: References intentionally omitted - may contain sensitive information.
         # Users can view detailed references in SummaryBot via the "View in SummaryBot" link.
 

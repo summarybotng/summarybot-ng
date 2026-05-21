@@ -1,7 +1,7 @@
 /**
- * Step 3: Delivery & Options (ADR-089)
+ * Step 3: Where (Delivery & Options) (ADR-089, ADR-099)
  *
- * Only shown for recurring schedules.
+ * Available for all wizard modes (now, recurring, past).
  * Configures where summaries are delivered + advanced options.
  */
 
@@ -23,11 +23,17 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ChevronDown, Mail, Webhook, Hash, MessageSquare, MessageCircle } from "lucide-react";
+import { ChevronDown, Mail, Webhook, Hash, MessageSquare, MessageCircle, FileText, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { StepProps } from "../types";
 
-export function DeliveryStep({ state, onChange, guildId }: StepProps) {
+export function WhereStep({ state, onChange, guildId }: StepProps) {
   const { data: guild } = useGuild(guildId);
   const { data: promptTemplates } = usePromptTemplates(guildId);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -209,6 +215,62 @@ export function DeliveryStep({ state, onChange, guildId }: StepProps) {
                   })
                 }
               />
+            )}
+          </div>
+        </div>
+
+        {/* Confluence (ADR-099) */}
+        <div className="flex items-start gap-3 p-3 rounded-md border">
+          <Checkbox
+            checked={state.destinations.confluence}
+            onCheckedChange={(checked) =>
+              onChange({
+                destinations: {
+                  ...state.destinations,
+                  confluence: !!checked,
+                },
+              })
+            }
+            className="mt-1"
+          />
+          <div className="flex-1 space-y-2">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              <span className="font-medium">Publish to Confluence</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Create a Confluence page with the summary content
+            </p>
+            {state.destinations.confluence && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="pageTitle" className="text-sm">
+                    Page title template
+                  </Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-xs">
+                        <p className="text-xs">
+                          Available variables:<br />
+                          <code>{"{channels}"}</code> - Channel names<br />
+                          <code>{"{date}"}</code> - Summary date<br />
+                          <code>{"{week}"}</code> - Week number<br />
+                          <code>{"{guild}"}</code> - Server name
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Input
+                  id="pageTitle"
+                  placeholder="{channels} Summary - {date}"
+                  value={state.pageTitleTemplate}
+                  onChange={(e) => onChange({ pageTitleTemplate: e.target.value })}
+                />
+              </div>
             )}
           </div>
         </div>

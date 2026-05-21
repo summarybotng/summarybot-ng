@@ -12,13 +12,11 @@ interface WizardProgressProps {
 }
 
 export function WizardProgress({ currentStep, whenType }: WizardProgressProps) {
-  // For "now" and "past", we skip delivery step
-  const showDeliveryStep = whenType === "recurring";
-
+  // "Where" step is now available for all modes
   const steps = [
     { id: "what" as const, label: "What", number: 1 },
     { id: "when" as const, label: "When", number: 2 },
-    ...(showDeliveryStep ? [{ id: "delivery" as const, label: "Delivery", number: 3 }] : []),
+    { id: "where" as const, label: "Where", number: 3 },
   ];
 
   const currentIndex = steps.findIndex((s) => s.id === currentStep);

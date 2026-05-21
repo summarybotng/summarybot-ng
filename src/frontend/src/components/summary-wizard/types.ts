@@ -53,7 +53,7 @@ export interface WizardState {
   forceRegenerate: boolean;    // Delete existing and regenerate
   perChannel: boolean;         // ADR-096: Generate one summary per channel
 
-  // Step 3: Delivery (recurring only)
+  // Step 3: Where (delivery destinations)
   destinations: {
     dashboard: boolean;
     discordChannel: boolean;
@@ -64,7 +64,11 @@ export interface WizardState {
     webhookUrl: string;
     email: boolean;
     emailAddresses: string;
+    confluence: boolean;       // ADR-099: Publish to Confluence
   };
+
+  // Page title template (for published destinations)
+  pageTitleTemplate: string;   // e.g., "{channels} Summary - {date}"
 
   // Summary options
   summaryLength: "brief" | "detailed" | "comprehensive";
@@ -106,7 +110,7 @@ export const initialWizardState: WizardState = {
   forceRegenerate: false,     // Default to skip existing
   perChannel: true,           // ADR-096: Default to per-channel for weekly
 
-  // Delivery
+  // Where (delivery destinations)
   destinations: {
     dashboard: true,
     discordChannel: false,
@@ -117,7 +121,11 @@ export const initialWizardState: WizardState = {
     webhookUrl: "",
     email: false,
     emailAddresses: "",
+    confluence: false,       // ADR-099
   },
+
+  // Page title template
+  pageTitleTemplate: "{channels} Summary - {date}",
 
   // Summary options
   summaryLength: "detailed",
@@ -126,7 +134,7 @@ export const initialWizardState: WizardState = {
   promptTemplateId: null,
 };
 
-export type WizardStep = "what" | "when" | "delivery";
+export type WizardStep = "what" | "when" | "where";
 
 export interface StepProps {
   state: WizardState;

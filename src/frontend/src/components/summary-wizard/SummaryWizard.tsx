@@ -21,7 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { WizardProgress } from "./shared/WizardProgress";
 import { WhatStep } from "./steps/WhatStep";
 import { WhenStep } from "./steps/WhenStep";
-import { DeliveryStep } from "./steps/DeliveryStep";
+import { WhereStep } from "./steps/WhereStep";
 import type { WizardState, WizardStep, WhenType, Platform, SplitMode } from "./types";
 import { initialWizardState } from "./types";
 
@@ -170,13 +170,8 @@ export function SummaryWizard({
     if (step === "what") {
       setStep("when");
     } else if (step === "when") {
-      if (state.whenType === "recurring") {
-        setStep("delivery");
-      } else {
-        // For "now" and "past", submit directly
-        handleSubmit();
-      }
-    } else if (step === "delivery") {
+      setStep("where");
+    } else if (step === "where") {
       handleSubmit();
     }
   };
@@ -184,7 +179,7 @@ export function SummaryWizard({
   const handleBack = () => {
     if (step === "when") {
       setStep("what");
-    } else if (step === "delivery") {
+    } else if (step === "where") {
       setStep("when");
     }
   };
@@ -231,13 +226,12 @@ export function SummaryWizard({
     return null;
   };
 
-  const isLastStep =
-    step === "delivery" || (step === "when" && state.whenType !== "recurring");
+  const isLastStep = step === "where";
 
   const canProceed =
     (step === "what" && canProceedFromWhat()) ||
     (step === "when" && canProceedFromWhen()) ||
-    step === "delivery";
+    step === "where";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -262,8 +256,8 @@ export function SummaryWizard({
             {step === "when" && (
               <WhenStep state={state} onChange={handleChange} guildId={guildId} />
             )}
-            {step === "delivery" && (
-              <DeliveryStep state={state} onChange={handleChange} guildId={guildId} />
+            {step === "where" && (
+              <WhereStep state={state} onChange={handleChange} guildId={guildId} />
             )}
           </motion.div>
         </AnimatePresence>

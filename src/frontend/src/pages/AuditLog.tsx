@@ -410,9 +410,12 @@ export function AuditLog() {
 
       {/* Entry Detail Dialog */}
       <Dialog open={!!selectedEntry} onOpenChange={(open) => !open && setSelectedEntry(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl" aria-describedby="audit-entry-description">
           <DialogHeader>
             <DialogTitle>Audit Log Entry</DialogTitle>
+            <p id="audit-entry-description" className="sr-only">
+              Detailed view of the selected audit log entry
+            </p>
           </DialogHeader>
           {selectedEntry && (
             <div className="space-y-4">

@@ -27,6 +27,12 @@ interface ScheduleRequest {
   summary_options: SummaryOptions;
   // ADR-034: Guild prompt templates
   prompt_template_id?: string | null;
+  // ADR-101: Rolling period summaries
+  rolling_period?: "weekly" | "biweekly" | "monthly";
+  rolling_end_day?: number;
+  accumulation_strategy?: "append" | "resummarize" | "hybrid";
+  // Custom title template
+  title_template?: string;
 }
 
 export function useSchedules(guildId: string) {
@@ -35,6 +41,18 @@ export function useSchedules(guildId: string) {
     queryFn: () => api.get<SchedulesResponse>(`/guilds/${guildId}/schedules`),
     select: (data) => data.schedules,
     enabled: !!guildId,
+  });
+}
+
+/**
+ * Fetch a single schedule by ID.
+ * Used for edit mode in the wizard.
+ */
+export function useSchedule(guildId: string, scheduleId: string | null) {
+  return useQuery({
+    queryKey: ["schedule", guildId, scheduleId],
+    queryFn: () => api.get<Schedule>(`/guilds/${guildId}/schedules/${scheduleId}`),
+    enabled: !!guildId && !!scheduleId,
   });
 }
 

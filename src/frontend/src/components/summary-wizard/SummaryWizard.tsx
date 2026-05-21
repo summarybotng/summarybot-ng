@@ -23,7 +23,8 @@ import { WhatStep } from "./steps/WhatStep";
 import { WhenStep } from "./steps/WhenStep";
 import { WhereStep } from "./steps/WhereStep";
 import type { WizardState, WizardStep, WhenType, Platform, SplitMode } from "./types";
-import { initialWizardState } from "./types";
+import { initialWizardState, scheduleToWizardState } from "./types";
+import type { Schedule } from "@/types";
 
 // LocalStorage key for persisting wizard selections
 const getStorageKey = (guildId: string) => `wizard_selection_${guildId}`;
@@ -41,8 +42,12 @@ interface SummaryWizardProps {
   onOpenChange: (open: boolean) => void;
   guildId: string;
   initialWhenType?: WhenType;
+  /** Schedule to edit (enables edit mode) */
+  editSchedule?: Schedule | null;
   onGenerateNow?: (state: WizardState) => Promise<void>;
   onCreateSchedule?: (state: WizardState) => Promise<void>;
+  /** Called when updating an existing schedule */
+  onUpdateSchedule?: (scheduleId: string, state: WizardState) => Promise<void>;
   onGeneratePast?: (state: WizardState) => Promise<void>;
 }
 
@@ -51,10 +56,14 @@ export function SummaryWizard({
   onOpenChange,
   guildId,
   initialWhenType = "now",
+  editSchedule,
   onGenerateNow,
   onCreateSchedule,
+  onUpdateSchedule,
   onGeneratePast,
 }: SummaryWizardProps) {
+  const isEditMode = !!editSchedule;
+
   const [state, setState] = useState<WizardState>(() => ({
     ...initialWizardState,
     whenType: initialWhenType,
@@ -62,11 +71,25 @@ export function SummaryWizard({
   const [step, setStep] = useState<WizardStep>("what");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasRestoredSelection, setHasRestoredSelection] = useState(false);
+  const [hasLoadedEditData, setHasLoadedEditData] = useState(false);
   const { toast } = useToast();
 
-  // Restore selection from localStorage when wizard opens
+  // Load edit schedule data when opening in edit mode
   useEffect(() => {
-    if (open && guildId && !hasRestoredSelection) {
+    if (open && editSchedule && !hasLoadedEditData) {
+      const editState = scheduleToWizardState(editSchedule);
+      setState(editState);
+      setHasLoadedEditData(true);
+    }
+    // Reset when dialog closes
+    if (!open) {
+      setHasLoadedEditData(false);
+    }
+  }, [open, editSchedule, hasLoadedEditData]);
+
+  // Restore selection from localStorage when wizard opens (skip in edit mode)
+  useEffect(() => {
+    if (open && guildId && !hasRestoredSelection && !isEditMode) {
       try {
         const saved = localStorage.getItem(getStorageKey(guildId));
         if (saved) {
@@ -89,7 +112,7 @@ export function SummaryWizard({
     if (!open) {
       setHasRestoredSelection(false);
     }
-  }, [open, guildId, hasRestoredSelection]);
+  }, [open, guildId, hasRestoredSelection, isEditMode]);
 
   // Save selection to localStorage when it changes
   useEffect(() => {
@@ -187,7 +210,10 @@ export function SummaryWizard({
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
-      if (state.whenType === "now" && onGenerateNow) {
+      if (isEditMode && editSchedule && onUpdateSchedule) {
+        // Edit mode: update existing schedule
+        await onUpdateSchedule(editSchedule.id, state);
+      } else if (state.whenType === "now" && onGenerateNow) {
         await onGenerateNow(state);
       } else if (state.whenType === "recurring" && onCreateSchedule) {
         await onCreateSchedule(state);
@@ -203,7 +229,7 @@ export function SummaryWizard({
         || error?.message
         || "An unexpected error occurred";
       toast({
-        title: "Generation failed",
+        title: isEditMode ? "Update failed" : "Generation failed",
         description: errorMessage,
         variant: "destructive",
       });
@@ -213,6 +239,7 @@ export function SummaryWizard({
   };
 
   const getSubmitLabel = () => {
+    if (isEditMode) return "Save Changes";
     if (state.whenType === "now") return "Generate Now";
     if (state.whenType === "recurring") return "Create Schedule";
     if (state.whenType === "past") return "Generate";
@@ -237,7 +264,7 @@ export function SummaryWizard({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create Summary</DialogTitle>
+          <DialogTitle>{isEditMode ? "Edit Schedule" : "Create Summary"}</DialogTitle>
         </DialogHeader>
 
         <WizardProgress currentStep={step} whenType={state.whenType} />

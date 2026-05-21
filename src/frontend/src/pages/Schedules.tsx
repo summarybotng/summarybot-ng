@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   useSchedules,
@@ -7,113 +7,36 @@ import {
   useDeleteSchedule,
   useRunSchedule,
 } from "@/hooks/useSchedules";
-import { useGuild } from "@/hooks/useGuilds";
-import { usePromptTemplates } from "@/hooks/usePromptTemplates";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Calendar, Loader2, Pencil, Info, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Calendar, Info, ChevronDown, ChevronUp } from "lucide-react";
 import { ScheduleCard } from "@/components/schedules/ScheduleCard";
 import { RunHistoryDrawer } from "@/components/schedules/RunHistoryDrawer";
-import {
-  ScheduleForm,
-  getInitialFormData,
-  scheduleToFormData,
-  formDataToDestinations,
-  type ScheduleFormData,
-} from "@/components/schedules/ScheduleForm";
 import type { Schedule } from "@/types";
 
 export function Schedules() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { data: schedules, isLoading } = useSchedules(id || "");
-  const { data: guild } = useGuild(id || "");
-  const { data: promptTemplates } = usePromptTemplates(id || "");  // ADR-034
   const updateSchedule = useUpdateSchedule(id || "");
   const deleteSchedule = useDeleteSchedule(id || "");
   const runSchedule = useRunSchedule(id || "");
   const { toast } = useToast();
 
-  const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
   const [historySchedule, setHistorySchedule] = useState<Schedule | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [formData, setFormData] = useState<ScheduleFormData>(() => getInitialFormData());
   const [helpExpanded, setHelpExpanded] = useState(false);
 
-  const resetForm = () => {
-    setFormData(getInitialFormData());
-  };
-
-  const openEditDialog = (schedule: Schedule) => {
-    setFormData(scheduleToFormData(schedule));
-    setEditingSchedule(schedule);
+  // Navigate to wizard for editing (keeps wizard and edit forms in sync)
+  const openEditWizard = (schedule: Schedule) => {
+    navigate(`/guilds/${id}/summaries?edit=${schedule.id}`);
   };
 
   const openHistoryDrawer = (schedule: Schedule) => {
     setHistorySchedule(schedule);
     setHistoryOpen(true);
-  };
-
-
-  const handleEdit = async () => {
-    if (!editingSchedule) return;
-
-    try {
-      // ADR-011: Determine channel_ids based on scope
-      let channelIds: string[] | undefined = undefined;
-      if (formData.scope === "channel") {
-        channelIds = formData.channel_ids.length > 0
-          ? formData.channel_ids
-          : guild?.config.enabled_channels || [];
-      }
-
-      await updateSchedule.mutateAsync({
-        scheduleId: editingSchedule.id,
-        schedule: {
-          name: formData.name,
-          scope: formData.scope,
-          channel_ids: channelIds,
-          category_id: formData.scope === "category" ? formData.category_id : undefined,
-          schedule_type: formData.schedule_type,
-          schedule_time: formData.schedule_time,
-          schedule_days: formData.schedule_type === "weekly" ? formData.schedule_days : undefined,
-          timezone: formData.timezone,
-          destinations: formDataToDestinations(formData),
-          prompt_template_id: formData.prompt_template_id || undefined,  // ADR-034
-          platform: formData.platform,  // ADR-051
-          enable_continuity: formData.enable_continuity,  // ADR-087
-          summary_options: {
-            summary_length: formData.summary_length,
-            perspective: formData.perspective,
-            include_action_items: true,
-            include_technical_terms: true,
-            min_messages: formData.min_messages,
-          },
-        },
-      });
-      setEditingSchedule(null);
-      resetForm();
-      toast({
-        title: "Schedule updated",
-        description: "Your schedule has been updated.",
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to update schedule.",
-        variant: "destructive",
-      });
-    }
   };
 
   const handleToggle = async (scheduleId: string, isActive: boolean) => {
@@ -186,50 +109,6 @@ export function Schedules() {
         </Button>
       </motion.div>
 
-      {/* Edit Dialog */}
-      <Dialog
-        open={!!editingSchedule}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEditingSchedule(null);
-            resetForm();
-          }
-        }}
-      >
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Schedule</DialogTitle>
-            <DialogDescription>
-              Modify your automated summary schedule
-            </DialogDescription>
-          </DialogHeader>
-          <ScheduleForm
-            formData={formData}
-            onChange={setFormData}
-            channels={guild?.channels || []}
-            categories={guild?.categories || []}
-            promptTemplates={promptTemplates || []}
-            guildId={id || ""}
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingSchedule(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleEdit}
-              disabled={!formData.name || updateSchedule.isPending}
-            >
-              {updateSchedule.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Pencil className="mr-2 h-4 w-4" />
-              )}
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Help Note */}
       <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20">
         <CardContent className="p-4">
@@ -279,9 +158,11 @@ export function Schedules() {
           <p className="mb-6 text-center text-muted-foreground">
             Create your first schedule to automate summaries
           </p>
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Create Schedule
+          <Button asChild>
+            <Link to={`/guilds/${id}/summaries?create=schedule`}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Schedule
+            </Link>
           </Button>
         </motion.div>
       ) : (
@@ -292,7 +173,7 @@ export function Schedules() {
               schedule={schedule}
               index={index}
               onToggle={handleToggle}
-              onEdit={openEditDialog}
+              onEdit={openEditWizard}
               onDelete={handleDelete}
               onRunNow={handleRunNow}
               onViewHistory={openHistoryDrawer}

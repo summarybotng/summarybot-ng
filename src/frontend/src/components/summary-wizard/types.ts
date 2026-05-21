@@ -151,3 +151,117 @@ export interface StepProps {
   onChange: (updates: Partial<WizardState>) => void;
   guildId: string;
 }
+
+/**
+ * Convert a Schedule object to WizardState for editing.
+ * This keeps the edit flow in sync with creation.
+ */
+export function scheduleToWizardState(schedule: {
+  id: string;
+  name: string;
+  scope?: string;
+  channel_ids?: string[];
+  category_id?: string;
+  schedule_type: string;
+  schedule_time: string;
+  schedule_days?: number[];
+  timezone: string;
+  platform?: string;
+  enable_continuity?: boolean;
+  rolling_period?: string;
+  rolling_end_day?: number;
+  accumulation_strategy?: string;
+  time_range_hours?: number;
+  prompt_template_id?: string;
+  title_template?: string;
+  summary_options: {
+    summary_length: string;
+    perspective: string;
+    min_messages?: number;
+  };
+  destinations: Array<{
+    type: string;
+    target?: string;
+  }>;
+}): WizardState {
+  // Extract destinations
+  const dashboardDest = schedule.destinations.find((d) => d.type === "dashboard");
+  const discordChannelDest = schedule.destinations.find((d) => d.type === "discord_channel");
+  const discordDmDest = schedule.destinations.find((d) => d.type === "discord_dm");
+  const webhookDest = schedule.destinations.find((d) => d.type === "webhook");
+  const emailDest = schedule.destinations.find((d) => d.type === "email");
+  const confluenceDest = schedule.destinations.find((d) => d.type === "confluence");
+
+  // Map schedule_type to frequency
+  const frequencyMap: Record<string, ScheduleFrequency> = {
+    "fifteen-minutes": "fifteen-minutes",
+    "hourly": "hourly",
+    "every-4-hours": "every-4-hours",
+    "daily": "daily",
+    "weekly": "weekly",
+    "monthly": "monthly",
+    "once": "once",
+  };
+
+  return {
+    // Step 1: What
+    platform: (schedule.platform || "discord") as Platform,
+    scope: (schedule.scope || "channel") as "channel" | "category" | "guild",
+    channelIds: schedule.channel_ids || [],
+    categoryId: schedule.category_id || "",
+    splitMode: "by-channel",  // Default, not stored in schedule
+
+    // Step 2: When
+    whenType: "recurring",  // Edit is always for recurring schedules
+
+    // Now options (not used for edit)
+    timeRange: "24h",
+    customHours: undefined,
+
+    // Recurring options
+    frequency: frequencyMap[schedule.schedule_type] || "daily",
+    scheduleTime: schedule.schedule_time,
+    scheduleDays: schedule.schedule_days || [],
+    timezone: schedule.timezone,
+    scheduleName: schedule.name,
+    enableContinuity: schedule.enable_continuity ?? false,
+    lookbackHours: schedule.time_range_hours || 24,
+
+    // ADR-101: Rolling period
+    rollingPeriod: (schedule.rolling_period || "none") as "none" | "weekly" | "biweekly" | "monthly",
+    rollingEndDay: schedule.rolling_end_day ?? 5,
+    accumulationStrategy: (schedule.accumulation_strategy || "hybrid") as "append" | "resummarize" | "hybrid",
+
+    // Past options (not used for edit)
+    dateFrom: null,
+    dateTo: null,
+    pastGranularity: "weekly",
+    pastScheduleDays: [6],
+    pastLookbackHours: 168,
+    forceRegenerate: false,
+    perChannel: true,
+
+    // Step 3: Where
+    destinations: {
+      dashboard: !!dashboardDest,
+      discordChannel: !!discordChannelDest,
+      discordChannelId: discordChannelDest?.target || "",
+      discordDm: !!discordDmDest,
+      discordDmUserId: discordDmDest?.target || "",
+      webhook: !!webhookDest,
+      webhookUrl: webhookDest?.target || "",
+      email: !!emailDest,
+      emailAddresses: emailDest?.target || "",
+      confluence: !!confluenceDest,
+    },
+
+    // Page title template
+    pageTitleTemplate: schedule.title_template || "{channels} Summary - {date}",
+
+    // Summary options
+    summaryLength: schedule.summary_options.summary_length as "brief" | "detailed" | "comprehensive",
+    perspective: schedule.summary_options.perspective,
+    minMessages: schedule.summary_options.min_messages ?? 5,
+    promptTemplateId: schedule.prompt_template_id || null,
+  };
+}

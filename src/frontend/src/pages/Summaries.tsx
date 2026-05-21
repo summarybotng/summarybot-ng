@@ -7,7 +7,7 @@ import { useGenerateArchive, useGenerationJob } from "@/hooks/useArchive";
 import { useGuild } from "@/hooks/useGuilds";
 import { usePromptTemplates } from "@/hooks/usePromptTemplates";
 import { useWhatsAppChats } from "@/hooks/useWhatsApp";
-import { useCreateSchedule } from "@/hooks/useSchedules";
+import { useCreateSchedule, useSchedule, useUpdateSchedule } from "@/hooks/useSchedules";
 import { SummaryWizard, type WizardState } from "@/components/summary-wizard";
 import { generateScheduleName } from "@/components/summary-wizard/steps/WhenStep";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,6 +63,8 @@ export function Summaries() {
   const viewSummaryId = searchParams.get("view") || deepLinkSummaryId;
   // Deep link: open wizard for schedule creation (from Schedules page)
   const createParam = searchParams.get("create");
+  // Deep link: open wizard for schedule editing (from Schedules page)
+  const editScheduleId = searchParams.get("edit");
 
   // ADR-012: Default to "all" (All Summaries) tab - unified view
   const [activeTab, setActiveTab] = useState("all");
@@ -87,6 +89,9 @@ export function Summaries() {
   // ADR-089: Unified Summary Wizard
   const [wizardOpen, setWizardOpen] = useState(false);
   const createSchedule = useCreateSchedule(id || "");
+  const updateSchedule = useUpdateSchedule(id || "");
+  // Fetch schedule for edit mode
+  const { data: editScheduleData } = useSchedule(id || "", editScheduleId);
 
   // ADR-035: Track generation parameters for progress display
   const [generationParams, setGenerationParams] = useState<{
@@ -120,12 +125,12 @@ export function Summaries() {
     setChannelSearch("");
   }, [platform]);
 
-  // Open wizard when navigating from Schedules page with ?create=schedule
+  // Open wizard when navigating from Schedules page with ?create=schedule or ?edit=<id>
   useEffect(() => {
-    if (createParam === "schedule") {
+    if (createParam === "schedule" || editScheduleId) {
       setWizardOpen(true);
     }
-  }, [createParam]);
+  }, [createParam, editScheduleId]);
 
   // Handle task completion
   useEffect(() => {
@@ -270,6 +275,10 @@ export function Summaries() {
         ...(state.destinations.email && state.destinations.emailAddresses
           ? [{ type: "email" as const, target: state.destinations.emailAddresses, format: "html" as const }]
           : []),
+        // ADR-099: Confluence destination
+        ...(state.destinations.confluence
+          ? [{ type: "confluence" as const, target: "default", format: "adf" as const }]
+          : []),
       ],
       summary_options: {
         summary_length: state.summaryLength,
@@ -281,6 +290,60 @@ export function Summaries() {
     });
     toast({ title: "Schedule created", description: `${scheduleName} has been scheduled.` });
   }, [createSchedule, toast]);
+
+  // Update existing schedule (edit mode)
+  const handleWizardUpdateSchedule = useCallback(async (scheduleId: string, state: WizardState) => {
+    const scheduleName = state.scheduleName.trim() || generateScheduleName(state);
+    await updateSchedule.mutateAsync({
+      scheduleId,
+      schedule: {
+        name: scheduleName,
+        scope: state.scope,
+        channel_ids: state.scope === "channel" ? state.channelIds : [],
+        category_id: state.scope === "category" ? state.categoryId : undefined,
+        schedule_type: state.frequency,
+        schedule_time: state.scheduleTime,
+        schedule_days: state.frequency === "weekly" ? state.scheduleDays : undefined,
+        timezone: state.timezone,
+        platform: state.platform,
+        enable_continuity: state.enableContinuity,
+        time_range_hours: state.lookbackHours,
+        prompt_template_id: state.promptTemplateId || undefined,
+        // ADR-101: Rolling period summaries
+        rolling_period: state.rollingPeriod !== "none" ? state.rollingPeriod : undefined,
+        rolling_end_day: state.rollingPeriod !== "none" ? state.rollingEndDay : undefined,
+        accumulation_strategy: state.rollingPeriod !== "none" ? state.accumulationStrategy : undefined,
+        // Custom title template
+        title_template: state.pageTitleTemplate || undefined,
+        destinations: [
+          { type: "dashboard", target: "default", format: "embed" },
+          ...(state.destinations.discordChannel && state.destinations.discordChannelId
+            ? [{ type: "discord_channel" as const, target: state.destinations.discordChannelId, format: "embed" as const }]
+            : []),
+          ...(state.destinations.discordDm && state.destinations.discordDmUserId
+            ? [{ type: "discord_dm" as const, target: state.destinations.discordDmUserId, format: "embed" as const }]
+            : []),
+          ...(state.destinations.webhook && state.destinations.webhookUrl
+            ? [{ type: "webhook" as const, target: state.destinations.webhookUrl, format: "json" as const }]
+            : []),
+          ...(state.destinations.email && state.destinations.emailAddresses
+            ? [{ type: "email" as const, target: state.destinations.emailAddresses, format: "html" as const }]
+            : []),
+          ...(state.destinations.confluence
+            ? [{ type: "confluence" as const, target: "default", format: "adf" as const }]
+            : []),
+        ],
+        summary_options: {
+          summary_length: state.summaryLength,
+          perspective: state.perspective,
+          include_action_items: true,
+          include_technical_terms: true,
+          min_messages: state.minMessages,
+        },
+      },
+    });
+    toast({ title: "Schedule updated", description: `${scheduleName} has been updated.` });
+  }, [updateSchedule, toast]);
 
   const handleWizardGeneratePast = useCallback(async (state: WizardState) => {
     if (!state.dateFrom || !state.dateTo || !id) return;
@@ -470,9 +533,11 @@ export function Summaries() {
           open={wizardOpen}
           onOpenChange={setWizardOpen}
           guildId={id || ""}
-          initialWhenType={createParam === "schedule" ? "recurring" : "now"}
+          initialWhenType={createParam === "schedule" || editScheduleId ? "recurring" : "now"}
+          editSchedule={editScheduleData || null}
           onGenerateNow={handleWizardGenerateNow}
           onCreateSchedule={handleWizardCreateSchedule}
+          onUpdateSchedule={handleWizardUpdateSchedule}
           onGeneratePast={handleWizardGeneratePast}
         />
 

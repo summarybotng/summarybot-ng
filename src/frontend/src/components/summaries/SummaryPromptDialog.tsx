@@ -6,7 +6,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -52,7 +51,7 @@ export function SummaryPromptDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] sm:max-w-2xl">
+      <DialogContent className="max-h-[85vh] sm:max-w-2xl" aria-describedby="generation-details-description">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             Generation Details
@@ -62,6 +61,9 @@ export function SummaryPromptDialog({
               </Badge>
             )}
           </DialogTitle>
+          <p id="generation-details-description" className="sr-only">
+            View the source content and prompts used to generate this summary
+          </p>
         </DialogHeader>
 
         {/* ADR-038: Collapsed by default - click to expand details */}

@@ -282,23 +282,24 @@ export function WhereStep({ state, onChange, guildId }: StepProps) {
           <Label htmlFor="summaryTitle" className="text-sm font-medium">
             Summary title template
           </Label>
-          <TooltipProvider>
+          <TooltipProvider delayDuration={0}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
               </TooltipTrigger>
-              <TooltipContent side="right" className="max-w-xs">
-                <p className="text-xs">
-                  Customize how summaries are titled. Variables:<br />
-                  <code>{"{channels}"}</code> - Channel names<br />
-                  <code>{"{date}"}</code> - Date (May 21, 2026)<br />
-                  <code>{"{time}"}</code> - Time (14:30)<br />
-                  <code>{"{datetime}"}</code> - Date and time<br />
-                  <code>{"{platform}"}</code> - Platform name<br />
-                  <code>{"{schedule}"}</code> - Schedule name<br />
-                  <code>{"{period}"}</code> - Rolling period (Week of May 19)<br />
-                  <code>{"{weekday}"}</code> - Day of week
-                </p>
+              <TooltipContent side="right" className="max-w-sm p-3">
+                <p className="text-xs font-medium mb-1">Template variables:</p>
+                <div className="text-xs space-y-0.5">
+                  <div><code className="bg-muted px-1 rounded">{"{channels}"}</code> — Channel names</div>
+                  <div><code className="bg-muted px-1 rounded">{"{channel_count}"}</code> — Number of channels</div>
+                  <div><code className="bg-muted px-1 rounded">{"{date}"}</code> — Date (May 21, 2026)</div>
+                  <div><code className="bg-muted px-1 rounded">{"{time}"}</code> — Time (14:30)</div>
+                  <div><code className="bg-muted px-1 rounded">{"{datetime}"}</code> — Date and time</div>
+                  <div><code className="bg-muted px-1 rounded">{"{platform}"}</code> — Discord/Slack/WhatsApp</div>
+                  <div><code className="bg-muted px-1 rounded">{"{schedule}"}</code> — Schedule name</div>
+                  <div><code className="bg-muted px-1 rounded">{"{period}"}</code> — Rolling period</div>
+                  <div><code className="bg-muted px-1 rounded">{"{weekday}"}</code> — Day of week</div>
+                </div>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

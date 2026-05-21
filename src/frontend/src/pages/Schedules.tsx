@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   useSchedules,
-  useCreateSchedule,
   useUpdateSchedule,
   useDeleteSchedule,
   useRunSchedule,
@@ -40,13 +39,11 @@ export function Schedules() {
   const { data: schedules, isLoading } = useSchedules(id || "");
   const { data: guild } = useGuild(id || "");
   const { data: promptTemplates } = usePromptTemplates(id || "");  // ADR-034
-  const createSchedule = useCreateSchedule(id || "");
   const updateSchedule = useUpdateSchedule(id || "");
   const deleteSchedule = useDeleteSchedule(id || "");
   const runSchedule = useRunSchedule(id || "");
   const { toast } = useToast();
 
-  const [createOpen, setCreateOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
   const [historySchedule, setHistorySchedule] = useState<Schedule | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -67,52 +64,6 @@ export function Schedules() {
     setHistoryOpen(true);
   };
 
-  const handleCreate = async () => {
-    try {
-      // ADR-011: Determine channel_ids based on scope
-      let channelIds: string[] = [];
-      if (formData.scope === "channel") {
-        channelIds = formData.channel_ids.length > 0
-          ? formData.channel_ids
-          : guild?.config.enabled_channels || [];
-      }
-      // For category and guild scopes, channels are resolved server-side
-
-      await createSchedule.mutateAsync({
-        name: formData.name,
-        scope: formData.scope,
-        channel_ids: channelIds,
-        category_id: formData.scope === "category" ? formData.category_id : undefined,
-        schedule_type: formData.schedule_type,
-        schedule_time: formData.schedule_time,
-        schedule_days: formData.schedule_type === "weekly" ? formData.schedule_days : undefined,
-        timezone: formData.timezone,
-        destinations: formDataToDestinations(formData),
-        prompt_template_id: formData.prompt_template_id || undefined,  // ADR-034
-        platform: formData.platform,  // ADR-051
-        enable_continuity: formData.enable_continuity,  // ADR-087
-        summary_options: {
-          summary_length: formData.summary_length,
-          perspective: formData.perspective,
-          include_action_items: true,
-          include_technical_terms: true,
-          min_messages: formData.min_messages,
-        },
-      });
-      setCreateOpen(false);
-      resetForm();
-      toast({
-        title: "Schedule created",
-        description: "Your new schedule has been created.",
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to create schedule.",
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleEdit = async () => {
     if (!editingSchedule) return;
@@ -226,50 +177,13 @@ export function Schedules() {
           </p>
         </div>
 
-        {/* Create Dialog */}
-        <Dialog open={createOpen} onOpenChange={(open) => {
-          setCreateOpen(open);
-          if (!open) resetForm();
-        }}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Schedule
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Create Schedule</DialogTitle>
-              <DialogDescription>
-                Set up an automated summary schedule
-              </DialogDescription>
-            </DialogHeader>
-            <ScheduleForm
-              formData={formData}
-              onChange={setFormData}
-              channels={guild?.channels || []}
-              categories={guild?.categories || []}
-              promptTemplates={promptTemplates || []}
-              guildId={id || ""}
-            />
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setCreateOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={handleCreate}
-                disabled={!formData.name || createSchedule.isPending}
-              >
-                {createSchedule.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Plus className="mr-2 h-4 w-4" />
-                )}
-                Create
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Link to Summaries page wizard */}
+        <Button asChild>
+          <Link to={`/guilds/${id}/summaries?create=schedule`}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Schedule
+          </Link>
+        </Button>
       </motion.div>
 
       {/* Edit Dialog */}

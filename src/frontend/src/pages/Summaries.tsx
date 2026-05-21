@@ -61,6 +61,8 @@ export function Summaries() {
   const highlightParam = searchParams.get("highlight");
   // Deep link: open specific summary from Jobs page or RSS feed
   const viewSummaryId = searchParams.get("view") || deepLinkSummaryId;
+  // Deep link: open wizard for schedule creation (from Schedules page)
+  const createParam = searchParams.get("create");
 
   // ADR-012: Default to "all" (All Summaries) tab - unified view
   const [activeTab, setActiveTab] = useState("all");
@@ -117,6 +119,13 @@ export function Summaries() {
     setSelectedChannels([]);
     setChannelSearch("");
   }, [platform]);
+
+  // Open wizard when navigating from Schedules page with ?create=schedule
+  useEffect(() => {
+    if (createParam === "schedule") {
+      setWizardOpen(true);
+    }
+  }, [createParam]);
 
   // Handle task completion
   useEffect(() => {

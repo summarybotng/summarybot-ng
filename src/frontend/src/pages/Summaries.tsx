@@ -470,7 +470,7 @@ export function Summaries() {
           open={wizardOpen}
           onOpenChange={setWizardOpen}
           guildId={id || ""}
-          initialWhenType="now"
+          initialWhenType={createParam === "schedule" ? "recurring" : "now"}
           onGenerateNow={handleWizardGenerateNow}
           onCreateSchedule={handleWizardCreateSchedule}
           onGeneratePast={handleWizardGeneratePast}

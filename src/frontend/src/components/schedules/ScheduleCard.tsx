@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Play, Trash2, Calendar, Clock, Pencil, History, MessageSquare, Copy, Check } from "lucide-react";
+import { Play, Trash2, Calendar, Clock, Pencil, History, MessageSquare, Copy, Check, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import type { Schedule } from "@/types";
 
@@ -89,6 +89,15 @@ export function ScheduleCard({
                   {getPlatformBadge(schedule.platform).icon}
                   {getPlatformBadge(schedule.platform).label}
                 </Badge>
+                {/* ADR-101: Rolling period badge */}
+                {schedule.rolling_period && (
+                  <Badge variant="outline" className="gap-1 text-orange-600 border-orange-300 bg-orange-50 dark:bg-orange-950/30 dark:text-orange-400 dark:border-orange-800">
+                    <RefreshCw className="h-3 w-3" />
+                    {schedule.rolling_period === "weekly" ? "Weekly Rolling" :
+                     schedule.rolling_period === "biweekly" ? "Biweekly Rolling" :
+                     schedule.rolling_period === "monthly" ? "Monthly Rolling" : "Rolling"}
+                  </Badge>
+                )}
               </div>
 
               <div className="mb-3 flex flex-wrap gap-3 text-sm text-muted-foreground">

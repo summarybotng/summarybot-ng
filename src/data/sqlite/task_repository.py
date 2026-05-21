@@ -56,8 +56,9 @@ class SQLiteTaskRepository(TaskRepository):
             scope, channel_ids, category_id, excluded_channel_ids,
             resolve_category_at_runtime, timezone, prompt_template_id, platform,
             enable_continuity, time_range_hours,
-            rolling_period, rolling_end_day, accumulation_strategy
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            rolling_period, rolling_end_day, accumulation_strategy,
+            title_template
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -94,6 +95,8 @@ class SQLiteTaskRepository(TaskRepository):
             getattr(task, 'rolling_period', None),
             getattr(task, 'rolling_end_day', None),
             getattr(task, 'accumulation_strategy', 'hybrid'),
+            # Custom title template
+            getattr(task, 'title_template', None),
         )
 
         await self.connection.execute(query, params)
@@ -232,6 +235,8 @@ class SQLiteTaskRepository(TaskRepository):
             rolling_period=row.get('rolling_period'),
             rolling_end_day=row.get('rolling_end_day'),
             accumulation_strategy=row.get('accumulation_strategy', 'hybrid'),
+            # Custom title template
+            title_template=row.get('title_template'),
         )
 
     def _row_to_task_result(self, row: Dict[str, Any]) -> TaskResult:

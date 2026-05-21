@@ -122,6 +122,8 @@ def _task_to_response(task, category_name: str = None, template_name: str = None
         rolling_period=getattr(task, 'rolling_period', None),
         rolling_end_day=getattr(task, 'rolling_end_day', None),
         accumulation_strategy=getattr(task, 'accumulation_strategy', 'hybrid'),
+        # Custom title template
+        title_template=getattr(task, 'title_template', None),
     )
 
 
@@ -289,6 +291,8 @@ async def create_schedule(
         rolling_period=body.rolling_period if body.rolling_period and body.rolling_period != "none" else None,
         rolling_end_day=body.rolling_end_day,
         accumulation_strategy=body.accumulation_strategy or "hybrid",
+        # Custom title template
+        title_template=body.title_template,
     )
 
     # Calculate next run
@@ -541,6 +545,10 @@ async def update_schedule(
         task.rolling_end_day = body.rolling_end_day
     if body.accumulation_strategy is not None:
         task.accumulation_strategy = body.accumulation_strategy
+
+    # Update title template
+    if body.title_template is not None:
+        task.title_template = body.title_template if body.title_template else None
 
     # Recalculate next run
     task.next_run = task.calculate_next_run()

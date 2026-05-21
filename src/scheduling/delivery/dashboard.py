@@ -6,7 +6,7 @@ Extended by ADR-067: Automatic Wiki Ingestion.
 import asyncio
 import logging
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from .base import DeliveryStrategy, DeliveryResult, DeliveryContext
@@ -390,8 +390,9 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
         channel_names: List[str],
         context: DeliveryContext,
     ) -> str:
-        """Generate smart title based on scope and content."""
-        timestamp = utc_now_naive().strftime('%b %d, %H:%M')
+        """Generate smart title based on scope and content, or use custom template."""
+        now = utc_now_naive()
+        timestamp = now.strftime('%b %d, %H:%M')
         scope_type = summary.metadata.get("scope_type") if summary.metadata else None
 
         # Get platform for title prefix (all platforms get a prefix)
@@ -403,6 +404,17 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
             "telegram": "Telegram",
         }.get(platform.lower() if platform else "discord", platform.title() if platform else "Discord")
         platform_prefix = f"{platform_display}: "
+
+        # Check for custom title template
+        title_template = getattr(context.scheduled_task, 'title_template', None) if context.scheduled_task else None
+        if title_template:
+            return self._apply_title_template(
+                template=title_template,
+                now=now,
+                channel_names=channel_names,
+                platform_display=platform_display,
+                context=context,
+            )
 
         if scope_type == "guild" or len(scope_channel_ids) > 10:
             # Server-wide summary - use count instead of listing all
@@ -436,3 +448,60 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
                 title = f"{platform_prefix}Summary — {timestamp}"
 
         return title
+
+    def _apply_title_template(
+        self,
+        template: str,
+        now: datetime,
+        channel_names: List[str],
+        platform_display: str,
+        context: DeliveryContext,
+    ) -> str:
+        """Apply custom title template with variable substitution.
+
+        Supported variables:
+            {date}          - Date (e.g., "May 21, 2026")
+            {time}          - Time (e.g., "14:30")
+            {datetime}      - Date and time (e.g., "May 21, 14:30")
+            {channels}      - Channel names (e.g., "#general, #dev")
+            {channel_count} - Number of channels (e.g., "5")
+            {platform}      - Platform name (e.g., "Discord")
+            {schedule}      - Schedule name
+            {period}        - Rolling period (e.g., "Week of May 19")
+            {weekday}       - Day of week (e.g., "Wednesday")
+        """
+        schedule_name = context.scheduled_task.name if context.scheduled_task else "Summary"
+        rolling_period = getattr(context.scheduled_task, 'rolling_period', None) if context.scheduled_task else None
+
+        # Calculate period string for rolling summaries
+        if rolling_period == 'weekly':
+            # Week starts on Monday
+            week_start = now - timedelta(days=now.weekday())
+            period_str = f"Week of {week_start.strftime('%b %d')}"
+        elif rolling_period == 'biweekly':
+            week_start = now - timedelta(days=now.weekday())
+            period_str = f"Biweek of {week_start.strftime('%b %d')}"
+        elif rolling_period == 'monthly':
+            period_str = now.strftime('%B %Y')
+        else:
+            period_str = now.strftime('%b %d')
+
+        # Channel string
+        if len(channel_names) > 5:
+            channels_str = f"{', '.join(channel_names[:3])} +{len(channel_names)-3} more"
+        else:
+            channels_str = ', '.join(channel_names) if channel_names else "Summary"
+
+        # Apply substitutions
+        result = template
+        result = result.replace('{date}', now.strftime('%b %d, %Y'))
+        result = result.replace('{time}', now.strftime('%H:%M'))
+        result = result.replace('{datetime}', now.strftime('%b %d, %H:%M'))
+        result = result.replace('{channels}', channels_str)
+        result = result.replace('{channel_count}', str(len(channel_names)))
+        result = result.replace('{platform}', platform_display)
+        result = result.replace('{schedule}', schedule_name)
+        result = result.replace('{period}', period_str)
+        result = result.replace('{weekday}', now.strftime('%A'))
+
+        return result

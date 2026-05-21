@@ -276,6 +276,44 @@ export function WhereStep({ state, onChange, guildId }: StepProps) {
         </div>
       </div>
 
+      {/* Summary Title Template */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="summaryTitle" className="text-sm font-medium">
+            Summary title template
+          </Label>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-xs">
+                <p className="text-xs">
+                  Customize how summaries are titled. Variables:<br />
+                  <code>{"{channels}"}</code> - Channel names<br />
+                  <code>{"{date}"}</code> - Date (May 21, 2026)<br />
+                  <code>{"{time}"}</code> - Time (14:30)<br />
+                  <code>{"{datetime}"}</code> - Date and time<br />
+                  <code>{"{platform}"}</code> - Platform name<br />
+                  <code>{"{schedule}"}</code> - Schedule name<br />
+                  <code>{"{period}"}</code> - Rolling period (Week of May 19)<br />
+                  <code>{"{weekday}"}</code> - Day of week
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+        <Input
+          id="summaryTitle"
+          placeholder="{channels} Summary - {date}"
+          value={state.pageTitleTemplate}
+          onChange={(e) => onChange({ pageTitleTemplate: e.target.value })}
+        />
+        <p className="text-xs text-muted-foreground">
+          Leave blank for auto-generated titles based on scope
+        </p>
+      </div>
+
       {/* Advanced Options */}
       <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
         <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">

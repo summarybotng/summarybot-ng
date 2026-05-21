@@ -481,6 +481,8 @@ class ScheduleListItem(BaseModel):
     rolling_period: Optional[str] = None  # 'weekly', 'biweekly', 'monthly'
     rolling_end_day: Optional[int] = None
     accumulation_strategy: str = "hybrid"
+    # Custom title template
+    title_template: Optional[str] = None
 
 
 class SchedulesResponse(BaseModel):
@@ -514,6 +516,8 @@ class ScheduleCreateRequest(BaseModel):
     rolling_period: Optional[str] = None  # 'weekly', 'biweekly', 'monthly' (null for standard)
     rolling_end_day: Optional[int] = None  # Day to finalize (0=Mon, 6=Sun) for weekly
     accumulation_strategy: str = "hybrid"  # 'append', 'resummarize', 'hybrid'
+    # Custom title template
+    title_template: Optional[str] = None  # Custom title with variables: {date}, {channels}, {platform}, etc.
 
 
 class ScheduleUpdateRequest(BaseModel):
@@ -542,6 +546,8 @@ class ScheduleUpdateRequest(BaseModel):
     rolling_period: Optional[str] = None
     rolling_end_day: Optional[int] = None
     accumulation_strategy: Optional[str] = None
+    # Custom title template
+    title_template: Optional[str] = None
 
 
 class ScheduleRunResponse(BaseModel):

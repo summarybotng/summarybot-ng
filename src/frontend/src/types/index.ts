@@ -202,6 +202,12 @@ export interface Schedule {
   enable_continuity?: boolean;
   // ADR-089: Lookback period
   time_range_hours?: number;
+  // ADR-101: Rolling period summaries
+  rolling_period?: "weekly" | "biweekly" | "monthly" | null;
+  rolling_end_day?: number;
+  accumulation_strategy?: "append" | "resummarize" | "hybrid";
+  // Custom title template
+  title_template?: string | null;
 }
 
 // ADR-034: Guild Prompt Template types

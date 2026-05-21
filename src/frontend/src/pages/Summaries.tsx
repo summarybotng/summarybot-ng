@@ -240,6 +240,12 @@ export function Summaries() {
       enable_continuity: state.enableContinuity,
       time_range_hours: state.lookbackHours,  // ADR-089: Lookback period
       prompt_template_id: state.promptTemplateId || undefined,  // ADR-034: Custom templates
+      // ADR-101: Rolling period summaries
+      rolling_period: state.rollingPeriod !== "none" ? state.rollingPeriod : undefined,
+      rolling_end_day: state.rollingPeriod !== "none" ? state.rollingEndDay : undefined,
+      accumulation_strategy: state.rollingPeriod !== "none" ? state.accumulationStrategy : undefined,
+      // Custom title template
+      title_template: state.pageTitleTemplate || undefined,
       destinations: [
         { type: "dashboard", target: "default", format: "embed" },
         ...(state.destinations.discordChannel && state.destinations.discordChannelId

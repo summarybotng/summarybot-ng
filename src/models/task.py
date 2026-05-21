@@ -181,6 +181,10 @@ class ScheduledTask(BaseModel):
     rolling_end_day: Optional[int] = None         # Day to finalize (0=Mon, 6=Sun) for weekly
     accumulation_strategy: str = "hybrid"         # 'append', 'resummarize', 'hybrid'
 
+    # Custom title template with variable support
+    # Variables: {date}, {time}, {datetime}, {channels}, {channel_count}, {platform}, {schedule}, {period}
+    title_template: Optional[str] = None          # Custom title format (null for auto-generated)
+
     def calculate_next_run(self, from_time: Optional[datetime] = None) -> Optional[datetime]:
         """Calculate the next run time for this task.
 

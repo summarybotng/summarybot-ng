@@ -1636,7 +1636,7 @@ async def list_stored_summaries(
         confluence_repo = await get_confluence_repository()
         if confluence_repo:
             summary_ids = [s.id for s in summaries]
-            pubs = await confluence_repo.get_by_guild(guild_id)
+            pubs = await confluence_repo.find_by_guild(guild_id)
             for pub in pubs:
                 if pub.summary_id in summary_ids:
                     confluence_publications[pub.summary_id] = pub.page_url

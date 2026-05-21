@@ -15,7 +15,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Play, Trash2, Calendar, Clock, Pencil, History, MessageSquare } from "lucide-react";
+import { Play, Trash2, Calendar, Clock, Pencil, History, MessageSquare, Copy, Check } from "lucide-react";
+import { useState } from "react";
 import type { Schedule } from "@/types";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -60,6 +61,14 @@ export function ScheduleCard({
   isDeleting,
   isRunning,
 }: ScheduleCardProps) {
+  const [copied, setCopied] = useState(false);
+
+  const copyId = () => {
+    navigator.clipboard.writeText(schedule.id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -100,7 +109,7 @@ export function ScheduleCard({
                 </div>
               </div>
 
-              <div className="flex gap-4 text-sm text-muted-foreground">
+              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                 <span>Runs: {schedule.run_count}</span>
                 <span>Failures: {schedule.failure_count}</span>
                 {schedule.next_run && (
@@ -110,6 +119,18 @@ export function ScheduleCard({
                     )
                   </span>
                 )}
+                <button
+                  onClick={copyId}
+                  className="flex items-center gap-1 text-xs font-mono opacity-60 hover:opacity-100 transition-opacity"
+                  title="Click to copy Schedule ID"
+                >
+                  ID: {schedule.id}
+                  {copied ? (
+                    <Check className="h-3 w-3 text-green-500" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                </button>
               </div>
             </div>
 

@@ -15,7 +15,7 @@ from apscheduler.jobstores.base import JobLookupError
 from .tasks import SummaryTask, CleanupTask, TaskType, TaskMetadata
 from .executor import TaskExecutor
 from .persistence import TaskPersistence
-from ..models.task import ScheduledTask, ScheduleType, TaskStatus
+from ..models.task import ScheduledTask, ScheduleType, TaskStatus, TaskResult
 from ..models.summary_job import SummaryJob, JobType, JobStatus
 from src.utils.time import utc_now_naive
 from ..exceptions import (
@@ -646,6 +646,25 @@ class TaskScheduler:
                 metadata.update_execution(duration, failed=not result.success)
                 metadata.next_execution = task.next_run
 
+            # Save TaskResult to database for execution history
+            if self.task_repository:
+                try:
+                    task_result = TaskResult(
+                        task_id=task_id,
+                        status=TaskStatus.COMPLETED if result.success else TaskStatus.FAILED,
+                        started_at=start_time,
+                        completed_at=utc_now_naive(),
+                        summary_id=result.summary_result.id if result.summary_result else None,
+                        error_message=result.error_message if not result.success else None,
+                        error_details=result.error_details if not result.success else None,
+                        delivery_results=result.delivery_results,
+                        execution_time_seconds=(utc_now_naive() - start_time).total_seconds(),
+                    )
+                    await self.task_repository.save_task_result(task_result)
+                    logger.debug(f"Saved execution result for task {task_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to save task result for {task_id}: {e}")
+
             # Persist updated task
             await self._persist_task(task)
 
@@ -667,6 +686,25 @@ class TaskScheduler:
             if metadata:
                 duration = (utc_now_naive() - start_time).total_seconds()
                 metadata.update_execution(duration, failed=True)
+
+            # Save TaskResult to database for execution history (exception case)
+            if self.task_repository:
+                try:
+                    task_result = TaskResult(
+                        task_id=task_id,
+                        status=TaskStatus.FAILED,
+                        started_at=start_time,
+                        completed_at=utc_now_naive(),
+                        summary_id=None,
+                        error_message=str(e),
+                        error_details={"exception_type": type(e).__name__},
+                        delivery_results=[],
+                        execution_time_seconds=(utc_now_naive() - start_time).total_seconds(),
+                    )
+                    await self.task_repository.save_task_result(task_result)
+                    logger.debug(f"Saved exception result for task {task_id}")
+                except Exception as save_err:
+                    logger.warning(f"Failed to save task result for {task_id}: {save_err}")
 
             # Persist failure
             await self._persist_task(task)

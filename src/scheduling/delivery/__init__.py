@@ -11,6 +11,7 @@ from .discord_dm import DiscordDMDeliveryStrategy
 from .webhook import WebhookDeliveryStrategy
 from .email import EmailDeliveryStrategy
 from .dashboard import DashboardDeliveryStrategy
+from .confluence import ConfluenceDeliveryStrategy
 
 __all__ = [
     'DeliveryStrategy',
@@ -20,4 +21,5 @@ __all__ = [
     'WebhookDeliveryStrategy',
     'EmailDeliveryStrategy',
     'DashboardDeliveryStrategy',
+    'ConfluenceDeliveryStrategy',
 ]

@@ -23,6 +23,7 @@ from .delivery import (
     WebhookDeliveryStrategy,
     EmailDeliveryStrategy,
     DashboardDeliveryStrategy,
+    ConfluenceDeliveryStrategy,
 )
 from ..models.task import TaskResult, DestinationType, ScheduledTask, Destination, SummaryScope, ScheduleType
 # ADR-051: Platform fetcher abstraction for multi-platform support
@@ -120,6 +121,7 @@ class TaskExecutor:
             DestinationType.WEBHOOK: WebhookDeliveryStrategy(),
             DestinationType.EMAIL: EmailDeliveryStrategy(),
             DestinationType.DASHBOARD: DashboardDeliveryStrategy(),
+            DestinationType.CONFLUENCE: ConfluenceDeliveryStrategy(),
         }
 
     async def _get_template_content(self, task: SummaryTask) -> tuple[Optional[str], Optional[str], Optional[str]]:

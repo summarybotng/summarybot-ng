@@ -83,6 +83,7 @@ class DestinationType(Enum):
     EMAIL = "email"
     FILE = "file"
     DASHBOARD = "dashboard"  # ADR-005: Store in dashboard for viewing/manual push
+    CONFLUENCE = "confluence"  # ADR-099: Publish to Confluence
 
 
 class SummaryScope(Enum):

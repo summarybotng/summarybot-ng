@@ -1676,42 +1676,40 @@ function StoredSummaryDetailSheet({
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
                       <GitBranch className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
-                      Continuity Chain - Week {summary.continuity_week_number}
+                      Weekly Continuity Chain
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <p className="text-xs text-muted-foreground">
-                      Part of a weekly continuity chain. Each week carries context from the previous.
+                      This summary is Week {summary.continuity_week_number} in a weekly chain. Each summary carries context from the previous week.
                     </p>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {summary.previous_summary_id ? (
                         <Button
                           variant="outline"
                           size="sm"
-                          className="gap-1"
+                          className="gap-1 text-xs"
                           onClick={() => onNavigate?.(summary.previous_summary_id!)}
                         >
-                          <ChevronLeft className="h-3 w-3" />
-                          Week {summary.continuity_week_number - 1}
+                          ← Previous (Week {summary.continuity_week_number - 1})
                         </Button>
                       ) : (
-                        <span className="text-xs text-muted-foreground">← First week</span>
+                        <Badge variant="outline" className="text-xs text-muted-foreground">← First week</Badge>
                       )}
-                      <Badge variant="secondary" className="bg-cyan-500/20 text-cyan-700 dark:text-cyan-300">
+                      <Badge className="bg-cyan-500 text-white">
                         Week {summary.continuity_week_number}
                       </Badge>
                       {summary.next_summary_id ? (
                         <Button
                           variant="outline"
                           size="sm"
-                          className="gap-1"
+                          className="gap-1 text-xs"
                           onClick={() => onNavigate?.(summary.next_summary_id!)}
                         >
-                          Week {summary.continuity_week_number + 1}
-                          <ChevronRight className="h-3 w-3" />
+                          Next (Week {summary.continuity_week_number + 1}) →
                         </Button>
                       ) : (
-                        <span className="text-xs text-muted-foreground">Latest →</span>
+                        <Badge variant="outline" className="text-xs text-muted-foreground">Latest →</Badge>
                       )}
                     </div>
                   </CardContent>

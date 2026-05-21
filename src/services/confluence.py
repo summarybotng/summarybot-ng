@@ -411,29 +411,17 @@ class ConfluencePublisher:
         """
         content: List[Dict[str, Any]] = []
 
-        # Info panel with metadata
+        # Info panel with metadata (channels now in separate expand section)
         metadata_text = self._build_metadata_text(summary)
-        info_panel_content: List[Dict[str, Any]] = [
-            {
-                "type": "paragraph",
-                "content": [{"type": "text", "text": metadata_text}],
-            }
-        ]
-
-        # ADR-100: Add channel list to info panel
-        if channel_names:
-            info_panel_content.append({
-                "type": "paragraph",
-                "content": [
-                    {"type": "text", "text": "Channels: ", "marks": [{"type": "strong"}]},
-                    {"type": "text", "text": ", ".join(f"#{name}" for name in channel_names)},
-                ],
-            })
-
         content.append({
             "type": "panel",
             "attrs": {"panelType": "info"},
-            "content": info_panel_content,
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": metadata_text}],
+                }
+            ],
         })
 
         # Summary text with LLM-based date extraction (ADR-100)

@@ -23,7 +23,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Calendar, Loader2, Pencil } from "lucide-react";
+import { Plus, Calendar, Loader2, Pencil, Info, ChevronDown, ChevronUp } from "lucide-react";
 import { ScheduleCard } from "@/components/schedules/ScheduleCard";
 import { RunHistoryDrawer } from "@/components/schedules/RunHistoryDrawer";
 import {
@@ -51,6 +51,7 @@ export function Schedules() {
   const [historySchedule, setHistorySchedule] = useState<Schedule | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [formData, setFormData] = useState<ScheduleFormData>(() => getInitialFormData());
+  const [helpExpanded, setHelpExpanded] = useState(false);
 
   const resetForm = () => {
     setFormData(getInitialFormData());
@@ -314,6 +315,42 @@ export function Schedules() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Help Note */}
+      <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20">
+        <CardContent className="p-4">
+          <button
+            onClick={() => setHelpExpanded(!helpExpanded)}
+            className="flex w-full items-center justify-between text-left"
+          >
+            <div className="flex items-center gap-2 text-sm font-medium text-blue-700 dark:text-blue-300">
+              <Info className="h-4 w-4" />
+              Normal vs Rolling Schedules
+            </div>
+            {helpExpanded ? (
+              <ChevronUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            )}
+          </button>
+          {helpExpanded && (
+            <div className="mt-3 space-y-2 text-sm text-blue-800 dark:text-blue-200">
+              <p>
+                <strong>Normal Schedule:</strong> Each run creates a new summary document.
+                A daily schedule produces 7 separate summaries per week.
+              </p>
+              <p>
+                <strong>Rolling Schedule:</strong> Accumulates content into one summary per period.
+                A daily schedule with weekly rolling produces 1 summary that builds up all week,
+                then finalizes and starts fresh.
+              </p>
+              <p className="text-xs text-blue-600 dark:text-blue-400">
+                Enable rolling periods in the "When" step when creating or editing a schedule.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {isLoading ? (
         <SchedulesSkeleton />

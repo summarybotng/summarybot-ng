@@ -221,7 +221,7 @@ export function Channels() {
             <Alert className="border-amber-500/50 bg-amber-500/10">
               <AlertTriangle className="h-4 w-4 text-amber-500" />
               <AlertDescription className="text-amber-700 dark:text-amber-300">
-                <strong>{lockedSummarizing.length} private channel{lockedSummarizing.length > 1 ? 's are' : ' is'} being summarized:</strong>{' '}
+                <strong>{lockedSummarizing.length} restricted channel{lockedSummarizing.length > 1 ? 's are' : ' is'} being summarized:</strong>{' '}
                 {lockedSummarizing.map(c => c.name).join(', ')}.
                 These summaries may contain sensitive content.
               </AlertDescription>
@@ -236,7 +236,7 @@ export function Channels() {
         <Alert className="border-amber-500/50 bg-amber-500/10">
           <Lock className="h-4 w-4 text-amber-500" />
           <AlertDescription className="text-amber-700 dark:text-amber-300">
-            <strong>Private channels detected.</strong> Channels marked with 🔒 have restricted access.
+            <strong>Restricted channels detected.</strong> Channels marked with 🔒 have restricted access.
             These are disabled by default to protect sensitive content. Enabling them will be logged for audit.
           </AlertDescription>
         </Alert>
@@ -346,7 +346,7 @@ export function Channels() {
                                 {isLocked && (
                                   <div className="flex items-center gap-1">
                                     <Lock className="h-3 w-3 text-amber-500" />
-                                    <span className="text-xs text-amber-500">Private</span>
+                                    <span className="text-xs text-amber-500">Restricted</span>
                                     {isLockedAndSummarizing && (
                                       <Badge variant="destructive" className="ml-1 text-xs py-0 px-1.5">
                                         <Eye className="h-3 w-3 mr-1" />
@@ -366,7 +366,7 @@ export function Channels() {
                                     if (isLocked && !isEnabled) {
                                       // Show warning for enabling locked channels
                                       if (window.confirm(
-                                        `⚠️ "${channel.name}" is a private/locked channel.\n\n` +
+                                        `⚠️ "${channel.name}" is a restricted channel.\n\n` +
                                         `Enabling summarization may expose sensitive content. ` +
                                         `This action will be logged for audit purposes.\n\n` +
                                         `Are you sure you want to enable summarization?`

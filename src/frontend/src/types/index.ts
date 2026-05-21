@@ -444,6 +444,9 @@ export interface StoredSummaryDetail extends StoredSummary {
   };
   // ADR-087: Continuity chain navigation (detail view only)
   next_summary_id?: string;  // Found by reverse lookup
+  // ADR-101: Rolling period summaries (detail view extras)
+  rolling_period_start?: string;
+  rolling_accumulated_through?: string;
 }
 
 export interface PushDelivery {

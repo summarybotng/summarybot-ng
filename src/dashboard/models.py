@@ -971,6 +971,12 @@ class StoredSummaryDetailResponse(BaseModel):
     continuity_week_number: Optional[int] = None
     previous_summary_id: Optional[str] = None
     next_summary_id: Optional[str] = None  # Found by reverse lookup
+    # ADR-101: Rolling period summaries
+    rolling_period_type: Optional[str] = None  # 'weekly', 'biweekly', 'monthly'
+    rolling_finalized: bool = True  # False = "In Progress"
+    rolling_accumulation_count: int = 0
+    rolling_period_start: Optional[datetime] = None
+    rolling_accumulated_through: Optional[datetime] = None
 
 
 class StoredSummaryUpdateRequest(BaseModel):

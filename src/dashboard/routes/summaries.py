@@ -1989,6 +1989,12 @@ async def get_stored_summary(
         continuity_week_number=stored.continuity_week_number,
         previous_summary_id=stored.previous_summary_id,
         next_summary_id=next_summary_id,
+        # ADR-101: Rolling period summaries
+        rolling_period_type=stored.rolling_period_type,
+        rolling_finalized=stored.rolling_finalized if stored.rolling_period_type else True,
+        rolling_accumulation_count=stored.rolling_accumulation_count or 0,
+        rolling_period_start=stored.rolling_period_start,
+        rolling_accumulated_through=stored.rolling_accumulated_through,
     )
 
 

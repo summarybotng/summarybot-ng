@@ -477,6 +477,10 @@ class ScheduleListItem(BaseModel):
     enable_continuity: bool = False  # When true, weekly summaries carry context from previous week
     # ADR-089: Lookback period
     time_range_hours: int = 24  # How far back to fetch messages
+    # ADR-101: Rolling period summaries
+    rolling_period: Optional[str] = None  # 'weekly', 'biweekly', 'monthly'
+    rolling_end_day: Optional[int] = None
+    accumulation_strategy: str = "hybrid"
 
 
 class SchedulesResponse(BaseModel):
@@ -506,6 +510,10 @@ class ScheduleCreateRequest(BaseModel):
     enable_continuity: bool = False  # When true, weekly summaries carry context from previous week
     # ADR-089: Lookback period (how far back to fetch messages)
     time_range_hours: int = 24  # Default: look back 24 hours
+    # ADR-101: Rolling period summaries
+    rolling_period: Optional[str] = None  # 'weekly', 'biweekly', 'monthly' (null for standard)
+    rolling_end_day: Optional[int] = None  # Day to finalize (0=Mon, 6=Sun) for weekly
+    accumulation_strategy: str = "hybrid"  # 'append', 'resummarize', 'hybrid'
 
 
 class ScheduleUpdateRequest(BaseModel):
@@ -530,6 +538,10 @@ class ScheduleUpdateRequest(BaseModel):
     enable_continuity: Optional[bool] = None  # When true, weekly summaries carry context from previous week
     # ADR-089: Lookback period (how far back to fetch messages)
     time_range_hours: Optional[int] = None
+    # ADR-101: Rolling period summaries
+    rolling_period: Optional[str] = None
+    rolling_end_day: Optional[int] = None
+    accumulation_strategy: Optional[str] = None
 
 
 class ScheduleRunResponse(BaseModel):

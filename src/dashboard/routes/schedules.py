@@ -118,6 +118,10 @@ def _task_to_response(task, category_name: str = None, template_name: str = None
         enable_continuity=getattr(task, 'enable_continuity', False),
         # ADR-089: Lookback period
         time_range_hours=getattr(task, 'time_range_hours', 24),
+        # ADR-101: Rolling period summaries
+        rolling_period=getattr(task, 'rolling_period', None),
+        rolling_end_day=getattr(task, 'rolling_end_day', None),
+        accumulation_strategy=getattr(task, 'accumulation_strategy', 'hybrid'),
     )
 
 
@@ -281,6 +285,10 @@ async def create_schedule(
         platform=body.platform or "discord",  # ADR-051
         enable_continuity=body.enable_continuity,  # ADR-087
         time_range_hours=body.time_range_hours,  # ADR-089: Lookback period
+        # ADR-101: Rolling period summaries
+        rolling_period=body.rolling_period if body.rolling_period and body.rolling_period != "none" else None,
+        rolling_end_day=body.rolling_end_day,
+        accumulation_strategy=body.accumulation_strategy or "hybrid",
     )
 
     # Calculate next run
@@ -525,6 +533,14 @@ async def update_schedule(
     # ADR-089: Update time_range_hours
     if body.time_range_hours is not None:
         task.time_range_hours = body.time_range_hours
+
+    # ADR-101: Update rolling period settings
+    if body.rolling_period is not None:
+        task.rolling_period = body.rolling_period if body.rolling_period != "none" else None
+    if body.rolling_end_day is not None:
+        task.rolling_end_day = body.rolling_end_day
+    if body.accumulation_strategy is not None:
+        task.accumulation_strategy = body.accumulation_strategy
 
     # Recalculate next run
     task.next_run = task.calculate_next_run()

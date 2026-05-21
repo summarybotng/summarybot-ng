@@ -438,6 +438,8 @@ export interface StoredSummaryDetail extends StoredSummary {
     published_at?: string;
     last_updated_at?: string;
   };
+  // ADR-087: Continuity chain navigation (detail view only)
+  next_summary_id?: string;  // Found by reverse lookup
 }
 
 export interface PushDelivery {

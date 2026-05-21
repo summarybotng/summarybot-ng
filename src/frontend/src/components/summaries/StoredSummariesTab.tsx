@@ -1628,6 +1628,54 @@ function StoredSummaryDetailSheet({
                 </Card>
               )}
 
+              {/* ADR-087: Continuity Chain Navigation */}
+              {summary.continuity_week_number && (
+                <Card className="bg-cyan-500/5 border-cyan-500/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <GitBranch className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+                      Continuity Chain - Week {summary.continuity_week_number}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      Part of a weekly continuity chain. Each week carries context from the previous.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      {summary.previous_summary_id ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1"
+                          onClick={() => onNavigate?.(summary.previous_summary_id!)}
+                        >
+                          <ChevronLeft className="h-3 w-3" />
+                          Week {summary.continuity_week_number - 1}
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">← First week</span>
+                      )}
+                      <Badge variant="secondary" className="bg-cyan-500/20 text-cyan-700 dark:text-cyan-300">
+                        Week {summary.continuity_week_number}
+                      </Badge>
+                      {summary.next_summary_id ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1"
+                          onClick={() => onNavigate?.(summary.next_summary_id!)}
+                        >
+                          Week {summary.continuity_week_number + 1}
+                          <ChevronRight className="h-3 w-3" />
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Latest →</span>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* ADR-099: Confluence Publication Link */}
               {summary.confluence_publication && (
                 <Card className="bg-blue-500/5 border-blue-500/20">

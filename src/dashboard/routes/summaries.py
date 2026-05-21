@@ -1931,6 +1931,16 @@ async def get_stored_summary(
     except Exception as e:
         logger.warning(f"Failed to get Confluence publication info: {e}")
 
+    # ADR-087: Find next summary in continuity chain (reverse lookup)
+    next_summary_id = None
+    if stored.continuity_week_number:
+        try:
+            next_summaries = await stored_repo.find_by_previous_summary(summary_id)
+            if next_summaries:
+                next_summary_id = next_summaries[0].id
+        except Exception as e:
+            logger.warning(f"Failed to find next summary in continuity chain: {e}")
+
     return StoredSummaryDetailResponse(
         id=stored.id,
         title=stored.title,
@@ -1975,6 +1985,10 @@ async def get_stored_summary(
         category_name=stored.category_name,
         # ADR-099: Confluence publication
         confluence_publication=confluence_publication,
+        # ADR-087: Continuity chain
+        continuity_week_number=stored.continuity_week_number,
+        previous_summary_id=stored.previous_summary_id,
+        next_summary_id=next_summary_id,
     )
 
 

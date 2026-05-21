@@ -1313,3 +1313,26 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             )
         )
         return [self._row_to_stored_summary(row) for row in rows]
+
+    async def find_by_previous_summary(
+        self,
+        previous_summary_id: str,
+    ) -> List[StoredSummary]:
+        """
+        Find summaries that have the given summary as their previous_summary_id.
+        Used to find the "next" summary in a continuity chain.
+
+        Args:
+            previous_summary_id: The summary ID to find successors of
+
+        Returns:
+            List of summaries that reference this as their previous summary
+        """
+        query = """
+        SELECT * FROM stored_summaries
+        WHERE previous_summary_id = ?
+        ORDER BY created_at ASC
+        LIMIT 5
+        """
+        rows = await self.connection.fetch_all(query, (previous_summary_id,))
+        return [self._row_to_stored_summary(row) for row in rows]

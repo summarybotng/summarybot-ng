@@ -949,6 +949,10 @@ class StoredSummaryDetailResponse(BaseModel):
     category_name: Optional[str] = None
     # ADR-099: Confluence publication
     confluence_publication: Optional[ConfluencePublicationInfo] = None
+    # ADR-087: Continuity chain
+    continuity_week_number: Optional[int] = None
+    previous_summary_id: Optional[str] = None
+    next_summary_id: Optional[str] = None  # Found by reverse lookup
 
 
 class StoredSummaryUpdateRequest(BaseModel):

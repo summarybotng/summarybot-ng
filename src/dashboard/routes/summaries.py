@@ -4273,6 +4273,17 @@ async def list_jobs(
     if not job_repo:
         return JobsListResponse(jobs=[], total=0, limit=limit, offset=offset)
 
+    # Auto-cleanup: Cancel stale pending/running jobs older than 1 hour
+    try:
+        stale_cancelled = await job_repo.cancel_stale_jobs(
+            guild_id=guild_id,
+            max_age_hours=1,
+        )
+        if stale_cancelled > 0:
+            logger.info(f"Auto-cancelled {stale_cancelled} stale jobs for guild {guild_id}")
+    except Exception as e:
+        logger.warning(f"Failed to auto-cancel stale jobs: {e}")
+
     # Convert filter params to strings for repository
     type_filter = job_type if job_type else None
     status_filter = status if status else None

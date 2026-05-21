@@ -315,3 +315,28 @@ class SQLiteSummaryJobRepository(SummaryJobRepository):
 
         rows = await self.connection.fetch_all(query, tuple(params))
         return [SummaryJob.from_dict(dict(row)) for row in rows]
+
+    async def cancel_stale_jobs(
+        self,
+        guild_id: str,
+        max_age_hours: int = 1,
+    ) -> int:
+        """Cancel stale pending/running jobs older than max_age_hours.
+
+        Returns the number of jobs cancelled.
+        """
+        query = """
+        UPDATE summary_jobs
+        SET status = 'cancelled',
+            error = 'Auto-cancelled: stale job'
+        WHERE guild_id = ?
+          AND status IN ('pending', 'running')
+          AND created_at < datetime('now', '-' || ? || ' hours')
+        """
+        await self.connection.execute(query, (guild_id, str(max_age_hours)))
+        # Get count of affected rows
+        count_query = """
+        SELECT changes()
+        """
+        result = await self.connection.fetch_one(count_query, ())
+        return result[0] if result else 0

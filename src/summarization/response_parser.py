@@ -62,6 +62,10 @@ class InlineKnowledgeUnit:
     confidence: float = 1.0
     references: List[int] = field(default_factory=list)
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for JSON serialization."""
+        return asdict(self)
+
 
 @dataclass
 class ParsedSummary(BaseModel):

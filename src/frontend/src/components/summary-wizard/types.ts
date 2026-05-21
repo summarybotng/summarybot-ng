@@ -44,6 +44,11 @@ export interface WizardState {
   enableContinuity: boolean;
   lookbackHours: number;  // How far back to fetch messages (time_range_hours)
 
+  // ADR-101: Rolling period summaries
+  rollingPeriod: "none" | "weekly" | "biweekly" | "monthly";
+  rollingEndDay: number;  // Day to finalize (0=Mon, 6=Sun)
+  accumulationStrategy: "append" | "resummarize" | "hybrid";
+
   // When: Past options
   dateFrom: Date | null;
   dateTo: Date | null;
@@ -100,6 +105,11 @@ export const initialWizardState: WizardState = {
   scheduleName: "",
   enableContinuity: false,
   lookbackHours: 24,  // Default: look back 24 hours
+
+  // ADR-101: Rolling period summaries
+  rollingPeriod: "none",
+  rollingEndDay: 5,  // Default to Saturday (5 = Saturday in 0=Mon system)
+  accumulationStrategy: "hybrid",
 
   // Past options
   dateFrom: null,

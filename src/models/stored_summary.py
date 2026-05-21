@@ -136,6 +136,14 @@ class StoredSummary(BaseModel):
     category_id: Optional[str] = None     # Category ID for category-scoped summaries
     category_name: Optional[str] = None   # Category name for display
 
+    # ADR-101: Rolling period summaries
+    rolling_period_type: Optional[str] = None      # 'weekly', 'biweekly', 'monthly'
+    rolling_period_start: Optional[datetime] = None  # First day of the period
+    rolling_accumulated_through: Optional[datetime] = None  # Last message timestamp included
+    rolling_finalized: bool = False                # True when period is complete
+    rolling_accumulation_count: int = 0            # Number of accumulation passes
+    rolling_raw_content: Optional[List[Dict[str, Any]]] = None  # Daily content segments
+
     def get_pushed_channel_ids(self) -> List[str]:
         """Get list of channel IDs this summary was pushed to."""
         return [d.channel_id for d in self.push_deliveries if d.success]
@@ -367,6 +375,10 @@ class StoredSummary(BaseModel):
             "scope_type": self.scope_type,
             "category_id": self.category_id,
             "category_name": self.category_name,
+            # ADR-101: Rolling period
+            "rolling_period_type": self.rolling_period_type,
+            "rolling_finalized": self.rolling_finalized,
+            "rolling_accumulation_count": self.rolling_accumulation_count,
         }
 
     def to_dict(self) -> Dict[str, Any]:
@@ -410,6 +422,13 @@ class StoredSummary(BaseModel):
             "scope_type": self.scope_type,
             "category_id": self.category_id,
             "category_name": self.category_name,
+            # ADR-101: Rolling period summaries
+            "rolling_period_type": self.rolling_period_type,
+            "rolling_period_start": self.rolling_period_start.isoformat() if self.rolling_period_start else None,
+            "rolling_accumulated_through": self.rolling_accumulated_through.isoformat() if self.rolling_accumulated_through else None,
+            "rolling_finalized": self.rolling_finalized,
+            "rolling_accumulation_count": self.rolling_accumulation_count,
+            "rolling_raw_content": self.rolling_raw_content,
         }
 
     @classmethod
@@ -462,4 +481,11 @@ class StoredSummary(BaseModel):
             scope_type=data.get("scope_type"),
             category_id=data.get("category_id"),
             category_name=data.get("category_name"),
+            # ADR-101: Rolling period summaries
+            rolling_period_type=data.get("rolling_period_type"),
+            rolling_period_start=datetime.fromisoformat(data["rolling_period_start"]) if data.get("rolling_period_start") else None,
+            rolling_accumulated_through=datetime.fromisoformat(data["rolling_accumulated_through"]) if data.get("rolling_accumulated_through") else None,
+            rolling_finalized=data.get("rolling_finalized", False),
+            rolling_accumulation_count=data.get("rolling_accumulation_count", 0),
+            rolling_raw_content=data.get("rolling_raw_content"),
         )

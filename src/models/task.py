@@ -176,6 +176,11 @@ class ScheduledTask(BaseModel):
     # ADR-089: Lookback period (how far back to fetch messages)
     time_range_hours: int = 24  # Default: look back 24 hours
 
+    # ADR-101: Rolling period summaries
+    rolling_period: Optional[str] = None          # 'weekly', 'biweekly', 'monthly' (null for standard)
+    rolling_end_day: Optional[int] = None         # Day to finalize (0=Mon, 6=Sun) for weekly
+    accumulation_strategy: str = "hybrid"         # 'append', 'resummarize', 'hybrid'
+
     def calculate_next_run(self, from_time: Optional[datetime] = None) -> Optional[datetime]:
         """Calculate the next run time for this task.
 
@@ -356,6 +361,36 @@ class ScheduledTask(BaseModel):
     def should_resolve_runtime(self) -> bool:
         """Check if category channels should be resolved at execution time."""
         return self.is_category_summary() and self.resolve_category_at_runtime
+
+    def is_rolling_period(self) -> bool:
+        """Check if this is a rolling period schedule (ADR-101)."""
+        return self.rolling_period is not None
+
+    def is_period_end_day(self, current_time: Optional[datetime] = None) -> bool:
+        """Check if today is the end day for a rolling period (ADR-101).
+
+        For weekly rolling periods, checks if today is the rolling_end_day.
+        For biweekly/monthly, checks based on period boundaries.
+        """
+        if not self.rolling_period:
+            return False
+
+        current_time = current_time or datetime.now(timezone.utc)
+        task_tz = _get_timezone(self.timezone)
+        local_now = current_time.astimezone(task_tz)
+        current_weekday = local_now.weekday()
+
+        if self.rolling_period == "weekly":
+            return current_weekday == (self.rolling_end_day or 5)  # Default to Saturday (5)
+        elif self.rolling_period == "biweekly":
+            # For biweekly, end on the configured day every 2 weeks
+            # This is a simplified check - full implementation would track period start
+            return current_weekday == (self.rolling_end_day or 5)
+        elif self.rolling_period == "monthly":
+            # End on last day of month
+            next_day = local_now + timedelta(days=1)
+            return next_day.month != local_now.month
+        return False
 
     def get_filtered_channel_ids(self, all_channel_ids: List[str]) -> List[str]:
         """Get channel IDs with exclusions applied.

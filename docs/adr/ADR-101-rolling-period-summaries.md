@@ -1,7 +1,7 @@
 # ADR-101: Rolling Period Summaries
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 
@@ -114,12 +114,12 @@ Rolling summaries integrate with Confluence publishing:
 5. Confluence integration for rolling updates
 6. Backfill support (generate rolling summary for past period)
 
-## Open Questions
+## Decisions
 
-1. **Missed days**: If scheduler fails for a day, should next run catch up all missed content?
-2. **Manual regeneration**: Should force-regenerate restart the rolling period or just regenerate current state?
-3. **Channel changes**: If channels in scope change mid-period, how to handle?
-4. **Visibility**: Should in-progress rolling summaries be visible in dashboard with "In Progress" badge?
+1. **Missed days**: Yes, catch up all missed content on next run
+2. **Manual regeneration**: Restart the rolling period (clear and begin fresh)
+3. **Channel changes**: Regenerate from scratch with new channel scope
+4. **Visibility**: Yes, show in-progress rolling summaries with "In Progress" badge
 
 ## References
 

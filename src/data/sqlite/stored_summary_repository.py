@@ -69,8 +69,10 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             contains_sensitive_channels,
             split_from, split_private_id, split_public_id,
             previous_summary_id, continuity_week_number,
-            scope_type, category_id, category_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            scope_type, category_id, category_name,
+            rolling_period_type, rolling_period_start, rolling_accumulated_through,
+            rolling_finalized, rolling_accumulation_count, rolling_raw_content
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -115,6 +117,13 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             summary.scope_type,
             summary.category_id,
             summary.category_name,
+            # ADR-101: Rolling period summaries
+            summary.rolling_period_type,
+            summary.rolling_period_start.isoformat() if summary.rolling_period_start else None,
+            summary.rolling_accumulated_through.isoformat() if summary.rolling_accumulated_through else None,
+            summary.rolling_finalized,
+            summary.rolling_accumulation_count,
+            json.dumps(summary.rolling_raw_content) if summary.rolling_raw_content else None,
         )
 
         await self.connection.execute(query, params)
@@ -839,6 +848,13 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             scope_type=row.get('scope_type'),
             category_id=row.get('category_id'),
             category_name=row.get('category_name'),
+            # ADR-101: Rolling period summaries
+            rolling_period_type=row.get('rolling_period_type'),
+            rolling_period_start=datetime.fromisoformat(row['rolling_period_start']) if row.get('rolling_period_start') else None,
+            rolling_accumulated_through=datetime.fromisoformat(row['rolling_accumulated_through']) if row.get('rolling_accumulated_through') else None,
+            rolling_finalized=bool(row.get('rolling_finalized', False)),
+            rolling_accumulation_count=row.get('rolling_accumulation_count', 0) or 0,
+            rolling_raw_content=json.loads(row['rolling_raw_content']) if row.get('rolling_raw_content') else None,
         )
 
     def _dict_to_summary_result(self, data: Dict[str, Any]) -> SummaryResult:
@@ -1336,3 +1352,122 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         """
         rows = await self.connection.fetch_all(query, (previous_summary_id,))
         return [self._row_to_stored_summary(row) for row in rows]
+
+    # ADR-101: Rolling Period Summaries
+
+    async def find_active_rolling_summary(
+        self,
+        guild_id: str,
+        schedule_id: str,
+        rolling_period_type: str,
+    ) -> Optional[StoredSummary]:
+        """
+        Find the active (non-finalized) rolling summary for a schedule.
+
+        Args:
+            guild_id: The guild ID
+            schedule_id: The schedule ID
+            rolling_period_type: 'weekly', 'biweekly', 'monthly'
+
+        Returns:
+            Active rolling summary if found, None otherwise
+        """
+        query = """
+        SELECT * FROM stored_summaries
+        WHERE guild_id = ?
+          AND schedule_id = ?
+          AND rolling_period_type = ?
+          AND rolling_finalized = 0
+        ORDER BY rolling_period_start DESC
+        LIMIT 1
+        """
+        row = await self.connection.fetch_one(query, (guild_id, schedule_id, rolling_period_type))
+        if not row:
+            return None
+        return self._row_to_stored_summary(row)
+
+    async def update_rolling_accumulation(
+        self,
+        summary_id: str,
+        summary_result: SummaryResult,
+        accumulated_through: datetime,
+        raw_content_segment: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Update a rolling summary with new accumulated content.
+
+        Args:
+            summary_id: The summary ID to update
+            summary_result: Updated SummaryResult with merged content
+            accumulated_through: Timestamp of last message included
+            raw_content_segment: Optional daily content segment to append
+        """
+        # First get existing raw content
+        existing = await self.get(summary_id)
+        if not existing:
+            raise ValueError(f"Summary {summary_id} not found")
+
+        raw_content = existing.rolling_raw_content or []
+        if raw_content_segment:
+            raw_content.append(raw_content_segment)
+
+        # Extract message count for sortable column
+        message_count = summary_result.message_count or 0
+        participant_count = len(summary_result.participants) if summary_result.participants else 0
+
+        query = """
+        UPDATE stored_summaries
+        SET summary_json = ?,
+            rolling_accumulated_through = ?,
+            rolling_accumulation_count = rolling_accumulation_count + 1,
+            rolling_raw_content = ?,
+            message_count = ?,
+            participant_count = ?
+        WHERE id = ?
+        """
+        await self.connection.execute(query, (
+            json.dumps(summary_result.to_dict()),
+            accumulated_through.isoformat(),
+            json.dumps(raw_content) if raw_content else None,
+            message_count,
+            participant_count,
+            summary_id,
+        ))
+
+    async def finalize_rolling_summary(self, summary_id: str) -> None:
+        """
+        Mark a rolling summary as finalized (period complete).
+
+        Args:
+            summary_id: The summary ID to finalize
+        """
+        query = """
+        UPDATE stored_summaries
+        SET rolling_finalized = 1
+        WHERE id = ?
+        """
+        await self.connection.execute(query, (summary_id,))
+
+    async def restart_rolling_summary(
+        self,
+        summary_id: str,
+        new_period_start: datetime,
+    ) -> None:
+        """
+        Restart a rolling summary (for manual regeneration).
+        Clears accumulated content and resets counters.
+
+        Args:
+            summary_id: The summary ID to restart
+            new_period_start: New period start date
+        """
+        query = """
+        UPDATE stored_summaries
+        SET rolling_period_start = ?,
+            rolling_accumulated_through = NULL,
+            rolling_finalized = 0,
+            rolling_accumulation_count = 0,
+            rolling_raw_content = NULL
+        WHERE id = ?
+        """
+        await self.connection.execute(query, (new_period_start.isoformat(), summary_id,))

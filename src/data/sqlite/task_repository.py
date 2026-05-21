@@ -55,8 +55,9 @@ class SQLiteTaskRepository(TaskRepository):
             run_count, failure_count, max_failures, retry_delay_minutes,
             scope, channel_ids, category_id, excluded_channel_ids,
             resolve_category_at_runtime, timezone, prompt_template_id, platform,
-            enable_continuity
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            enable_continuity, time_range_hours,
+            rolling_period, rolling_end_day, accumulation_strategy
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -88,6 +89,11 @@ class SQLiteTaskRepository(TaskRepository):
             getattr(task, 'prompt_template_id', None),
             getattr(task, 'platform', 'discord'),  # ADR-051
             1 if getattr(task, 'enable_continuity', False) else 0,  # ADR-087
+            getattr(task, 'time_range_hours', 24),  # ADR-089
+            # ADR-101: Rolling period summaries
+            getattr(task, 'rolling_period', None),
+            getattr(task, 'rolling_end_day', None),
+            getattr(task, 'accumulation_strategy', 'hybrid'),
         )
 
         await self.connection.execute(query, params)
@@ -221,6 +227,11 @@ class SQLiteTaskRepository(TaskRepository):
             prompt_template_id=row.get('prompt_template_id'),
             platform=row.get('platform', 'discord'),  # ADR-051
             enable_continuity=bool(row.get('enable_continuity', 0)),  # ADR-087
+            time_range_hours=row.get('time_range_hours', 24),  # ADR-089
+            # ADR-101: Rolling period summaries
+            rolling_period=row.get('rolling_period'),
+            rolling_end_day=row.get('rolling_end_day'),
+            accumulation_strategy=row.get('accumulation_strategy', 'hybrid'),
         )
 
     def _row_to_task_result(self, row: Dict[str, Any]) -> TaskResult:

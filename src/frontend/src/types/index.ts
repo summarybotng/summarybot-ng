@@ -398,6 +398,10 @@ export interface StoredSummary {
   // ADR-099: Confluence publication status (list view)
   is_published_confluence?: boolean;
   confluence_page_url?: string;
+  // ADR-101: Rolling period summaries
+  rolling_period_type?: "weekly" | "biweekly" | "monthly";
+  rolling_finalized?: boolean;
+  rolling_accumulation_count?: number;
 }
 
 // ADR-020: Navigation for prev/next summary

@@ -883,6 +883,10 @@ class StoredSummaryListItem(BaseModel):
     confluence_page_url: Optional[str] = None
     # ADR-087: Continuity chain (for list view badge)
     continuity_week_number: Optional[int] = None
+    # ADR-101: Rolling period summaries
+    rolling_period_type: Optional[str] = None  # 'weekly', 'biweekly', 'monthly'
+    rolling_finalized: bool = True  # False = "In Progress"
+    rolling_accumulation_count: int = 0
 
 
 class StoredSummaryListResponse(BaseModel):

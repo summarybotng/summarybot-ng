@@ -268,6 +268,12 @@ export function StoredSummaryCard({
                 Week {summary.continuity_week_number}
               </Badge>
             )}
+            {/* ADR-101: Rolling period in-progress indicator */}
+            {summary.rolling_period_type && !summary.rolling_finalized && (
+              <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30 animate-pulse">
+                In Progress
+              </Badge>
+            )}
           </div>
 
           <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">

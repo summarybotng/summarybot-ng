@@ -14,6 +14,7 @@ import discord
 
 from .tasks import SummaryTask, CleanupTask
 from src.utils.time import utc_now_naive
+from datetime import timedelta
 from .delivery import (
     DeliveryStrategy,
     DeliveryResult,
@@ -573,6 +574,30 @@ class TaskExecutor:
 
             logger.info(f"Generated summary {summary_result.id}")
 
+            # ADR-101: Handle rolling period summaries
+            rolling_summary = await self._handle_rolling_period(
+                task=task,
+                summary_result=summary_result,
+                all_messages=all_messages,
+            )
+            if rolling_summary:
+                # Rolling period handled - skip normal delivery but return success
+                task.mark_completed()
+                execution_time = (utc_now_naive() - start_time).total_seconds()
+                return TaskExecutionResult(
+                    task_id=task.scheduled_task.id,
+                    success=True,
+                    summary_result=rolling_summary.summary_result,
+                    delivery_results=[{
+                        "destination_type": "dashboard",
+                        "target": "rolling_period",
+                        "success": True,
+                        "message": f"Rolling {rolling_summary.rolling_period_type} summary updated",
+                        "summary_id": rolling_summary.id,
+                    }],
+                    execution_time_seconds=execution_time,
+                )
+
             # ADR-035: Store custom template info in metadata when used
             if template_name:
                 summary_result.metadata["perspective"] = template_name
@@ -1041,6 +1066,262 @@ Continue from this context for Week {week_number}. Reference previous discussion
         except Exception as e:
             logger.warning(f"ADR-087: Failed to build continuity context: {e}")
             return "", 1, None
+
+    async def _handle_rolling_period(
+        self,
+        task: SummaryTask,
+        summary_result: SummaryResult,
+        all_messages: List[Any],
+    ) -> Optional[StoredSummary]:
+        """
+        ADR-101: Handle rolling period summary accumulation.
+
+        If this is a rolling period schedule:
+        1. Find existing active rolling summary for this schedule
+        2. If found and not period end day: accumulate content
+        3. If period end day: finalize after accumulation
+        4. If not found: create new rolling summary
+
+        Returns:
+            StoredSummary if rolling period handled, None if not a rolling schedule
+        """
+        rolling_period = getattr(task.scheduled_task, 'rolling_period', None)
+        if not rolling_period:
+            return None
+
+        from datetime import timezone
+        from ..data.repositories import get_stored_summary_repository
+
+        summary_repo = await get_stored_summary_repository()
+        schedule_id = task.scheduled_task.id
+        guild_id = task.guild_id
+
+        # Find active rolling summary
+        existing = await summary_repo.find_active_rolling_summary(
+            guild_id=guild_id,
+            schedule_id=schedule_id,
+            rolling_period_type=rolling_period,
+        )
+
+        # Check if today is the period end day
+        is_end_day = task.scheduled_task.is_period_end_day()
+        strategy = getattr(task.scheduled_task, 'accumulation_strategy', 'hybrid')
+
+        if existing:
+            logger.info(
+                f"ADR-101: Found active rolling summary {existing.id} "
+                f"(accumulation #{existing.rolling_accumulation_count + 1})"
+            )
+
+            # Get the latest message timestamp for accumulated_through
+            latest_msg_time = max(
+                (m.timestamp for m in all_messages),
+                default=utc_now_naive()
+            )
+
+            # Build raw content segment for this accumulation
+            raw_segment = {
+                "date": utc_now_naive().isoformat(),
+                "message_count": len(all_messages),
+                "summary_text": summary_result.summary_text,
+                "key_points": summary_result.key_points or [],
+                "action_items": [a.to_dict() for a in (summary_result.action_items or [])],
+            }
+
+            # Merge content based on strategy
+            merged_result = await self._merge_rolling_content(
+                existing=existing,
+                new_result=summary_result,
+                strategy=strategy,
+            )
+
+            # Update the rolling summary
+            await summary_repo.update_rolling_accumulation(
+                summary_id=existing.id,
+                summary_result=merged_result,
+                accumulated_through=latest_msg_time,
+                raw_content_segment=raw_segment,
+            )
+
+            # Finalize if it's the end day
+            if is_end_day:
+                await summary_repo.finalize_rolling_summary(existing.id)
+                logger.info(f"ADR-101: Finalized rolling summary {existing.id}")
+
+            # Return the existing summary (updated)
+            existing.summary_result = merged_result
+            return existing
+
+        else:
+            # Create new rolling summary
+            logger.info(f"ADR-101: Creating new rolling summary for schedule {schedule_id}")
+
+            # Calculate period start
+            now = utc_now_naive()
+            if rolling_period == "weekly":
+                # Find start of week (Monday = 0)
+                days_since_monday = now.weekday()
+                period_start = now - timedelta(days=days_since_monday)
+            elif rolling_period == "biweekly":
+                # Start from today for biweekly
+                period_start = now
+            elif rolling_period == "monthly":
+                # Start of current month
+                period_start = now.replace(day=1)
+            else:
+                period_start = now
+
+            # Build initial raw content
+            raw_content = [{
+                "date": now.isoformat(),
+                "message_count": len(all_messages),
+                "summary_text": summary_result.summary_text,
+                "key_points": summary_result.key_points or [],
+                "action_items": [a.to_dict() for a in (summary_result.action_items or [])],
+            }]
+
+            latest_msg_time = max(
+                (m.timestamp for m in all_messages),
+                default=now
+            )
+
+            # Create stored summary with rolling period fields
+            stored_summary = StoredSummary(
+                id=summary_result.id,
+                guild_id=guild_id,
+                source_channel_ids=task.get_all_channel_ids(),
+                schedule_id=schedule_id,
+                summary_result=summary_result,
+                title=f"Rolling {rolling_period.title()} Summary",
+                source=SummarySource.SCHEDULED,
+                rolling_period_type=rolling_period,
+                rolling_period_start=period_start,
+                rolling_accumulated_through=latest_msg_time,
+                rolling_finalized=is_end_day,  # Finalize immediately if it's end day
+                rolling_accumulation_count=1,
+                rolling_raw_content=raw_content,
+            )
+
+            await summary_repo.save(stored_summary)
+
+            if is_end_day:
+                logger.info(f"ADR-101: Created and finalized rolling summary {stored_summary.id}")
+            else:
+                logger.info(f"ADR-101: Created rolling summary {stored_summary.id} (in progress)")
+
+            return stored_summary
+
+    async def _merge_rolling_content(
+        self,
+        existing: StoredSummary,
+        new_result: SummaryResult,
+        strategy: str,
+    ) -> SummaryResult:
+        """
+        ADR-101: Merge new content into existing rolling summary.
+
+        Strategies:
+        - append: Add new day as separate section
+        - resummarize: Re-summarize all raw content (expensive)
+        - hybrid: Merge structured data, combine narratives
+
+        Returns:
+            Merged SummaryResult
+        """
+        existing_result = existing.summary_result
+        if not existing_result:
+            return new_result
+
+        if strategy == "append":
+            # Simple append: add date-prefixed section
+            date_str = utc_now_naive().strftime("%A, %B %d")
+            merged_text = (
+                f"{existing_result.summary_text}\n\n"
+                f"## {date_str}\n\n"
+                f"{new_result.summary_text}"
+            )
+
+            merged = SummaryResult(
+                id=existing_result.id,
+                summary_text=merged_text,
+                key_points=(existing_result.key_points or []) + (new_result.key_points or []),
+                action_items=(existing_result.action_items or []) + (new_result.action_items or []),
+                participants=self._merge_participants(
+                    existing_result.participants or [],
+                    new_result.participants or [],
+                ),
+                technical_terms=(existing_result.technical_terms or []) + (new_result.technical_terms or []),
+                metadata=existing_result.metadata or {},
+                message_count=(existing_result.message_count or 0) + (new_result.message_count or 0),
+            )
+            return merged
+
+        elif strategy == "resummarize":
+            # Re-summarize using all raw content
+            # This would require calling the summarization engine again
+            # For now, fall back to hybrid
+            logger.warning("ADR-101: resummarize strategy not yet fully implemented, using hybrid")
+            strategy = "hybrid"
+
+        # Hybrid strategy (default)
+        # Combine summary texts with transition
+        merged_text = (
+            f"{existing_result.summary_text}\n\n"
+            f"**Latest update:**\n{new_result.summary_text}"
+        )
+
+        # Deduplicate key points
+        existing_points = set(existing_result.key_points or [])
+        new_points = [p for p in (new_result.key_points or []) if p not in existing_points]
+
+        # Deduplicate action items by description
+        existing_actions = {a.description for a in (existing_result.action_items or [])}
+        new_actions = [a for a in (new_result.action_items or []) if a.description not in existing_actions]
+
+        merged = SummaryResult(
+            id=existing_result.id,
+            summary_text=merged_text,
+            key_points=(existing_result.key_points or []) + new_points,
+            action_items=(existing_result.action_items or []) + new_actions,
+            participants=self._merge_participants(
+                existing_result.participants or [],
+                new_result.participants or [],
+            ),
+            technical_terms=self._dedupe_terms(
+                (existing_result.technical_terms or []) + (new_result.technical_terms or [])
+            ),
+            metadata=existing_result.metadata or {},
+            message_count=(existing_result.message_count or 0) + (new_result.message_count or 0),
+        )
+        return merged
+
+    def _merge_participants(
+        self,
+        existing: List[Any],
+        new: List[Any],
+    ) -> List[Any]:
+        """Merge participant lists, updating message counts."""
+        participants_by_id: Dict[str, Any] = {}
+        for p in existing:
+            participants_by_id[p.id] = p
+        for p in new:
+            if p.id in participants_by_id:
+                # Update message count
+                existing_p = participants_by_id[p.id]
+                existing_p.message_count += p.message_count
+            else:
+                participants_by_id[p.id] = p
+        return list(participants_by_id.values())
+
+    def _dedupe_terms(self, terms: List[Any]) -> List[Any]:
+        """Deduplicate technical terms by term text."""
+        seen = set()
+        result = []
+        for t in terms:
+            if t.term.lower() not in seen:
+                seen.add(t.term.lower())
+                result.append(t)
+        return result
 
     async def _track_access_issues(
         self,

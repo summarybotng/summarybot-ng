@@ -67,6 +67,7 @@ import {
   Lock,
   BookOpen,  // ADR-086: Wiki navigation
   Boxes,     // ADR-093: RuVector indicator
+  RefreshCw, // ADR-101: Rolling period indicator
 } from "lucide-react";
 import {
   Select,
@@ -1368,6 +1369,13 @@ function StoredSummaryDetailSheet({
                     <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-xs">
                       <BookOpen className="mr-1 h-3 w-3" />
                       Wiki
+                    </Badge>
+                  )}
+                  {/* ADR-101: Rolling period in-progress indicator */}
+                  {summary.rolling_period_type && !summary.rolling_finalized && (
+                    <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30 text-xs animate-pulse">
+                      <RefreshCw className="mr-1 h-3 w-3" />
+                      In Progress
                     </Badge>
                   )}
                 </div>

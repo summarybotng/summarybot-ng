@@ -170,6 +170,11 @@ export function generateScheduleName(state: Pick<StepProps, "state">["state"]): 
     parts.push("continuity");
   }
 
+  // ADR-101: Rolling period
+  if (state.rollingPeriod && state.rollingPeriod !== "none") {
+    parts.push(`rolling-${state.rollingPeriod}`);
+  }
+
   return parts.join(" ");
 }
 
@@ -316,6 +321,89 @@ function RecurringOptions({ state, onChange }: Pick<StepProps, "state" | "onChan
               Each week's summary includes context from the previous week
             </p>
           </div>
+        </div>
+      )}
+
+      {/* ADR-101: Rolling Period Summaries */}
+      {(state.frequency === "daily" || state.frequency === "weekly") && (
+        <div className="space-y-3 p-3 rounded-md border bg-background">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-medium">Rolling period summary</Label>
+              <p className="text-xs text-muted-foreground">
+                Accumulate content daily into a single period summary
+              </p>
+            </div>
+            <Select
+              value={state.rollingPeriod}
+              onValueChange={(v) => onChange({ rollingPeriod: v as "none" | "weekly" | "biweekly" | "monthly" })}
+            >
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Off</SelectItem>
+                <SelectItem value="weekly">Weekly</SelectItem>
+                <SelectItem value="biweekly">Biweekly</SelectItem>
+                <SelectItem value="monthly">Monthly</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {state.rollingPeriod !== "none" && (
+            <>
+              {/* End day for weekly rolling */}
+              {state.rollingPeriod === "weekly" && (
+                <div className="flex items-center gap-3">
+                  <Label className="text-sm">Finalize on</Label>
+                  <div className="flex gap-1">
+                    {DAYS.map((day, i) => (
+                      <Button
+                        key={day}
+                        type="button"
+                        variant={state.rollingEndDay === i ? "default" : "outline"}
+                        size="sm"
+                        className="w-10"
+                        onClick={() => onChange({ rollingEndDay: i })}
+                      >
+                        {day}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Accumulation strategy */}
+              <div className="flex items-center gap-3">
+                <Label className="text-sm">Strategy</Label>
+                <Select
+                  value={state.accumulationStrategy}
+                  onValueChange={(v) => onChange({ accumulationStrategy: v as "append" | "resummarize" | "hybrid" })}
+                >
+                  <SelectTrigger className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="hybrid">Hybrid (recommended)</SelectItem>
+                    <SelectItem value="append">Append sections</SelectItem>
+                    <SelectItem value="resummarize">Re-summarize all</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                {state.rollingPeriod === "weekly" && (
+                  <>Daily runs accumulate into one summary until {DAYS[state.rollingEndDay]}, then a new period starts.</>
+                )}
+                {state.rollingPeriod === "biweekly" && (
+                  <>Content accumulates for two weeks before finalizing and starting fresh.</>
+                )}
+                {state.rollingPeriod === "monthly" && (
+                  <>Content accumulates until month-end, then a new period starts.</>
+                )}
+              </p>
+            </>
+          )}
         </div>
       )}
 

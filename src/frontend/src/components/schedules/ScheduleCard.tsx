@@ -15,11 +15,45 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Play, Trash2, Calendar, Clock, Pencil, History, MessageSquare, Copy, Check, RefreshCw } from "lucide-react";
+import { Play, Trash2, Calendar, Clock, Pencil, History, MessageSquare, Copy, Check, RefreshCw, LayoutDashboard, Bell, Mail, Globe, FileText } from "lucide-react";
 import { useState } from "react";
 import type { Schedule } from "@/types";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// Destination type to display info
+const DESTINATION_INFO: Record<string, { label: string; icon: React.ReactNode; className: string }> = {
+  dashboard: {
+    label: "Dashboard",
+    icon: <LayoutDashboard className="h-3 w-3" />,
+    className: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  },
+  discord_channel: {
+    label: "Discord",
+    icon: <MessageSquare className="h-3 w-3" />,
+    className: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300",
+  },
+  discord_dm: {
+    label: "DM",
+    icon: <Bell className="h-3 w-3" />,
+    className: "bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300",
+  },
+  webhook: {
+    label: "Webhook",
+    icon: <Globe className="h-3 w-3" />,
+    className: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
+  },
+  email: {
+    label: "Email",
+    icon: <Mail className="h-3 w-3" />,
+    className: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
+  },
+  confluence: {
+    label: "Confluence",
+    icon: <FileText className="h-3 w-3" />,
+    className: "bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300",
+  },
+};
 
 // ADR-051: Platform badge helper
 function getPlatformBadge(platform?: string) {
@@ -99,6 +133,28 @@ export function ScheduleCard({
                   </Badge>
                 )}
               </div>
+
+              {/* Destination chips */}
+              {schedule.destinations && schedule.destinations.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-1.5">
+                  {schedule.destinations
+                    .filter(d => d.enabled !== false)
+                    .map((dest, idx) => {
+                      const info = DESTINATION_INFO[dest.type];
+                      if (!info) return null;
+                      return (
+                        <Badge
+                          key={`${dest.type}-${idx}`}
+                          variant="secondary"
+                          className={`gap-1 text-xs font-normal ${info.className}`}
+                        >
+                          {info.icon}
+                          {info.label}
+                        </Badge>
+                      );
+                    })}
+                </div>
+              )}
 
               <div className="mb-3 flex flex-wrap gap-3 text-sm text-muted-foreground">
                 <div className="flex items-center gap-1.5">

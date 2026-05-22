@@ -114,6 +114,24 @@ Rolling summaries integrate with Confluence publishing:
 5. Confluence integration for rolling updates
 6. Backfill support (generate rolling summary for past period)
 
+## Invariants
+
+### One Active Rolling Summary Per Schedule
+
+**Critical**: At any given time, there must be at most **one active (non-finalized) rolling summary** per schedule. This is enforced by the `find_active_rolling_summary()` query which matches on `(guild_id, schedule_id, rolling_period_type, rolling_finalized=0)`.
+
+If multiple active rolling summaries exist for the same schedule, subsequent runs will only accumulate into the most recent one (by `rolling_period_start`), leaving others orphaned.
+
+**Causes of duplicate active summaries:**
+- Missing `schedule_id` on stored summaries (now fixed via ADR-102/103 which ensures schedule attribution)
+- Manual summary creation without proper schedule linking
+- Bug in finalization logic
+
+**Resolution**: If duplicates are found, either:
+1. Finalize the older ones (`rolling_finalized = 1`)
+2. Delete the duplicates
+3. Merge content into the canonical summary
+
 ## Decisions
 
 1. **Missed days**: Yes, catch up all missed content on next run

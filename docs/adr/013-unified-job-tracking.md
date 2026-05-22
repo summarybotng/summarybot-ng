@@ -287,6 +287,7 @@ The current retry mechanism has some limitations:
 
 See **ADR-042: Intelligent Job Retry Strategy** for the proposed improvements.
 See **ADR-044: Deferred Technical Debt Tracker** for the full list of pending issues.
+See **[ADR-102](./ADR-102-schedule-summary-job-traceability.md)** for Schedule→Job→Summary traceability fixes.
 
 ### Proposed Enhancements (Not Yet Implemented)
 The following features are documented in this ADR but not yet built:

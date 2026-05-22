@@ -117,3 +117,4 @@ Currently, these relationships exist in the data model but are not exposed in th
 ## References
 - ADR-006: Retrospective Summary Archive
 - ADR-008: Unified Summary Experience
+- [ADR-102](./ADR-102-schedule-summary-job-traceability.md): Bug fixes for traceability chain (2026-05-22)

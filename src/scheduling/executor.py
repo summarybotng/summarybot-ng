@@ -1326,14 +1326,20 @@ Continue from this context for Week {week_number}. Reference previous discussion
         """Merge participant lists, updating message counts."""
         participants_by_id: Dict[str, Any] = {}
         for p in existing:
-            participants_by_id[p.id] = p
+            # Participant model uses user_id, not id
+            pid = getattr(p, 'user_id', None) or getattr(p, 'id', None)
+            if pid:
+                participants_by_id[pid] = p
         for p in new:
-            if p.id in participants_by_id:
+            pid = getattr(p, 'user_id', None) or getattr(p, 'id', None)
+            if not pid:
+                continue
+            if pid in participants_by_id:
                 # Update message count
-                existing_p = participants_by_id[p.id]
+                existing_p = participants_by_id[pid]
                 existing_p.message_count += p.message_count
             else:
-                participants_by_id[p.id] = p
+                participants_by_id[pid] = p
         return list(participants_by_id.values())
 
     def _dedupe_terms(self, terms: List[Any]) -> List[Any]:

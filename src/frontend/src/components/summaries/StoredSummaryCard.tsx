@@ -117,7 +117,8 @@ export function StoredSummaryCard({
   const handleScheduleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (summary.schedule_id) {
-      navigate(`/guilds/${guildId}/schedules`);
+      // Navigate with schedule ID to highlight the specific schedule
+      navigate(`/guilds/${guildId}/schedules?highlight=${summary.schedule_id}`);
     }
   };
 

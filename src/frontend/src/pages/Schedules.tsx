@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   useSchedules,
@@ -18,6 +18,7 @@ import type { Schedule } from "@/types";
 
 export function Schedules() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { data: schedules, isLoading } = useSchedules(id || "");
   const updateSchedule = useUpdateSchedule(id || "");
@@ -28,6 +29,32 @@ export function Schedules() {
   const [historySchedule, setHistorySchedule] = useState<Schedule | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [helpExpanded, setHelpExpanded] = useState(false);
+
+  // Highlight schedule from URL param (when navigating from summary)
+  const highlightId = searchParams.get("highlight");
+  const [highlightedId, setHighlightedId] = useState<string | null>(highlightId);
+  const scheduleRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Scroll to and highlight the schedule when navigating from summary
+  useEffect(() => {
+    if (highlightId && schedules) {
+      setHighlightedId(highlightId);
+      // Scroll to the schedule after a short delay for DOM to render
+      setTimeout(() => {
+        const el = scheduleRefs.current[highlightId];
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 100);
+      // Clear highlight after animation
+      setTimeout(() => {
+        setHighlightedId(null);
+        // Remove highlight param from URL
+        searchParams.delete("highlight");
+        setSearchParams(searchParams, { replace: true });
+      }, 3000);
+    }
+  }, [highlightId, schedules, searchParams, setSearchParams]);
 
   // Navigate to wizard for editing (keeps wizard and edit forms in sync)
   const openEditWizard = (schedule: Schedule) => {
@@ -168,18 +195,27 @@ export function Schedules() {
       ) : (
         <div className="space-y-4">
           {schedules?.map((schedule, index) => (
-            <ScheduleCard
+            <div
               key={schedule.id}
-              schedule={schedule}
-              index={index}
-              onToggle={handleToggle}
-              onEdit={openEditWizard}
-              onDelete={handleDelete}
-              onRunNow={handleRunNow}
-              onViewHistory={openHistoryDrawer}
-              isDeleting={deleteSchedule.isPending}
-              isRunning={runSchedule.isPending}
-            />
+              ref={(el) => { scheduleRefs.current[schedule.id] = el; }}
+              className={`transition-all duration-500 rounded-lg ${
+                highlightedId === schedule.id
+                  ? "ring-2 ring-blue-500 ring-offset-2 bg-blue-50/50 dark:bg-blue-950/20"
+                  : ""
+              }`}
+            >
+              <ScheduleCard
+                schedule={schedule}
+                index={index}
+                onToggle={handleToggle}
+                onEdit={openEditWizard}
+                onDelete={handleDelete}
+                onRunNow={handleRunNow}
+                onViewHistory={openHistoryDrawer}
+                isDeleting={deleteSchedule.isPending}
+                isRunning={runSchedule.isPending}
+              />
+            </div>
           ))}
         </div>
       )}

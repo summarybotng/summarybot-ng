@@ -1344,29 +1344,36 @@ Continue from this context for Week {week_number}. Reference previous discussion
         Returns:
             Generated title string
         """
-        now = utc_now_naive()
         schedule_name = task.scheduled_task.name if task.scheduled_task else "Summary"
         title_template = getattr(task.scheduled_task, 'title_template', None) if task.scheduled_task else None
 
-        # Calculate period string
+        # Calculate period string and end date
         if rolling_period == 'weekly':
             period_str = f"Week of {period_start.strftime('%b %d')}"
+            period_end = period_start + timedelta(days=6)
         elif rolling_period == 'biweekly':
             period_str = f"Biweek of {period_start.strftime('%b %d')}"
+            period_end = period_start + timedelta(days=13)
         elif rolling_period == 'monthly':
             period_str = period_start.strftime('%B %Y')
+            # End of month
+            if period_start.month == 12:
+                period_end = period_start.replace(year=period_start.year + 1, month=1, day=1) - timedelta(days=1)
+            else:
+                period_end = period_start.replace(month=period_start.month + 1, day=1) - timedelta(days=1)
         else:
             period_str = period_start.strftime('%b %d')
+            period_end = period_start
 
         if title_template:
-            # Apply template substitutions
+            # Apply template substitutions - use period_start for dates (not now)
             result = title_template
-            result = result.replace('{date}', now.strftime('%b %d, %Y'))
-            result = result.replace('{time}', now.strftime('%H:%M'))
-            result = result.replace('{datetime}', now.strftime('%b %d, %H:%M'))
+            result = result.replace('{date}', period_start.strftime('%b %d, %Y'))
+            result = result.replace('{time}', period_start.strftime('%H:%M'))
+            result = result.replace('{datetime}', period_start.strftime('%b %d, %H:%M'))
             result = result.replace('{schedule}', schedule_name)
             result = result.replace('{period}', period_str)
-            result = result.replace('{weekday}', now.strftime('%A'))
+            result = result.replace('{weekday}', period_start.strftime('%A'))
             # Channel placeholders - simplified for rolling summaries
             channel_ids = task.get_all_channel_ids()
             result = result.replace('{channel_count}', str(len(channel_ids)))

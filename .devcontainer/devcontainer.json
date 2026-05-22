@@ -40,12 +40,7 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        "anthropic.claude-code",
-        "rooveterinaryinc.roo-cline",
-        "vsls-contrib.gistfs",
-        "github.copilot",
-        "github.copilot-chat",
-        "bierner.markdown-mermaid"
+        "anthropic.claude-code"
       ]
     }
   },

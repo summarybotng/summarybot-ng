@@ -54,7 +54,7 @@ from ..models import (
     ConfluenceSettingsResponse,
     ConfluencePublicationInfo,
 )
-from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_stored_summary_repository, get_config_manager, get_task_scheduler, get_summary_job_repository, get_config_repository
+from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_stored_summary_repository, get_config_manager, get_task_scheduler, get_summary_job_repository, get_config_repository, get_task_repository
 from ...data.base import SearchCriteria
 from ...models.stored_summary import StoredSummary, SummarySource
 from ...models.summary_job import SummaryJob, JobType, JobStatus
@@ -1622,12 +1622,27 @@ async def list_stored_summaries(
     # ADR-009: Build schedule name lookup for summaries with schedule_ids
     schedule_names: dict[str, str] = {}
     scheduler = get_task_scheduler()
-    if scheduler:
-        schedule_ids = {s.schedule_id for s in summaries if s.schedule_id}
+    schedule_ids = {s.schedule_id for s in summaries if s.schedule_id}
+
+    if scheduler and schedule_ids:
+        # First check in-memory active tasks
         for schedule_id in schedule_ids:
             task = scheduler.get_task(schedule_id)
             if task:
                 schedule_names[schedule_id] = task.name
+
+        # Fall back to database for any not found in memory
+        missing_ids = schedule_ids - set(schedule_names.keys())
+        if missing_ids:
+            task_repo = await get_task_repository()
+            if task_repo:
+                for schedule_id in missing_ids:
+                    try:
+                        task = await task_repo.get_task(schedule_id)
+                        if task:
+                            schedule_names[schedule_id] = task.name
+                    except Exception as e:
+                        logger.debug(f"Could not load schedule {schedule_id} from database: {e}")
 
     # ADR-099: Build confluence publication lookup
     confluence_publications: dict[str, str] = {}  # summary_id -> page_url

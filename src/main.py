@@ -630,7 +630,9 @@ class SummaryBotApp:
                 row = await result.fetchone()
                 if row:
                     # Returns (busy, log, checkpointed) - log and checkpointed are page counts
-                    self.logger.debug(f"WAL checkpoint: busy={row[0]}, log_pages={row[1]}, checkpointed={row[2]}")
+                    # Log at INFO level to verify checkpoint is running
+                    if row[1] > 0:  # Only log if there were pages to checkpoint
+                        self.logger.info(f"WAL checkpoint: busy={row[0]}, log_pages={row[1]}, checkpointed={row[2]}")
             except Exception as e:
                 self.logger.warning(f"Periodic WAL checkpoint failed: {e}")
 

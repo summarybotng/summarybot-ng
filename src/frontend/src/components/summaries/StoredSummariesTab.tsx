@@ -15,7 +15,7 @@ import { usePushToDrive, useServerSyncConfig } from "@/hooks/useArchive";
 import { useConfluencePublish, type PublishToConfluenceResponse } from "@/hooks/useConfluencePublish";
 import { useGuild } from "@/hooks/useGuilds";
 import { useAuthStore } from "@/stores/authStore";
-import { useTimezone, parseAsUTC } from "@/contexts/TimezoneContext";
+import { useTimezone, parseAsUTC, formatRelativeTime } from "@/contexts/TimezoneContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -68,7 +68,6 @@ import {
   Lock,
   BookOpen,  // ADR-086: Wiki navigation
   Boxes,     // ADR-093: RuVector indicator
-  RefreshCw, // ADR-101: Rolling period indicator
 } from "lucide-react";
 import {
   Select,
@@ -1410,11 +1409,15 @@ function StoredSummaryDetailSheet({
                       Wiki
                     </Badge>
                   )}
-                  {/* ADR-101: Rolling period in-progress indicator */}
+                  {/* ADR-101/Issue #19: Rolling period in-progress indicator with end date */}
                   {summary.rolling_period_type && !summary.rolling_finalized && (
                     <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30 text-xs animate-pulse">
                       <RefreshCw className="mr-1 h-3 w-3" />
-                      In Progress
+                      {summary.rolling_ends_at ? (
+                        <>Finishes {new Date(summary.rolling_ends_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ({formatRelativeTime(summary.rolling_ends_at)})</>
+                      ) : (
+                        <>Rolling {summary.rolling_period_type}</>
+                      )}
                     </Badge>
                   )}
                 </div>

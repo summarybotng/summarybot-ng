@@ -98,6 +98,10 @@ export interface SummaryFilterCriteria {
   /** Filter by scope type (guild, category, channel) */
   scopeType?: "guild" | "category" | "channel" | "all";
 
+  // === Rolling Status (Issue #19) ===
+  /** Filter by rolling summary status */
+  rollingStatus?: "still_rolling" | "finalized" | "all_rolling" | "none";
+
   // === Sorting (for list views, not feeds) ===
   sortBy?: SortByType;
   sortOrder?: SortOrderType;
@@ -206,6 +210,11 @@ export function criteriaToSearchParams(criteria: SummaryFilterCriteria): URLSear
     params.set("scope_type", criteria.scopeType);
   }
 
+  // Issue #19: Rolling status filter
+  if (criteria.rollingStatus && criteria.rollingStatus !== "none") {
+    params.set("rolling_status", criteria.rollingStatus);
+  }
+
   // Sorting
   if (criteria.sortBy) params.set("sort_by", criteria.sortBy);
   if (criteria.sortOrder) params.set("sort_order", criteria.sortOrder);
@@ -252,6 +261,8 @@ export function criteriaToApiBody(criteria: SummaryFilterCriteria): Record<strin
   if (criteria.hasContinuity !== undefined) body.has_continuity = criteria.hasContinuity;
   // ADR-098: Scope type filter
   if (criteria.scopeType && criteria.scopeType !== "all") body.scope_type = criteria.scopeType;
+  // Issue #19: Rolling status filter
+  if (criteria.rollingStatus && criteria.rollingStatus !== "none") body.rolling_status = criteria.rollingStatus;
 
   return body;
 }
@@ -284,6 +295,7 @@ export function countActiveFilters(criteria: SummaryFilterCriteria): number {
     criteria.granularity,
     criteria.hasContinuity !== undefined,
     criteria.scopeType && criteria.scopeType !== "all",
+    criteria.rollingStatus && criteria.rollingStatus !== "none",
   ].filter(Boolean).length;
 }
 

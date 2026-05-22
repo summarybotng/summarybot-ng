@@ -69,6 +69,53 @@ router = APIRouter()
 _generation_tasks: dict[str, dict] = {}
 
 
+def _calculate_rolling_ends_at(
+    rolling_period_type: Optional[str],
+    rolling_period_start: Optional[datetime],
+    created_at: Optional[datetime],
+) -> Optional[datetime]:
+    """Issue #19: Calculate when a rolling summary period ends.
+
+    Args:
+        rolling_period_type: 'weekly', 'biweekly', or 'monthly'
+        rolling_period_start: Start of the rolling period (if available)
+        created_at: Summary creation date (fallback)
+
+    Returns:
+        End datetime for the rolling period, or None if not a rolling summary
+    """
+    if not rolling_period_type:
+        return None
+
+    # Use period_start if available, otherwise estimate from created_at
+    start = rolling_period_start or created_at
+    if not start:
+        return None
+
+    if rolling_period_type == "weekly":
+        # Weekly periods end on Sunday 23:59:59
+        # Find the next Sunday from period start
+        days_until_sunday = (6 - start.weekday()) % 7
+        if days_until_sunday == 0 and start.hour > 0:
+            days_until_sunday = 7  # If it's Sunday but not midnight, next Sunday
+        end_date = start + timedelta(days=days_until_sunday)
+        return end_date.replace(hour=23, minute=59, second=59)
+
+    elif rolling_period_type == "biweekly":
+        # Biweekly periods end 2 weeks from Monday start
+        days_until_sunday = (6 - start.weekday()) % 7 + 7  # Next-next Sunday
+        end_date = start + timedelta(days=days_until_sunday)
+        return end_date.replace(hour=23, minute=59, second=59)
+
+    elif rolling_period_type == "monthly":
+        # Monthly periods end on the last day of the month
+        import calendar
+        last_day = calendar.monthrange(start.year, start.month)[1]
+        return start.replace(day=last_day, hour=23, minute=59, second=59)
+
+    return None
+
+
 def _check_guild_access(guild_id: str, user: dict):
     """Check user has access to guild."""
     if guild_id not in user.get("guilds", []):
@@ -1669,6 +1716,13 @@ async def list_stored_summaries(
         if s.id in confluence_publications:
             item_dict["is_published_confluence"] = True
             item_dict["confluence_page_url"] = confluence_publications[s.id]
+        # Issue #19: Calculate rolling_ends_at for in-progress rolling summaries
+        if s.rolling_period_type and not s.rolling_finalized:
+            item_dict["rolling_ends_at"] = _calculate_rolling_ends_at(
+                s.rolling_period_type,
+                s.rolling_period_start,
+                s.created_at,
+            )
         items.append(StoredSummaryListItem(**item_dict))
 
     return StoredSummaryListResponse(
@@ -2031,6 +2085,12 @@ async def get_stored_summary(
         rolling_accumulation_count=stored.rolling_accumulation_count or 0,
         rolling_period_start=stored.rolling_period_start,
         rolling_accumulated_through=stored.rolling_accumulated_through,
+        # Issue #19: Calculate rolling_ends_at for in-progress rolling summaries
+        rolling_ends_at=_calculate_rolling_ends_at(
+            stored.rolling_period_type,
+            stored.rolling_period_start,
+            stored.created_at,
+        ) if stored.rolling_period_type and not stored.rolling_finalized else None,
     )
 
 

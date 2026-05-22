@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { format, parse } from "date-fns";
-import { Calendar as CalendarIcon, ArrowUpDown, Filter, X, Hash, AlertTriangle, CheckCircle2, ListChecks, Users, MessageSquare, Lock, Search } from "lucide-react";
+import { Calendar as CalendarIcon, ArrowUpDown, Filter, X, Hash, AlertTriangle, CheckCircle2, ListChecks, Users, MessageSquare, Lock, Search, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -140,6 +140,8 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
     filters.granularity !== undefined,
     // ADR-087: Continuity filter
     filters.hasContinuity !== undefined,
+    // Issue #19: Rolling status filter
+    filters.rollingStatus !== undefined && filters.rollingStatus !== "none",
   ].filter(Boolean).length;
 
   const handleClearFilters = () => {
@@ -173,6 +175,8 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
       granularity: undefined,
       // ADR-087: Clear continuity filter
       hasContinuity: undefined,
+      // Issue #19: Clear rolling status filter
+      rollingStatus: undefined,
     });
   };
 
@@ -293,6 +297,28 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
               <SelectItem value="all">All</SelectItem>
               <SelectItem value="yes">Has Chain</SelectItem>
               <SelectItem value="no">No Chain</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Issue #19: Rolling status filter */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Rolling:</span>
+          <Select
+            value={filters.rollingStatus || "none"}
+            onValueChange={(v) => onFiltersChange({
+              ...filters,
+              rollingStatus: v === "none" ? undefined : v as "still_rolling" | "finalized" | "all_rolling"
+            })}
+          >
+            <SelectTrigger className="w-[130px] h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">All Summaries</SelectItem>
+              <SelectItem value="still_rolling">Still Rolling</SelectItem>
+              <SelectItem value="finalized">Finalized</SelectItem>
+              <SelectItem value="all_rolling">All Rolling</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -1025,6 +1051,20 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
               {filters.hasContinuity ? "Has Continuity" : "No Continuity"}
               <button
                 onClick={() => onFiltersChange({ ...filters, hasContinuity: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {/* Issue #19: Rolling status filter badge */}
+          {filters.rollingStatus && filters.rollingStatus !== "none" && (
+            <Badge variant="secondary" className="gap-1">
+              <RefreshCw className="h-3 w-3" />
+              {filters.rollingStatus === "still_rolling" ? "Still Rolling" :
+               filters.rollingStatus === "finalized" ? "Finalized" : "All Rolling"}
+              <button
+                onClick={() => onFiltersChange({ ...filters, rollingStatus: undefined })}
                 className="ml-1 hover:text-destructive"
               >
                 <X className="h-3 w-3" />

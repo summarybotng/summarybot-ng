@@ -177,11 +177,15 @@ export function ScheduleCard({
               <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                 <span>Runs: {schedule.run_count}</span>
                 <span>Failures: {schedule.failure_count}</span>
+                {/* Issue #19: Show last run time */}
+                {schedule.last_run && (
+                  <span>
+                    Last: {formatRelativeTime(schedule.last_run)}
+                  </span>
+                )}
                 {schedule.next_run && (
                   <span>
-                    Next: {parseAsUTC(schedule.next_run).toLocaleString()} (
-                    {formatRelativeTime(schedule.next_run)}
-                    )
+                    Next: {formatRelativeTime(schedule.next_run)}
                   </span>
                 )}
                 <button

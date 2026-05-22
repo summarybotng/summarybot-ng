@@ -408,6 +408,8 @@ export interface StoredSummary {
   rolling_period_type?: "weekly" | "biweekly" | "monthly";
   rolling_finalized?: boolean;
   rolling_accumulation_count?: number;
+  // Issue #19: When rolling period ends (for "Finishes rolling..." display)
+  rolling_ends_at?: string;
 }
 
 // ADR-020: Navigation for prev/next summary

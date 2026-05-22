@@ -905,6 +905,8 @@ class StoredSummaryListItem(BaseModel):
     rolling_period_type: Optional[str] = None  # 'weekly', 'biweekly', 'monthly'
     rolling_finalized: bool = True  # False = "In Progress"
     rolling_accumulation_count: int = 0
+    # Issue #19: When the rolling period ends (for "Finishes rolling..." display)
+    rolling_ends_at: Optional[datetime] = None
 
 
 class StoredSummaryListResponse(BaseModel):
@@ -984,6 +986,8 @@ class StoredSummaryDetailResponse(BaseModel):
     rolling_accumulation_count: int = 0
     rolling_period_start: Optional[datetime] = None
     rolling_accumulated_through: Optional[datetime] = None
+    # Issue #19: When the rolling period ends (for "Finishes rolling..." display)
+    rolling_ends_at: Optional[datetime] = None
 
 
 class StoredSummaryUpdateRequest(BaseModel):

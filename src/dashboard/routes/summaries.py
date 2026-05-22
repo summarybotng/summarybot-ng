@@ -4342,6 +4342,34 @@ async def list_jobs(
 
     job_items = [_job_to_list_item(job) for job in jobs]
 
+    # ADR-009: Look up schedule names for jobs with schedule_ids
+    schedule_ids = {j.schedule_id for j in job_items if j.schedule_id}
+    if schedule_ids:
+        schedule_names: dict[str, str] = {}
+        scheduler = get_task_scheduler()
+        if scheduler:
+            # Try in-memory first
+            for schedule_id in schedule_ids:
+                task = scheduler.get_task(schedule_id)
+                if task:
+                    schedule_names[schedule_id] = task.name
+            # Fall back to database for any not found
+            missing_ids = schedule_ids - set(schedule_names.keys())
+            if missing_ids:
+                task_repo = await get_task_repository()
+                if task_repo:
+                    for schedule_id in missing_ids:
+                        try:
+                            task = await task_repo.get_task(schedule_id)
+                            if task:
+                                schedule_names[schedule_id] = task.name
+                        except Exception:
+                            pass
+        # Apply schedule names to job items
+        for job_item in job_items:
+            if job_item.schedule_id and job_item.schedule_id in schedule_names:
+                job_item.schedule_name = schedule_names[job_item.schedule_id]
+
     return JobsListResponse(
         jobs=job_items,
         total=total,

@@ -1317,6 +1317,7 @@ class JobListItem(BaseModel):
     status: JobStatus
     scope: Optional[str] = None
     schedule_id: Optional[str] = None
+    schedule_name: Optional[str] = None  # ADR-009: For navigation to schedule
     progress: JobProgressResponse
     summary_id: Optional[str] = None
     summary_ids: List[str] = []
@@ -1344,6 +1345,7 @@ class JobDetailResponse(BaseModel):
     channel_ids: List[str] = []
     category_id: Optional[str] = None
     schedule_id: Optional[str] = None
+    schedule_name: Optional[str] = None  # ADR-009: For navigation to schedule
     period_start: Optional[datetime] = None
     period_end: Optional[datetime] = None
     progress: JobProgressResponse

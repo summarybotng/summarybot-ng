@@ -70,6 +70,7 @@ interface Job {
   status: "pending" | "running" | "completed" | "failed" | "cancelled" | "paused";
   scope: string | null;
   schedule_id: string | null;
+  schedule_name: string | null;  // ADR-009: For navigation to schedule
   progress: JobProgress;
   summary_id: string | null;
   summary_ids?: string[] | null;
@@ -364,10 +365,15 @@ function JobCard({ job, onCancel, onRetry, onPause, onResume, isCancelling, isRe
               </div>
             )}
             {job.schedule_id && (
-              <div className="flex items-center gap-1" title={`Schedule ID: ${job.schedule_id}`}>
+              <a
+                href={`/guilds/${job.guild_id}/schedules?highlight=${job.schedule_id}`}
+                className="flex items-center gap-1 text-blue-600 hover:text-blue-700 hover:underline"
+                onClick={(e) => e.stopPropagation()}
+                title={`Schedule: ${job.schedule_name || job.schedule_id}`}
+              >
                 <Clock className="h-3 w-3" />
-                <span className="font-mono">{job.schedule_id.substring(0, 8)}</span>
-              </div>
+                <span>{job.schedule_name || `Schedule ${job.schedule_id.substring(0, 8)}`}</span>
+              </a>
             )}
             {job.summary_id && !job.summary_ids?.length && (
               <a

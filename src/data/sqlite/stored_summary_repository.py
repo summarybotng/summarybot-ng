@@ -364,6 +364,21 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             conditions.append("scope_type = ?")
             params.append(filter.scope_type)
 
+        # Issue #19: Rolling status filter
+        if filter.rolling_status:
+            if filter.rolling_status == "still_rolling":
+                conditions.append("rolling_period_type IS NOT NULL AND rolling_finalized = 0")
+            elif filter.rolling_status == "finalized":
+                conditions.append("rolling_period_type IS NOT NULL AND rolling_finalized = 1")
+            elif filter.rolling_status == "all_rolling":
+                conditions.append("rolling_period_type IS NOT NULL")
+
+        # ADR-103: Schedule filter
+        if filter.schedule_ids:
+            placeholders = ",".join("?" for _ in filter.schedule_ids)
+            conditions.append(f"schedule_id IN ({placeholders})")
+            params.extend(filter.schedule_ids)
+
         where_clause = " AND ".join(conditions)
         return where_clause, params
 
@@ -414,6 +429,10 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         has_continuity: Optional[bool] = None,
         # ADR-098: Scope type filter
         scope_type: Optional[str] = None,
+        # Issue #19: Rolling status filter
+        rolling_status: Optional[str] = None,
+        # ADR-103: Schedule filter
+        schedule_ids: Optional[List[str]] = None,
     ) -> List[StoredSummary]:
         """Find stored summaries for a guild.
 
@@ -470,6 +489,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             archive_granularity=archive_granularity,
             has_continuity=has_continuity,
             scope_type=scope_type,
+            rolling_status=rolling_status,
+            schedule_ids=schedule_ids,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 
@@ -568,8 +589,12 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         has_continuity: Optional[bool] = None,
         # ADR-098: Scope type filter
         scope_type: Optional[str] = None,
+        # Issue #19: Rolling status filter
+        rolling_status: Optional[str] = None,
+        # ADR-103: Schedule filter
+        schedule_ids: Optional[List[str]] = None,
     ) -> int:
-        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026, ADR-035, ADR-041, ADR-073, ADR-087, ADR-098)."""
+        """Count stored summaries for a guild with optional filters (ADR-017, ADR-018, ADR-021, ADR-026, ADR-035, ADR-041, ADR-073, ADR-087, ADR-098, ADR-103)."""
         # CS-002: Use shared filter builder
         filter_obj = StoredSummaryFilter(
             guild_id=guild_id,
@@ -601,6 +626,8 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             archive_granularity=archive_granularity,
             has_continuity=has_continuity,
             scope_type=scope_type,
+            rolling_status=rolling_status,
+            schedule_ids=schedule_ids,
         )
         where_clause, params = self._build_filter_clause(filter_obj)
 

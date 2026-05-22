@@ -102,6 +102,10 @@ export interface SummaryFilterCriteria {
   /** Filter by rolling summary status */
   rollingStatus?: "still_rolling" | "finalized" | "all_rolling" | "none";
 
+  // === Schedule Filter (ADR-103) ===
+  /** Filter by schedule IDs */
+  scheduleIds?: string[];
+
   // === Sorting (for list views, not feeds) ===
   sortBy?: SortByType;
   sortOrder?: SortOrderType;
@@ -215,6 +219,11 @@ export function criteriaToSearchParams(criteria: SummaryFilterCriteria): URLSear
     params.set("rolling_status", criteria.rollingStatus);
   }
 
+  // ADR-103: Schedule filter
+  if (criteria.scheduleIds?.length) {
+    params.set("schedule_ids", criteria.scheduleIds.join(","));
+  }
+
   // Sorting
   if (criteria.sortBy) params.set("sort_by", criteria.sortBy);
   if (criteria.sortOrder) params.set("sort_order", criteria.sortOrder);
@@ -263,6 +272,8 @@ export function criteriaToApiBody(criteria: SummaryFilterCriteria): Record<strin
   if (criteria.scopeType && criteria.scopeType !== "all") body.scope_type = criteria.scopeType;
   // Issue #19: Rolling status filter
   if (criteria.rollingStatus && criteria.rollingStatus !== "none") body.rolling_status = criteria.rollingStatus;
+  // ADR-103: Schedule filter
+  if (criteria.scheduleIds?.length) body.schedule_ids = criteria.scheduleIds;
 
   return body;
 }
@@ -296,6 +307,7 @@ export function countActiveFilters(criteria: SummaryFilterCriteria): number {
     criteria.hasContinuity !== undefined,
     criteria.scopeType && criteria.scopeType !== "all",
     criteria.rollingStatus && criteria.rollingStatus !== "none",
+    criteria.scheduleIds?.length,
   ].filter(Boolean).length;
 }
 

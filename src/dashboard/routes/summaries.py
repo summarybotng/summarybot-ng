@@ -1515,6 +1515,10 @@ async def list_stored_summaries(
     has_continuity: Optional[bool] = Query(None, description="Filter by continuity chain presence (weekly summaries with continuity_week_number)"),
     # ADR-098: Scope type filter
     scope_type: Optional[str] = Query(None, description="Filter by scope type (guild, category, channel)"),
+    # Issue #19: Rolling status filter
+    rolling_status: Optional[str] = Query(None, description="Filter by rolling status (still_rolling, finalized, all_rolling)"),
+    # ADR-103: Schedule filter
+    schedule_ids: Optional[str] = Query(None, description="Filter by schedule IDs (comma-separated)"),
     user: dict = Depends(get_current_user),
 ):
     """List stored summaries for a guild.
@@ -1527,6 +1531,7 @@ async def list_stored_summaries(
     ADR-041: Access issues filtering for partial coverage detection.
     ADR-073: Private channel content filtering.
     ADR-098: Scope type filtering for guild, category, or channel summaries.
+    ADR-103: Schedule filtering by schedule_id.
     """
     _check_guild_access(guild_id, user)
     _get_guild_or_404(guild_id)
@@ -1599,6 +1604,10 @@ async def list_stored_summaries(
         has_continuity=has_continuity,
         # ADR-098: Scope type filter
         scope_type=scope_type,
+        # Issue #19: Rolling status filter
+        rolling_status=rolling_status,
+        # ADR-103: Schedule filter
+        schedule_ids=[s.strip() for s in schedule_ids.split(",") if s.strip()] if schedule_ids else None,
     )
 
     total = await stored_repo.count_by_guild(
@@ -1640,6 +1649,10 @@ async def list_stored_summaries(
         has_continuity=has_continuity,
         # ADR-098: Scope type filter
         scope_type=scope_type,
+        # Issue #19: Rolling status filter
+        rolling_status=rolling_status,
+        # ADR-103: Schedule filter
+        schedule_ids=[s.strip() for s in schedule_ids.split(",") if s.strip()] if schedule_ids else None,
     )
 
     # ADR-046: Filter sensitive summaries for non-admin users

@@ -8,7 +8,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { format, parse } from "date-fns";
-import { Calendar as CalendarIcon, ArrowUpDown, Filter, X, Hash, AlertTriangle, CheckCircle2, ListChecks, Users, MessageSquare, Lock, Search, RefreshCw } from "lucide-react";
+import { Calendar as CalendarIcon, ArrowUpDown, Filter, X, Hash, AlertTriangle, CheckCircle2, ListChecks, Users, MessageSquare, Lock, Search, RefreshCw, Clock } from "lucide-react";
+import { useSchedules } from "@/hooks/useSchedules";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -97,6 +98,8 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
   const [searchInput, setSearchInput] = useState(filters.searchQuery || "");
   const { perspectives } = usePerspectiveOptions(guildId);
+  // ADR-103: Fetch schedules for schedule filter dropdown
+  const { data: schedules = [] } = useSchedules(guildId || "");
 
   // Sync searchInput when external filter changes
   useEffect(() => {
@@ -142,6 +145,8 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
     filters.hasContinuity !== undefined,
     // Issue #19: Rolling status filter
     filters.rollingStatus !== undefined && filters.rollingStatus !== "none",
+    // ADR-103: Schedule filter
+    filters.scheduleIds?.length,
   ].filter(Boolean).length;
 
   const handleClearFilters = () => {
@@ -177,6 +182,8 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
       hasContinuity: undefined,
       // Issue #19: Clear rolling status filter
       rollingStatus: undefined,
+      // ADR-103: Clear schedule filter
+      scheduleIds: undefined,
     });
   };
 
@@ -322,6 +329,35 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
             </SelectContent>
           </Select>
         </div>
+
+        {/* ADR-103: Schedule filter */}
+        {schedules.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Schedule:</span>
+            <Select
+              value={filters.scheduleIds?.[0] || "all"}
+              onValueChange={(v) => onFiltersChange({
+                ...filters,
+                scheduleIds: v === "all" ? undefined : [v]
+              })}
+            >
+              <SelectTrigger className="w-[160px] h-8">
+                <SelectValue placeholder="All Schedules" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Schedules</SelectItem>
+                {schedules.map((schedule) => (
+                  <SelectItem key={schedule.id} value={schedule.id}>
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-3 w-3" />
+                      <span className="truncate max-w-[120px]">{schedule.name}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* ADR-035: Summary Length filter */}
         <div className="flex items-center gap-2">
@@ -1065,6 +1101,19 @@ export function SummaryFilters({ filters, onFiltersChange, totalCount, guildId }
                filters.rollingStatus === "finalized" ? "Finalized" : "All Rolling"}
               <button
                 onClick={() => onFiltersChange({ ...filters, rollingStatus: undefined })}
+                className="ml-1 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {/* ADR-103: Schedule filter badge */}
+          {filters.scheduleIds?.length && (
+            <Badge variant="secondary" className="gap-1">
+              <Clock className="h-3 w-3" />
+              {schedules.find(s => s.id === filters.scheduleIds?.[0])?.name || "Schedule"}
+              <button
+                onClick={() => onFiltersChange({ ...filters, scheduleIds: undefined })}
                 className="ml-1 hover:text-destructive"
               >
                 <X className="h-3 w-3" />

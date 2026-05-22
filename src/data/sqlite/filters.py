@@ -57,3 +57,7 @@ class StoredSummaryFilter:
     has_continuity: Optional[bool] = None  # True = has continuity_week_number
     # ADR-098: Scope type filter
     scope_type: Optional[str] = None  # 'guild' | 'category' | 'channel'
+    # Issue #19: Rolling status filter
+    rolling_status: Optional[str] = None  # 'still_rolling' | 'finalized' | 'all_rolling'
+    # ADR-103: Schedule filter
+    schedule_ids: Optional[List[str]] = None  # Filter by specific schedule IDs

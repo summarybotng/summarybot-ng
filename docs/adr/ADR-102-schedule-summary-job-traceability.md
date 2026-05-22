@@ -1,7 +1,7 @@
 # ADR-102: Schedule-Summary-Job Traceability
 
 ## Status
-PROPOSED
+IMPLEMENTED (2026-05-22)
 
 ## Context
 
@@ -136,31 +136,31 @@ describe('Schedule-Summary-Job Traceability', () => {
 });
 ```
 
-## Identified Bugs
+## Identified Bugs (All Fixed)
 
-### Bug 1: task_repository may be None
-**Location**: `scheduler.py:650`
+### Bug 1: task_repository may be None ✅ FIXED
+**Location**: `scheduler.py:71-76`
 **Issue**: `save_task_result` only runs if `self.task_repository` is truthy
 **Impact**: Run history is empty if repository not initialized
-**Fix**: Ensure `task_repository` is always initialized; log error if None
+**Fix**: Added WARNING log at startup if task_repository not initialized. Verified initialization in main.py:474-481.
 
-### Bug 2: Rolling summaries skip normal delivery
-**Location**: `executor.py:585-601`
+### Bug 2: Rolling summaries skip normal delivery ✅ FIXED (prior session)
+**Location**: `executor.py:595-609`
 **Issue**: Rolling period summaries return early, bypassing `_deliver_summary`
 **Impact**: Confluence delivery skipped for rolling summaries
-**Fix**: Execute delivery strategies even for rolling summaries
+**Fix**: Added ADR-102 block to execute non-dashboard deliveries when `rolling_finalized=True`
 
-### Bug 3: Confluence delivery fails silently
-**Location**: `delivery/confluence.py`
-**Issue**: Errors may be caught but not properly surfaced to TaskResult
-**Impact**: User sees "success" but Confluence page not created
-**Fix**: Ensure all delivery errors are captured in delivery_results
+### Bug 3: Confluence delivery fails silently ✅ FIXED
+**Location**: `delivery/confluence.py:28-130`
+**Issue**: ConfluenceDeliveryStrategy called `publish_summary()` with wrong parameters (passed `content` instead of `summary`, `parent_page_id` not valid). Also treated return value as dict when it's a dataclass.
+**Impact**: Confluence delivery would fail with type errors
+**Fix**: Corrected API call to pass `summary=summary`, `guild_id`, `channel_names`, `scope_type`, `category_name`. Fixed result handling to use dataclass attributes (`result.success`, `result.error`, etc.)
 
-### Bug 4: schedule_id not set on some summary paths
-**Location**: Various
-**Issue**: Some code paths may create summaries without setting schedule_id
-**Impact**: Summary doesn't link back to schedule
-**Fix**: Audit all summary creation paths
+### Bug 4: schedule_id not set on some summary paths ✅ FIXED
+**Location**: `dashboard/services/job_executor.py:267-275`
+**Issue**: StoredSummary created from job_executor didn't include `schedule_id` even for SCHEDULED jobs
+**Impact**: Summary doesn't link back to schedule when retried via job_executor
+**Fix**: Added `schedule_id=job.schedule_id` to StoredSummary constructor
 
 ## Consequences
 

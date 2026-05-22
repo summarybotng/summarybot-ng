@@ -264,10 +264,12 @@ async def _execute_manual_job(job: SummaryJob) -> None:
             if job.job_type == JobType.SCHEDULED:
                 source = SummarySource.SCHEDULED
 
+            # ADR-102: Include schedule_id for traceability
             stored_summary = StoredSummary(
                 id=result.id,
                 guild_id=job.guild_id,
                 source_channel_ids=job.channel_ids,
+                schedule_id=job.schedule_id,  # ADR-102: Link to originating schedule
                 summary_result=result,
                 title=title,
                 source=source,

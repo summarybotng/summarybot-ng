@@ -61,34 +61,43 @@ class ConfluenceDeliveryStrategy(DeliveryStrategy):
             # Generate title from context
             title = self._generate_title(summary, context)
 
-            # Convert summary to Confluence content
-            content = self._format_for_confluence(summary)
+            # Get channel names for content and labels (ADR-100)
+            channel_names = self._get_channel_names(context)
 
-            # Get parent page from settings
-            parent_page_id = None
-            try:
-                repo = await get_confluence_repository()
-                if repo:
-                    settings = await repo.get_settings(context.guild_id)
-                    if settings:
-                        parent_page_id = settings.parent_page_id
-            except Exception as e:
-                logger.warning(f"Could not get Confluence settings: {e}")
+            # Get scope type and category name for labels
+            scope_type = None
+            category_name = None
+            if context.scheduled_task:
+                scope = getattr(context.scheduled_task, 'scope', None)
+                if scope:
+                    scope_type = scope.value if hasattr(scope, 'value') else str(scope)
+                category_name = getattr(context.scheduled_task, 'category_name', None)
 
-            # Publish to Confluence
+            # ADR-102: Publish to Confluence using correct API
+            # The publish_summary method takes the full SummaryResult, not formatted content
             result = await confluence_service.publish_summary(
+                summary=summary,
                 title=title,
-                content=content,
                 summary_id=summary.id,
-                parent_page_id=parent_page_id,
+                guild_id=context.guild_id,
+                channel_names=channel_names,
+                scope_type=scope_type,
+                category_name=category_name,
             )
 
-            if not result.get("success"):
+            # ADR-102: Handle result as ConfluencePublishResult dataclass, not dict
+            if not result.success:
+                error_msg = result.error or "Unknown error"
+                if result.conflict:
+                    error_msg = f"Conflict: {error_msg}"
+                logger.warning(
+                    f"ADR-102: Confluence delivery failed for summary {summary.id}: {error_msg}"
+                )
                 return DeliveryResult(
                     destination_type=self.destination_type,
                     target="confluence",
                     success=False,
-                    error=result.get("error", "Unknown error"),
+                    error=error_msg,
                 )
 
             # Store publication record
@@ -97,26 +106,26 @@ class ConfluenceDeliveryStrategy(DeliveryStrategy):
                 publication = ConfluencePublication(
                     guild_id=context.guild_id,
                     summary_id=summary.id,
-                    page_id=result["page_id"],
-                    page_url=result["page_url"],
-                    page_version=result.get("version", 1),
+                    page_id=result.page_id,
+                    page_url=result.page_url,
+                    page_version=result.page_version or 1,
                     published_at=utc_now_naive(),
                 )
                 await confluence_repo.save(publication)
 
             logger.info(
-                f"Published summary {summary.id} to Confluence: {result['page_url']}"
+                f"Published summary {summary.id} to Confluence: {result.page_url}"
             )
 
             return DeliveryResult(
                 destination_type=self.destination_type,
-                target=result["page_url"],
+                target=result.page_url or "confluence",
                 success=True,
                 details={
                     "message": "Published to Confluence",
-                    "page_id": result["page_id"],
-                    "page_url": result["page_url"],
-                    "version": result.get("version", 1),
+                    "page_id": result.page_id,
+                    "page_url": result.page_url,
+                    "version": result.page_version or 1,
                 },
             )
 
@@ -212,42 +221,3 @@ class ConfluenceDeliveryStrategy(DeliveryStrategy):
         else:
             channel_names = [f"Channel {cid}" for cid in channel_ids]
         return channel_names
-
-    def _format_for_confluence(self, summary: SummaryResult) -> str:
-        """Format summary content for Confluence (ADF/wiki markup).
-
-        Returns HTML-like content that Confluence can render.
-        """
-        parts = []
-
-        # Summary text
-        if summary.summary_text:
-            parts.append(f"<h2>Summary</h2>\n{summary.summary_text}")
-
-        # Key points
-        if summary.key_points:
-            points_html = "\n".join(f"<li>{point}</li>" for point in summary.key_points)
-            parts.append(f"<h2>Key Points</h2>\n<ul>{points_html}</ul>")
-
-        # Action items
-        if summary.action_items:
-            items_html = "\n".join(
-                f"<li><strong>{item.assignee or 'Unassigned'}</strong>: {item.description}</li>"
-                for item in summary.action_items
-            )
-            parts.append(f"<h2>Action Items</h2>\n<ul>{items_html}</ul>")
-
-        # Participants
-        if summary.participants:
-            participants_list = ", ".join(p.display_name for p in summary.participants)
-            parts.append(f"<h2>Participants</h2>\n<p>{participants_list}</p>")
-
-        # Technical terms
-        if summary.technical_terms:
-            terms_html = "\n".join(
-                f"<li><strong>{term.term}</strong>: {term.definition or 'No definition'}</li>"
-                for term in summary.technical_terms
-            )
-            parts.append(f"<h2>Technical Terms</h2>\n<ul>{terms_html}</ul>")
-
-        return "\n\n".join(parts) if parts else "<p>No content available.</p>"

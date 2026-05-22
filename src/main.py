@@ -625,8 +625,9 @@ class SummaryBotApp:
                 factory = get_repository_factory()
                 conn = await factory.get_connection()
 
-                # Use PASSIVE checkpoint to avoid blocking writers
-                result = await conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+                # Use TRUNCATE checkpoint to fully clear the WAL
+                # This is more aggressive than PASSIVE but ensures all data is persisted
+                result = await conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                 row = await result.fetchone()
                 if row:
                     # Returns (busy, log, checkpointed) - log and checkpointed are page counts

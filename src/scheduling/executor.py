@@ -1187,6 +1187,9 @@ Continue from this context for Week {week_number}. Reference previous discussion
                 default=now
             )
 
+            # Generate title from schedule's title_template or use sensible default
+            title = self._generate_rolling_title(task, rolling_period, period_start)
+
             # Create stored summary with rolling period fields
             stored_summary = StoredSummary(
                 id=summary_result.id,
@@ -1194,7 +1197,7 @@ Continue from this context for Week {week_number}. Reference previous discussion
                 source_channel_ids=task.get_all_channel_ids(),
                 schedule_id=schedule_id,
                 summary_result=summary_result,
-                title=f"Rolling {rolling_period.title()} Summary",
+                title=title,
                 source=SummarySource.SCHEDULED,
                 rolling_period_type=rolling_period,
                 rolling_period_start=period_start,
@@ -1324,6 +1327,62 @@ Continue from this context for Week {week_number}. Reference previous discussion
                 seen.add(t.term.lower())
                 result.append(t)
         return result
+
+    def _generate_rolling_title(
+        self,
+        task: SummaryTask,
+        rolling_period: str,
+        period_start: datetime,
+    ) -> str:
+        """Generate title for rolling summary using schedule's title_template or default.
+
+        Args:
+            task: The SummaryTask with scheduled_task reference
+            rolling_period: 'weekly', 'biweekly', 'monthly'
+            period_start: Start date of the rolling period
+
+        Returns:
+            Generated title string
+        """
+        now = utc_now_naive()
+        schedule_name = task.scheduled_task.name if task.scheduled_task else "Summary"
+        title_template = getattr(task.scheduled_task, 'title_template', None) if task.scheduled_task else None
+
+        # Calculate period string
+        if rolling_period == 'weekly':
+            period_str = f"Week of {period_start.strftime('%b %d')}"
+        elif rolling_period == 'biweekly':
+            period_str = f"Biweek of {period_start.strftime('%b %d')}"
+        elif rolling_period == 'monthly':
+            period_str = period_start.strftime('%B %Y')
+        else:
+            period_str = period_start.strftime('%b %d')
+
+        if title_template:
+            # Apply template substitutions
+            result = title_template
+            result = result.replace('{date}', now.strftime('%b %d, %Y'))
+            result = result.replace('{time}', now.strftime('%H:%M'))
+            result = result.replace('{datetime}', now.strftime('%b %d, %H:%M'))
+            result = result.replace('{schedule}', schedule_name)
+            result = result.replace('{period}', period_str)
+            result = result.replace('{weekday}', now.strftime('%A'))
+            # Channel placeholders - simplified for rolling summaries
+            channel_ids = task.get_all_channel_ids()
+            result = result.replace('{channel_count}', str(len(channel_ids)))
+            result = result.replace('{channels}', f"{len(channel_ids)} channels")
+            # Platform
+            platform = getattr(task.scheduled_task, 'platform', 'discord') if task.scheduled_task else 'discord'
+            platform_display = {
+                "discord": "Discord",
+                "whatsapp": "WhatsApp",
+                "slack": "Slack",
+            }.get((platform or 'discord').lower(), "Discord")
+            result = result.replace('{platform}', platform_display)
+            return result
+
+        # Default title: use schedule name with period
+        return f"{schedule_name} - {period_str}"
 
     async def _track_access_issues(
         self,

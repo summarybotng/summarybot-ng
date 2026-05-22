@@ -1187,7 +1187,7 @@ async def trigger_drive_scan(
 # -------------------------------------------------------------------------
 
 @router.post(
-    "/guilds/{guild_id}/whatsapp/scrub-pii",
+    "/guilds/{guild_id}/scrub-pii",
     summary="Scrub PII from WhatsApp messages",
     description="Retroactively anonymize phone numbers in existing WhatsApp message content.",
     responses={

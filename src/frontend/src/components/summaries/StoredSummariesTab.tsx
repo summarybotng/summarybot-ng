@@ -1409,6 +1409,19 @@ function StoredSummaryDetailSheet({
                       Wiki
                     </Badge>
                   )}
+                  {/* ADR-102: Schedule badge with link */}
+                  {summary.schedule_id && (
+                    <Badge
+                      variant="outline"
+                      className="bg-blue-500/10 text-blue-600 border-blue-500/30 text-xs cursor-pointer hover:bg-blue-500/20"
+                      onClick={() => {
+                        window.location.href = `/guilds/${guildId}/schedules?highlight=${summary.schedule_id}`;
+                      }}
+                    >
+                      <Clock className="mr-1 h-3 w-3" />
+                      {summary.schedule_name || "Schedule"}
+                    </Badge>
+                  )}
                   {/* ADR-101/Issue #19: Rolling period in-progress indicator with end date */}
                   {summary.rolling_period_type && !summary.rolling_finalized && (
                     <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30 text-xs animate-pulse">

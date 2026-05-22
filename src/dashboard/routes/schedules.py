@@ -725,11 +725,11 @@ async def run_schedule(
 async def test_write_persistence(
     guild_id: str = Path(...),
     schedule_id: str = Path(...),
-    user: dict = Depends(get_current_user),
 ):
-    """Debug endpoint to test task_result persistence through the app's repository."""
-    _check_guild_access(guild_id, user)
-    require_guild_admin(guild_id, user)
+    """Debug endpoint to test task_result persistence through the app's repository.
+
+    ADR-102: Temporary endpoint - no auth required for localhost testing.
+    """
 
     import secrets
     from ...models.task import TaskResult, TaskStatus

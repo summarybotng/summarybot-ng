@@ -81,13 +81,16 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
                 previous_summary_id = summary.metadata.get("previous_summary_id")
                 archive_granularity = summary.metadata.get("archive_granularity")
 
+            # ADR-102: Get schedule_id for traceability
+            schedule_id_value = context.scheduled_task.id if context.scheduled_task else None
+
             # Create stored summary with SCHEDULED source
             # Use the SummaryResult's ID to ensure job.summary_id matches stored summary
             stored_summary = StoredSummary(
                 id=summary.id,  # Use SummaryResult ID for consistency with job tracking
                 guild_id=context.guild_id,
                 source_channel_ids=scope_channel_ids,  # Store full scope for reference
-                schedule_id=context.scheduled_task.id if context.scheduled_task else None,
+                schedule_id=schedule_id_value,
                 summary_result=summary,
                 title=title,
                 source=SummarySource.SCHEDULED,

@@ -552,6 +552,10 @@ class SummaryBotApp:
             self.logger.info("Summary Bot NG is now online!")
             self.logger.info("=" * 60)
 
+            # Start periodic WAL checkpoint task to ensure data persistence
+            # This is critical because Fly.io may SIGKILL the app before graceful shutdown
+            asyncio.create_task(self._periodic_wal_checkpoint())
+
             if self.webhook_only_mode:
                 # In webhook-only mode, keep running until shutdown signal
                 # The webhook server is already running in the background
@@ -588,9 +592,47 @@ class SummaryBotApp:
             self.logger.info("Stopping Discord bot...")
             await self.discord_bot.stop()
 
+        # ADR-102: Checkpoint WAL to ensure all data is persisted before shutdown
+        try:
+            from .data import get_repository_factory
+            factory = get_repository_factory()
+            conn = await factory.get_connection()
+            self.logger.info("Checkpointing database WAL before shutdown...")
+            await conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            self.logger.info("Database WAL checkpoint completed")
+        except Exception as e:
+            self.logger.warning(f"Failed to checkpoint WAL: {e}")
+
         self.logger.info("=" * 60)
         self.logger.info("Summary Bot NG stopped cleanly")
         self.logger.info("=" * 60)
+
+    async def _periodic_wal_checkpoint(self):
+        """Periodically checkpoint the WAL to ensure data persistence.
+
+        Runs every 60 seconds to flush WAL changes to the main database.
+        This is critical because Fly.io may SIGKILL the app before graceful
+        shutdown completes, losing uncommitted WAL data.
+        """
+        checkpoint_interval = 60  # seconds
+        while self.running:
+            try:
+                await asyncio.sleep(checkpoint_interval)
+                if not self.running:
+                    break
+
+                from .data import get_repository_factory
+                factory = get_repository_factory()
+                conn = await factory.get_connection()
+
+                # Use PASSIVE checkpoint to avoid blocking writers
+                result = await conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+                row = await result.fetchone()
+                if row:
+                    # Returns (busy, log, checkpointed) - log and checkpointed are page counts
+                    self.logger.debug(f"WAL checkpoint: busy={row[0]}, log_pages={row[1]}, checkpointed={row[2]}")
+            except Exception as e:
+                self.logger.warning(f"Periodic WAL checkpoint failed: {e}")
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals (SIGINT, SIGTERM)."""

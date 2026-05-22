@@ -74,6 +74,9 @@ class TaskScheduler:
                 "ADR-102: task_repository not initialized - run history will not be saved. "
                 "Ensure get_task_repository() is called during startup."
             )
+        else:
+            db_path = getattr(self.task_repository.connection, 'db_path', 'UNKNOWN')
+            logger.info(f"task_repository initialized with db_path={db_path}")
 
         try:
             # Start the scheduler first so schedule_task() works

@@ -583,20 +583,38 @@ class TaskExecutor:
                 all_messages=all_messages,
             )
             if rolling_summary:
-                # Rolling period handled - skip normal delivery but return success
+                # Rolling period handled - still execute other delivery strategies
+                delivery_results = [{
+                    "destination_type": "dashboard",
+                    "target": "rolling_period",
+                    "success": True,
+                    "message": f"Rolling {rolling_summary.rolling_period_type} summary updated",
+                    "summary_id": rolling_summary.id,
+                }]
+
+                # ADR-102: Execute non-dashboard deliveries for rolling summaries
+                # Only deliver when finalized OR when explicitly configured
+                if rolling_summary.rolling_finalized:
+                    other_destinations = [d for d in task.destinations if d.type.value != "dashboard"]
+                    if other_destinations:
+                        logger.info(
+                            f"ADR-102: Executing {len(other_destinations)} delivery strategies "
+                            f"for finalized rolling summary {rolling_summary.id}"
+                        )
+                        other_results = await self._deliver_summary(
+                            summary=rolling_summary.summary_result,
+                            destinations=other_destinations,
+                            task=task,
+                        )
+                        delivery_results.extend(other_results)
+
                 task.mark_completed()
                 execution_time = (utc_now_naive() - start_time).total_seconds()
                 return TaskExecutionResult(
                     task_id=task.scheduled_task.id,
                     success=True,
                     summary_result=rolling_summary.summary_result,
-                    delivery_results=[{
-                        "destination_type": "dashboard",
-                        "target": "rolling_period",
-                        "success": True,
-                        "message": f"Rolling {rolling_summary.rolling_period_type} summary updated",
-                        "summary_id": rolling_summary.id,
-                    }],
+                    delivery_results=delivery_results,
                     execution_time_seconds=execution_time,
                 )
 

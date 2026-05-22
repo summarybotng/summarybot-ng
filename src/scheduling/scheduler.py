@@ -68,6 +68,13 @@ class TaskScheduler:
 
         logger.info("Starting task scheduler...")
 
+        # ADR-102: Warn if task_repository is not available (run history won't work)
+        if not self.task_repository:
+            logger.warning(
+                "ADR-102: task_repository not initialized - run history will not be saved. "
+                "Ensure get_task_repository() is called during startup."
+            )
+
         try:
             # Start the scheduler first so schedule_task() works
             self.scheduler.start()

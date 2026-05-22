@@ -25,6 +25,7 @@ from ...services.anonymization.phone_anonymizer import (
     hash_phone_number,
     hash_to_pseudonym,
     COMBINED_PHONE_PATTERN,
+    PhoneAnonymizer,
 )
 from ...utils.time import utc_now_naive
 
@@ -738,6 +739,9 @@ class SQLiteWhatsAppImportRepository:
         """
         Store messages in ingest_messages table.
 
+        PII Protection: Phone numbers in message content are anonymized
+        before storage to comply with data protection requirements.
+
         Args:
             import_id: The import ID (used as batch_id)
             messages: List of parsed messages
@@ -746,6 +750,9 @@ class SQLiteWhatsAppImportRepository:
         Returns:
             Number of messages stored
         """
+        # Create anonymizer for content scrubbing (uses same salt as participant anonymization)
+        content_anonymizer = PhoneAnonymizer(salt=self.salt)
+
         # Store messages in ingest_messages (compatible with existing queries)
         query = """
         INSERT OR IGNORE INTO ingest_messages (
@@ -756,11 +763,21 @@ class SQLiteWhatsAppImportRepository:
         """
 
         params_list = []
+        phones_scrubbed = 0
         for msg in messages:
             sender = msg.get("sender", "Unknown")
             pseudonym = participant_map.get(sender, sender)
 
             msg_id = f"wa_{import_id}_{msg.get('message_id', uuid.uuid4().hex[:8])}"
+
+            # Anonymize phone numbers in message content (PII scrubbing)
+            raw_content = msg.get("content", "")
+            if raw_content:
+                result = content_anonymizer.anonymize_text(raw_content)
+                content = result.anonymized_text
+                phones_scrubbed += result.phone_count
+            else:
+                content = ""
 
             params = (
                 msg_id,
@@ -770,7 +787,7 @@ class SQLiteWhatsAppImportRepository:
                 pseudonym,  # sender_id = pseudonym
                 pseudonym,  # sender_name = pseudonym
                 msg.get("timestamp", "").isoformat() if hasattr(msg.get("timestamp"), "isoformat") else str(msg.get("timestamp", "")),
-                msg.get("content", ""),
+                content,  # Anonymized content
                 1 if msg.get("attachment") else 0,
                 json.dumps([{"filename": msg["attachment"]}]) if msg.get("attachment") else "[]",
                 msg.get("reply_to"),
@@ -784,7 +801,88 @@ class SQLiteWhatsAppImportRepository:
         if params_list:
             await self.connection.executemany(query, params_list)
 
+        if phones_scrubbed > 0:
+            logger.info(f"PII scrubbing: Anonymized {phones_scrubbed} phone numbers in {len(params_list)} messages for import {import_id}")
+
         return len(params_list)
+
+    async def scrub_existing_messages_pii(
+        self,
+        import_id: Optional[str] = None,
+        batch_size: int = 1000,
+    ) -> Dict[str, int]:
+        """
+        Scrub PII (phone numbers) from existing WhatsApp messages.
+
+        This retroactively anonymizes phone numbers in message content
+        for messages that were stored before PII scrubbing was implemented.
+
+        Args:
+            import_id: Optional specific import to scrub. If None, scrubs all WhatsApp messages.
+            batch_size: Number of messages to process per batch.
+
+        Returns:
+            Dict with 'messages_updated' and 'phones_scrubbed' counts.
+        """
+        content_anonymizer = PhoneAnonymizer(salt=self.salt)
+
+        # Build query conditions
+        conditions = "source_type = 'whatsapp'"
+        params: List[Any] = []
+        if import_id:
+            conditions += " AND batch_id = ?"
+            params.append(import_id)
+
+        # Count total messages to process
+        count_query = f"SELECT COUNT(*) as cnt FROM ingest_messages WHERE {conditions}"
+        count_row = await self.connection.fetch_one(count_query, tuple(params))
+        total = count_row["cnt"] if count_row else 0
+
+        if total == 0:
+            return {"messages_updated": 0, "phones_scrubbed": 0}
+
+        logger.info(f"PII scrubbing: Starting scan of {total} WhatsApp messages")
+
+        messages_updated = 0
+        phones_scrubbed = 0
+        offset = 0
+
+        while offset < total:
+            # Fetch batch
+            fetch_query = f"""
+            SELECT id, content FROM ingest_messages
+            WHERE {conditions}
+            ORDER BY id
+            LIMIT ? OFFSET ?
+            """
+            batch_params = list(params) + [batch_size, offset]
+            rows = await self.connection.fetch_all(fetch_query, tuple(batch_params))
+
+            updates = []
+            for row in rows:
+                content = row["content"] or ""
+                if not content:
+                    continue
+
+                result = content_anonymizer.anonymize_text(content)
+                if result.phone_count > 0:
+                    updates.append((result.anonymized_text, row["id"]))
+                    phones_scrubbed += result.phone_count
+
+            # Apply updates
+            if updates:
+                update_query = "UPDATE ingest_messages SET content = ? WHERE id = ?"
+                await self.connection.executemany(update_query, updates)
+                messages_updated += len(updates)
+
+            offset += batch_size
+
+        logger.info(f"PII scrubbing complete: Updated {messages_updated} messages, scrubbed {phones_scrubbed} phone numbers")
+
+        return {
+            "messages_updated": messages_updated,
+            "phones_scrubbed": phones_scrubbed,
+        }
 
     async def get_messages_for_import(
         self,

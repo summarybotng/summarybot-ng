@@ -1183,6 +1183,59 @@ async def trigger_drive_scan(
 
 
 # -------------------------------------------------------------------------
+# PII Scrubbing (Issue #85a8d4d4)
+# -------------------------------------------------------------------------
+
+@router.post(
+    "/guilds/{guild_id}/whatsapp/scrub-pii",
+    summary="Scrub PII from WhatsApp messages",
+    description="Retroactively anonymize phone numbers in existing WhatsApp message content.",
+    responses={
+        403: {"description": "No permission"},
+    },
+)
+async def scrub_whatsapp_pii(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    import_id: Optional[str] = Body(None, description="Specific import ID to scrub (optional)"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Scrub phone numbers from existing WhatsApp messages.
+
+    This endpoint retroactively anonymizes phone numbers that may have been
+    stored in message content before PII scrubbing was implemented.
+
+    Admin only.
+    """
+    _check_guild_access(guild_id, user)
+    require_guild_admin(guild_id, user)
+
+    repo = await get_whatsapp_import_repository(guild_id)
+
+    result = await repo.scrub_existing_messages_pii(import_id=import_id)
+
+    user_id = user.get("id", "unknown")
+    await audit_log(
+        "whatsapp.pii.scrub",
+        user_id=user_id,
+        guild_id=guild_id,
+        resource_type="whatsapp_messages",
+        details={
+            "import_id": import_id,
+            "messages_updated": result["messages_updated"],
+            "phones_scrubbed": result["phones_scrubbed"],
+        },
+    )
+
+    return {
+        "success": True,
+        "messages_updated": result["messages_updated"],
+        "phones_scrubbed": result["phones_scrubbed"],
+        "message": f"Scrubbed {result['phones_scrubbed']} phone numbers from {result['messages_updated']} messages",
+    }
+
+
+# -------------------------------------------------------------------------
 # Helper Functions
 # -------------------------------------------------------------------------
 

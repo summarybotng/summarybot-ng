@@ -661,9 +661,11 @@ class TaskScheduler:
                         execution_time_seconds=(utc_now_naive() - start_time).total_seconds(),
                     )
                     await self.task_repository.save_task_result(task_result)
-                    logger.debug(f"Saved execution result for task {task_id}")
+                    logger.info(f"Saved execution result for task {task_id} (execution_id={task_result.execution_id})")
                 except Exception as e:
                     logger.warning(f"Failed to save task result for {task_id}: {e}")
+            else:
+                logger.warning(f"Cannot save task result for {task_id}: task_repository not available")
 
             # Persist updated task
             await self._persist_task(task)
@@ -702,9 +704,11 @@ class TaskScheduler:
                         execution_time_seconds=(utc_now_naive() - start_time).total_seconds(),
                     )
                     await self.task_repository.save_task_result(task_result)
-                    logger.debug(f"Saved exception result for task {task_id}")
+                    logger.info(f"Saved exception result for task {task_id} (execution_id={task_result.execution_id})")
                 except Exception as save_err:
                     logger.warning(f"Failed to save task result for {task_id}: {save_err}")
+            else:
+                logger.warning(f"Cannot save task result for {task_id}: task_repository not available")
 
             # Persist failure
             await self._persist_task(task)

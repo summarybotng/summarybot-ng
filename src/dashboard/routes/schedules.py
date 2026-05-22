@@ -715,47 +715,6 @@ async def run_schedule(
     )
 
 
-# ADR-102: Debug endpoint to test task_result persistence
-@router.post(
-    "/guilds/{guild_id}/schedules/{schedule_id}/test-write",
-    summary="Test write persistence (DEBUG)",
-    description="ADR-102: Debug endpoint to verify task_result write persistence.",
-    include_in_schema=False,  # Hide from OpenAPI docs
-)
-async def test_write_persistence(
-    guild_id: str = Path(...),
-    schedule_id: str = Path(...),
-):
-    """Debug endpoint to test task_result persistence through the app's repository.
-
-    ADR-102: Temporary endpoint - no auth required for localhost testing.
-    """
-
-    import secrets
-    from ...models.task import TaskResult, TaskStatus
-
-    task_repo = await get_task_repository()
-    exec_id = f"test-write-{secrets.token_hex(4)}"
-
-    result = TaskResult(
-        task_id=schedule_id,
-        execution_id=exec_id,
-        status=TaskStatus.COMPLETED,
-        started_at=datetime.utcnow(),
-        completed_at=datetime.utcnow(),
-        summary_id="test-summary",
-        error_message=None,
-        error_details=None,
-        delivery_results={"test": True},
-        execution_time_seconds=0.1,
-    )
-
-    await task_repo.save_task_result(result)
-    logger.info(f"ADR-102 DEBUG: Saved test task_result {exec_id}")
-
-    return {"execution_id": exec_id, "status": "saved"}
-
-
 @router.get(
     "/guilds/{guild_id}/schedules/{schedule_id}/history",
     response_model=ExecutionHistoryResponse,

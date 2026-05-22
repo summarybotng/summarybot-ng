@@ -40,14 +40,18 @@ class SQLiteTaskRepository(TaskRepository):
         self.connection = connection
 
     async def save_task(self, task: ScheduledTask) -> str:
-        """Save or update a scheduled task."""
+        """Save or update a scheduled task.
+
+        ADR-102: Use INSERT ... ON CONFLICT DO UPDATE instead of INSERT OR REPLACE
+        to avoid triggering ON DELETE CASCADE which deletes related task_results.
+        """
         # Get scope value safely
         scope_value = None
         if hasattr(task, 'scope') and task.scope is not None:
             scope_value = task.scope.value if hasattr(task.scope, 'value') else str(task.scope)
 
         query = """
-        INSERT OR REPLACE INTO scheduled_tasks (
+        INSERT INTO scheduled_tasks (
             id, name, channel_id, guild_id, schedule_type,
             schedule_time, schedule_days, cron_expression,
             destinations, summary_options, is_active,
@@ -59,6 +63,39 @@ class SQLiteTaskRepository(TaskRepository):
             rolling_period, rolling_end_day, accumulation_strategy,
             title_template
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            channel_id = excluded.channel_id,
+            guild_id = excluded.guild_id,
+            schedule_type = excluded.schedule_type,
+            schedule_time = excluded.schedule_time,
+            schedule_days = excluded.schedule_days,
+            cron_expression = excluded.cron_expression,
+            destinations = excluded.destinations,
+            summary_options = excluded.summary_options,
+            is_active = excluded.is_active,
+            created_at = excluded.created_at,
+            created_by = excluded.created_by,
+            last_run = excluded.last_run,
+            next_run = excluded.next_run,
+            run_count = excluded.run_count,
+            failure_count = excluded.failure_count,
+            max_failures = excluded.max_failures,
+            retry_delay_minutes = excluded.retry_delay_minutes,
+            scope = excluded.scope,
+            channel_ids = excluded.channel_ids,
+            category_id = excluded.category_id,
+            excluded_channel_ids = excluded.excluded_channel_ids,
+            resolve_category_at_runtime = excluded.resolve_category_at_runtime,
+            timezone = excluded.timezone,
+            prompt_template_id = excluded.prompt_template_id,
+            platform = excluded.platform,
+            enable_continuity = excluded.enable_continuity,
+            time_range_hours = excluded.time_range_hours,
+            rolling_period = excluded.rolling_period,
+            rolling_end_day = excluded.rolling_end_day,
+            accumulation_strategy = excluded.accumulation_strategy,
+            title_template = excluded.title_template
         """
 
         params = (

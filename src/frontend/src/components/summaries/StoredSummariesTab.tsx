@@ -7,6 +7,7 @@
  */
 
 import { useState, useMemo, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, usePushToDM, useSendToEmail, useRegenerateSummary, useSummaryWikiPages, type SummarySourceType, type RegenerateOptions } from "@/hooks/useStoredSummaries";
@@ -96,6 +97,36 @@ import { SummaryFilters, type FilterState } from "./SummaryFilters";
 import { SummaryCalendar } from "./SummaryCalendar";
 import { BulkActionBar } from "./BulkActionBar";
 import type { StoredSummary, StoredSummaryDetail } from "@/types";
+
+// Schedule badge component - shows which schedule created a summary
+function ScheduleBadge({
+  scheduleId,
+  scheduleName,
+  guildId,
+}: {
+  scheduleId: string;
+  scheduleName?: string;
+  guildId: string;
+}) {
+  const navigate = useNavigate();
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigate(`/guilds/${guildId}/schedules?highlight=${scheduleId}`);
+  };
+
+  return (
+    <Badge
+      variant="outline"
+      className="border-blue-500/50 text-blue-600 cursor-pointer hover:bg-blue-500/10"
+      onClick={handleClick}
+      title={`Created by schedule: ${scheduleName || scheduleId.substring(0, 8)}`}
+    >
+      <Clock className="mr-1 h-3 w-3" />
+      {scheduleName || `Schedule ${scheduleId.substring(0, 8)}`}
+    </Badge>
+  );
+}
 
 // Helper to group summaries by recency
 function groupSummariesByRecency(summaries: StoredSummary[]): {
@@ -1283,6 +1314,14 @@ function StoredSummaryDetailSheet({
                       {summary.source === "archive" ? <Archive className="mr-1 h-3 w-3" /> : <Clock className="mr-1 h-3 w-3" />}
                       {summary.source}
                     </Badge>
+                  )}
+                  {/* Schedule badge - clickable to navigate to originating schedule */}
+                  {summary.schedule_id && (
+                    <ScheduleBadge
+                      scheduleId={summary.schedule_id}
+                      scheduleName={summary.schedule_name}
+                      guildId={guildId}
+                    />
                   )}
                   {/* ADR-098: Scope badge */}
                   {summary.scope_type && (

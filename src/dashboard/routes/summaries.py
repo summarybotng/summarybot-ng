@@ -1956,12 +1956,33 @@ async def get_stored_summary(
         except Exception as e:
             logger.warning(f"Failed to find next summary in continuity chain: {e}")
 
+    # ADR-009: Look up schedule name if summary has a schedule_id
+    schedule_name = None
+    if stored.schedule_id:
+        scheduler = get_task_scheduler()
+        if scheduler:
+            # Try in-memory first
+            task = scheduler.get_task(stored.schedule_id)
+            if task:
+                schedule_name = task.name
+            else:
+                # Fall back to database
+                try:
+                    task_repo = await get_task_repository()
+                    if task_repo:
+                        task = await task_repo.get_task(stored.schedule_id)
+                        if task:
+                            schedule_name = task.name
+                except Exception as e:
+                    logger.debug(f"Could not load schedule {stored.schedule_id} for detail: {e}")
+
     return StoredSummaryDetailResponse(
         id=stored.id,
         title=stored.title,
         guild_id=stored.guild_id,
         source_channel_ids=stored.source_channel_ids,
         schedule_id=stored.schedule_id,
+        schedule_name=schedule_name,
         created_at=stored.created_at,
         viewed_at=stored.viewed_at,
         pushed_at=stored.pushed_at,

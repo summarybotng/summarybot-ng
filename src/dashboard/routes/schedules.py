@@ -21,6 +21,10 @@ from ..models import (
     SummaryOptionsResponse,
     SummaryScope,
     ErrorResponse,
+    # ADR-104: Rolling schedule summaries
+    RollingScheduleSummariesResponse,
+    RollingCurrentSummary,
+    RollingPreviousSummary,
 )
 from ..utils.scope_resolver import resolve_channels_for_scope
 from . import get_discord_bot, get_task_scheduler, get_task_repository
@@ -767,6 +771,97 @@ async def get_execution_history(
     ]
 
     return ExecutionHistoryResponse(executions=executions)
+
+
+# ADR-104: Rolling Schedule Summary Display
+@router.get(
+    "/guilds/{guild_id}/schedules/{schedule_id}/rolling-summaries",
+    response_model=RollingScheduleSummariesResponse,
+    summary="Get rolling schedule summaries",
+    description="Get current and previous rolling summaries for a rolling schedule (ADR-104).",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        404: {"model": ErrorResponse, "description": "Schedule not found"},
+    },
+)
+async def get_rolling_schedule_summaries(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    schedule_id: str = Path(..., description="Schedule ID"),
+    previous_limit: int = 3,
+    user: dict = Depends(get_current_user),
+):
+    """Get rolling summaries for a schedule.
+
+    Returns the current active rolling summary with rollover date and progress,
+    plus the previous N finalized rolling summaries.
+    """
+    _check_guild_access(guild_id, user)
+
+    scheduler = get_task_scheduler()
+    if not scheduler:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Schedule not found"},
+        )
+
+    task = await scheduler.get_task_async(schedule_id)
+    if not task or task.guild_id != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Schedule not found"},
+        )
+
+    # Only applicable for rolling schedules
+    if not task.is_rolling_period():
+        return RollingScheduleSummariesResponse(
+            current=None,
+            previous=[],
+            total_finalized_count=0,
+        )
+
+    # Get rolling summaries from repository
+    from ...data.repositories import get_stored_summary_repository
+    summary_repo = await get_stored_summary_repository()
+
+    data = await summary_repo.get_rolling_schedule_summaries(
+        guild_id=guild_id,
+        schedule_id=schedule_id,
+        previous_limit=previous_limit,
+    )
+
+    # Build current summary response
+    current = None
+    if data['current']:
+        s = data['current']
+        rollover_date = task.calculate_rollover_date()
+        current = RollingCurrentSummary(
+            summary_id=s.id,
+            title=s.title,
+            period_start=s.rolling_period_start or s.created_at,
+            rollover_date=rollover_date or s.created_at,
+            accumulation_count=s.rolling_accumulation_count or 1,
+            total_days_in_period=task.get_period_days_total(),
+            last_updated=s.rolling_accumulated_through or s.created_at,
+            message_count=s.summary_result.message_count if s.summary_result else 0,
+        )
+
+    # Build previous summaries response
+    previous = []
+    for s in data['previous']:
+        previous.append(RollingPreviousSummary(
+            summary_id=s.id,
+            title=s.title,
+            period_start=s.rolling_period_start or s.created_at,
+            period_end=s.rolling_accumulated_through,
+            message_count=s.summary_result.message_count if s.summary_result else 0,
+            accumulation_count=s.rolling_accumulation_count or 1,
+        ))
+
+    return RollingScheduleSummariesResponse(
+        current=current,
+        previous=previous,
+        total_finalized_count=data['total_count'],
+    )
 
 
 # ADR-046: Channel privacy checking

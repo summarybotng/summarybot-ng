@@ -397,6 +397,88 @@ class ScheduledTask(BaseModel):
             return next_day.month != local_now.month
         return False
 
+    def calculate_rollover_date(self, current_time: Optional[datetime] = None) -> Optional[datetime]:
+        """Calculate when the current rolling period will finalize (ADR-104).
+
+        Returns the next rollover date in UTC, or None if not a rolling schedule.
+        """
+        if not self.rolling_period:
+            return None
+
+        current_time = current_time or datetime.now(timezone.utc)
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=timezone.utc)
+
+        task_tz = _get_timezone(self.timezone)
+        local_now = current_time.astimezone(task_tz)
+        current_weekday = local_now.weekday()
+
+        # Parse schedule time
+        hour, minute = 9, 0  # Default
+        if self.schedule_time:
+            try:
+                hour, minute = map(int, self.schedule_time.split(':'))
+            except ValueError:
+                pass
+
+        if self.rolling_period == "weekly":
+            end_day = self.rolling_end_day if self.rolling_end_day is not None else 5  # Saturday
+            days_until_end = (end_day - current_weekday) % 7
+            if days_until_end == 0:
+                # Today is end day - check if we've passed the schedule time
+                end_time_today = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                if local_now >= end_time_today:
+                    # Already passed, next week
+                    days_until_end = 7
+
+            rollover_local = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            rollover_local += timedelta(days=days_until_end)
+            return _to_utc(rollover_local)
+
+        elif self.rolling_period == "biweekly":
+            end_day = self.rolling_end_day if self.rolling_end_day is not None else 5
+            days_until_end = (end_day - current_weekday) % 7
+            if days_until_end == 0:
+                end_time_today = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                if local_now >= end_time_today:
+                    days_until_end = 14  # Next biweekly occurrence
+            # Simplified: just find next end_day (full impl would track period start)
+            rollover_local = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            rollover_local += timedelta(days=days_until_end)
+            return _to_utc(rollover_local)
+
+        elif self.rolling_period == "monthly":
+            # End of current month
+            if local_now.month == 12:
+                next_month_start = local_now.replace(year=local_now.year + 1, month=1, day=1)
+            else:
+                next_month_start = local_now.replace(month=local_now.month + 1, day=1)
+            last_day_of_month = next_month_start - timedelta(days=1)
+            rollover_local = last_day_of_month.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+            # If we've already passed this month's end, go to next month
+            if local_now >= rollover_local:
+                if rollover_local.month == 12:
+                    next_month_start = rollover_local.replace(year=rollover_local.year + 1, month=2, day=1)
+                else:
+                    next_month_start = rollover_local.replace(month=rollover_local.month + 2, day=1)
+                rollover_local = next_month_start - timedelta(days=1)
+                rollover_local = rollover_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+            return _to_utc(rollover_local)
+
+        return None
+
+    def get_period_days_total(self) -> int:
+        """Get total days in the rolling period (ADR-104)."""
+        if self.rolling_period == "weekly":
+            return 7
+        elif self.rolling_period == "biweekly":
+            return 14
+        elif self.rolling_period == "monthly":
+            return 30  # Approximate
+        return 0
+
     def get_filtered_channel_ids(self, all_channel_ids: List[str]) -> List[str]:
         """Get channel IDs with exclusions applied.
 

@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { parseAsUTC, formatRelativeTime } from "@/contexts/TimezoneContext";
+import { useTimezone, formatRelativeTime } from "@/contexts/TimezoneContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,9 +15,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Play, Trash2, Calendar, Clock, Pencil, History, MessageSquare, Copy, Check, RefreshCw, LayoutDashboard, Bell, Mail, Globe, FileText } from "lucide-react";
+import { Play, Trash2, Calendar, Clock, Pencil, History, MessageSquare, Copy, Check, RefreshCw, LayoutDashboard, Bell, Mail, Globe, FileText, FileStack, ChevronRight } from "lucide-react";
 import { useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import type { Schedule } from "@/types";
+import { useRollingSummaries } from "@/hooks/useSchedules";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -96,6 +98,15 @@ export function ScheduleCard({
   isRunning,
 }: ScheduleCardProps) {
   const [copied, setCopied] = useState(false);
+  const { guildId } = useParams<{ guildId: string }>();
+  const { formatDateTime } = useTimezone();
+
+  // ADR-104: Fetch rolling summaries for rolling schedules
+  const { data: rollingSummaries } = useRollingSummaries(
+    guildId || "",
+    schedule.id,
+    !!schedule.rolling_period
+  );
 
   const copyId = () => {
     navigator.clipboard.writeText(schedule.id);
@@ -201,6 +212,75 @@ export function ScheduleCard({
                   )}
                 </button>
               </div>
+
+              {/* ADR-104: Rolling summaries display */}
+              {schedule.rolling_period && rollingSummaries && (
+                <div className="mt-4 pt-4 border-t border-border/50">
+                  {/* Current rolling summary */}
+                  {rollingSummaries.current && (
+                    <div className="mb-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <FileStack className="h-4 w-4 text-orange-500" />
+                        <span className="text-sm font-medium">Current Period</span>
+                        <Badge variant="outline" className="text-xs bg-orange-50 text-orange-600 border-orange-200 dark:bg-orange-950/30 dark:text-orange-400 dark:border-orange-800">
+                          Rolling
+                        </Badge>
+                      </div>
+                      <Link
+                        to={`/guilds/${guildId}/summaries?view=${rollingSummaries.current.summary_id}`}
+                        className="block p-3 rounded-md bg-muted/50 hover:bg-muted transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-sm">{rollingSummaries.current.title}</span>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted-foreground">
+                          <span>Day {rollingSummaries.current.accumulation_count} of {rollingSummaries.current.total_days_in_period}</span>
+                          <span>Rollover: {formatDateTime(rollingSummaries.current.rollover_date)}</span>
+                          <span>{rollingSummaries.current.message_count} messages</span>
+                        </div>
+                      </Link>
+                    </div>
+                  )}
+
+                  {/* Previous finalized summaries */}
+                  {rollingSummaries.previous.length > 0 && (
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-2">Previous Periods</div>
+                      <div className="space-y-1">
+                        {rollingSummaries.previous.map((summary) => (
+                          <Link
+                            key={summary.summary_id}
+                            to={`/guilds/${guildId}/summaries?view=${summary.summary_id}`}
+                            className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors text-sm"
+                          >
+                            <span className="text-muted-foreground">{summary.title}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">{summary.message_count} msgs</span>
+                              <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                      {rollingSummaries.total_finalized_count > rollingSummaries.previous.length && (
+                        <Link
+                          to={`/guilds/${guildId}/summaries?schedule=${schedule.id}`}
+                          className="block mt-2 text-xs text-primary hover:underline"
+                        >
+                          View all {rollingSummaries.total_finalized_count} summaries →
+                        </Link>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Empty state */}
+                  {!rollingSummaries.current && rollingSummaries.previous.length === 0 && (
+                    <div className="text-sm text-muted-foreground">
+                      No summaries yet. Run the schedule to generate the first rolling summary.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2">

@@ -1475,6 +1475,68 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
         """
         await self.connection.execute(query, (summary_id,))
 
+    async def get_rolling_schedule_summaries(
+        self,
+        guild_id: str,
+        schedule_id: str,
+        previous_limit: int = 3,
+    ) -> Dict[str, Any]:
+        """
+        Get rolling summaries for a schedule (ADR-104).
+
+        Returns the current active summary plus previous finalized summaries.
+
+        Args:
+            guild_id: The guild ID
+            schedule_id: The schedule ID
+            previous_limit: Max number of previous finalized summaries (default 3)
+
+        Returns:
+            Dict with 'current', 'previous', and 'total_count' keys
+        """
+        # Get current active summary
+        current_query = """
+        SELECT * FROM stored_summaries
+        WHERE guild_id = ?
+          AND schedule_id = ?
+          AND rolling_period_type IS NOT NULL
+          AND rolling_finalized = 0
+        ORDER BY rolling_period_start DESC
+        LIMIT 1
+        """
+        current_row = await self.connection.fetch_one(current_query, (guild_id, schedule_id))
+        current = self._row_to_stored_summary(current_row) if current_row else None
+
+        # Get previous finalized summaries
+        previous_query = """
+        SELECT * FROM stored_summaries
+        WHERE guild_id = ?
+          AND schedule_id = ?
+          AND rolling_period_type IS NOT NULL
+          AND rolling_finalized = 1
+        ORDER BY rolling_period_start DESC
+        LIMIT ?
+        """
+        previous_rows = await self.connection.fetch_all(previous_query, (guild_id, schedule_id, previous_limit))
+        previous = [self._row_to_stored_summary(row) for row in previous_rows]
+
+        # Get total count of finalized summaries
+        count_query = """
+        SELECT COUNT(*) as cnt FROM stored_summaries
+        WHERE guild_id = ?
+          AND schedule_id = ?
+          AND rolling_period_type IS NOT NULL
+          AND rolling_finalized = 1
+        """
+        count_row = await self.connection.fetch_one(count_query, (guild_id, schedule_id))
+        total_count = count_row['cnt'] if count_row else 0
+
+        return {
+            'current': current,
+            'previous': previous,
+            'total_count': total_count,
+        }
+
     async def restart_rolling_summary(
         self,
         summary_id: str,

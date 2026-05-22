@@ -118,3 +118,41 @@ export function useExecutionHistory(guildId: string, scheduleId: string | null) 
     enabled: !!guildId && !!scheduleId,
   });
 }
+
+// ADR-104: Rolling schedule summaries
+interface RollingCurrentSummary {
+  summary_id: string;
+  title: string;
+  period_start: string;
+  rollover_date: string;
+  accumulation_count: number;
+  total_days_in_period: number;
+  last_updated: string | null;
+  message_count: number;
+}
+
+interface RollingPreviousSummary {
+  summary_id: string;
+  title: string;
+  period_start: string;
+  period_end: string | null;
+  message_count: number;
+  accumulation_count: number;
+}
+
+interface RollingScheduleSummariesResponse {
+  current: RollingCurrentSummary | null;
+  previous: RollingPreviousSummary[];
+  total_finalized_count: number;
+}
+
+export function useRollingSummaries(guildId: string, scheduleId: string | null, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ["rolling-summaries", guildId, scheduleId],
+    queryFn: () =>
+      api.get<RollingScheduleSummariesResponse>(
+        `/guilds/${guildId}/schedules/${scheduleId}/rolling-summaries`
+      ),
+    enabled: !!guildId && !!scheduleId && enabled,
+  });
+}

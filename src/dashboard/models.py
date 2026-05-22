@@ -571,6 +571,36 @@ class ExecutionHistoryResponse(BaseModel):
     executions: List[ExecutionHistoryItem]
 
 
+# ADR-104: Rolling Schedule Summary Display
+class RollingCurrentSummary(BaseModel):
+    """Current active rolling summary with progress info (ADR-104)."""
+    summary_id: str
+    title: str
+    period_start: datetime
+    rollover_date: datetime
+    accumulation_count: int
+    total_days_in_period: int
+    last_updated: Optional[datetime] = None
+    message_count: int = 0
+
+
+class RollingPreviousSummary(BaseModel):
+    """Previous finalized rolling summary (ADR-104)."""
+    summary_id: str
+    title: str
+    period_start: datetime
+    period_end: Optional[datetime] = None
+    message_count: int = 0
+    accumulation_count: int = 0
+
+
+class RollingScheduleSummariesResponse(BaseModel):
+    """Response for rolling schedule summaries (ADR-104)."""
+    current: Optional[RollingCurrentSummary] = None
+    previous: List[RollingPreviousSummary] = []
+    total_finalized_count: int = 0
+
+
 # --- Webhooks ---
 
 class WebhookListItem(BaseModel):

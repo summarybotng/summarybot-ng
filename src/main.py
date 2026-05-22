@@ -615,6 +615,7 @@ class SummaryBotApp:
         shutdown completes, losing uncommitted WAL data.
         """
         checkpoint_interval = 60  # seconds
+        self.logger.info(f"WAL checkpoint task started (interval={checkpoint_interval}s)")
         while self.running:
             try:
                 await asyncio.sleep(checkpoint_interval)
@@ -631,9 +632,8 @@ class SummaryBotApp:
                 row = await result.fetchone()
                 if row:
                     # Returns (busy, log, checkpointed) - log and checkpointed are page counts
-                    # Log at INFO level to verify checkpoint is running
-                    if row[1] > 0:  # Only log if there were pages to checkpoint
-                        self.logger.info(f"WAL checkpoint: busy={row[0]}, log_pages={row[1]}, checkpointed={row[2]}")
+                    # Always log to confirm checkpoint task is running (ADR-102 debugging)
+                    self.logger.info(f"WAL checkpoint: busy={row[0]}, log_pages={row[1]}, checkpointed={row[2]}")
             except Exception as e:
                 self.logger.warning(f"Periodic WAL checkpoint failed: {e}")
 

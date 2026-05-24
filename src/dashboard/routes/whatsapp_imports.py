@@ -18,10 +18,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
-from ..auth import get_current_user
+from ..auth import get_current_user, require_guild_admin
 from ...data.sqlite.whatsapp_import_repository import (
     SQLiteWhatsAppImportRepository,
     generate_import_id,
@@ -1195,7 +1195,7 @@ async def trigger_drive_scan(
     },
 )
 async def scrub_whatsapp_pii(
-    guild_id: str = Path(..., description="Discord guild ID"),
+    guild_id: str,
     import_id: Optional[str] = Body(None, description="Specific import ID to scrub (optional)"),
     user: dict = Depends(get_current_user),
 ):
@@ -1207,10 +1207,9 @@ async def scrub_whatsapp_pii(
 
     Admin only.
     """
-    _check_guild_access(guild_id, user)
     require_guild_admin(guild_id, user)
 
-    repo = await get_whatsapp_import_repository(guild_id)
+    repo = await get_whatsapp_import_repository()
 
     result = await repo.scrub_existing_messages_pii(import_id=import_id)
 

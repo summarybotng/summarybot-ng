@@ -7,7 +7,7 @@
  * - Generate past (retrospective)
  */
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,8 +16,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, ArrowLeft, ArrowRight, Sparkles, Calendar } from "lucide-react";
+import { Loader2, ArrowLeft, ArrowRight, Sparkles, Calendar, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useGuild } from "@/hooks/useGuilds";
 import { WizardProgress } from "./shared/WizardProgress";
 import { WhatStep } from "./steps/WhatStep";
 import { WhenStep } from "./steps/WhenStep";
@@ -73,6 +74,7 @@ export function SummaryWizard({
   const [hasRestoredSelection, setHasRestoredSelection] = useState(false);
   const [hasLoadedEditData, setHasLoadedEditData] = useState(false);
   const { toast } = useToast();
+  const { data: guild } = useGuild(guildId);
 
   // Load edit schedule data when opening in edit mode
   useEffect(() => {
@@ -260,14 +262,153 @@ export function SummaryWizard({
     (step === "when" && canProceedFromWhen()) ||
     step === "where";
 
+  // Free step navigation
+  const handleStepClick = useCallback((targetStep: WizardStep) => {
+    setStep(targetStep);
+  }, []);
+
+  // Generate English summary of what this schedule will do
+  const summaryText = useMemo(() => {
+    const parts: string[] = [];
+
+    // What: channels/scope
+    const channelNames = state.channelIds
+      .map((id) => {
+        const channel = guild?.channels?.find((c) => c.id === id);
+        return channel ? `#${channel.name}` : null;
+      })
+      .filter(Boolean);
+
+    const categoryName = state.categoryId
+      ? guild?.categories?.find((c) => c.id === state.categoryId)?.name
+      : null;
+
+    let sourceText = "";
+    let channelsForTitle = "";
+    if (state.scope === "guild") {
+      sourceText = "all channels in this server";
+      channelsForTitle = "Server";
+    } else if (state.scope === "category" && categoryName) {
+      sourceText = `all channels in the "${categoryName}" category`;
+      channelsForTitle = categoryName;
+    } else if (channelNames.length > 0) {
+      sourceText = channelNames.length === 1
+        ? channelNames[0]!
+        : `${channelNames.slice(0, -1).join(", ")} and ${channelNames[channelNames.length - 1]}`;
+      channelsForTitle = channelNames.length === 1
+        ? channelNames[0]!.replace("#", "")
+        : `${channelNames.length} channels`;
+    } else {
+      sourceText = "selected channels";
+      channelsForTitle = "Channels";
+    }
+
+    // Platform
+    const platformLabel = state.platform === "discord" ? "Discord" : state.platform === "slack" ? "Slack" : "WhatsApp";
+
+    // Date range calculation
+    let dateRangeText = "";
+    const now = new Date();
+    if (state.whenType === "now") {
+      const hours = state.timeRange === "custom" ? (state.customHours || 24) : parseInt(state.timeRange);
+      const startDate = new Date(now.getTime() - hours * 60 * 60 * 1000);
+      dateRangeText = `${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — ${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    } else if (state.whenType === "recurring") {
+      const hours = state.lookbackHours || 24;
+      dateRangeText = `Last ${hours} hours of messages each run`;
+    } else if (state.whenType === "past") {
+      const fromStr = state.dateFrom ? state.dateFrom.toLocaleDateString() : "?";
+      const toStr = state.dateTo ? state.dateTo.toLocaleDateString() : "?";
+      dateRangeText = `${fromStr} — ${toStr}`;
+    }
+
+    // When: timing
+    let whenText = "";
+    if (state.whenType === "now") {
+      const hours = state.timeRange === "custom" ? state.customHours : parseInt(state.timeRange);
+      whenText = `from the last ${hours} hours`;
+    } else if (state.whenType === "recurring") {
+      const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const freqLabel = state.frequency === "fifteen-minutes" ? "every 15 minutes"
+        : state.frequency === "hourly" ? "every hour"
+        : state.frequency === "every-4-hours" ? "every 4 hours"
+        : state.frequency === "daily" ? "daily"
+        : state.frequency === "weekly" ? `weekly on ${state.scheduleDays.map(d => DAYS[d]).join(", ")}`
+        : state.frequency === "monthly" ? "monthly"
+        : state.frequency;
+      whenText = `${freqLabel} at ${state.scheduleTime} (${state.timezone})`;
+    } else if (state.whenType === "past") {
+      const fromStr = state.dateFrom ? state.dateFrom.toLocaleDateString() : "?";
+      const toStr = state.dateTo ? state.dateTo.toLocaleDateString() : "?";
+      whenText = `for the period ${fromStr} to ${toStr}`;
+    }
+
+    // Where: destinations
+    const destinations: string[] = [];
+    if (state.destinations.dashboard) destinations.push("the dashboard");
+    if (state.destinations.discordChannel && state.destinations.discordChannelId) {
+      const destChannel = guild?.channels?.find((c) => c.id === state.destinations.discordChannelId);
+      destinations.push(destChannel ? `#${destChannel.name}` : "a Discord channel");
+    }
+    if (state.destinations.discordDm) destinations.push("Discord DM");
+    if (state.destinations.webhook) destinations.push("a webhook");
+    if (state.destinations.email) destinations.push("email");
+    if (state.destinations.confluence) destinations.push("Confluence");
+
+    const destText = destinations.length > 0
+      ? destinations.length === 1
+        ? destinations[0]
+        : `${destinations.slice(0, -1).join(", ")} and ${destinations[destinations.length - 1]}`
+      : "the dashboard";
+
+    // Generate title preview
+    const titleTemplate = state.pageTitleTemplate || "{channels} Summary - {date}";
+    const titlePreview = titleTemplate
+      .replace("{channels}", channelsForTitle)
+      .replace("{date}", now.toLocaleDateString());
+
+    // Build the summary
+    if (state.whenType === "now") {
+      parts.push(`Generate a ${state.summaryLength} summary of ${platformLabel} messages in ${sourceText} ${whenText}.`);
+      parts.push(`Date range: ${dateRangeText}.`);
+      parts.push(`Deliver to ${destText}.`);
+    } else if (state.whenType === "recurring") {
+      const actionVerb = isEditMode ? "will continue to summarize" : "will summarize";
+      parts.push(`This schedule ${actionVerb} ${platformLabel} messages in ${sourceText} ${whenText}.`);
+      parts.push(`${dateRangeText}.`);
+      if (state.rollingPeriod !== "none") {
+        const rollLabel = state.rollingPeriod === "weekly" ? "weekly" : state.rollingPeriod === "biweekly" ? "biweekly" : "monthly";
+        parts.push(`Using ${rollLabel} rolling accumulation.`);
+      }
+      parts.push(`Summaries will be delivered to ${destText}.`);
+    } else if (state.whenType === "past") {
+      parts.push(`Generate ${state.summaryLength} summaries of ${platformLabel} messages in ${sourceText} ${whenText}.`);
+      parts.push(`Date range: ${dateRangeText}.`);
+      parts.push(`Deliver to ${destText}.`);
+    }
+
+    return { description: parts.join(" "), title: titlePreview };
+  }, [state, guild, isEditMode]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditMode ? "Edit Schedule" : "Create Summary"}</DialogTitle>
         </DialogHeader>
 
-        <WizardProgress currentStep={step} whenType={state.whenType} />
+        {/* Summary Preview - always visible at top */}
+        <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="h-4 w-4 text-primary shrink-0" />
+            <span className="font-medium text-sm">{summaryText.title}</span>
+          </div>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            {summaryText.description}
+          </p>
+        </div>
+
+        <WizardProgress currentStep={step} whenType={state.whenType} onStepClick={handleStepClick} />
 
         <AnimatePresence mode="wait">
           <motion.div

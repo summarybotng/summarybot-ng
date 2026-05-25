@@ -200,6 +200,44 @@ function RecurringOptions({ state, onChange }: Pick<StepProps, "state" | "onChan
   // Interval schedules don't need time picker
   const isIntervalSchedule = ["fifteen-minutes", "hourly", "every-4-hours"].includes(state.frequency);
 
+  // Determine valid rolling period options based on frequency
+  // Rolling periods need multiple runs within the period to accumulate
+  const getValidRollingPeriods = (freq: ScheduleFrequency) => {
+    switch (freq) {
+      case "fifteen-minutes":
+      case "hourly":
+      case "every-4-hours":
+      case "daily":
+        // High frequency: all rolling periods valid
+        return ["none", "weekly", "biweekly", "monthly"] as const;
+      case "weekly":
+        // Weekly runs: can't do weekly rolling (only 1 run), but biweekly/monthly work
+        return ["none", "biweekly", "monthly"] as const;
+      case "monthly":
+      case "once":
+        // Too infrequent for any rolling accumulation
+        return ["none"] as const;
+      default:
+        return ["none"] as const;
+    }
+  };
+
+  const validRollingPeriods = getValidRollingPeriods(state.frequency);
+  const canUseRolling = validRollingPeriods.length > 1;
+
+  // Auto-reset rolling period if frequency changes to incompatible
+  const handleFrequencyChange = (newFreq: ScheduleFrequency) => {
+    const newValidPeriods = getValidRollingPeriods(newFreq);
+    const updates: Partial<typeof state> = { frequency: newFreq };
+
+    // Reset rolling period if current selection is no longer valid
+    if (state.rollingPeriod !== "none" && !newValidPeriods.includes(state.rollingPeriod as any)) {
+      updates.rollingPeriod = "none";
+    }
+
+    onChange(updates);
+  };
+
   const toggleDay = (day: number) => {
     const newDays = state.scheduleDays.includes(day)
       ? state.scheduleDays.filter((d) => d !== day)
@@ -222,7 +260,7 @@ function RecurringOptions({ state, onChange }: Pick<StepProps, "state" | "onChan
               type="button"
               variant={state.frequency === f.value ? "default" : "outline"}
               size="sm"
-              onClick={() => onChange({ frequency: f.value })}
+              onClick={() => handleFrequencyChange(f.value)}
             >
               {f.label}
             </Button>
@@ -324,88 +362,107 @@ function RecurringOptions({ state, onChange }: Pick<StepProps, "state" | "onChan
         </div>
       )}
 
-      {/* ADR-101: Rolling Period Summaries */}
-      {(state.frequency === "daily" || state.frequency === "weekly") && (
-        <div className="space-y-3 p-3 rounded-md border bg-background">
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm font-medium">Rolling period summary</Label>
-              <p className="text-xs text-muted-foreground">
-                Accumulate content daily into a single period summary
-              </p>
-            </div>
-            <Select
-              value={state.rollingPeriod}
-              onValueChange={(v) => onChange({ rollingPeriod: v as "none" | "weekly" | "biweekly" | "monthly" })}
-            >
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Off</SelectItem>
-                <SelectItem value="weekly">Weekly</SelectItem>
-                <SelectItem value="biweekly">Biweekly</SelectItem>
-                <SelectItem value="monthly">Monthly</SelectItem>
-              </SelectContent>
-            </Select>
+      {/* ADR-101: Rolling Period Summaries (ADR-102: Frequency constraints) */}
+      <div className="space-y-3 p-3 rounded-md border bg-background">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-sm font-medium">Rolling period summary</Label>
+            <p className="text-xs text-muted-foreground">
+              Accumulate runs into a single period summary
+            </p>
           </div>
-
-          {state.rollingPeriod !== "none" && (
-            <>
-              {/* End day for weekly rolling */}
-              {state.rollingPeriod === "weekly" && (
-                <div className="flex items-center gap-3">
-                  <Label className="text-sm">Finalize on</Label>
-                  <div className="flex gap-1">
-                    {DAYS.map((day, i) => (
-                      <Button
-                        key={day}
-                        type="button"
-                        variant={state.rollingEndDay === i ? "default" : "outline"}
-                        size="sm"
-                        className="w-10"
-                        onClick={() => onChange({ rollingEndDay: i })}
-                      >
-                        {day}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Accumulation strategy */}
-              <div className="flex items-center gap-3">
-                <Label className="text-sm">Strategy</Label>
-                <Select
-                  value={state.accumulationStrategy}
-                  onValueChange={(v) => onChange({ accumulationStrategy: v as "append" | "resummarize" | "hybrid" })}
-                >
-                  <SelectTrigger className="w-40">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="hybrid">Hybrid (recommended)</SelectItem>
-                    <SelectItem value="append">Append sections</SelectItem>
-                    <SelectItem value="resummarize">Re-summarize all</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <p className="text-xs text-muted-foreground">
-                {state.rollingPeriod === "weekly" && (
-                  <>Daily runs accumulate into one summary until {DAYS[state.rollingEndDay]}, then a new period starts.</>
-                )}
-                {state.rollingPeriod === "biweekly" && (
-                  <>Content accumulates for two weeks before finalizing and starting fresh.</>
-                )}
-                {state.rollingPeriod === "monthly" && (
-                  <>Content accumulates until month-end, then a new period starts.</>
-                )}
-              </p>
-            </>
-          )}
+          <Select
+            value={state.rollingPeriod}
+            onValueChange={(v) => onChange({ rollingPeriod: v as "none" | "weekly" | "biweekly" | "monthly" })}
+            disabled={!canUseRolling}
+          >
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Off</SelectItem>
+              <SelectItem value="weekly" disabled={!validRollingPeriods.includes("weekly")}>
+                Weekly
+              </SelectItem>
+              <SelectItem value="biweekly" disabled={!validRollingPeriods.includes("biweekly")}>
+                Biweekly
+              </SelectItem>
+              <SelectItem value="monthly" disabled={!validRollingPeriods.includes("monthly")}>
+                Monthly
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-      )}
+
+        {/* Explanation when rolling is unavailable or limited */}
+        {!canUseRolling && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            Rolling periods require a more frequent schedule to accumulate multiple runs.
+            {state.frequency === "monthly" && " Monthly schedules only run once per period."}
+            {state.frequency === "once" && " One-time schedules cannot accumulate."}
+          </p>
+        )}
+        {canUseRolling && state.frequency === "weekly" && !validRollingPeriods.includes("weekly") && (
+          <p className="text-xs text-muted-foreground">
+            Weekly rolling requires a more frequent schedule (daily or more) to accumulate multiple runs within the week.
+          </p>
+        )}
+
+        {state.rollingPeriod !== "none" && (
+          <>
+            {/* End day for weekly rolling */}
+            {state.rollingPeriod === "weekly" && (
+              <div className="flex items-center gap-3">
+                <Label className="text-sm">Finalize on</Label>
+                <div className="flex gap-1">
+                  {DAYS.map((day, i) => (
+                    <Button
+                      key={day}
+                      type="button"
+                      variant={state.rollingEndDay === i ? "default" : "outline"}
+                      size="sm"
+                      className="w-10"
+                      onClick={() => onChange({ rollingEndDay: i })}
+                    >
+                      {day}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Accumulation strategy */}
+            <div className="flex items-center gap-3">
+              <Label className="text-sm">Strategy</Label>
+              <Select
+                value={state.accumulationStrategy}
+                onValueChange={(v) => onChange({ accumulationStrategy: v as "append" | "resummarize" | "hybrid" })}
+              >
+                <SelectTrigger className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="hybrid">Hybrid (recommended)</SelectItem>
+                  <SelectItem value="append">Append sections</SelectItem>
+                  <SelectItem value="resummarize">Re-summarize all</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              {state.rollingPeriod === "weekly" && (
+                <>Runs accumulate into one summary until {DAYS[state.rollingEndDay]}, then a new period starts.</>
+              )}
+              {state.rollingPeriod === "biweekly" && (
+                <>Content accumulates for two weeks before finalizing and starting fresh.</>
+              )}
+              {state.rollingPeriod === "monthly" && (
+                <>Content accumulates until month-end, then a new period starts.</>
+              )}
+            </p>
+          </>
+        )}
+      </div>
 
       {/* Schedule Name with auto-generated suggestion */}
       <div>

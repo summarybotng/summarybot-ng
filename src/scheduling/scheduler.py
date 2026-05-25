@@ -167,6 +167,13 @@ class TaskScheduler:
                 coalesce=True  # Run once if multiple executions missed
             )
 
+            # Sync task.next_run with APScheduler's calculated next fire time
+            # This ensures database stays in sync after restarts
+            job = self.scheduler.get_job(task.id)
+            if job and job.next_run_time:
+                task.next_run = job.next_run_time
+                logger.debug(f"Synced next_run for {task.id}: {task.next_run}")
+
             # Track task
             self.active_tasks[task.id] = task
             self.task_metadata[task.id] = metadata

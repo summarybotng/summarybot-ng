@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Play, Trash2, Calendar, Clock, Pencil, History, MessageSquare, Copy, Check, RefreshCw, LayoutDashboard, Bell, Mail, Globe, FileText, FileStack, ChevronRight } from "lucide-react";
+import { Play, Trash2, Calendar, Clock, Pencil, History, MessageSquare, Copy, Check, RefreshCw, LayoutDashboard, Bell, Mail, Globe, FileText, FileStack, ChevronRight, FastForward, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { Schedule } from "@/types";
@@ -101,6 +101,9 @@ export function ScheduleCard({
   const { guildId } = useParams<{ guildId: string }>();
   const { formatDateTime } = useTimezone();
 
+  // Check if schedule has missed runs (next_run is in the past)
+  const isMissed = schedule.next_run && schedule.is_active && new Date(schedule.next_run) < new Date();
+
   // ADR-104: Fetch rolling summaries for rolling schedules
   const { data: rollingSummaries } = useRollingSummaries(
     guildId || "",
@@ -129,6 +132,12 @@ export function ScheduleCard({
                 <Badge variant={schedule.is_active ? "default" : "secondary"}>
                   {schedule.is_active ? "Active" : "Inactive"}
                 </Badge>
+                {isMissed && (
+                  <Badge variant="destructive" className="gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    Missed
+                  </Badge>
+                )}
                 {/* ADR-051: Platform badge */}
                 <Badge className={getPlatformBadge(schedule.platform).className}>
                   {getPlatformBadge(schedule.platform).icon}
@@ -284,6 +293,20 @@ export function ScheduleCard({
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Prominent Catch Up button when schedule has missed runs */}
+              {isMissed && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => onRunNow(schedule.id)}
+                  disabled={isRunning}
+                  className="gap-1.5 bg-orange-500 hover:bg-orange-600 text-white"
+                >
+                  <FastForward className="h-4 w-4" />
+                  Catch Up
+                </Button>
+              )}
+
               <Switch
                 checked={schedule.is_active}
                 onCheckedChange={(checked) => onToggle(schedule.id, checked)}
@@ -307,15 +330,18 @@ export function ScheduleCard({
                 <Pencil className="h-4 w-4" />
               </Button>
 
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => onRunNow(schedule.id)}
-                disabled={isRunning}
-                title="Run now"
-              >
-                <Play className="h-4 w-4" />
-              </Button>
+              {/* Show Run Now only when not missed (otherwise Catch Up is shown) */}
+              {!isMissed && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onRunNow(schedule.id)}
+                  disabled={isRunning}
+                  title="Run now"
+                >
+                  <Play className="h-4 w-4" />
+                </Button>
+              )}
 
               <AlertDialog>
                 <AlertDialogTrigger asChild>

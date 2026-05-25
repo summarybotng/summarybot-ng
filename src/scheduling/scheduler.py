@@ -458,30 +458,33 @@ class TaskScheduler:
 
     def _create_trigger(self, task: ScheduledTask):
         """Create APScheduler trigger from scheduled task."""
+        # Use task's timezone if set, otherwise fall back to scheduler default
+        task_tz = task.timezone or self.timezone
+
         if task.schedule_type == ScheduleType.ONCE:
             # One-time execution
             run_time = task.next_run or utc_now_naive()
-            return DateTrigger(run_date=run_time, timezone=self.timezone)
+            return DateTrigger(run_date=run_time, timezone=task_tz)
 
         elif task.schedule_type == ScheduleType.FIFTEEN_MINUTES:
             # Every 15 minutes
-            return IntervalTrigger(minutes=15, timezone=self.timezone)
+            return IntervalTrigger(minutes=15, timezone=task_tz)
 
         elif task.schedule_type == ScheduleType.HOURLY:
             # Every hour
-            return IntervalTrigger(hours=1, timezone=self.timezone)
+            return IntervalTrigger(hours=1, timezone=task_tz)
 
         elif task.schedule_type == ScheduleType.EVERY_4_HOURS:
             # Every 4 hours
-            return IntervalTrigger(hours=4, timezone=self.timezone)
+            return IntervalTrigger(hours=4, timezone=task_tz)
 
         elif task.schedule_type == ScheduleType.DAILY:
             # Daily execution
             if task.schedule_time:
                 hour, minute = map(int, task.schedule_time.split(':'))
-                return CronTrigger(hour=hour, minute=minute, timezone=self.timezone)
+                return CronTrigger(hour=hour, minute=minute, timezone=task_tz)
             else:
-                return IntervalTrigger(days=1, timezone=self.timezone)
+                return IntervalTrigger(days=1, timezone=task_tz)
 
         elif task.schedule_type == ScheduleType.WEEKLY:
             # Weekly execution
@@ -497,7 +500,7 @@ class TaskScheduler:
                 day_of_week=day_of_week,
                 hour=hour,
                 minute=minute,
-                timezone=self.timezone
+                timezone=task_tz
             )
 
         elif task.schedule_type == ScheduleType.HALF_WEEKLY:
@@ -517,7 +520,7 @@ class TaskScheduler:
                 day_of_week=day_of_week,
                 hour=hour,
                 minute=minute,
-                timezone=self.timezone
+                timezone=task_tz
             )
 
         elif task.schedule_type == ScheduleType.MONTHLY:
@@ -533,7 +536,7 @@ class TaskScheduler:
                 day=day,
                 hour=hour,
                 minute=minute,
-                timezone=self.timezone
+                timezone=task_tz
             )
 
         elif task.schedule_type == ScheduleType.CUSTOM:
@@ -541,7 +544,7 @@ class TaskScheduler:
             if not task.cron_expression:
                 raise ValueError("Custom schedule requires cron_expression")
 
-            return CronTrigger.from_crontab(task.cron_expression, timezone=self.timezone)
+            return CronTrigger.from_crontab(task.cron_expression, timezone=task_tz)
 
         else:
             raise ValueError(f"Unsupported schedule type: {task.schedule_type}")

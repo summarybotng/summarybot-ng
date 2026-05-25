@@ -367,23 +367,71 @@ export function SummaryWizard({
       .replace("{channels}", channelsForTitle)
       .replace("{date}", now.toLocaleDateString());
 
+    // Split mode description
+    const splitModeText = state.splitMode === "consolidated" ? "combined into one"
+      : state.splitMode === "by-category" ? "split by category"
+      : "split per channel";
+
+    // Perspective description
+    const perspectiveText = state.perspective && state.perspective !== "general"
+      ? ` from a ${state.perspective} perspective`
+      : "";
+
     // Build the summary
     if (state.whenType === "now") {
-      parts.push(`Generate a ${state.summaryLength} summary of ${platformLabel} messages in ${sourceText} ${whenText}.`);
+      parts.push(`Generate a ${state.summaryLength} summary${perspectiveText} of ${platformLabel} messages in ${sourceText} ${whenText}.`);
       parts.push(`Date range: ${dateRangeText}.`);
+      if ((state.scope === "category" || state.scope === "guild") && state.platform === "discord") {
+        parts.push(`Summaries ${splitModeText}.`);
+      }
+      if (state.minMessages > 0) {
+        parts.push(`Requires at least ${state.minMessages} messages.`);
+      }
       parts.push(`Deliver to ${destText}.`);
     } else if (state.whenType === "recurring") {
       const actionVerb = isEditMode ? "will continue to summarize" : "will summarize";
       parts.push(`This schedule ${actionVerb} ${platformLabel} messages in ${sourceText} ${whenText}.`);
       parts.push(`${dateRangeText}.`);
-      if (state.rollingPeriod !== "none") {
-        const rollLabel = state.rollingPeriod === "weekly" ? "weekly" : state.rollingPeriod === "biweekly" ? "biweekly" : "monthly";
-        parts.push(`Using ${rollLabel} rolling accumulation.`);
+      parts.push(`${state.summaryLength.charAt(0).toUpperCase() + state.summaryLength.slice(1)} summaries${perspectiveText}.`);
+      if ((state.scope === "category" || state.scope === "guild") && state.platform === "discord") {
+        parts.push(`Summaries ${splitModeText}.`);
       }
-      parts.push(`Summaries will be delivered to ${destText}.`);
+      if (state.rollingPeriod !== "none") {
+        const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+        const endDayName = DAYS[state.rollingEndDay] || "Saturday";
+        const periodLabel = state.rollingPeriod === "weekly" ? "week"
+          : state.rollingPeriod === "biweekly" ? "two weeks"
+          : "month";
+        const strategyExplain = state.accumulationStrategy === "append"
+          ? "each daily summary is added to build a complete picture"
+          : state.accumulationStrategy === "resummarize"
+          ? "all messages are re-summarized together at the end"
+          : "daily summaries are combined and refined at the end";
+        parts.push(`Rolling ${state.rollingPeriod} period: summaries accumulate over ${periodLabel}, finalizing every ${endDayName}. Strategy: ${strategyExplain}.`);
+      }
+      if (state.enableContinuity) {
+        parts.push(`Continuity enabled (references previous summaries).`);
+      }
+      if (state.minMessages > 0) {
+        parts.push(`Requires at least ${state.minMessages} messages.`);
+      }
+      parts.push(`Deliver to ${destText}.`);
     } else if (state.whenType === "past") {
-      parts.push(`Generate ${state.summaryLength} summaries of ${platformLabel} messages in ${sourceText} ${whenText}.`);
+      const granularityText = state.pastGranularity === "single" ? "a single summary"
+        : state.pastGranularity === "daily" ? "daily summaries"
+        : "weekly summaries";
+      parts.push(`Generate ${granularityText}${perspectiveText} of ${platformLabel} messages in ${sourceText} ${whenText}.`);
       parts.push(`Date range: ${dateRangeText}.`);
+      parts.push(`${state.summaryLength.charAt(0).toUpperCase() + state.summaryLength.slice(1)} detail level.`);
+      if (state.perChannel && state.channelIds.length > 1) {
+        parts.push(`One summary per channel.`);
+      }
+      if (state.forceRegenerate) {
+        parts.push(`Will overwrite existing summaries.`);
+      }
+      if (state.minMessages > 0) {
+        parts.push(`Requires at least ${state.minMessages} messages.`);
+      }
       parts.push(`Deliver to ${destText}.`);
     }
 

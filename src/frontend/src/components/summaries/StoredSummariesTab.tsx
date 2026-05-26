@@ -2046,6 +2046,43 @@ function StoredSummaryDetailSheet({
                       )}
                     </div>
 
+                    {/* ADR-106: Source channels with names */}
+                    {summary.source_channel_ids && summary.source_channel_ids.length > 0 && (
+                      <div className="pt-2 border-t border-border/50">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Hash className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-xs font-medium">
+                            Source Channels ({summary.source_channel_ids.length})
+                            {summary.message_count > 0 && (
+                              <span className="text-muted-foreground font-normal ml-1">
+                                • {summary.message_count} messages
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {summary.source_channel_ids.slice(0, 20).map((channelId) => {
+                            const channel = guild?.channels?.find((c) => c.id === channelId);
+                            return (
+                              <Badge
+                                key={channelId}
+                                variant="secondary"
+                                className="text-xs font-normal"
+                                title={channel ? `#${channel.name}` : channelId}
+                              >
+                                {channel ? `#${channel.name}` : `ID: ${channelId.slice(-6)}`}
+                              </Badge>
+                            );
+                          })}
+                          {summary.source_channel_ids.length > 20 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{summary.source_channel_ids.length - 20} more
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Show any additional unknown metadata fields */}
                     {(() => {
                       const knownKeys = new Set([

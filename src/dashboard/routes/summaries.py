@@ -151,21 +151,36 @@ def _generate_smart_title(
     category_name: Optional[str] = None,
     platform: str = "discord",
     channel_name_map: Optional[Dict[str, str]] = None,
-    timestamp: Optional[datetime] = None,
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
 ) -> str:
     """Generate a smart, context-aware title for summaries.
 
     Rules:
-    - GUILD scope: "Server Summary — {date}"
-    - CATEGORY scope: "{category_name} — {date}"
-    - CHANNEL scope with 1 channel: "#{channel_name} — {date}"
-    - CHANNEL scope with 2-3 channels: "#ch1, #ch2, #ch3 — {date}"
-    - CHANNEL scope with 4+ channels: "{N} channels — {date}"
+    - GUILD scope: "Server Summary — {date_range}"
+    - CATEGORY scope: "{category_name} — {date_range}"
+    - CHANNEL scope with 1 channel: "#{channel_name} — {date_range}"
+    - CHANNEL scope with 2-3 channels: "#ch1, #ch2, #ch3 — {date_range}"
+    - CHANNEL scope with 4+ channels: "{N} channels — {date_range}"
+
+    Date range format:
+    - Same day: "May 26, 09:00 - 17:00"
+    - Different days: "May 24 - May 26"
     """
     from ..models import SummaryScope  # Import from models
 
-    ts = timestamp or utc_now_naive()
-    date_str = ts.strftime("%b %d, %H:%M")
+    # Format date range
+    if start_time and end_time:
+        if start_time.date() == end_time.date():
+            # Same day: "May 26, 09:00 - 17:00"
+            date_str = f"{start_time.strftime('%b %d')}, {start_time.strftime('%H:%M')} - {end_time.strftime('%H:%M')}"
+        else:
+            # Different days: "May 24 - May 26"
+            date_str = f"{start_time.strftime('%b %d')} - {end_time.strftime('%b %d')}"
+    elif end_time:
+        date_str = end_time.strftime("%b %d, %H:%M")
+    else:
+        date_str = utc_now_naive().strftime("%b %d, %H:%M")
 
     # Platform prefix for non-Discord
     prefix = ""
@@ -1350,6 +1365,8 @@ async def generate_summary(
                     category_name=cat_name,
                     platform=platform,
                     channel_name_map=channel_name_map,
+                    start_time=start_time,
+                    end_time=end_time,
                 )
 
                 # Create StoredSummary with source=MANUAL for generate button

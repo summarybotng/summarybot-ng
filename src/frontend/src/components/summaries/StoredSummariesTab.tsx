@@ -1242,6 +1242,7 @@ function StoredSummaryDetailSheet({
   onNavigate?: (summaryId: string) => void;
 }) {
   const { data: summary, isLoading } = useStoredSummary(guildId, summaryId || "");
+  const { data: guild } = useGuild(guildId);  // For channel name resolution
   const { formatDate, formatDateTime, formatTime } = useTimezone();
 
   // Format date range for title display (in user's local timezone)

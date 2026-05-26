@@ -218,7 +218,30 @@ function RecurringOptions({ state, onChange }: Pick<StepProps, "state" | "onChan
   const validRollingPeriods = getValidRollingPeriods(state.frequency);
   const canUseRolling = validRollingPeriods.length > 1;
 
+  // Get recommended lookback for each frequency to cover the interval
+  const getRecommendedLookback = (freq: ScheduleFrequency): number => {
+    switch (freq) {
+      case "fifteen-minutes":
+        return 4;    // 4 hours
+      case "hourly":
+        return 4;    // 4 hours
+      case "every-4-hours":
+        return 24;   // 24 hours (6 runs)
+      case "daily":
+        return 24;   // 24 hours (full day)
+      case "weekly":
+        return 168;  // 7 days (full week)
+      case "monthly":
+        return 168;  // 7 days (max available, monthly needs more)
+      case "once":
+        return 24;   // Default to 24 hours
+      default:
+        return 24;
+    }
+  };
+
   // Auto-reset rolling period if frequency changes to incompatible
+  // Also auto-update lookback to cover the frequency interval
   const handleFrequencyChange = (newFreq: ScheduleFrequency) => {
     const newValidPeriods = getValidRollingPeriods(newFreq);
     const updates: Partial<typeof state> = { frequency: newFreq };
@@ -226,6 +249,12 @@ function RecurringOptions({ state, onChange }: Pick<StepProps, "state" | "onChan
     // Reset rolling period if current selection is no longer valid
     if (state.rollingPeriod !== "none" && !newValidPeriods.includes(state.rollingPeriod as any)) {
       updates.rollingPeriod = "none";
+    }
+
+    // Auto-update lookback to cover the frequency interval
+    const recommendedLookback = getRecommendedLookback(newFreq);
+    if (state.lookbackHours < recommendedLookback) {
+      updates.lookbackHours = recommendedLookback;
     }
 
     onChange(updates);
@@ -319,20 +348,31 @@ function RecurringOptions({ state, onChange }: Pick<StepProps, "state" | "onChan
       <div>
         <Label>Look back period</Label>
         <div className="flex gap-2 mt-2 flex-wrap">
-          {lookbackOptions.map((opt) => (
-            <Button
-              key={opt.value}
-              type="button"
-              variant={state.lookbackHours === opt.value ? "default" : "outline"}
-              size="sm"
-              onClick={() => onChange({ lookbackHours: opt.value })}
-            >
-              {opt.label}
-            </Button>
-          ))}
+          {lookbackOptions.map((opt) => {
+            const recommendedLookback = getRecommendedLookback(state.frequency);
+            const isTooShort = opt.value < recommendedLookback;
+            return (
+              <Button
+                key={opt.value}
+                type="button"
+                variant={state.lookbackHours === opt.value ? "default" : "outline"}
+                size="sm"
+                onClick={() => onChange({ lookbackHours: opt.value })}
+                className={isTooShort ? "opacity-50" : ""}
+                title={isTooShort ? `May miss content (${state.frequency} runs need ${recommendedLookback}h+)` : undefined}
+              >
+                {opt.label}
+              </Button>
+            );
+          })}
         </div>
-        <p className="text-xs text-muted-foreground mt-2">
-          How many hours of messages to include in each summary
+        {state.lookbackHours < getRecommendedLookback(state.frequency) && (
+          <p className="text-xs text-amber-600 mt-2">
+            ⚠️ This lookback may miss content between runs. For {state.frequency} schedules, {getRecommendedLookback(state.frequency) >= 24 ? `${getRecommendedLookback(state.frequency) / 24} days` : `${getRecommendedLookback(state.frequency)} hours`} is recommended.
+          </p>
+        )}
+        <p className="text-xs text-muted-foreground mt-1">
+          How far back to look for messages on each run
         </p>
       </div>
 

@@ -135,19 +135,7 @@ function NowOptions({ state, onChange }: Pick<StepProps, "state" | "onChange">) 
 export function generateScheduleName(state: Pick<StepProps, "state">["state"]): string {
   const parts: string[] = [];
 
-  // Frequency
-  const freqLabels: Record<ScheduleFrequency, string> = {
-    "fifteen-minutes": "15min",
-    "hourly": "Hourly",
-    "every-4-hours": "4hr",
-    "daily": "Daily",
-    "weekly": "Weekly",
-    "monthly": "Monthly",
-    "once": "Once",
-  };
-  parts.push(freqLabels[state.frequency]);
-
-  // Days for weekly
+  // For weekly schedules with specific days, lead with the day(s)
   if (state.frequency === "weekly" && state.scheduleDays.length > 0) {
     const dayNames = state.scheduleDays
       .sort((a, b) => a - b)
@@ -156,23 +144,28 @@ export function generateScheduleName(state: Pick<StepProps, "state">["state"]): 
     parts.push(dayNames);
   }
 
-  // Lookback period
-  if (state.lookbackHours === 168) {
-    parts.push("7d");
-  } else if (state.lookbackHours >= 24) {
-    parts.push(`${state.lookbackHours / 24}d`);
-  } else {
-    parts.push(`${state.lookbackHours}h`);
-  }
-
-  // Continuity
-  if (state.enableContinuity) {
-    parts.push("continuity");
-  }
-
-  // ADR-101: Rolling period
+  // Rolling period takes precedence for schedule type description
   if (state.rollingPeriod && state.rollingPeriod !== "none") {
-    parts.push(`rolling-${state.rollingPeriod}`);
+    const rollingLabels: Record<string, string> = {
+      weekly: "Weekly",
+      biweekly: "Biweekly",
+      monthly: "Monthly",
+    };
+    parts.push(rollingLabels[state.rollingPeriod] || state.rollingPeriod);
+    parts.push("Digest");
+  } else {
+    // Non-rolling: describe the frequency
+    const freqLabels: Record<ScheduleFrequency, string> = {
+      "fifteen-minutes": "15-Minute",
+      "hourly": "Hourly",
+      "every-4-hours": "4-Hour",
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "monthly": "Monthly",
+      "once": "One-Time",
+    };
+    parts.push(freqLabels[state.frequency]);
+    parts.push("Summary");
   }
 
   return parts.join(" ");

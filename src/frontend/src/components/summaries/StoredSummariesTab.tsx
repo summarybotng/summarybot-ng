@@ -1242,7 +1242,36 @@ function StoredSummaryDetailSheet({
   onNavigate?: (summaryId: string) => void;
 }) {
   const { data: summary, isLoading } = useStoredSummary(guildId, summaryId || "");
-  const { formatDateTime, formatTime } = useTimezone();
+  const { formatDate, formatDateTime, formatTime } = useTimezone();
+
+  // Format date range for title display (in user's local timezone)
+  const formatTitleDateRange = () => {
+    if (!summary) return "";
+
+    // For rolling summaries, use rolling period dates
+    const startDate = summary.rolling_period_start || summary.start_time;
+    const endDate = summary.rolling_accumulated_through || summary.end_time;
+
+    if (!startDate) return "";
+
+    const start = new Date(startDate);
+    const end = endDate ? new Date(endDate) : start;
+
+    // Check if same day (in user's TZ)
+    const startStr = formatDate(start, { month: "short", day: "numeric" });
+    const endStr = formatDate(end, { month: "short", day: "numeric" });
+
+    if (startStr === endStr) {
+      // Same day - show time range if we have both times
+      if (summary.start_time && summary.end_time) {
+        return ` — ${startStr}, ${formatTime(start)} - ${formatTime(end)}`;
+      }
+      return ` — ${startStr}`;
+    }
+
+    // Different days - show date range
+    return ` — ${startStr} - ${endStr}`;
+  };
   const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
   const [regenerateOptions, setRegenerateOptions] = useState<RegenerateOptions>({});
 
@@ -1290,7 +1319,7 @@ function StoredSummaryDetailSheet({
           <>
             <SheetHeader>
               <div className="flex items-center justify-between gap-2">
-                <SheetTitle className="flex-1">{summary.title}</SheetTitle>
+                <SheetTitle className="flex-1">{summary.title}{formatTitleDateRange()}</SheetTitle>
                 {/* Platform and source badges */}
                 <div className="flex items-center gap-2">
                   {summary.archive_source_key && (() => {

@@ -1358,7 +1358,11 @@ Continue from this context for Week {week_number}. Reference previous discussion
         rolling_period: str,
         period_start: datetime,
     ) -> str:
-        """Generate title for rolling summary using schedule's title_template or default.
+        """Generate title for rolling summary (without dates).
+
+        The title contains only the schedule name. The frontend will
+        append the date range in the user's local timezone from
+        rolling_period_start and rolling_accumulated_through.
 
         Args:
             task: The SummaryTask with scheduled_task reference
@@ -1366,31 +1370,23 @@ Continue from this context for Week {week_number}. Reference previous discussion
             period_start: Start date of the rolling period
 
         Returns:
-            Generated title string
+            Generated title string (schedule name only)
         """
         schedule_name = task.scheduled_task.name if task.scheduled_task else "Summary"
         title_template = getattr(task.scheduled_task, 'title_template', None) if task.scheduled_task else None
 
-        # Calculate period string and end date
-        if rolling_period == 'weekly':
-            period_str = f"Week of {period_start.strftime('%b %d')}"
-            period_end = period_start + timedelta(days=6)
-        elif rolling_period == 'biweekly':
-            period_str = f"Biweek of {period_start.strftime('%b %d')}"
-            period_end = period_start + timedelta(days=13)
-        elif rolling_period == 'monthly':
-            period_str = period_start.strftime('%B %Y')
-            # End of month
-            if period_start.month == 12:
-                period_end = period_start.replace(year=period_start.year + 1, month=1, day=1) - timedelta(days=1)
-            else:
-                period_end = period_start.replace(month=period_start.month + 1, day=1) - timedelta(days=1)
-        else:
-            period_str = period_start.strftime('%b %d')
-            period_end = period_start
-
         if title_template:
-            # Apply template substitutions - use period_start for dates (not now)
+            # Apply template substitutions for custom templates
+            # Calculate period string for template compatibility
+            if rolling_period == 'weekly':
+                period_str = f"Week of {period_start.strftime('%b %d')}"
+            elif rolling_period == 'biweekly':
+                period_str = f"Biweek of {period_start.strftime('%b %d')}"
+            elif rolling_period == 'monthly':
+                period_str = period_start.strftime('%B %Y')
+            else:
+                period_str = period_start.strftime('%b %d')
+
             result = title_template
             result = result.replace('{date}', period_start.strftime('%b %d, %Y'))
             result = result.replace('{time}', period_start.strftime('%H:%M'))
@@ -1398,7 +1394,7 @@ Continue from this context for Week {week_number}. Reference previous discussion
             result = result.replace('{schedule}', schedule_name)
             result = result.replace('{period}', period_str)
             result = result.replace('{weekday}', period_start.strftime('%A'))
-            # Channel placeholders - simplified for rolling summaries
+            # Channel placeholders
             channel_ids = task.get_all_channel_ids()
             result = result.replace('{channel_count}', str(len(channel_ids)))
             result = result.replace('{channels}', f"{len(channel_ids)} channels")
@@ -1412,8 +1408,8 @@ Continue from this context for Week {week_number}. Reference previous discussion
             result = result.replace('{platform}', platform_display)
             return result
 
-        # Default title: use schedule name with period
-        return f"{schedule_name} - {period_str}"
+        # Default: just the schedule name (frontend adds date range in user's TZ)
+        return schedule_name
 
     async def _track_access_issues(
         self,

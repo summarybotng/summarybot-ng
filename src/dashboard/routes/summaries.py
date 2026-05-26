@@ -151,36 +151,20 @@ def _generate_smart_title(
     category_name: Optional[str] = None,
     platform: str = "discord",
     channel_name_map: Optional[Dict[str, str]] = None,
-    start_time: Optional[datetime] = None,
-    end_time: Optional[datetime] = None,
 ) -> str:
-    """Generate a smart, context-aware title for summaries.
+    """Generate a smart, context-aware title for summaries (without dates).
+
+    The title contains only the scope/channel context. The frontend will
+    append the date range in the user's local timezone from start_time/end_time.
 
     Rules:
-    - GUILD scope: "Server Summary — {date_range}"
-    - CATEGORY scope: "{category_name} — {date_range}"
-    - CHANNEL scope with 1 channel: "#{channel_name} — {date_range}"
-    - CHANNEL scope with 2-3 channels: "#ch1, #ch2, #ch3 — {date_range}"
-    - CHANNEL scope with 4+ channels: "{N} channels — {date_range}"
-
-    Date range format:
-    - Same day: "May 26, 09:00 - 17:00"
-    - Different days: "May 24 - May 26"
+    - GUILD scope: "{ServerName} Summary"
+    - CATEGORY scope: "{category_name}"
+    - CHANNEL scope with 1 channel: "#{channel_name}"
+    - CHANNEL scope with 2-3 channels: "#ch1, #ch2, #ch3"
+    - CHANNEL scope with 4+ channels: "{N} channels"
     """
     from ..models import SummaryScope  # Import from models
-
-    # Format date range
-    if start_time and end_time:
-        if start_time.date() == end_time.date():
-            # Same day: "May 26, 09:00 - 17:00"
-            date_str = f"{start_time.strftime('%b %d')}, {start_time.strftime('%H:%M')} - {end_time.strftime('%H:%M')}"
-        else:
-            # Different days: "May 24 - May 26"
-            date_str = f"{start_time.strftime('%b %d')} - {end_time.strftime('%b %d')}"
-    elif end_time:
-        date_str = end_time.strftime("%b %d, %H:%M")
-    else:
-        date_str = utc_now_naive().strftime("%b %d, %H:%M")
 
     # Platform prefix for non-Discord
     prefix = ""
@@ -192,22 +176,22 @@ def _generate_smart_title(
     # GUILD scope
     if scope == SummaryScope.GUILD:
         guild_name = guild.name if guild and hasattr(guild, 'name') else "Server"
-        return f"{prefix}{guild_name} Summary — {date_str}"
+        return f"{prefix}{guild_name} Summary"
 
     # CATEGORY scope
     if scope == SummaryScope.CATEGORY:
         cat_name = category_name or "Category"
-        return f"{prefix}{cat_name} — {date_str}"
+        return f"{prefix}{cat_name}"
 
     # CHANNEL scope - depends on channel count
     if not channel_ids:
-        return f"{prefix}Summary — {date_str}"
+        return f"{prefix}Summary"
 
     num_channels = len(channel_ids)
 
     if num_channels >= 4:
         # Many channels - just show count
-        return f"{prefix}{num_channels} channels — {date_str}"
+        return f"{prefix}{num_channels} channels"
 
     # 1-3 channels - show names
     channel_names = []
@@ -232,7 +216,7 @@ def _generate_smart_title(
             # Fallback to truncated ID
             channel_names.append(f"#{cid[:8]}" if platform == "discord" else cid[:8])
 
-    return f"{prefix}{', '.join(channel_names)} — {date_str}"
+    return f"{prefix}{', '.join(channel_names)}"
 
 
 @router.get(
@@ -1365,8 +1349,6 @@ async def generate_summary(
                     category_name=cat_name,
                     platform=platform,
                     channel_name_map=channel_name_map,
-                    start_time=start_time,
-                    end_time=end_time,
                 )
 
                 # Create StoredSummary with source=MANUAL for generate button

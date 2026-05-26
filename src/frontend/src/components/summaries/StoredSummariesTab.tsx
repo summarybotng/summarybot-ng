@@ -1811,15 +1811,21 @@ function StoredSummaryDetailSheet({
                 </Card>
               )}
 
-              {/* ADR-010: How This Summary Was Generated - ALL METADATA */}
+              {/* ADR-010/106: Metadata Panel - Collapsed by default */}
               {summary.metadata && (
                 <Card className="bg-muted/30">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      <Settings2 className="h-4 w-4" />
-                      How This Summary Was Generated
-                    </CardTitle>
-                  </CardHeader>
+                  <details className="group">
+                    <summary className="cursor-pointer list-none">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Settings2 className="h-4 w-4" />
+                          Metadata
+                          <span className="text-xs text-muted-foreground font-normal ml-auto group-open:hidden">
+                            Click to expand
+                          </span>
+                        </CardTitle>
+                      </CardHeader>
+                    </summary>
                   <CardContent className="space-y-3">
                     {/* ADR-073/074: Privacy indicator - shown prominently if contains restricted channels */}
                     {summary.contains_sensitive_channels && (
@@ -1881,12 +1887,28 @@ function StoredSummaryDetailSheet({
 
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       {/* Core generation settings */}
-                      {(summary.metadata.model_used || summary.metadata.model) && (
+                      {(summary.metadata.claude_model || summary.metadata.model_used || summary.metadata.model) && (
                         <div>
                           <span className="text-muted-foreground">Model:</span>{" "}
                           <span className="font-medium flex items-center gap-1 inline-flex">
                             <Sparkles className="h-3 w-3" />
-                            {(summary.metadata.model_used || summary.metadata.model)?.replace("claude-", "").replace(/-/g, " ")}
+                            {(summary.metadata.claude_model || summary.metadata.model_used || summary.metadata.model)?.replace("anthropic/", "").replace("claude-", "").replace(/-/g, " ")}
+                          </span>
+                          {summary.metadata.requested_model &&
+                           summary.metadata.requested_model !== summary.metadata.claude_model && (
+                            <span className="text-xs text-amber-600 dark:text-amber-400 ml-1" title={`Originally requested: ${summary.metadata.requested_model}`}>
+                              (upgraded)
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {/* Show requested model if different */}
+                      {summary.metadata.requested_model &&
+                       summary.metadata.requested_model !== summary.metadata.claude_model && (
+                        <div>
+                          <span className="text-muted-foreground">Requested:</span>{" "}
+                          <span className="font-medium text-muted-foreground">
+                            {summary.metadata.requested_model.replace("anthropic/", "").replace("claude-", "").replace(/-/g, " ")}
                           </span>
                         </div>
                       )}
@@ -1979,6 +2001,47 @@ function StoredSummaryDetailSheet({
                         <div>
                           <span className="text-muted-foreground">Cache:</span>{" "}
                           <span className="font-medium capitalize">{summary.metadata.cache_status}</span>
+                        </div>
+                      )}
+                      {/* ADR-106: Extended metadata fields */}
+                      {summary.metadata.retry_of && (
+                        <div className="col-span-2">
+                          <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <RefreshCw className="h-3 w-3" />
+                            Retry of failed job: <code className="text-xs bg-muted px-1 rounded">{summary.metadata.retry_of}</code>
+                          </span>
+                        </div>
+                      )}
+                      {summary.metadata.api_response_id && (
+                        <div>
+                          <span className="text-muted-foreground">API Response:</span>{" "}
+                          <code className="text-xs font-medium bg-muted px-1 rounded" title={summary.metadata.api_response_id}>
+                            {summary.metadata.api_response_id.slice(0, 12)}...
+                          </code>
+                        </div>
+                      )}
+                      {summary.metadata.generation_attempts?.total_latency_ms && (
+                        <div>
+                          <span className="text-muted-foreground">Latency:</span>{" "}
+                          <span className="font-medium">{(summary.metadata.generation_attempts.total_latency_ms / 1000).toFixed(2)}s</span>
+                        </div>
+                      )}
+                      {summary.metadata.generation_attempts?.total_attempts > 1 && (
+                        <div>
+                          <span className="text-muted-foreground">Attempts:</span>{" "}
+                          <span className="font-medium text-amber-600 dark:text-amber-400">
+                            {summary.metadata.generation_attempts.total_attempts}
+                          </span>
+                        </div>
+                      )}
+                      {summary.metadata.extraction_stats && (
+                        <div className="col-span-2 pt-1">
+                          <span className="text-muted-foreground text-xs">Extracted:</span>{" "}
+                          <span className="text-xs">
+                            {summary.metadata.extraction_stats.key_points || 0} key points,{" "}
+                            {summary.metadata.extraction_stats.action_items || 0} actions,{" "}
+                            {summary.metadata.extraction_stats.reference_count || 0} references
+                          </span>
                         </div>
                       )}
                     </div>
@@ -2109,6 +2172,7 @@ function StoredSummaryDetailSheet({
                       </div>
                     )}
                   </CardContent>
+                  </details>
                 </Card>
               )}
             </div>

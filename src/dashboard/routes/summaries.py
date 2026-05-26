@@ -5,7 +5,7 @@ Summary routes for dashboard API.
 import logging
 import asyncio
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 
 from ..auth import get_current_user, require_guild_admin, is_guild_admin
@@ -142,6 +142,82 @@ def _get_guild_or_404(guild_id: str):
         )
 
     return guild
+
+
+def _generate_smart_title(
+    scope: "SummaryScope",
+    channel_ids: List[str],
+    guild: Optional[object] = None,
+    category_name: Optional[str] = None,
+    platform: str = "discord",
+    channel_name_map: Optional[Dict[str, str]] = None,
+    timestamp: Optional[datetime] = None,
+) -> str:
+    """Generate a smart, context-aware title for summaries.
+
+    Rules:
+    - GUILD scope: "Server Summary — {date}"
+    - CATEGORY scope: "{category_name} — {date}"
+    - CHANNEL scope with 1 channel: "#{channel_name} — {date}"
+    - CHANNEL scope with 2-3 channels: "#ch1, #ch2, #ch3 — {date}"
+    - CHANNEL scope with 4+ channels: "{N} channels — {date}"
+    """
+    from ..models import SummaryScope  # Import from models
+
+    ts = timestamp or utc_now_naive()
+    date_str = ts.strftime("%b %d, %H:%M")
+
+    # Platform prefix for non-Discord
+    prefix = ""
+    if platform == "slack":
+        prefix = "Slack: "
+    elif platform == "whatsapp":
+        prefix = "WhatsApp: "
+
+    # GUILD scope
+    if scope == SummaryScope.GUILD:
+        guild_name = guild.name if guild and hasattr(guild, 'name') else "Server"
+        return f"{prefix}{guild_name} Summary — {date_str}"
+
+    # CATEGORY scope
+    if scope == SummaryScope.CATEGORY:
+        cat_name = category_name or "Category"
+        return f"{prefix}{cat_name} — {date_str}"
+
+    # CHANNEL scope - depends on channel count
+    if not channel_ids:
+        return f"{prefix}Summary — {date_str}"
+
+    num_channels = len(channel_ids)
+
+    if num_channels >= 4:
+        # Many channels - just show count
+        return f"{prefix}{num_channels} channels — {date_str}"
+
+    # 1-3 channels - show names
+    channel_names = []
+    for cid in channel_ids[:3]:
+        if platform == "discord" and guild:
+            try:
+                ch = guild.get_channel(int(cid))
+                if ch and hasattr(ch, 'name'):
+                    channel_names.append(f"#{ch.name}")
+                    continue
+            except (ValueError, AttributeError):
+                pass
+
+        # Slack/WhatsApp or fallback
+        if channel_name_map and cid in channel_name_map:
+            name = channel_name_map[cid]
+            if platform == "discord":
+                channel_names.append(f"#{name}")
+            else:
+                channel_names.append(name)
+        else:
+            # Fallback to truncated ID
+            channel_names.append(f"#{cid[:8]}" if platform == "discord" else cid[:8])
+
+    return f"{prefix}{', '.join(channel_names)} — {date_str}"
 
 
 @router.get(
@@ -772,6 +848,7 @@ async def generate_summary(
     # Resolve channel_ids based on scope
     from ..models import SummaryScope
     channel_ids = []
+    category_name = None  # Will be set if scope is CATEGORY (Discord only)
 
     if is_slack:
         # Slack channel resolution
@@ -831,6 +908,8 @@ async def generate_summary(
                     status_code=404,
                     detail={"code": "CATEGORY_NOT_FOUND", "message": "Category not found"},
                 )
+            # Store category name for title generation
+            category_name = getattr(category, 'name', None)
             # Get text channels in this category
             channel_ids = [str(c.id) for c in guild.text_channels if c.category_id == category.id]
             if not channel_ids:
@@ -1261,31 +1340,17 @@ async def generate_summary(
             logger.info(f"[{job_id}] Getting stored summary repository...")
             stored_repo = await get_stored_summary_repository()
             if stored_repo:
-                # Generate descriptive title
-                channel_names = []
-                if is_slack:
-                    # For Slack, use channel IDs (we could fetch names but keep it simple)
-                    for cid in channel_ids[:3]:
-                        channel_names.append(f"#{cid[:8]}")  # Truncate long Slack channel IDs
-                    if len(channel_ids) > 3:
-                        channel_names.append(f"+{len(channel_ids) - 3} more")
-                    title = f"Slack: {', '.join(channel_names) or 'Summary'} — {utc_now_naive().strftime('%b %d, %H:%M')}"
-                elif is_whatsapp:
-                    # For WhatsApp, use chat names from fetcher (ADR-081)
-                    for cid in channel_ids[:3]:
-                        chat_name = channel_name_map.get(cid, cid[:8])
-                        channel_names.append(chat_name)
-                    if len(channel_ids) > 3:
-                        channel_names.append(f"+{len(channel_ids) - 3} more")
-                    title = f"WhatsApp: {', '.join(channel_names) or 'Summary'} — {utc_now_naive().strftime('%b %d, %H:%M')}"
-                else:
-                    for cid in channel_ids[:3]:  # Limit to 3 channels in title
-                        ch = guild.get_channel(int(cid))
-                        if ch:
-                            channel_names.append(f"#{ch.name}")
-                    if len(channel_ids) > 3:
-                        channel_names.append(f"+{len(channel_ids) - 3} more")
-                    title = f"{', '.join(channel_names) or 'Summary'} — {utc_now_naive().strftime('%b %d, %H:%M')}"
+                # Generate smart title based on scope
+                # category_name is set above if scope is CATEGORY
+                cat_name = category_name if body.scope == SummaryScope.CATEGORY else None
+                title = _generate_smart_title(
+                    scope=body.scope,
+                    channel_ids=channel_ids,
+                    guild=guild if not is_slack and not is_whatsapp else None,
+                    category_name=cat_name,
+                    platform=platform,
+                    channel_name_map=channel_name_map,
+                )
 
                 # Create StoredSummary with source=MANUAL for generate button
                 stored_summary = StoredSummary(

@@ -63,13 +63,18 @@ export interface WizardState {
     dashboard: boolean;
     discordChannel: boolean;
     discordChannelId: string;
+    discordChannelRollingIntermediate: boolean;  // ADR-108: Deliver during rolling period
     discordDm: boolean;        // ADR-047: Discord DM delivery
     discordDmUserId: string;   // ADR-047: Discord user ID for DM
+    discordDmRollingIntermediate: boolean;  // ADR-108
     webhook: boolean;
     webhookUrl: string;
+    webhookRollingIntermediate: boolean;  // ADR-108
     email: boolean;
     emailAddresses: string;
+    emailRollingIntermediate: boolean;  // ADR-108
     confluence: boolean;       // ADR-099: Publish to Confluence
+    confluenceRollingIntermediate: boolean;  // ADR-108
   };
 
   // Page title template (for published destinations)
@@ -125,13 +130,18 @@ export const initialWizardState: WizardState = {
     dashboard: true,
     discordChannel: false,
     discordChannelId: "",
+    discordChannelRollingIntermediate: false,  // ADR-108
     discordDm: false,        // ADR-047
     discordDmUserId: "",     // ADR-047
+    discordDmRollingIntermediate: false,  // ADR-108
     webhook: false,
     webhookUrl: "",
+    webhookRollingIntermediate: false,  // ADR-108
     email: false,
     emailAddresses: "",
+    emailRollingIntermediate: false,  // ADR-108
     confluence: false,       // ADR-099
+    confluenceRollingIntermediate: false,  // ADR-108
   },
 
   // Page title template
@@ -246,13 +256,18 @@ export function scheduleToWizardState(schedule: {
       dashboard: !!dashboardDest,
       discordChannel: !!discordChannelDest,
       discordChannelId: discordChannelDest?.target || "",
+      discordChannelRollingIntermediate: discordChannelDest?.rolling_deliver_intermediate ?? false,  // ADR-108
       discordDm: !!discordDmDest,
       discordDmUserId: discordDmDest?.target || "",
+      discordDmRollingIntermediate: discordDmDest?.rolling_deliver_intermediate ?? false,  // ADR-108
       webhook: !!webhookDest,
       webhookUrl: webhookDest?.target || "",
+      webhookRollingIntermediate: webhookDest?.rolling_deliver_intermediate ?? false,  // ADR-108
       email: !!emailDest,
       emailAddresses: emailDest?.target || "",
+      emailRollingIntermediate: emailDest?.rolling_deliver_intermediate ?? false,  // ADR-108
       confluence: !!confluenceDest,
+      confluenceRollingIntermediate: confluenceDest?.rolling_deliver_intermediate ?? false,  // ADR-108
     },
 
     // Page title template

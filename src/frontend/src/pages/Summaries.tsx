@@ -263,21 +263,46 @@ export function Summaries() {
       destinations: [
         { type: "dashboard", target: "default", format: "embed" },
         ...(state.destinations.discordChannel && state.destinations.discordChannelId
-          ? [{ type: "discord_channel" as const, target: state.destinations.discordChannelId, format: "embed" as const }]
+          ? [{
+              type: "discord_channel" as const,
+              target: state.destinations.discordChannelId,
+              format: "embed" as const,
+              rolling_deliver_intermediate: state.destinations.discordChannelRollingIntermediate,  // ADR-108
+            }]
           : []),
         // ADR-047: Discord DM destination
         ...(state.destinations.discordDm && state.destinations.discordDmUserId
-          ? [{ type: "discord_dm" as const, target: state.destinations.discordDmUserId, format: "embed" as const }]
+          ? [{
+              type: "discord_dm" as const,
+              target: state.destinations.discordDmUserId,
+              format: "embed" as const,
+              rolling_deliver_intermediate: state.destinations.discordDmRollingIntermediate,  // ADR-108
+            }]
           : []),
         ...(state.destinations.webhook && state.destinations.webhookUrl
-          ? [{ type: "webhook" as const, target: state.destinations.webhookUrl, format: "json" as const }]
+          ? [{
+              type: "webhook" as const,
+              target: state.destinations.webhookUrl,
+              format: "json" as const,
+              rolling_deliver_intermediate: state.destinations.webhookRollingIntermediate,  // ADR-108
+            }]
           : []),
         ...(state.destinations.email && state.destinations.emailAddresses
-          ? [{ type: "email" as const, target: state.destinations.emailAddresses, format: "html" as const }]
+          ? [{
+              type: "email" as const,
+              target: state.destinations.emailAddresses,
+              format: "html" as const,
+              rolling_deliver_intermediate: state.destinations.emailRollingIntermediate,  // ADR-108
+            }]
           : []),
         // ADR-099: Confluence destination
         ...(state.destinations.confluence
-          ? [{ type: "confluence" as const, target: "default", format: "adf" as const }]
+          ? [{
+              type: "confluence" as const,
+              target: "default",
+              format: "adf" as const,
+              rolling_deliver_intermediate: state.destinations.confluenceRollingIntermediate,  // ADR-108
+            }]
           : []),
       ],
       summary_options: {
@@ -318,19 +343,44 @@ export function Summaries() {
         destinations: [
           { type: "dashboard", target: "default", format: "embed" },
           ...(state.destinations.discordChannel && state.destinations.discordChannelId
-            ? [{ type: "discord_channel" as const, target: state.destinations.discordChannelId, format: "embed" as const }]
+            ? [{
+                type: "discord_channel" as const,
+                target: state.destinations.discordChannelId,
+                format: "embed" as const,
+                rolling_deliver_intermediate: state.destinations.discordChannelRollingIntermediate,  // ADR-108
+              }]
             : []),
           ...(state.destinations.discordDm && state.destinations.discordDmUserId
-            ? [{ type: "discord_dm" as const, target: state.destinations.discordDmUserId, format: "embed" as const }]
+            ? [{
+                type: "discord_dm" as const,
+                target: state.destinations.discordDmUserId,
+                format: "embed" as const,
+                rolling_deliver_intermediate: state.destinations.discordDmRollingIntermediate,  // ADR-108
+              }]
             : []),
           ...(state.destinations.webhook && state.destinations.webhookUrl
-            ? [{ type: "webhook" as const, target: state.destinations.webhookUrl, format: "json" as const }]
+            ? [{
+                type: "webhook" as const,
+                target: state.destinations.webhookUrl,
+                format: "json" as const,
+                rolling_deliver_intermediate: state.destinations.webhookRollingIntermediate,  // ADR-108
+              }]
             : []),
           ...(state.destinations.email && state.destinations.emailAddresses
-            ? [{ type: "email" as const, target: state.destinations.emailAddresses, format: "html" as const }]
+            ? [{
+                type: "email" as const,
+                target: state.destinations.emailAddresses,
+                format: "html" as const,
+                rolling_deliver_intermediate: state.destinations.emailRollingIntermediate,  // ADR-108
+              }]
             : []),
           ...(state.destinations.confluence
-            ? [{ type: "confluence" as const, target: "default", format: "adf" as const }]
+            ? [{
+                type: "confluence" as const,
+                target: "default",
+                format: "adf" as const,
+                rolling_deliver_intermediate: state.destinations.confluenceRollingIntermediate,  // ADR-108
+              }]
             : []),
         ],
         summary_options: {

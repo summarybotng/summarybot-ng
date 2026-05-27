@@ -592,18 +592,35 @@ class TaskExecutor:
                     "summary_id": rolling_summary.id,
                 }]
 
-                # ADR-102: Execute non-dashboard deliveries for rolling summaries
-                # Only deliver when finalized OR when explicitly configured
-                if rolling_summary.rolling_finalized:
-                    other_destinations = [d for d in task.destinations if d.type.value != "dashboard"]
-                    if other_destinations:
+                # ADR-102/ADR-108: Execute non-dashboard deliveries for rolling summaries
+                # Deliver when:
+                # - Finalized: all non-dashboard destinations
+                # - Intermediate: only destinations with rolling_deliver_intermediate=True
+                other_destinations = [d for d in task.destinations if d.type.value != "dashboard"]
+                if other_destinations:
+                    if rolling_summary.rolling_finalized:
+                        # Finalized: deliver to all destinations
+                        destinations_to_deliver = other_destinations
                         logger.info(
-                            f"ADR-102: Executing {len(other_destinations)} delivery strategies "
+                            f"ADR-102: Executing {len(destinations_to_deliver)} delivery strategies "
                             f"for finalized rolling summary {rolling_summary.id}"
                         )
+                    else:
+                        # Intermediate: only deliver to destinations with rolling_deliver_intermediate=True
+                        destinations_to_deliver = [
+                            d for d in other_destinations
+                            if getattr(d, 'rolling_deliver_intermediate', False)
+                        ]
+                        if destinations_to_deliver:
+                            logger.info(
+                                f"ADR-108: Executing {len(destinations_to_deliver)} intermediate deliveries "
+                                f"for in-progress rolling summary {rolling_summary.id}"
+                            )
+
+                    if destinations_to_deliver:
                         other_results = await self._deliver_summary(
                             summary=rolling_summary.summary_result,
-                            destinations=other_destinations,
+                            destinations=destinations_to_deliver,
                             task=task,
                         )
                         delivery_results.extend(other_results)

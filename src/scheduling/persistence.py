@@ -185,7 +185,8 @@ class TaskPersistence:
                     "type": dest.type.value,
                     "target": dest.target,
                     "format": dest.format,
-                    "enabled": dest.enabled
+                    "enabled": dest.enabled,
+                    "rolling_deliver_intermediate": getattr(dest, 'rolling_deliver_intermediate', False),  # ADR-108
                 }
                 for dest in task.destinations
             ],
@@ -238,7 +239,8 @@ class TaskPersistence:
                 type=DestinationType(dest["type"]),
                 target=dest["target"],
                 format=dest["format"],
-                enabled=dest["enabled"]
+                enabled=dest["enabled"],
+                rolling_deliver_intermediate=dest.get("rolling_deliver_intermediate", False),  # ADR-108
             )
             for dest in data.get("destinations", [])
         ]

@@ -446,6 +446,7 @@ class DestinationResponse(BaseModel):
     type: str
     target: str
     format: str = "embed"
+    rolling_deliver_intermediate: bool = False  # ADR-108: Deliver during rolling period
 
 
 class ScheduleListItem(BaseModel):

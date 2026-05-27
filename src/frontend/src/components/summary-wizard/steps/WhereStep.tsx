@@ -40,6 +40,9 @@ export function WhereStep({ state, onChange, guildId }: StepProps) {
 
   const textChannels = guild?.channels.filter((c) => c.type === "text") || [];
 
+  // ADR-108: Show rolling delivery options when a rolling period is selected
+  const hasRollingPeriod = state.rollingPeriod && state.rollingPeriod !== "none";
+
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-medium">Where should we deliver each summary?</h3>
@@ -80,28 +83,49 @@ export function WhereStep({ state, onChange, guildId }: StepProps) {
               <span className="font-medium">Post to Discord channel</span>
             </div>
             {state.destinations.discordChannel && (
-              <Select
-                value={state.destinations.discordChannelId}
-                onValueChange={(v) =>
-                  onChange({
-                    destinations: {
-                      ...state.destinations,
-                      discordChannelId: v,
-                    },
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select channel" />
-                </SelectTrigger>
-                <SelectContent>
-                  {textChannels.map((ch) => (
-                    <SelectItem key={ch.id} value={ch.id}>
-                      #{ch.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <>
+                <Select
+                  value={state.destinations.discordChannelId}
+                  onValueChange={(v) =>
+                    onChange({
+                      destinations: {
+                        ...state.destinations,
+                        discordChannelId: v,
+                      },
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select channel" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {textChannels.map((ch) => (
+                      <SelectItem key={ch.id} value={ch.id}>
+                        #{ch.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {hasRollingPeriod && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground pl-1">
+                    <Checkbox
+                      id="discord-rolling"
+                      checked={state.destinations.discordChannelRollingIntermediate}
+                      onCheckedChange={(checked) =>
+                        onChange({
+                          destinations: {
+                            ...state.destinations,
+                            discordChannelRollingIntermediate: !!checked,
+                          },
+                        })
+                      }
+                    />
+                    <label htmlFor="discord-rolling" className="cursor-pointer">
+                      Deliver on each run (not just when finalized)
+                    </label>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -129,18 +153,39 @@ export function WhereStep({ state, onChange, guildId }: StepProps) {
               Send directly to a user via DM
             </p>
             {state.destinations.discordDm && (
-              <Input
-                placeholder="Discord User ID (e.g., 123456789012345678)"
-                value={state.destinations.discordDmUserId}
-                onChange={(e) =>
-                  onChange({
-                    destinations: {
-                      ...state.destinations,
-                      discordDmUserId: e.target.value,
-                    },
-                  })
-                }
-              />
+              <>
+                <Input
+                  placeholder="Discord User ID (e.g., 123456789012345678)"
+                  value={state.destinations.discordDmUserId}
+                  onChange={(e) =>
+                    onChange({
+                      destinations: {
+                        ...state.destinations,
+                        discordDmUserId: e.target.value,
+                      },
+                    })
+                  }
+                />
+                {hasRollingPeriod && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground pl-1">
+                    <Checkbox
+                      id="dm-rolling"
+                      checked={state.destinations.discordDmRollingIntermediate}
+                      onCheckedChange={(checked) =>
+                        onChange({
+                          destinations: {
+                            ...state.destinations,
+                            discordDmRollingIntermediate: !!checked,
+                          },
+                        })
+                      }
+                    />
+                    <label htmlFor="dm-rolling" className="cursor-pointer">
+                      Deliver on each run (not just when finalized)
+                    </label>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -165,19 +210,40 @@ export function WhereStep({ state, onChange, guildId }: StepProps) {
               <span className="font-medium">Send to webhook</span>
             </div>
             {state.destinations.webhook && (
-              <Input
-                type="url"
-                placeholder="https://..."
-                value={state.destinations.webhookUrl}
-                onChange={(e) =>
-                  onChange({
-                    destinations: {
-                      ...state.destinations,
-                      webhookUrl: e.target.value,
-                    },
-                  })
-                }
-              />
+              <>
+                <Input
+                  type="url"
+                  placeholder="https://..."
+                  value={state.destinations.webhookUrl}
+                  onChange={(e) =>
+                    onChange({
+                      destinations: {
+                        ...state.destinations,
+                        webhookUrl: e.target.value,
+                      },
+                    })
+                  }
+                />
+                {hasRollingPeriod && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground pl-1">
+                    <Checkbox
+                      id="webhook-rolling"
+                      checked={state.destinations.webhookRollingIntermediate}
+                      onCheckedChange={(checked) =>
+                        onChange({
+                          destinations: {
+                            ...state.destinations,
+                            webhookRollingIntermediate: !!checked,
+                          },
+                        })
+                      }
+                    />
+                    <label htmlFor="webhook-rolling" className="cursor-pointer">
+                      Deliver on each run (not just when finalized)
+                    </label>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -202,19 +268,40 @@ export function WhereStep({ state, onChange, guildId }: StepProps) {
               <span className="font-medium">Email</span>
             </div>
             {state.destinations.email && (
-              <Input
-                type="text"
-                placeholder="email@example.com, another@example.com"
-                value={state.destinations.emailAddresses}
-                onChange={(e) =>
-                  onChange({
-                    destinations: {
-                      ...state.destinations,
-                      emailAddresses: e.target.value,
-                    },
-                  })
-                }
-              />
+              <>
+                <Input
+                  type="text"
+                  placeholder="email@example.com, another@example.com"
+                  value={state.destinations.emailAddresses}
+                  onChange={(e) =>
+                    onChange({
+                      destinations: {
+                        ...state.destinations,
+                        emailAddresses: e.target.value,
+                      },
+                    })
+                  }
+                />
+                {hasRollingPeriod && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground pl-1">
+                    <Checkbox
+                      id="email-rolling"
+                      checked={state.destinations.emailRollingIntermediate}
+                      onCheckedChange={(checked) =>
+                        onChange({
+                          destinations: {
+                            ...state.destinations,
+                            emailRollingIntermediate: !!checked,
+                          },
+                        })
+                      }
+                    />
+                    <label htmlFor="email-rolling" className="cursor-pointer">
+                      Deliver on each run (not just when finalized)
+                    </label>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -270,6 +357,25 @@ export function WhereStep({ state, onChange, guildId }: StepProps) {
                   value={state.pageTitleTemplate}
                   onChange={(e) => onChange({ pageTitleTemplate: e.target.value })}
                 />
+                {hasRollingPeriod && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Checkbox
+                      id="confluence-rolling"
+                      checked={state.destinations.confluenceRollingIntermediate}
+                      onCheckedChange={(checked) =>
+                        onChange({
+                          destinations: {
+                            ...state.destinations,
+                            confluenceRollingIntermediate: !!checked,
+                          },
+                        })
+                      }
+                    />
+                    <label htmlFor="confluence-rolling" className="cursor-pointer">
+                      Publish on each run (not just when finalized)
+                    </label>
+                  </div>
+                )}
               </div>
             )}
           </div>

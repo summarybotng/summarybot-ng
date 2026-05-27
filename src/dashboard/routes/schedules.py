@@ -73,6 +73,7 @@ def _task_to_response(task, category_name: str = None, template_name: str = None
                 type=dest_type,
                 target=dest.target,
                 format=dest.format,
+                rolling_deliver_intermediate=getattr(dest, 'rolling_deliver_intermediate', False),  # ADR-108
             )
         )
 
@@ -256,6 +257,7 @@ async def create_schedule(
                 type=dest_type,
                 target=dest.target,
                 format=dest.format,
+                rolling_deliver_intermediate=getattr(dest, 'rolling_deliver_intermediate', False),  # ADR-108
             )
         )
 
@@ -514,6 +516,7 @@ async def update_schedule(
                     target=d.target,
                     format=d.format,
                     enabled=True,
+                    rolling_deliver_intermediate=getattr(d, 'rolling_deliver_intermediate', False),  # ADR-108
                 )
             )
         task.destinations = new_destinations

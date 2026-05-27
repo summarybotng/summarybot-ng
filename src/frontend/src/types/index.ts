@@ -247,12 +247,14 @@ export interface PromptTemplateUsage {
 }
 
 export interface Destination {
-  type: "discord_channel" | "discord_dm" | "webhook" | "dashboard" | "email";
+  type: "discord_channel" | "discord_dm" | "webhook" | "dashboard" | "email" | "confluence";
   target: string;
   format: "embed" | "markdown" | "json" | "html";
   // ADR-005: Dashboard-specific options
   auto_archive_days?: number;
   notify_on_delivery?: boolean;
+  // ADR-108: Rolling period delivery control
+  rolling_deliver_intermediate?: boolean;
 }
 
 // Webhook types

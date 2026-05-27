@@ -109,6 +109,9 @@ class Destination(BaseModel):
     # ADR-005: Dashboard-specific options
     auto_archive_days: Optional[int] = None  # Auto-archive after N days
     notify_on_delivery: bool = False  # Send notification when summary is ready
+    # ADR-108: Rolling period delivery control
+    # When True, deliver on every run during rolling period (not just when finalized)
+    rolling_deliver_intermediate: bool = False
 
     def to_display_string(self) -> str:
         """Get human-readable destination string."""

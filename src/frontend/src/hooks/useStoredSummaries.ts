@@ -303,6 +303,8 @@ export interface RegenerateOptions {
   perspective?: string;
   // ADR-075: Split option for summaries with private channel content
   split_private?: boolean;
+  // Re-fetch messages from Discord instead of using stored content
+  refetch_messages?: boolean;
 }
 
 export function useRegenerateSummary(guildId: string) {

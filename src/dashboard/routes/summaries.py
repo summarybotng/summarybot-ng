@@ -2549,13 +2549,35 @@ async def regenerate_stored_summary(
     import secrets
     job_id = f"regen_{secrets.token_urlsafe(16)}"
 
+    # Check if refetch is explicitly requested
+    refetch_requested = body and body.refetch_messages
+
     # Determine regeneration method
-    if can_use_slack:
-        regen_method = "slack"
-    elif can_use_discord:
-        regen_method = "discord"
+    if refetch_requested:
+        # User explicitly wants to re-fetch from platform
+        if can_use_slack:
+            regen_method = "slack"
+        elif can_use_discord:
+            regen_method = "discord"
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "CANNOT_REFETCH",
+                    "message": "Cannot re-fetch messages: no platform connection available. "
+                               "Discord/Slack must be connected and summary must have channel/time info.",
+                },
+            )
     else:
-        regen_method = "source_content"
+        # Default behavior: prefer source_content, fallback to platform
+        if has_source_content:
+            regen_method = "source_content"
+        elif can_use_slack:
+            regen_method = "slack"
+        elif can_use_discord:
+            regen_method = "discord"
+        else:
+            regen_method = "source_content"  # Will fail later if not available
 
     # ADR-075: Check if split is requested and prepare channel groups
     split_requested = body and body.split_private
@@ -2605,6 +2627,7 @@ async def regenerate_stored_summary(
             "repairs": repairs_made,
             "summary_length": body.summary_length if body and body.summary_length else None,
             "perspective": body.perspective if body and body.perspective else None,
+            "refetch_messages": refetch_requested,
             # ADR-075: Split tracking
             "split_private": split_requested,
             "channel_groups": channel_groups,

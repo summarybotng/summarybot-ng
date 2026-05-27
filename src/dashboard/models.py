@@ -1085,6 +1085,12 @@ class RegenerateOptionsRequest(BaseModel):
         description="Split summary into public and private portions (ADR-075). "
                     "Creates separate summary for private channels, original becomes public-only."
     )
+    # Re-fetch messages option
+    refetch_messages: Optional[bool] = Field(
+        False,
+        description="Re-fetch messages from Discord instead of using stored source_content. "
+                    "Useful when messages were edited/deleted after original summary."
+    )
 
 
 class BulkRegenerateRequest(BaseModel):

@@ -1566,6 +1566,29 @@ function StoredSummaryDetailSheet({
                       </Select>
                     </div>
 
+                    {/* Re-fetch messages option */}
+                    <div className="flex items-start space-x-3 p-3 rounded-md border">
+                      <Checkbox
+                        id="refetch-messages"
+                        checked={regenerateOptions.refetch_messages || false}
+                        onCheckedChange={(checked) =>
+                          setRegenerateOptions(prev => ({ ...prev, refetch_messages: checked === true }))
+                        }
+                      />
+                      <div className="grid gap-1.5 leading-none">
+                        <label
+                          htmlFor="refetch-messages"
+                          className="text-sm font-medium leading-none cursor-pointer"
+                        >
+                          Re-fetch messages from Discord
+                        </label>
+                        <p className="text-xs text-muted-foreground">
+                          Fetch fresh messages instead of using stored content.
+                          Useful if messages were edited or deleted.
+                        </p>
+                      </div>
+                    </div>
+
                     {/* ADR-075: Split option for summaries with private content */}
                     {summary.contains_sensitive_channels && (
                       <div className="flex items-start space-x-3 p-3 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950">

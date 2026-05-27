@@ -2451,6 +2451,18 @@ async def regenerate_stored_summary(
     if summary_result and summary_result.start_time and summary_result.end_time:
         start_time = summary_result.start_time
         end_time = summary_result.end_time
+    # ADR-108: Check rolling summary fields for time range
+    elif stored.rolling_period_start:
+        # Rolling summary - use the rolling period fields
+        start_time = stored.rolling_period_start
+        # Use accumulated_through as end if finalized, otherwise use now
+        if stored.rolling_accumulated_through:
+            end_time = stored.rolling_accumulated_through
+        else:
+            from datetime import timezone as tz
+            end_time = datetime.now(tz.utc)
+        repairs_made.append(f"using rolling period: {start_time} to {end_time}")
+        logger.info(f"Using rolling period for regeneration: {start_time} to {end_time}")
     else:
         # Repair: infer from archive_period or created_at
         if stored.archive_period:

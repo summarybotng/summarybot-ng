@@ -74,6 +74,10 @@ class DiscordFetcher(PlatformFetcher):
 
         total_channels = len(channel_ids)
 
+        # Log the time range being used for debugging
+        logger.info(f"[{job_id or 'no-job'}] Discord fetch: {len(channel_ids)} channels, "
+                    f"start={start_time.isoformat()}, end={end_time.isoformat()}")
+
         for idx, channel_id in enumerate(channel_ids):
             try:
                 channel = self._guild.get_channel(int(channel_id))
@@ -105,6 +109,10 @@ class DiscordFetcher(PlatformFetcher):
                     raw_messages.append(message)
                     # Extract user names while we have the Message objects
                     user_names[str(message.author.id)] = message.author.display_name
+
+                # Log raw message count before processing
+                logger.info(f"[{job_id or 'no-job'}] Channel #{channel.name} ({channel_id}): "
+                            f"{len(raw_messages)} raw messages from Discord")
 
                 # Process through MessageProcessor
                 options = SummaryOptions(min_messages=1)

@@ -1306,6 +1306,11 @@ Continue from this context for Week {week_number}. Reference previous discussion
                 technical_terms=(existing_result.technical_terms or []) + (new_result.technical_terms or []),
                 metadata=existing_result.metadata or {},
                 message_count=(existing_result.message_count or 0) + (new_result.message_count or 0),
+                # ADR-004: Merge references
+                reference_index=(existing_result.reference_index or []) + (new_result.reference_index or []),
+                referenced_key_points=(existing_result.referenced_key_points or []) + (new_result.referenced_key_points or []),
+                referenced_action_items=(existing_result.referenced_action_items or []) + (new_result.referenced_action_items or []),
+                referenced_decisions=(existing_result.referenced_decisions or []) + (new_result.referenced_decisions or []),
             )
             return merged
 
@@ -1345,6 +1350,14 @@ Continue from this context for Week {week_number}. Reference previous discussion
             ),
             metadata=existing_result.metadata or {},
             message_count=(existing_result.message_count or 0) + (new_result.message_count or 0),
+            # ADR-004: Merge references (dedupe by position to avoid duplicates)
+            reference_index=self._merge_references(
+                existing_result.reference_index or [],
+                new_result.reference_index or [],
+            ),
+            referenced_key_points=(existing_result.referenced_key_points or []) + (new_result.referenced_key_points or []),
+            referenced_action_items=(existing_result.referenced_action_items or []) + (new_result.referenced_action_items or []),
+            referenced_decisions=(existing_result.referenced_decisions or []) + (new_result.referenced_decisions or []),
         )
         return merged
 
@@ -1380,6 +1393,37 @@ Continue from this context for Week {week_number}. Reference previous discussion
             if t.term.lower() not in seen:
                 seen.add(t.term.lower())
                 result.append(t)
+        return result
+
+    def _merge_references(self, existing: List[Any], new: List[Any]) -> List[Any]:
+        """Merge reference lists, deduplicating by message_id.
+
+        Args:
+            existing: Existing references from previous accumulations
+            new: New references from current run
+
+        Returns:
+            Merged list of references with unique message_ids
+        """
+        seen_message_ids = set()
+        result = []
+
+        # Keep all existing references
+        for ref in existing:
+            msg_id = getattr(ref, 'message_id', None) or (ref.get('message_id') if isinstance(ref, dict) else None)
+            if msg_id:
+                seen_message_ids.add(msg_id)
+            result.append(ref)
+
+        # Add new references only if not already seen
+        for ref in new:
+            msg_id = getattr(ref, 'message_id', None) or (ref.get('message_id') if isinstance(ref, dict) else None)
+            if msg_id and msg_id in seen_message_ids:
+                continue  # Skip duplicate
+            if msg_id:
+                seen_message_ids.add(msg_id)
+            result.append(ref)
+
         return result
 
     def _generate_rolling_title(

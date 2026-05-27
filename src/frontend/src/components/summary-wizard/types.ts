@@ -192,6 +192,7 @@ export function scheduleToWizardState(schedule: {
   destinations: Array<{
     type: string;
     target?: string;
+    rolling_deliver_intermediate?: boolean;  // ADR-108
   }>;
 }): WizardState {
   // Extract destinations

@@ -597,6 +597,14 @@ class TaskExecutor:
                 # - Finalized: all non-dashboard destinations
                 # - Intermediate: only destinations with rolling_deliver_intermediate=True
                 other_destinations = [d for d in task.destinations if d.type.value != "dashboard"]
+
+                # Debug logging: show all destination settings
+                logger.debug(
+                    f"ADR-108: Rolling summary {rolling_summary.id} - "
+                    f"finalized={rolling_summary.rolling_finalized}, "
+                    f"destinations={[(d.type.value, d.rolling_deliver_intermediate) for d in other_destinations]}"
+                )
+
                 if other_destinations:
                     if rolling_summary.rolling_finalized:
                         # Finalized: deliver to all destinations
@@ -615,6 +623,11 @@ class TaskExecutor:
                             logger.info(
                                 f"ADR-108: Executing {len(destinations_to_deliver)} intermediate deliveries "
                                 f"for in-progress rolling summary {rolling_summary.id}"
+                            )
+                        else:
+                            logger.info(
+                                f"ADR-108: No intermediate deliveries configured for rolling summary "
+                                f"{rolling_summary.id} (no destinations have rolling_deliver_intermediate=True)"
                             )
 
                     if destinations_to_deliver:

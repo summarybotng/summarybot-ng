@@ -583,7 +583,8 @@ function GenerateDialog({
       force_regenerate: forceRegenerate,
       dry_run: dryRun,
       // ADR-111: Auto-publish to Confluence
-      auto_publish_confluence: autoPublishConfluence && confluenceConfigured,
+      // Send checkbox value directly - backend handles unconfigured case gracefully
+      auto_publish_confluence: autoPublishConfluence,
     };
 
     // Add scope-specific fields (only for Discord)

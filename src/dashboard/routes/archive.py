@@ -1050,7 +1050,7 @@ async def generate_retrospective(request: GenerateRequest):
     )
 
     generator = await get_generator()
-    logger.info(f"Creating job with per_channel={request.per_channel}, granularity={request.granularity}")
+    logger.info(f"Creating job with per_channel={request.per_channel}, granularity={request.granularity}, auto_publish_confluence={request.auto_publish_confluence}")
     job = await generator.create_job(
         source=source,
         start_date=request.date_range.start,

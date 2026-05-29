@@ -702,7 +702,9 @@ class ConfluencePublisher:
         if hasattr(item, 'assignee') and item.assignee:
             text += f" (@{item.assignee})"
         if hasattr(item, 'priority') and item.priority:
-            text = f"[{item.priority.upper()}] {text}"
+            # Priority is an Enum, get .value before calling .upper()
+            priority_str = item.priority.value if hasattr(item.priority, 'value') else str(item.priority)
+            text = f"[{priority_str.upper()}] {text}"
         return text
 
     # NOTE: _build_text_with_dates removed - now using LLM-based date_extractor.py

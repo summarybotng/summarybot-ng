@@ -305,7 +305,7 @@ class RetrospectiveGenerator:
             job.cost.max_cost_usd = max_cost_usd
 
         self._jobs[job_id] = job
-        logger.info(f"Created job {job_id} for {source.source_key}: {len(periods)} periods")
+        logger.info(f"Created job {job_id} for {source.source_key}: {len(periods)} periods, auto_publish_confluence={job.auto_publish_confluence}")
 
         # ADR-013: Persist job to database
         await self._persist_job(job)
@@ -995,6 +995,7 @@ class RetrospectiveGenerator:
             logger.debug(f"Saved archive summary to database: {summary_id}")
 
             # ADR-111: Auto-publish to Confluence if enabled
+            logger.info(f"[{job.job_id}] Auto-publish check: auto_publish_confluence={job.auto_publish_confluence}")
             if job.auto_publish_confluence:
                 await self._auto_publish_to_confluence(job, stored, summary_id)
                 # Throttle between publishes (ADR-110: 2s default)

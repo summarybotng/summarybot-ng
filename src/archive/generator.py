@@ -527,22 +527,32 @@ class RetrospectiveGenerator:
                     # Found in cache
                     result.append((cid, channel_map[cid].name))
                 else:
-                    # Not in cache - try API fetch via bot's helper method
-                    # Use #{id[:8]} format (matches _generate_smart_title fallback)
-                    channel_name = f"#{cid[:8]}"  # fallback - truncated ID with # prefix
-                    logger.info(f"Channel {cid} not in cache ({len(channel_map)} cached), attempting API fetch...")
-                    try:
-                        if bot and bot.is_ready:
-                            channel = await bot.get_or_fetch_channel(int(cid))
-                            if channel and hasattr(channel, 'name'):
-                                channel_name = channel.name
-                                logger.info(f"Fetched channel name via API: {cid} -> {channel_name}")
+                    # Not in cache - determine fallback based on source type
+                    if job.source.source_type == SourceType.WHATSAPP:
+                        # WhatsApp: Use chat_id as-is (format: "chatname-hash")
+                        # The chat name is the part before the last dash+hash
+                        parts = cid.rsplit('-', 1)
+                        channel_name = parts[0] if len(parts) > 1 else cid
+                        logger.info(f"WhatsApp channel {cid} -> derived name: {channel_name}")
+                    elif job.source.source_type == SourceType.DISCORD:
+                        # Discord: Try API fetch, fallback to #{id[:8]}
+                        channel_name = f"#{cid[:8]}"  # fallback
+                        logger.info(f"Channel {cid} not in cache ({len(channel_map)} cached), attempting API fetch...")
+                        try:
+                            if bot and bot.is_ready:
+                                channel = await bot.get_or_fetch_channel(int(cid))
+                                if channel and hasattr(channel, 'name'):
+                                    channel_name = channel.name
+                                    logger.info(f"Fetched channel name via API: {cid} -> {channel_name}")
+                                else:
+                                    logger.warning(f"Channel {cid} fetch returned None - using fallback #{cid[:8]}")
                             else:
-                                logger.warning(f"Channel {cid} fetch returned None - using fallback #{cid[:8]}")
-                        else:
-                            logger.warning(f"Bot not available/ready for channel fetch: {cid} (bot={bot is not None}, ready={bot.is_ready if bot else 'N/A'}) - using fallback #{cid[:8]}")
-                    except Exception as e:
-                        logger.warning(f"Failed to fetch channel {cid}: {type(e).__name__}: {e} - using fallback #{cid[:8]}")
+                                logger.warning(f"Bot not available/ready for channel fetch: {cid} (bot={bot is not None}, ready={bot.is_ready if bot else 'N/A'}) - using fallback #{cid[:8]}")
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch channel {cid}: {type(e).__name__}: {e} - using fallback #{cid[:8]}")
+                    else:
+                        # Other platforms: use channel_id as-is
+                        channel_name = cid
                     result.append((cid, channel_name))
             return result
 

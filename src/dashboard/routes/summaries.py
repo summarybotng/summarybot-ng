@@ -219,8 +219,15 @@ def _generate_smart_title(
             else:
                 channel_names.append(name)
         else:
-            # Fallback to truncated ID
-            channel_names.append(f"#{cid[:8]}" if platform == "discord" else cid[:8])
+            # Fallback based on platform
+            if platform == "discord":
+                channel_names.append(f"#{cid[:8]}")
+            elif platform == "whatsapp":
+                # WhatsApp chat_id format: "chatname-hash" - extract the name part
+                parts = cid.rsplit('-', 1)
+                channel_names.append(parts[0] if len(parts) > 1 else cid)
+            else:
+                channel_names.append(cid[:8])
 
     return f"{prefix}{', '.join(channel_names)}"
 

@@ -185,7 +185,13 @@ class WhatsAppFetcher(PlatformFetcher):
             (self._guild_id, chat_id)
         )
 
-        name = row["chat_name"] if row else chat_id
+        if row:
+            name = row["chat_name"]
+        else:
+            # No import record found - use chat_id as fallback
+            # This can happen if import was deleted but messages remain
+            logger.warning(f"No whatsapp_imports record found for guild={self._guild_id}, chat_id={chat_id} - using chat_id as name")
+            name = chat_id
         self._chat_names[chat_id] = name
         return name
 

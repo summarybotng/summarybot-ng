@@ -1434,6 +1434,8 @@ class JobType(str, Enum):
     RETROSPECTIVE = "retrospective"
     REGENERATE = "regenerate"
     WIKI_BACKFILL = "wiki_backfill"  # ADR-068: Wiki backfill job
+    BULK_CONFLUENCE_PUBLISH = "bulk_confluence_publish"  # ADR-110: Bulk publish to Confluence
+    BULK_CONFLUENCE_UNPUBLISH = "bulk_confluence_unpublish"  # ADR-110: Bulk unpublish from Confluence
 
 
 class JobStatus(str, Enum):

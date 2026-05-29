@@ -62,7 +62,7 @@ export function BulkActionBar({
   const [confluenceUnpublishOpen, setConfluenceUnpublishOpen] = useState(false);
   const [selectAllMatching, setSelectAllMatching] = useState(false);  // "Select all X matching filters" mode
   const [confluenceForce, setConfluenceForce] = useState(false);
-  const [confluenceDeletePages, setConfluenceDeletePages] = useState(false);
+  const [confluenceDeletePages, setConfluenceDeletePages] = useState(true);  // Default to true - users expect "unpublish" to remove pages
 
   const { toast } = useToast();
   const bulkDeleteMutation = useBulkDeleteSummaries(guildId);
@@ -392,35 +392,36 @@ export function BulkActionBar({
       {/* Confluence Unpublish Confirmation */}
       <AlertDialog open={confluenceUnpublishOpen} onOpenChange={(open) => {
         setConfluenceUnpublishOpen(open);
-        if (!open) setConfluenceDeletePages(false);
+        if (!open) setConfluenceDeletePages(true);  // Reset to default (delete pages)
       }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Unpublish {selectedCount} Summaries from Confluence?</AlertDialogTitle>
+            <AlertDialogTitle>Remove {selectedCount} Summaries from Confluence?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3">
                 <p>
                   {selectAllMatching ? (
                     <>
-                      This will unpublish <strong>all {selectedCount} summaries</strong> matching your current filters from Confluence.
+                      This will remove <strong>all {selectedCount} summaries</strong> matching your current filters from Confluence.
                     </>
                   ) : (
                     <>
-                      This will unpublish {selectedCount} {selectedCount === 1 ? "summary" : "summaries"} from Confluence.
+                      This will remove {selectedCount} {selectedCount === 1 ? "summary" : "summaries"} from Confluence.
                     </>
                   )}
                 </p>
                 <p className="text-sm text-muted-foreground">
                   Only summaries that have been published to Confluence will be affected.
                 </p>
-                <div className="flex items-center space-x-2 pt-2">
+                <div className="flex items-center space-x-2 pt-2 border-t mt-2">
                   <Checkbox
                     id="confluence-delete-pages"
                     checked={confluenceDeletePages}
                     onCheckedChange={(checked) => setConfluenceDeletePages(checked === true)}
                   />
                   <label htmlFor="confluence-delete-pages" className="text-sm cursor-pointer">
-                    Also delete pages from Confluence (not just tracking records)
+                    <span className="font-medium">Delete pages from Confluence</span>
+                    <span className="text-muted-foreground"> (uncheck to only remove tracking without deleting pages)</span>
                   </label>
                 </div>
               </div>
@@ -432,7 +433,7 @@ export function BulkActionBar({
               onClick={handleBulkConfluenceUnpublish}
               className={confluenceDeletePages ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
             >
-              {bulkConfluenceUnpublishMutation.isPending ? "Starting..." : confluenceDeletePages ? `Delete ${selectedCount} Pages` : `Unpublish ${selectedCount}`}
+              {bulkConfluenceUnpublishMutation.isPending ? "Starting..." : confluenceDeletePages ? `Delete ${selectedCount} Pages` : `Unlink ${selectedCount}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

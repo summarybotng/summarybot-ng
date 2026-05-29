@@ -528,7 +528,8 @@ class RetrospectiveGenerator:
                     result.append((cid, channel_map[cid].name))
                 else:
                     # Not in cache - try API fetch via bot's helper method
-                    channel_name = f"channel-{cid[-4:]}"  # fallback
+                    # Use #{id[:8]} format (matches _generate_smart_title fallback)
+                    channel_name = f"#{cid[:8]}"  # fallback - truncated ID with # prefix
                     logger.info(f"Channel {cid} not in cache ({len(channel_map)} cached), attempting API fetch...")
                     try:
                         if bot and bot.is_ready:
@@ -537,11 +538,11 @@ class RetrospectiveGenerator:
                                 channel_name = channel.name
                                 logger.info(f"Fetched channel name via API: {cid} -> {channel_name}")
                             else:
-                                logger.warning(f"Channel {cid} fetch returned: {type(channel).__name__ if channel else 'None'}")
+                                logger.warning(f"Channel {cid} fetch returned None - using fallback #{cid[:8]}")
                         else:
-                            logger.warning(f"Bot not available/ready for channel fetch: {cid} (bot={bot is not None}, ready={bot.is_ready if bot else 'N/A'})")
+                            logger.warning(f"Bot not available/ready for channel fetch: {cid} (bot={bot is not None}, ready={bot.is_ready if bot else 'N/A'}) - using fallback #{cid[:8]}")
                     except Exception as e:
-                        logger.warning(f"Failed to fetch channel {cid}: {type(e).__name__}: {e}")
+                        logger.warning(f"Failed to fetch channel {cid}: {type(e).__name__}: {e} - using fallback #{cid[:8]}")
                     result.append((cid, channel_name))
             return result
 

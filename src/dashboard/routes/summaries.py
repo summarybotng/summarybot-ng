@@ -730,7 +730,8 @@ async def _run_split_job(
 
         # Build context
         from ...summarization import SummaryContext
-        channel_name = channel_name_map.get(channel_ids[0], "channel") if len(channel_ids) == 1 else "multiple channels"
+        # Use #{id[:8]} format for fallback (matches _generate_smart_title)
+        channel_name = channel_name_map.get(channel_ids[0], f"#{channel_ids[0][:8]}") if len(channel_ids) == 1 else "multiple channels"
         server_name = guild.name if guild else guild_id
 
         context = SummaryContext(
@@ -3120,9 +3121,9 @@ async def delete_stored_summary(
                     if bot:
                         channel = bot.get_channel(int(channel_id))
                         if channel:
-                            channel_name = getattr(channel, 'name', f"channel-{channel_id[-4:]}")
+                            channel_name = getattr(channel, 'name', f"#{channel_id[:8]}")
                 except Exception:
-                    channel_name = f"channel-{channel_id[-4:]}"
+                    channel_name = f"#{channel_id[:8]}"
 
             # Create ArchiveSource from stored summary data
             source = ArchiveSource(
@@ -3130,7 +3131,7 @@ async def delete_stored_summary(
                 server_id=guild_id,
                 server_name=guild_id,  # Name not needed for path
                 channel_id=channel_id,
-                channel_name=channel_name or (f"channel-{channel_id[-4:]}" if channel_id else None),
+                channel_name=channel_name or (f"#{channel_id[:8]}" if channel_id else None),
                 scope=scope,
             )
 

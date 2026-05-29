@@ -393,38 +393,38 @@ class ConfluencePublisher:
                 error="Confluence not configured",
             )
 
-        async with self._get_client() as client:
-            try:
-                response = await client.delete(f"/pages/{page_id}")
+        try:
+            client = await self._get_client()
+            response = await client.delete(f"/pages/{page_id}")
 
-                if response.status_code == 204:
-                    logger.info(f"Deleted Confluence page {page_id}")
-                    return ConfluencePublishResult(
-                        success=True,
-                        page_id=page_id,
-                    )
-                elif response.status_code == 404:
-                    # Page already deleted or doesn't exist
-                    logger.warning(f"Confluence page {page_id} not found (already deleted?)")
-                    return ConfluencePublishResult(
-                        success=True,  # Consider this success since the page is gone
-                        page_id=page_id,
-                    )
-                else:
-                    error_msg = response.text[:500]
-                    logger.error(f"Failed to delete Confluence page {page_id}: {response.status_code} {error_msg}")
-                    return ConfluencePublishResult(
-                        success=False,
-                        page_id=page_id,
-                        error=f"Delete failed: {error_msg}",
-                    )
-            except Exception as e:
-                logger.exception(f"Error deleting Confluence page {page_id}: {e}")
+            if response.status_code == 204:
+                logger.info(f"Deleted Confluence page {page_id}")
+                return ConfluencePublishResult(
+                    success=True,
+                    page_id=page_id,
+                )
+            elif response.status_code == 404:
+                # Page already deleted or doesn't exist
+                logger.warning(f"Confluence page {page_id} not found (already deleted?)")
+                return ConfluencePublishResult(
+                    success=True,  # Consider this success since the page is gone
+                    page_id=page_id,
+                )
+            else:
+                error_msg = response.text[:500]
+                logger.error(f"Failed to delete Confluence page {page_id}: {response.status_code} {error_msg}")
                 return ConfluencePublishResult(
                     success=False,
                     page_id=page_id,
-                    error=str(e),
+                    error=f"Delete failed: {error_msg}",
                 )
+        except Exception as e:
+            logger.exception(f"Error deleting Confluence page {page_id}: {e}")
+            return ConfluencePublishResult(
+                success=False,
+                page_id=page_id,
+                error=str(e),
+            )
 
     async def _get_space_id(self, client: httpx.AsyncClient) -> str:
         """Get the space ID from the space key."""

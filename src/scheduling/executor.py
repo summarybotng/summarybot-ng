@@ -1238,12 +1238,16 @@ Continue from this context for Week {week_number}. Reference previous discussion
             # Generate title from schedule's title_template or use sensible default
             title = self._generate_rolling_title(task, rolling_period, period_start)
 
+            # ADR-109: Capture schedule name snapshot
+            schedule_name_snapshot = task.scheduled_task.name if task.scheduled_task else None
+
             # Create stored summary with rolling period fields
             stored_summary = StoredSummary(
                 id=summary_result.id,
                 guild_id=guild_id,
                 source_channel_ids=task.get_all_channel_ids(),
                 schedule_id=schedule_id,
+                schedule_name_snapshot=schedule_name_snapshot,  # ADR-109
                 summary_result=summary_result,
                 title=title,
                 source=SummarySource.SCHEDULED,

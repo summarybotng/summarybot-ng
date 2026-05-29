@@ -359,7 +359,8 @@ export interface StoredSummary {
   title: string;
   source_channel_ids: string[];
   schedule_id?: string;
-  schedule_name?: string;  // ADR-009: For navigation
+  schedule_name?: string;  // ADR-009: For navigation (live lookup)
+  schedule_name_snapshot?: string;  // ADR-109: Preserved even after schedule deletion
   created_at: string;
   viewed_at?: string;
   pushed_at?: string;

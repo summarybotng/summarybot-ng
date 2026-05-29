@@ -415,6 +415,109 @@ export function useBulkRegenerateSummaries(guildId: string) {
 }
 
 // ============================================================================
+// Bulk Confluence Publish/Unpublish
+// ============================================================================
+
+export interface BulkConfluencePublishRequest {
+  summary_ids?: string[];
+  filters?: BulkFilters;
+  force?: boolean;
+  timezone?: string;
+  throttle_ms?: number;
+}
+
+export interface BulkConfluencePublishResponse {
+  task_id: string;
+  queued_count: number;
+  skipped_count: number;
+  skipped_ids: string[];
+  skipped_reasons: Record<string, string>;
+}
+
+export interface BulkConfluenceUnpublishRequest {
+  summary_ids?: string[];
+  filters?: BulkFilters;
+  delete_pages?: boolean;
+  throttle_ms?: number;
+}
+
+export interface BulkConfluenceUnpublishResponse {
+  task_id: string;
+  queued_count: number;
+  skipped_count: number;
+  skipped_ids: string[];
+  skipped_reasons: Record<string, string>;
+}
+
+export interface BulkConfluenceTaskStatus {
+  task_id: string;
+  status: string;
+  type: string;
+  completed: number;
+  total: number;
+  successful: number;
+  failed: number;
+  errors: string[];
+  started_at?: string;
+  completed_at?: string;
+}
+
+export function useBulkConfluencePublish(guildId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (request: BulkConfluencePublishRequest) =>
+      api.post<BulkConfluencePublishResponse>(
+        `/guilds/${guildId}/stored-summaries/bulk-confluence-publish`,
+        request
+      ),
+    onSuccess: () => {
+      // Invalidate after a delay to allow publishing to complete
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] });
+      }, 5000);
+    },
+  });
+}
+
+export function useBulkConfluenceUnpublish(guildId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (request: BulkConfluenceUnpublishRequest) =>
+      api.post<BulkConfluenceUnpublishResponse>(
+        `/guilds/${guildId}/stored-summaries/bulk-confluence-unpublish`,
+        request
+      ),
+    onSuccess: () => {
+      // Invalidate after a delay
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["stored-summaries", guildId] });
+      }, 5000);
+    },
+  });
+}
+
+export function useBulkConfluenceTaskStatus(guildId: string, taskId: string | null) {
+  return useQuery({
+    queryKey: ["bulk-confluence-task", guildId, taskId],
+    queryFn: () =>
+      api.get<BulkConfluenceTaskStatus>(
+        `/guilds/${guildId}/bulk-confluence-task/${taskId}`
+      ),
+    enabled: !!guildId && !!taskId,
+    refetchInterval: (query) => {
+      // Poll every 2 seconds while task is processing
+      const data = query.state.data;
+      if (data && data.status === "processing") {
+        return 2000;
+      }
+      return false;
+    },
+  });
+}
+
+// ============================================================================
 // ADR-086: Bidirectional Summary-Wiki Navigation
 // ============================================================================
 

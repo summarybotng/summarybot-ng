@@ -1306,6 +1306,124 @@ class ConfluenceSettingsResponse(BaseModel):
 
 
 # ============================================================================
+# Bulk Confluence Publish/Unpublish Models
+# ============================================================================
+
+class BulkConfluencePublishRequest(BaseModel):
+    """Request to bulk publish summaries to Confluence.
+
+    Provide either summary_ids for explicit selection, or filters to select
+    all summaries matching the criteria.
+    """
+    summary_ids: Optional[List[str]] = Field(
+        None, max_length=100,
+        description="Summary IDs to publish"
+    )
+    filters: Optional[BulkFilters] = Field(
+        None,
+        description="Filters to select summaries for publishing"
+    )
+    force: bool = Field(
+        default=False,
+        description="Force update even if pages were modified externally"
+    )
+    timezone: Optional[str] = Field(
+        default=None,
+        description="User's timezone for footer timestamps"
+    )
+    throttle_ms: int = Field(
+        default=2000,
+        ge=500,
+        le=30000,
+        description="Delay between publishes in milliseconds (rate limiting)"
+    )
+
+    @model_validator(mode='after')
+    def validate_ids_or_filters(self):
+        if not self.summary_ids and not self.filters:
+            raise ValueError("Either summary_ids or filters must be provided")
+        if self.summary_ids and self.filters:
+            raise ValueError("Provide either summary_ids or filters, not both")
+        if self.summary_ids and len(self.summary_ids) == 0:
+            raise ValueError("summary_ids cannot be empty if provided")
+        return self
+
+
+class BulkConfluencePublishResponse(BaseModel):
+    """Response from bulk Confluence publish operation."""
+    task_id: str
+    queued_count: int
+    skipped_count: int = 0
+    skipped_ids: List[str] = []
+    skipped_reasons: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Map of skipped summary ID to reason"
+    )
+
+
+class BulkConfluenceUnpublishRequest(BaseModel):
+    """Request to bulk unpublish (delete pages from Confluence).
+
+    Provide either summary_ids for explicit selection, or filters to select
+    all published summaries matching the criteria.
+    """
+    summary_ids: Optional[List[str]] = Field(
+        None, max_length=100,
+        description="Summary IDs to unpublish"
+    )
+    filters: Optional[BulkFilters] = Field(
+        None,
+        description="Filters to select summaries for unpublishing"
+    )
+    delete_pages: bool = Field(
+        default=False,
+        description="Actually delete pages from Confluence (vs just removing tracking records)"
+    )
+    throttle_ms: int = Field(
+        default=2000,
+        ge=500,
+        le=30000,
+        description="Delay between deletions in milliseconds (rate limiting)"
+    )
+
+    @model_validator(mode='after')
+    def validate_ids_or_filters(self):
+        if not self.summary_ids and not self.filters:
+            raise ValueError("Either summary_ids or filters must be provided")
+        if self.summary_ids and self.filters:
+            raise ValueError("Provide either summary_ids or filters, not both")
+        if self.summary_ids and len(self.summary_ids) == 0:
+            raise ValueError("summary_ids cannot be empty if provided")
+        return self
+
+
+class BulkConfluenceUnpublishResponse(BaseModel):
+    """Response from bulk Confluence unpublish operation."""
+    task_id: str
+    queued_count: int
+    skipped_count: int = 0
+    skipped_ids: List[str] = []
+    skipped_reasons: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Map of skipped summary ID to reason"
+    )
+
+
+class BulkConfluenceTaskStatus(BaseModel):
+    """Status of a bulk Confluence operation task."""
+    task_id: str
+    status: str  # processing, completed, failed
+    type: str  # bulk_confluence_publish, bulk_confluence_unpublish
+    completed: int
+    total: int
+    successful: int = 0
+    failed: int = 0
+    errors: List[str] = []
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+# ============================================================================
 # ADR-013: Unified Job Tracking Models
 # ============================================================================
 

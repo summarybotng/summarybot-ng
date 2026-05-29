@@ -59,7 +59,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
 
         query = """
         INSERT OR REPLACE INTO stored_summaries (
-            id, guild_id, source_channel_ids, schedule_id,
+            id, guild_id, source_channel_ids, schedule_id, schedule_name_snapshot,
             summary_json, created_at, viewed_at, pushed_at,
             push_deliveries, title, is_pinned, is_archived, tags,
             source, archive_period, archive_granularity, archive_source_key,
@@ -72,7 +72,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             scope_type, category_id, category_name,
             rolling_period_type, rolling_period_start, rolling_accumulated_through,
             rolling_finalized, rolling_accumulation_count, rolling_raw_content
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -80,6 +80,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             summary.guild_id,
             json.dumps(summary.source_channel_ids),
             summary.schedule_id,
+            summary.schedule_name_snapshot,  # ADR-109
             json.dumps(summary.summary_result.to_dict() if summary.summary_result else {}),
             summary.created_at.isoformat(),
             summary.viewed_at.isoformat() if summary.viewed_at else None,
@@ -841,6 +842,7 @@ class SQLiteStoredSummaryRepository(StoredSummaryRepository):
             guild_id=row['guild_id'],
             source_channel_ids=json.loads(row['source_channel_ids']),
             schedule_id=row['schedule_id'],
+            schedule_name_snapshot=row.get('schedule_name_snapshot'),  # ADR-109
             summary_result=summary_result,
             created_at=datetime.fromisoformat(row['created_at']),
             viewed_at=datetime.fromisoformat(row['viewed_at']) if row['viewed_at'] else None,

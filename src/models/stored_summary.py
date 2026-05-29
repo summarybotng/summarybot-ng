@@ -84,6 +84,7 @@ class StoredSummary(BaseModel):
     guild_id: str = ""
     source_channel_ids: List[str] = field(default_factory=list)
     schedule_id: Optional[str] = None  # If from a scheduled task
+    schedule_name_snapshot: Optional[str] = None  # ADR-109: Preserved even after schedule deletion
 
     # Summary content - stores the full SummaryResult
     summary_result: Optional[SummaryResult] = None
@@ -328,6 +329,7 @@ class StoredSummary(BaseModel):
             "title": self.title,
             "source_channel_ids": self.source_channel_ids,
             "schedule_id": self.schedule_id,
+            "schedule_name_snapshot": self.schedule_name_snapshot,  # ADR-109
             "created_at": self.created_at.isoformat(),
             "viewed_at": self.viewed_at.isoformat() if self.viewed_at else None,
             "pushed_at": self.pushed_at.isoformat() if self.pushed_at else None,
@@ -388,6 +390,7 @@ class StoredSummary(BaseModel):
             "guild_id": self.guild_id,
             "source_channel_ids": self.source_channel_ids,
             "schedule_id": self.schedule_id,
+            "schedule_name_snapshot": self.schedule_name_snapshot,  # ADR-109
             "summary_result": self.summary_result.to_dict() if self.summary_result else None,
             "created_at": self.created_at.isoformat(),
             "viewed_at": self.viewed_at.isoformat() if self.viewed_at else None,
@@ -448,6 +451,7 @@ class StoredSummary(BaseModel):
             guild_id=data.get("guild_id", ""),
             source_channel_ids=data.get("source_channel_ids", []),
             schedule_id=data.get("schedule_id"),
+            schedule_name_snapshot=data.get("schedule_name_snapshot"),  # ADR-109
             summary_result=SummaryResult.from_dict(data["summary_result"]) if data.get("summary_result") else None,
             created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else utc_now_naive(),
             viewed_at=datetime.fromisoformat(data["viewed_at"]) if data.get("viewed_at") else None,

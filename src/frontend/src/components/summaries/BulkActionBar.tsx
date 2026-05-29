@@ -8,9 +8,10 @@
  */
 
 import { useState } from "react";
-import { Trash2, RefreshCw, X, CheckSquare, Square, CheckCheck } from "lucide-react";
+import { Trash2, RefreshCw, X, CheckSquare, Square, CheckCheck, Upload, FileX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +23,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { useBulkDeleteSummaries, useBulkRegenerateSummaries, type BulkFilters } from "@/hooks/useStoredSummaries";
+import {
+  useBulkDeleteSummaries,
+  useBulkRegenerateSummaries,
+  useBulkConfluencePublish,
+  useBulkConfluenceUnpublish,
+  type BulkFilters,
+} from "@/hooks/useStoredSummaries";
 
 interface BulkActionBarProps {
   guildId: string;
@@ -33,6 +40,8 @@ interface BulkActionBarProps {
   allSelected: boolean;  // All on current page selected
   pageSize: number;
   currentFilters?: BulkFilters;  // Current filter state for "select all matching"
+  confluenceConfigured?: boolean;  // Whether Confluence is configured for this guild
+  userTimezone?: string;  // User's timezone for Confluence publish
 }
 
 export function BulkActionBar({
@@ -44,14 +53,22 @@ export function BulkActionBar({
   allSelected,
   pageSize,
   currentFilters,
+  confluenceConfigured = false,
+  userTimezone,
 }: BulkActionBarProps) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false);
+  const [confluencePublishOpen, setConfluencePublishOpen] = useState(false);
+  const [confluenceUnpublishOpen, setConfluenceUnpublishOpen] = useState(false);
   const [selectAllMatching, setSelectAllMatching] = useState(false);  // "Select all X matching filters" mode
+  const [confluenceForce, setConfluenceForce] = useState(false);
+  const [confluenceDeletePages, setConfluenceDeletePages] = useState(false);
 
   const { toast } = useToast();
   const bulkDeleteMutation = useBulkDeleteSummaries(guildId);
   const bulkRegenerateMutation = useBulkRegenerateSummaries(guildId);
+  const bulkConfluencePublishMutation = useBulkConfluencePublish(guildId);
+  const bulkConfluenceUnpublishMutation = useBulkConfluenceUnpublish(guildId);
 
   const selectedCount = selectAllMatching ? totalFilteredCount : selectedIds.size;
   const hasMoreThanOnePage = totalFilteredCount > pageSize;
@@ -113,6 +130,52 @@ export function BulkActionBar({
     }
   };
 
+  const handleBulkConfluencePublish = async () => {
+    try {
+      const request = selectAllMatching && currentFilters
+        ? { filters: currentFilters, force: confluenceForce, timezone: userTimezone, throttle_ms: 2000 }
+        : { summary_ids: Array.from(selectedIds), force: confluenceForce, timezone: userTimezone, throttle_ms: 2000 };
+
+      const result = await bulkConfluencePublishMutation.mutateAsync(request);
+      setConfluencePublishOpen(false);
+      setConfluenceForce(false);
+      handleClearSelection();
+      toast({
+        title: "Bulk Confluence Publish Started",
+        description: `Queued ${result.queued_count} summaries for publishing${result.skipped_count > 0 ? `, ${result.skipped_count} skipped` : ""}. Task ID: ${result.task_id}`,
+      });
+    } catch (error) {
+      toast({
+        title: "Bulk Publish Failed",
+        description: "An error occurred while starting the publish job",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleBulkConfluenceUnpublish = async () => {
+    try {
+      const request = selectAllMatching && currentFilters
+        ? { filters: currentFilters, delete_pages: confluenceDeletePages, throttle_ms: 2000 }
+        : { summary_ids: Array.from(selectedIds), delete_pages: confluenceDeletePages, throttle_ms: 2000 };
+
+      const result = await bulkConfluenceUnpublishMutation.mutateAsync(request);
+      setConfluenceUnpublishOpen(false);
+      setConfluenceDeletePages(false);
+      handleClearSelection();
+      toast({
+        title: "Bulk Confluence Unpublish Started",
+        description: `Queued ${result.queued_count} summaries for unpublishing${result.skipped_count > 0 ? `, ${result.skipped_count} skipped (not published)` : ""}. Task ID: ${result.task_id}`,
+      });
+    } catch (error) {
+      toast({
+        title: "Bulk Unpublish Failed",
+        description: "An error occurred while starting the unpublish job",
+        variant: "destructive",
+      });
+    }
+  };
+
   if (selectedIds.size === 0 && !selectAllMatching) {
     return null;
   }
@@ -156,6 +219,30 @@ export function BulkActionBar({
               <RefreshCw className={`mr-2 h-4 w-4 ${bulkRegenerateMutation.isPending ? "animate-spin" : ""}`} />
               Regenerate ({selectedCount})
             </Button>
+            {confluenceConfigured && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfluencePublishOpen(true)}
+                  disabled={bulkConfluencePublishMutation.isPending}
+                  className="h-8"
+                >
+                  <Upload className={`mr-2 h-4 w-4 ${bulkConfluencePublishMutation.isPending ? "animate-pulse" : ""}`} />
+                  Publish ({selectedCount})
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfluenceUnpublishOpen(true)}
+                  disabled={bulkConfluenceUnpublishMutation.isPending}
+                  className="h-8"
+                >
+                  <FileX className={`mr-2 h-4 w-4 ${bulkConfluenceUnpublishMutation.isPending ? "animate-pulse" : ""}`} />
+                  Unpublish ({selectedCount})
+                </Button>
+              </>
+            )}
             <Button
               variant="destructive"
               size="sm"
@@ -251,6 +338,101 @@ export function BulkActionBar({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleBulkRegenerate}>
               {bulkRegenerateMutation.isPending ? "Starting..." : `Regenerate ${selectedCount}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confluence Publish Confirmation */}
+      <AlertDialog open={confluencePublishOpen} onOpenChange={(open) => {
+        setConfluencePublishOpen(open);
+        if (!open) setConfluenceForce(false);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Publish {selectedCount} Summaries to Confluence?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  {selectAllMatching ? (
+                    <>
+                      This will publish <strong>all {selectedCount} summaries</strong> matching your current filters to Confluence.
+                    </>
+                  ) : (
+                    <>
+                      This will publish {selectedCount} {selectedCount === 1 ? "summary" : "summaries"} to Confluence.
+                    </>
+                  )}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Summaries already published will be updated. This runs as a background job with rate limiting.
+                </p>
+                <div className="flex items-center space-x-2 pt-2">
+                  <Checkbox
+                    id="confluence-force"
+                    checked={confluenceForce}
+                    onCheckedChange={(checked) => setConfluenceForce(checked === true)}
+                  />
+                  <label htmlFor="confluence-force" className="text-sm cursor-pointer">
+                    Force update (overwrite external changes)
+                  </label>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkConfluencePublish}>
+              {bulkConfluencePublishMutation.isPending ? "Starting..." : `Publish ${selectedCount}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confluence Unpublish Confirmation */}
+      <AlertDialog open={confluenceUnpublishOpen} onOpenChange={(open) => {
+        setConfluenceUnpublishOpen(open);
+        if (!open) setConfluenceDeletePages(false);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unpublish {selectedCount} Summaries from Confluence?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  {selectAllMatching ? (
+                    <>
+                      This will unpublish <strong>all {selectedCount} summaries</strong> matching your current filters from Confluence.
+                    </>
+                  ) : (
+                    <>
+                      This will unpublish {selectedCount} {selectedCount === 1 ? "summary" : "summaries"} from Confluence.
+                    </>
+                  )}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Only summaries that have been published to Confluence will be affected.
+                </p>
+                <div className="flex items-center space-x-2 pt-2">
+                  <Checkbox
+                    id="confluence-delete-pages"
+                    checked={confluenceDeletePages}
+                    onCheckedChange={(checked) => setConfluenceDeletePages(checked === true)}
+                  />
+                  <label htmlFor="confluence-delete-pages" className="text-sm cursor-pointer">
+                    Also delete pages from Confluence (not just tracking records)
+                  </label>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkConfluenceUnpublish}
+              className={confluenceDeletePages ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
+            >
+              {bulkConfluenceUnpublishMutation.isPending ? "Starting..." : confluenceDeletePages ? `Delete ${selectedCount} Pages` : `Unpublish ${selectedCount}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

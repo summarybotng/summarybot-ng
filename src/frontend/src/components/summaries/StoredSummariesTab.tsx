@@ -12,7 +12,7 @@ import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStoredSummaries, useStoredSummary, useUpdateStoredSummary, useDeleteStoredSummary, usePushToChannel, usePushToDM, useSendToEmail, useRegenerateSummary, useSummaryWikiPages, type SummarySourceType, type RegenerateOptions } from "@/hooks/useStoredSummaries";
 import { usePushToDrive, useServerSyncConfig } from "@/hooks/useArchive";
-import { useConfluencePublish, type PublishToConfluenceResponse } from "@/hooks/useConfluencePublish";
+import { useConfluencePublish, useConfluenceSettings, type PublishToConfluenceResponse } from "@/hooks/useConfluencePublish";
 import { useGuild } from "@/hooks/useGuilds";
 import { useAuthStore } from "@/stores/authStore";
 import { useTimezone, parseAsUTC, formatRelativeTime } from "@/contexts/TimezoneContext";
@@ -438,6 +438,7 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
   const { data: serverSyncConfig } = useServerSyncConfig(guildId);  // ADR-091
   const regenerateMutation = useRegenerateSummary(guildId);
   const confluenceMutation = useConfluencePublish(guildId);  // ADR-099
+  const { data: confluenceSettings } = useConfluenceSettings(guildId);  // ADR-099
   const { timezone } = useTimezone();  // ADR-100: For Confluence footer timestamp
 
   // Refresh both list and calendar views
@@ -876,6 +877,8 @@ export function StoredSummariesTab({ guildId, initialSource, viewSummaryId }: St
             min_message_count: filters.minMessageCount,
             max_message_count: filters.maxMessageCount,
           }}
+          confluenceConfigured={confluenceSettings?.is_configured ?? false}
+          userTimezone={timezone}
         />
       )}
 

@@ -84,6 +84,23 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
             # ADR-102: Get schedule_id for traceability
             schedule_id_value = context.scheduled_task.id if context.scheduled_task else None
 
+            # ADR-109: Debug logging for bi-directional linking
+            if not schedule_id_value:
+                logger.warning(
+                    f"ADR-109: DashboardDeliveryStrategy creating summary {summary.id} "
+                    f"WITHOUT schedule_id. context.scheduled_task={context.scheduled_task}"
+                )
+            else:
+                logger.debug(
+                    f"ADR-109: DashboardDeliveryStrategy creating summary {summary.id} "
+                    f"WITH schedule_id={schedule_id_value}"
+                )
+
+            # ADR-109: Capture schedule name snapshot for historical reference
+            schedule_name_snapshot = None
+            if context.scheduled_task and hasattr(context.scheduled_task, 'name'):
+                schedule_name_snapshot = context.scheduled_task.name
+
             # Create stored summary with SCHEDULED source
             # Use the SummaryResult's ID to ensure job.summary_id matches stored summary
             stored_summary = StoredSummary(
@@ -91,6 +108,7 @@ class DashboardDeliveryStrategy(DeliveryStrategy):
                 guild_id=context.guild_id,
                 source_channel_ids=scope_channel_ids,  # Store full scope for reference
                 schedule_id=schedule_id_value,
+                schedule_name_snapshot=schedule_name_snapshot,  # ADR-109
                 summary_result=summary,
                 title=title,
                 source=SummarySource.SCHEDULED,

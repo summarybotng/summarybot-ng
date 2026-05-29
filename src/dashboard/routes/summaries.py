@@ -53,6 +53,12 @@ from ..models import (
     ConfluenceSettingsRequest,
     ConfluenceSettingsResponse,
     ConfluencePublicationInfo,
+    # Bulk Confluence operations
+    BulkConfluencePublishRequest,
+    BulkConfluencePublishResponse,
+    BulkConfluenceUnpublishRequest,
+    BulkConfluenceUnpublishResponse,
+    BulkConfluenceTaskStatus,
 )
 from . import get_discord_bot, get_summarization_engine, get_summary_repository, get_stored_summary_repository, get_config_manager, get_task_scheduler, get_summary_job_repository, get_config_repository, get_task_repository
 from ...data.base import SearchCriteria
@@ -3906,6 +3912,458 @@ async def publish_summary_to_confluence(
             status_code=500,
             detail={"code": "CONFLUENCE_FAILED", "message": f"Confluence publish failed: {str(e)}"},
         )
+
+
+# ==================== Bulk Confluence Publish/Unpublish ====================
+
+@router.post(
+    "/guilds/{guild_id}/stored-summaries/bulk-confluence-publish",
+    response_model=BulkConfluencePublishResponse,
+    summary="Bulk publish summaries to Confluence",
+    description="Queue multiple summaries for Confluence publishing. Runs as a background job with throttling.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        503: {"model": ErrorResponse, "description": "Confluence not configured"},
+    },
+)
+async def bulk_confluence_publish(
+    request: Request,
+    body: BulkConfluencePublishRequest,
+    guild_id: str = Path(..., description="Discord guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Bulk publish stored summaries to Confluence.
+
+    Runs as a background job to handle rate limiting. Use the task_id
+    to poll for progress via GET /guilds/{guild_id}/jobs/{task_id}/status.
+    """
+    import secrets
+    import os
+
+    _check_guild_access(guild_id, user)
+    require_guild_admin(guild_id, user)
+
+    # Check if Confluence is configured
+    from ...services.confluence import get_confluence_service_for_guild
+    from ...data.repositories import get_confluence_repository
+
+    confluence_service = await get_confluence_service_for_guild(guild_id)
+    if not confluence_service.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "CONFLUENCE_NOT_CONFIGURED",
+                "message": "Confluence not configured for this guild.",
+            },
+        )
+
+    stored_repo = await _get_stored_summary_repository()
+    confluence_repo = await get_confluence_repository()
+
+    # Resolve summary IDs from filters if needed
+    if body.filters:
+        created_after_dt = None
+        created_before_dt = None
+        if body.filters.created_after:
+            try:
+                created_after_dt = datetime.fromisoformat(body.filters.created_after.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+        if body.filters.created_before:
+            try:
+                created_before_dt = datetime.fromisoformat(body.filters.created_before.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+
+        summaries = await stored_repo.find_by_guild(
+            guild_id=guild_id,
+            limit=500,  # Reasonable limit for bulk publish
+            offset=0,
+            include_archived=body.filters.archived if body.filters.archived else False,
+            source=body.filters.source,
+            created_after=created_after_dt,
+            created_before=created_before_dt,
+        )
+        summary_ids = [s.id for s in summaries]
+        logger.info(f"Bulk Confluence publish: resolved {len(summary_ids)} IDs from filters")
+    else:
+        summary_ids = body.summary_ids
+
+    if not summary_ids:
+        return BulkConfluencePublishResponse(
+            task_id="none",
+            queued_count=0,
+            skipped_count=0,
+            skipped_ids=[],
+        )
+
+    # Filter summaries that can be published
+    queued_ids = []
+    skipped_ids = []
+    skipped_reasons: Dict[str, str] = {}
+
+    for summary_id in summary_ids:
+        stored = await stored_repo.get(summary_id)
+        if not stored or stored.guild_id != guild_id:
+            skipped_ids.append(summary_id)
+            skipped_reasons[summary_id] = "Not found or wrong guild"
+            continue
+
+        if not stored.summary_result:
+            skipped_ids.append(summary_id)
+            skipped_reasons[summary_id] = "No content to publish"
+            continue
+
+        queued_ids.append(summary_id)
+
+    if not queued_ids:
+        return BulkConfluencePublishResponse(
+            task_id="none",
+            queued_count=0,
+            skipped_count=len(skipped_ids),
+            skipped_ids=skipped_ids,
+            skipped_reasons=skipped_reasons,
+        )
+
+    # Create task
+    task_id = f"bulk_cfpub_{secrets.token_urlsafe(8)}"
+
+    # Get tenant URL for dashboard links
+    tenant = getattr(request.state, "tenant", None)
+    if tenant and tenant.subdomain:
+        dashboard_base_url = f"https://{tenant.subdomain}.summarybot.app"
+    elif tenant and tenant.custom_domain:
+        dashboard_base_url = f"https://{tenant.custom_domain}"
+    else:
+        dashboard_base_url = os.environ.get("DASHBOARD_URL", "https://summarybot.app")
+
+    # Store task info
+    _generation_tasks[task_id] = {
+        "status": "processing",
+        "type": "bulk_confluence_publish",
+        "guild_id": guild_id,
+        "summary_ids": queued_ids,
+        "completed": 0,
+        "total": len(queued_ids),
+        "successful": 0,
+        "failed": 0,
+        "started_at": utc_now_naive().isoformat(),
+        "errors": [],
+    }
+
+    # Background task with throttling
+    async def run_bulk_publish():
+        from ...data.sqlite.confluence_repository import ConfluencePublication
+
+        try:
+            guild = _get_guild_or_404(guild_id)
+        except HTTPException:
+            guild = None
+
+        for idx, summary_id in enumerate(queued_ids):
+            try:
+                stored = await stored_repo.get(summary_id)
+                if not stored or not stored.summary_result:
+                    _generation_tasks[task_id]["errors"].append(f"{summary_id}: Summary not found")
+                    _generation_tasks[task_id]["failed"] += 1
+                    _generation_tasks[task_id]["completed"] = idx + 1
+                    continue
+
+                # Check for existing publication
+                existing_pub = await confluence_repo.get_by_summary(summary_id) if confluence_repo else None
+
+                # Get channel names
+                channel_names: List[str] = []
+                if guild:
+                    for ch_id in stored.source_channel_ids or []:
+                        try:
+                            channel = guild.get_channel(int(ch_id))
+                            if channel and hasattr(channel, 'name'):
+                                channel_names.append(channel.name)
+                        except (ValueError, AttributeError):
+                            pass
+
+                # Publish
+                page_title = stored.title or f"Summary {summary_id[:8]}"
+                result = await confluence_service.publish_summary(
+                    summary=stored.summary_result,
+                    title=page_title,
+                    existing_page_id=existing_pub.page_id if existing_pub else None,
+                    existing_version=existing_pub.page_version if existing_pub else None,
+                    force=body.force,
+                    summary_id=summary_id,
+                    guild_id=guild_id,
+                    channel_names=channel_names if channel_names else None,
+                    scope_type=stored.scope_type,
+                    category_name=stored.category_name,
+                    user_timezone=body.timezone,
+                    dashboard_base_url=dashboard_base_url,
+                )
+
+                if result.success:
+                    # Save/update publication record
+                    if confluence_repo:
+                        if existing_pub:
+                            await confluence_repo.update_version(
+                                publication_id=existing_pub.id,
+                                new_version=result.page_version or 1,
+                                page_url=result.page_url,
+                            )
+                        else:
+                            publication = ConfluencePublication(
+                                id=f"cfp_{secrets.token_urlsafe(16)}",
+                                summary_id=summary_id,
+                                guild_id=guild_id,
+                                page_id=result.page_id or "",
+                                page_url=result.page_url or "",
+                                page_version=result.page_version or 1,
+                                published_by=user.get("sub", "unknown"),
+                            )
+                            await confluence_repo.save(publication)
+
+                    _generation_tasks[task_id]["successful"] += 1
+                    logger.info(f"Bulk publish: {summary_id} -> {result.page_id}")
+                else:
+                    error_msg = result.error or "Unknown error"
+                    if result.conflict:
+                        error_msg = f"Conflict: {error_msg}"
+                    _generation_tasks[task_id]["errors"].append(f"{summary_id}: {error_msg}")
+                    _generation_tasks[task_id]["failed"] += 1
+
+            except Exception as e:
+                logger.error(f"Bulk Confluence publish failed for {summary_id}: {e}")
+                _generation_tasks[task_id]["errors"].append(f"{summary_id}: {str(e)}")
+                _generation_tasks[task_id]["failed"] += 1
+
+            _generation_tasks[task_id]["completed"] = idx + 1
+
+            # Throttle between requests
+            if idx < len(queued_ids) - 1:
+                await asyncio.sleep(body.throttle_ms / 1000.0)
+
+        _generation_tasks[task_id]["status"] = "completed"
+        _generation_tasks[task_id]["completed_at"] = utc_now_naive().isoformat()
+
+    asyncio.create_task(run_bulk_publish())
+
+    return BulkConfluencePublishResponse(
+        task_id=task_id,
+        queued_count=len(queued_ids),
+        skipped_count=len(skipped_ids),
+        skipped_ids=skipped_ids,
+        skipped_reasons=skipped_reasons,
+    )
+
+
+@router.post(
+    "/guilds/{guild_id}/stored-summaries/bulk-confluence-unpublish",
+    response_model=BulkConfluenceUnpublishResponse,
+    summary="Bulk unpublish summaries from Confluence",
+    description="Remove summaries from Confluence. Optionally deletes the actual pages.",
+    responses={
+        403: {"model": ErrorResponse, "description": "No permission"},
+        503: {"model": ErrorResponse, "description": "Confluence not configured"},
+    },
+)
+async def bulk_confluence_unpublish(
+    body: BulkConfluenceUnpublishRequest,
+    guild_id: str = Path(..., description="Discord guild ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Bulk unpublish stored summaries from Confluence.
+
+    By default, only removes the publication tracking records. Set delete_pages=True
+    to actually delete the pages from Confluence.
+
+    Runs as a background job with throttling.
+    """
+    import secrets
+
+    _check_guild_access(guild_id, user)
+    require_guild_admin(guild_id, user)
+
+    from ...services.confluence import get_confluence_service_for_guild
+    from ...data.repositories import get_confluence_repository
+
+    confluence_service = await get_confluence_service_for_guild(guild_id)
+    confluence_repo = await get_confluence_repository()
+
+    if not confluence_repo:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "CONFLUENCE_NOT_CONFIGURED", "message": "Confluence repository not available."},
+        )
+
+    stored_repo = await _get_stored_summary_repository()
+
+    # Resolve summary IDs from filters if needed
+    if body.filters:
+        created_after_dt = None
+        created_before_dt = None
+        if body.filters.created_after:
+            try:
+                created_after_dt = datetime.fromisoformat(body.filters.created_after.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+        if body.filters.created_before:
+            try:
+                created_before_dt = datetime.fromisoformat(body.filters.created_before.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+
+        summaries = await stored_repo.find_by_guild(
+            guild_id=guild_id,
+            limit=500,
+            offset=0,
+            include_archived=body.filters.archived if body.filters.archived else False,
+            source=body.filters.source,
+            created_after=created_after_dt,
+            created_before=created_before_dt,
+        )
+        summary_ids = [s.id for s in summaries]
+        logger.info(f"Bulk Confluence unpublish: resolved {len(summary_ids)} IDs from filters")
+    else:
+        summary_ids = body.summary_ids
+
+    if not summary_ids:
+        return BulkConfluenceUnpublishResponse(
+            task_id="none",
+            queued_count=0,
+            skipped_count=0,
+            skipped_ids=[],
+        )
+
+    # Filter to summaries that are actually published
+    queued_items = []  # [(summary_id, publication)]
+    skipped_ids = []
+    skipped_reasons: Dict[str, str] = {}
+
+    for summary_id in summary_ids:
+        publication = await confluence_repo.get_by_summary(summary_id)
+        if not publication:
+            skipped_ids.append(summary_id)
+            skipped_reasons[summary_id] = "Not published to Confluence"
+            continue
+
+        if publication.guild_id != guild_id:
+            skipped_ids.append(summary_id)
+            skipped_reasons[summary_id] = "Publication belongs to different guild"
+            continue
+
+        queued_items.append((summary_id, publication))
+
+    if not queued_items:
+        return BulkConfluenceUnpublishResponse(
+            task_id="none",
+            queued_count=0,
+            skipped_count=len(skipped_ids),
+            skipped_ids=skipped_ids,
+            skipped_reasons=skipped_reasons,
+        )
+
+    # Create task
+    task_id = f"bulk_cfunpub_{secrets.token_urlsafe(8)}"
+
+    _generation_tasks[task_id] = {
+        "status": "processing",
+        "type": "bulk_confluence_unpublish",
+        "guild_id": guild_id,
+        "summary_ids": [item[0] for item in queued_items],
+        "completed": 0,
+        "total": len(queued_items),
+        "successful": 0,
+        "failed": 0,
+        "started_at": utc_now_naive().isoformat(),
+        "errors": [],
+    }
+
+    # Background task with throttling
+    async def run_bulk_unpublish():
+        for idx, (summary_id, publication) in enumerate(queued_items):
+            try:
+                # Optionally delete the actual page
+                if body.delete_pages and confluence_service.is_configured():
+                    result = await confluence_service.delete_page(publication.page_id)
+                    if not result.success:
+                        _generation_tasks[task_id]["errors"].append(
+                            f"{summary_id}: Failed to delete page - {result.error}"
+                        )
+                        _generation_tasks[task_id]["failed"] += 1
+                        _generation_tasks[task_id]["completed"] = idx + 1
+                        continue
+
+                # Delete the publication record
+                await confluence_repo.delete(publication.id)
+                _generation_tasks[task_id]["successful"] += 1
+                logger.info(f"Bulk unpublish: removed {summary_id} (page_id={publication.page_id}, deleted={body.delete_pages})")
+
+            except Exception as e:
+                logger.error(f"Bulk Confluence unpublish failed for {summary_id}: {e}")
+                _generation_tasks[task_id]["errors"].append(f"{summary_id}: {str(e)}")
+                _generation_tasks[task_id]["failed"] += 1
+
+            _generation_tasks[task_id]["completed"] = idx + 1
+
+            # Throttle between requests
+            if idx < len(queued_items) - 1:
+                await asyncio.sleep(body.throttle_ms / 1000.0)
+
+        _generation_tasks[task_id]["status"] = "completed"
+        _generation_tasks[task_id]["completed_at"] = utc_now_naive().isoformat()
+
+    asyncio.create_task(run_bulk_unpublish())
+
+    return BulkConfluenceUnpublishResponse(
+        task_id=task_id,
+        queued_count=len(queued_items),
+        skipped_count=len(skipped_ids),
+        skipped_ids=skipped_ids,
+        skipped_reasons=skipped_reasons,
+    )
+
+
+@router.get(
+    "/guilds/{guild_id}/bulk-confluence-task/{task_id}",
+    response_model=BulkConfluenceTaskStatus,
+    summary="Get bulk Confluence task status",
+    description="Get the status of a bulk Confluence publish/unpublish operation.",
+    responses={
+        404: {"model": ErrorResponse, "description": "Task not found"},
+    },
+)
+async def get_bulk_confluence_task_status(
+    guild_id: str = Path(..., description="Discord guild ID"),
+    task_id: str = Path(..., description="Task ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Get status of a bulk Confluence operation."""
+    _check_guild_access(guild_id, user)
+
+    task_info = _generation_tasks.get(task_id)
+    if not task_info or task_info.get("guild_id") != guild_id:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": f"Task {task_id} not found"},
+        )
+
+    if task_info.get("type") not in ("bulk_confluence_publish", "bulk_confluence_unpublish"):
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": f"Task {task_id} is not a Confluence task"},
+        )
+
+    return BulkConfluenceTaskStatus(
+        task_id=task_id,
+        status=task_info.get("status", "unknown"),
+        type=task_info.get("type", "unknown"),
+        completed=task_info.get("completed", 0),
+        total=task_info.get("total", 0),
+        successful=task_info.get("successful", 0),
+        failed=task_info.get("failed", 0),
+        errors=task_info.get("errors", [])[:20],  # Limit errors returned
+        started_at=task_info.get("started_at"),
+        completed_at=task_info.get("completed_at"),
+    )
 
 
 # ==================== ADR-099: Confluence Settings ====================

@@ -19,12 +19,15 @@ class JobType(Enum):
     RETROSPECTIVE = "retrospective"  # Archive backfill
     REGENERATE = "regenerate"   # Regenerate existing summary
     WIKI_BACKFILL = "wiki_backfill"  # ADR-068: Wiki knowledge base backfill
+    BULK_CONFLUENCE_PUBLISH = "bulk_confluence_publish"  # ADR-110: Bulk publish to Confluence
+    BULK_CONFLUENCE_UNPUBLISH = "bulk_confluence_unpublish"  # ADR-110: Bulk unpublish from Confluence
 
 
 class JobCategory(Enum):
     """Category for job filtering in UI (ADR-068)."""
     CHAT_SUMMARY = "chat_summary"       # Manual, Scheduled, Retrospective, Regenerate
     WIKI_MANAGEMENT = "wiki_management"  # Wiki Backfill
+    CONFLUENCE = "confluence"           # ADR-110: Confluence publish/unpublish
 
 
 # Map job types to categories
@@ -34,6 +37,8 @@ JOB_TYPE_CATEGORY = {
     JobType.RETROSPECTIVE: JobCategory.CHAT_SUMMARY,
     JobType.REGENERATE: JobCategory.CHAT_SUMMARY,
     JobType.WIKI_BACKFILL: JobCategory.WIKI_MANAGEMENT,
+    JobType.BULK_CONFLUENCE_PUBLISH: JobCategory.CONFLUENCE,
+    JobType.BULK_CONFLUENCE_UNPUBLISH: JobCategory.CONFLUENCE,
 }
 
 

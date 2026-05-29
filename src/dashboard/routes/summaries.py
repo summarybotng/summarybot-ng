@@ -4038,7 +4038,33 @@ async def bulk_confluence_publish(
     else:
         dashboard_base_url = os.environ.get("DASHBOARD_URL", "https://summarybot.app")
 
-    # Store task info
+    # ADR-110: Create job record for Jobs page tracking
+    job_repo = await get_summary_job_repository()
+    job = SummaryJob(
+        id=task_id,
+        guild_id=guild_id,
+        job_type=JobType.BULK_CONFLUENCE_PUBLISH,
+        status=JobStatus.RUNNING,
+        scope="bulk",
+        progress_current=0,
+        progress_total=len(queued_ids),
+        progress_message=f"Publishing {len(queued_ids)} summaries to Confluence",
+        created_by=user.get("sub"),
+        metadata={
+            "summary_count": len(queued_ids),
+            "force": body.force,
+            "throttle_ms": body.throttle_ms,
+        },
+    )
+    job.start()
+    if job_repo:
+        try:
+            await job_repo.save(job)
+            logger.info(f"Created bulk Confluence publish job {task_id} for {len(queued_ids)} summaries")
+        except Exception as e:
+            logger.warning(f"Failed to persist bulk Confluence job: {e}")
+
+    # Store task info (for backward compatibility with task status endpoint)
     _generation_tasks[task_id] = {
         "status": "processing",
         "type": "bulk_confluence_publish",
@@ -4138,12 +4164,33 @@ async def bulk_confluence_publish(
 
             _generation_tasks[task_id]["completed"] = idx + 1
 
+            # Update job progress
+            if job_repo:
+                try:
+                    job.update_progress(idx + 1, len(queued_ids), f"Published {idx + 1}/{len(queued_ids)}")
+                    await job_repo.update(job)
+                except Exception:
+                    pass
+
             # Throttle between requests
             if idx < len(queued_ids) - 1:
                 await asyncio.sleep(body.throttle_ms / 1000.0)
 
         _generation_tasks[task_id]["status"] = "completed"
         _generation_tasks[task_id]["completed_at"] = utc_now_naive().isoformat()
+
+        # Mark job as completed
+        if job_repo:
+            try:
+                successful = _generation_tasks[task_id]["successful"]
+                failed = _generation_tasks[task_id]["failed"]
+                job.complete(None)
+                job.metadata["successful"] = successful
+                job.metadata["failed"] = failed
+                await job_repo.update(job)
+                logger.info(f"Bulk Confluence publish job {task_id} completed: {successful} successful, {failed} failed")
+            except Exception as e:
+                logger.warning(f"Failed to update job completion: {e}")
 
     asyncio.create_task(run_bulk_publish())
 
@@ -4265,6 +4312,32 @@ async def bulk_confluence_unpublish(
     # Create task
     task_id = f"bulk_cfunpub_{secrets.token_urlsafe(8)}"
 
+    # ADR-110: Create job record for Jobs page tracking
+    job_repo = await get_summary_job_repository()
+    unpub_job = SummaryJob(
+        id=task_id,
+        guild_id=guild_id,
+        job_type=JobType.BULK_CONFLUENCE_UNPUBLISH,
+        status=JobStatus.RUNNING,
+        scope="bulk",
+        progress_current=0,
+        progress_total=len(queued_items),
+        progress_message=f"Removing {len(queued_items)} summaries from Confluence",
+        created_by=user.get("sub"),
+        metadata={
+            "summary_count": len(queued_items),
+            "delete_pages": body.delete_pages,
+            "throttle_ms": body.throttle_ms,
+        },
+    )
+    unpub_job.start()
+    if job_repo:
+        try:
+            await job_repo.save(unpub_job)
+            logger.info(f"Created bulk Confluence unpublish job {task_id} for {len(queued_items)} summaries")
+        except Exception as e:
+            logger.warning(f"Failed to persist bulk Confluence unpublish job: {e}")
+
     _generation_tasks[task_id] = {
         "status": "processing",
         "type": "bulk_confluence_unpublish",
@@ -4305,12 +4378,34 @@ async def bulk_confluence_unpublish(
 
             _generation_tasks[task_id]["completed"] = idx + 1
 
+            # Update job progress
+            if job_repo:
+                try:
+                    unpub_job.update_progress(idx + 1, len(queued_items), f"Unpublished {idx + 1}/{len(queued_items)}")
+                    await job_repo.update(unpub_job)
+                except Exception:
+                    pass
+
             # Throttle between requests
             if idx < len(queued_items) - 1:
                 await asyncio.sleep(body.throttle_ms / 1000.0)
 
         _generation_tasks[task_id]["status"] = "completed"
         _generation_tasks[task_id]["completed_at"] = utc_now_naive().isoformat()
+
+        # Mark job as completed
+        if job_repo:
+            try:
+                successful = _generation_tasks[task_id]["successful"]
+                failed = _generation_tasks[task_id]["failed"]
+                unpub_job.complete(None)
+                unpub_job.metadata["successful"] = successful
+                unpub_job.metadata["failed"] = failed
+                unpub_job.metadata["pages_deleted"] = body.delete_pages
+                await job_repo.update(unpub_job)
+                logger.info(f"Bulk Confluence unpublish job {task_id} completed: {successful} successful, {failed} failed")
+            except Exception as e:
+                logger.warning(f"Failed to update unpublish job completion: {e}")
 
     asyncio.create_task(run_bulk_unpublish())
 

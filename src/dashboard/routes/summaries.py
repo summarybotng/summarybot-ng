@@ -2817,8 +2817,16 @@ async def regenerate_stored_summary(
             channel_name = "regenerated"
             guild_name = ""
             if guild and channel_ids:
-                primary_channel = guild.get_channel(int(channel_ids[0]))
-                channel_name = primary_channel.name if primary_channel else "unknown"
+                first_channel_id = channel_ids[0]
+                # Only try to get Discord channel if channel_id looks like a Discord ID (numeric)
+                if first_channel_id.isdigit():
+                    primary_channel = guild.get_channel(int(first_channel_id))
+                    channel_name = primary_channel.name if primary_channel else "unknown"
+                else:
+                    # WhatsApp or other non-Discord source - extract name from chat_id
+                    # WhatsApp format: "chatname-hash" (e.g., "agentic-tribe-a7a830")
+                    parts = first_channel_id.rsplit('-', 1)
+                    channel_name = parts[0] if len(parts) > 1 else first_channel_id
                 guild_name = guild.name
 
             actual_start = start_time or (stored.created_at - timedelta(hours=24))

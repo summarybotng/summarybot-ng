@@ -1,7 +1,7 @@
 # ADR-111: Retrospective Summary Auto-Publish to Confluence
 
 ## Status
-Proposed
+Implemented (2026-05-29)
 
 ## Date
 2026-05-29

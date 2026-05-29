@@ -79,6 +79,8 @@ class GenerateRequest(BaseModel):
     # ADR-096: Per-channel mode - generate one summary per channel
     per_channel: bool = False
     min_channel_messages: int = 5  # Skip channels with fewer messages
+    # ADR-111: Auto-publish to Confluence
+    auto_publish_confluence: bool = False
 
 
 class BackfillReportRequest(BaseModel):
@@ -142,6 +144,9 @@ class JobResponse(BaseModel):
     completed_at: Optional[str] = None
     pause_reason: Optional[str] = None
     error: Optional[str] = None
+    # ADR-111: Confluence auto-publish tracking
+    confluence_published: int = 0
+    confluence_errors: Dict[str, str] = {}
 
 
 class CostEstimateResponse(BaseModel):
@@ -396,6 +401,20 @@ def create_whatsapp_message_fetcher(archive_root: Path, group_id: str, chat_ids:
 
     async def fetch_messages(source, start_time, end_time):
         """Fetch messages for a period from imported WhatsApp data."""
+        # Determine which chat_ids to filter by:
+        # 1. If source has a specific channel_id (per-channel mode), use that
+        # 2. Otherwise, use chat_ids from closure (if any)
+        # 3. Otherwise, fetch all chats for the guild
+        effective_chat_ids = chat_ids
+        if source and hasattr(source, 'channel_id') and source.channel_id:
+            # Per-channel mode: use the source's specific channel_id
+            effective_chat_ids = [source.channel_id]
+            logger.debug(f"WhatsApp fetch using source.channel_id: {source.channel_id}")
+        elif source and hasattr(source, 'channel_ids') and source.channel_ids:
+            # Multiple specific channels
+            effective_chat_ids = source.channel_ids
+            logger.debug(f"WhatsApp fetch using source.channel_ids: {source.channel_ids}")
+
         # Try file-based archive first
         messages = await importer.get_messages_for_period(
             group_id=group_id,
@@ -414,11 +433,9 @@ def create_whatsapp_message_fetcher(archive_root: Path, group_id: str, chat_ids:
                     start_iso = start_time.isoformat() if hasattr(start_time, 'isoformat') else str(start_time)
                     end_iso = end_time.isoformat() if hasattr(end_time, 'isoformat') else str(end_time)
 
-                    # Fix: Query by guild_id, not chat_id
-                    # group_id is the Discord guild ID that owns the WhatsApp imports
-                    # Optionally filter by specific chat_ids if provided
-                    if chat_ids:
-                        placeholders = ",".join("?" * len(chat_ids))
+                    # Query by guild_id, optionally filtering by specific chat_ids
+                    if effective_chat_ids:
+                        placeholders = ",".join("?" * len(effective_chat_ids))
                         rows = await conn.fetch_all(
                             f"""
                             SELECT
@@ -438,8 +455,9 @@ def create_whatsapp_message_fetcher(archive_root: Path, group_id: str, chat_ids:
                               AND m.content != ''
                             ORDER BY m.timestamp ASC
                             """,
-                            (group_id, *chat_ids, start_iso, end_iso)
+                            (group_id, *effective_chat_ids, start_iso, end_iso)
                         )
+                        logger.debug(f"WhatsApp query with chat_ids filter: {effective_chat_ids}, got {len(rows)} rows")
                     else:
                         rows = await conn.fetch_all(
                             """
@@ -461,6 +479,7 @@ def create_whatsapp_message_fetcher(archive_root: Path, group_id: str, chat_ids:
                             """,
                             (group_id, start_iso, end_iso)
                         )
+                        logger.debug(f"WhatsApp query without chat_ids filter, got {len(rows)} rows")
 
                     # Convert to archive message format
                     for row in rows:
@@ -1051,6 +1070,8 @@ async def generate_retrospective(request: GenerateRequest):
         # ADR-096: Per-channel mode
         per_channel=request.per_channel or False,
         min_channel_messages=request.min_channel_messages or 5,
+        # ADR-111: Auto-publish to Confluence
+        auto_publish_confluence=request.auto_publish_confluence or False,
     )
 
     # Start job in background if not dry run

@@ -19,6 +19,7 @@ import {
   type GenerationJob,
 } from "@/hooks/useArchive";
 import { useGuild } from "@/hooks/useGuilds";
+import { useConfluenceSettings } from "@/hooks/useConfluencePublish";
 import { ScopeSelector, type ScopeSelectorValue, getInitialScopeValue } from "@/components/ScopeSelector";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -98,6 +99,9 @@ export function Archive() {
   const { data: activeJob } = useGenerationJob(activeJobId);
   // ADR-011: Get guild data for scope selection
   const { data: guild } = useGuild(guildId || "");
+
+  // ADR-111: Check Confluence configuration
+  const { data: confluenceSettings } = useConfluenceSettings(guildId || "");
 
   // Mutations
   const estimateCost = useEstimateCost();
@@ -185,6 +189,7 @@ export function Archive() {
               sources={sources || []}
               channels={guild?.channels || []}
               categories={guild?.categories || []}
+              confluenceConfigured={confluenceSettings?.is_configured ?? false}
               onEstimate={async (request) => {
                 const result = await estimateCost.mutateAsync(request);
                 return result;
@@ -218,6 +223,17 @@ export function Archive() {
                       {activeJob.progress.completed} of {activeJob.progress.total || "?"} complete
                       {activeJob.progress.failed > 0 && ` (${activeJob.progress.failed} failed)`}
                     </p>
+                    {/* ADR-111: Confluence auto-publish stats */}
+                    {(activeJob.confluence_published ?? 0) > 0 && (
+                      <p className="text-sm text-green-600">
+                        {activeJob.confluence_published} published to Confluence
+                      </p>
+                    )}
+                    {Object.keys(activeJob.confluence_errors || {}).length > 0 && (
+                      <p className="text-sm text-orange-500">
+                        {Object.keys(activeJob.confluence_errors || {}).length} Confluence errors
+                      </p>
+                    )}
                   </div>
                 </div>
                 <Button
@@ -515,6 +531,7 @@ function GenerateDialog({
   sources,
   channels,
   categories,
+  confluenceConfigured,
   onEstimate,
   onGenerate,
   isPending,
@@ -523,6 +540,7 @@ function GenerateDialog({
   sources: ArchiveSource[];
   channels: { id: string; name: string; type: string }[];
   categories: { id: string; name: string; channel_count: number }[];
+  confluenceConfigured: boolean;
   onEstimate: (request: GenerateRequest) => Promise<{ periods: number; estimated_cost_usd: number; estimated_tokens: number; model: string }>;
   onGenerate: (request: GenerateRequest) => Promise<void>;
   isPending: boolean;
@@ -542,6 +560,8 @@ function GenerateDialog({
   const [scopeValue, setScopeValue] = useState<ScopeSelectorValue>(getInitialScopeValue("guild"));
   // WhatsApp source selection
   const [whatsappSourceId, setWhatsappSourceId] = useState<string>("");
+  // ADR-111: Auto-publish to Confluence
+  const [autoPublishConfluence, setAutoPublishConfluence] = useState(false);
 
   // Filter WhatsApp sources from all sources
   const whatsappSources = sources.filter(s => s.source_type === "whatsapp");
@@ -562,6 +582,8 @@ function GenerateDialog({
       regenerate_failed: regenerateFailed,
       force_regenerate: forceRegenerate,
       dry_run: dryRun,
+      // ADR-111: Auto-publish to Confluence
+      auto_publish_confluence: autoPublishConfluence && confluenceConfigured,
     };
 
     // Add scope-specific fields (only for Discord)
@@ -756,6 +778,25 @@ function GenerateDialog({
               id="force-regenerate"
               checked={forceRegenerate}
               onCheckedChange={setForceRegenerate}
+            />
+          </div>
+          {/* ADR-111: Auto-publish to Confluence */}
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="auto-publish-confluence" className={!confluenceConfigured ? "text-muted-foreground" : ""}>
+                Auto-publish to Confluence
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                {confluenceConfigured
+                  ? "Publish each summary to Confluence as it's generated"
+                  : "Configure Confluence in Settings to enable"}
+              </p>
+            </div>
+            <Switch
+              id="auto-publish-confluence"
+              checked={autoPublishConfluence}
+              onCheckedChange={setAutoPublishConfluence}
+              disabled={!confluenceConfigured}
             />
           </div>
         </div>

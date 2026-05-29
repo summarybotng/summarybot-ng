@@ -2118,15 +2118,39 @@ function StoredSummaryDetailSheet({
                         </div>
                         <div className="flex flex-wrap gap-1">
                           {summary.source_channel_ids.slice(0, 20).map((channelId) => {
-                            const channel = guild?.channels?.find((c) => c.id === channelId);
+                            // ADR-111: Check platform before looking up channel names
+                            // WhatsApp/Slack IDs should not be looked up in Discord channels
+                            const platform = summary.archive_source_key?.split(":")[0];
+                            const isDiscord = !platform || platform === "discord";
+                            const channel = isDiscord ? guild?.channels?.find((c) => c.id === channelId) : null;
+
+                            // Format display name based on platform
+                            let displayName: string;
+                            let titleText: string;
+                            if (channel) {
+                              displayName = `#${channel.name}`;
+                              titleText = `#${channel.name}`;
+                            } else if (platform === "whatsapp") {
+                              // WhatsApp chat_id format: "chatname-hash" - extract the name part
+                              const parts = channelId.split("-");
+                              displayName = parts.length > 1 ? parts.slice(0, -1).join("-") : channelId;
+                              titleText = `WhatsApp: ${displayName}`;
+                            } else if (platform === "slack") {
+                              displayName = channelId;
+                              titleText = `Slack: ${channelId}`;
+                            } else {
+                              displayName = `ID: ${channelId.slice(-6)}`;
+                              titleText = channelId;
+                            }
+
                             return (
                               <Badge
                                 key={channelId}
                                 variant="secondary"
                                 className="text-xs font-normal"
-                                title={channel ? `#${channel.name}` : channelId}
+                                title={titleText}
                               >
-                                {channel ? `#${channel.name}` : `ID: ${channelId.slice(-6)}`}
+                                {displayName}
                               </Badge>
                             );
                           })}

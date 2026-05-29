@@ -80,6 +80,8 @@ export interface GenerateRequest {
   // Summary options
   summary_type?: "brief" | "detailed" | "comprehensive";
   perspective?: "general" | "developer" | "marketing" | "product" | "finance" | "executive" | "support";
+  // ADR-111: Auto-publish to Confluence
+  auto_publish_confluence?: boolean;
 }
 
 export interface GenerationJob {
@@ -106,6 +108,9 @@ export interface GenerationJob {
   started_at?: string;
   completed_at?: string;
   error?: string;
+  // ADR-111: Confluence auto-publish tracking
+  confluence_published?: number;
+  confluence_errors?: Record<string, string>;
 }
 
 export interface SourceCostInfo {

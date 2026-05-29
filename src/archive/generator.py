@@ -123,6 +123,11 @@ class GenerationJob:
     per_channel: bool = False  # Generate one summary per channel instead of guild-wide
     min_channel_messages: int = 5  # Skip channels with fewer messages
 
+    # ADR-111: Auto-publish to Confluence
+    auto_publish_confluence: bool = False
+    confluence_published: int = 0
+    confluence_errors: Dict[str, str] = field(default_factory=dict)
+
     # Results
     summary_ids: List[str] = field(default_factory=list)  # IDs of created summaries
 
@@ -164,6 +169,9 @@ class GenerationJob:
             "error": self.error,
             # Results
             "summary_ids": self.summary_ids,
+            # ADR-111: Confluence auto-publish tracking
+            "confluence_published": self.confluence_published,
+            "confluence_errors": self.confluence_errors,
         }
 
 
@@ -234,6 +242,7 @@ class RetrospectiveGenerator:
         lookback_hours: Optional[int] = None,
         per_channel: bool = False,
         min_channel_messages: int = 5,
+        auto_publish_confluence: bool = False,
     ) -> GenerationJob:
         """
         Create a new generation job.
@@ -251,6 +260,7 @@ class RetrospectiveGenerator:
             dry_run: Estimate cost without generating
             summary_type: Type of summary (brief, detailed, comprehensive)
             perspective: Perspective/audience (general, developer, etc.)
+            auto_publish_confluence: ADR-111 - Auto-publish to Confluence after saving
             schedule_days: For weekly granularity - which days to generate (0=Sun, 6=Sat)
             lookback_hours: How many hours to look back for each summary
             per_channel: ADR-096 - Generate one summary per channel instead of guild-wide
@@ -288,6 +298,7 @@ class RetrospectiveGenerator:
             lookback_hours=lookback_hours,
             per_channel=per_channel,
             min_channel_messages=min_channel_messages,
+            auto_publish_confluence=auto_publish_confluence,
         )
 
         if max_cost_usd:
@@ -983,9 +994,94 @@ class RetrospectiveGenerator:
             await self.stored_summary_repository.save(stored)
             logger.debug(f"Saved archive summary to database: {summary_id}")
 
+            # ADR-111: Auto-publish to Confluence if enabled
+            if job.auto_publish_confluence:
+                await self._auto_publish_to_confluence(job, stored, summary_id)
+                # Throttle between publishes (ADR-110: 2s default)
+                await asyncio.sleep(2.0)
+
         except Exception as e:
             # Log but don't fail the job - file was already written
             logger.warning(f"Failed to save archive summary to database: {e}")
+
+    async def _auto_publish_to_confluence(
+        self,
+        job: GenerationJob,
+        stored: Any,  # StoredSummary
+        summary_id: str,
+    ) -> bool:
+        """
+        ADR-111: Auto-publish summary to Confluence if enabled and configured.
+
+        Non-blocking: errors are logged and tracked but don't fail the job.
+        Uses same publish logic as manual/bulk publish (ADR-099/110).
+
+        Args:
+            job: The generation job
+            stored: The StoredSummary that was just saved
+            summary_id: The summary ID
+
+        Returns:
+            True if published successfully, False otherwise
+        """
+        from ..services.confluence import get_confluence_service_for_guild
+        from ..data.repositories import get_confluence_repository
+        from ..data.sqlite.confluence_repository import ConfluencePublication
+        import secrets
+
+        guild_id = stored.guild_id
+
+        try:
+            # Check if Confluence is configured for this guild
+            confluence_service = await get_confluence_service_for_guild(guild_id)
+            if not confluence_service.is_configured():
+                logger.debug(f"Confluence not configured for guild {guild_id}, skipping auto-publish")
+                return False
+
+            # Extract channel names from stored summary for labels
+            channel_names = None
+            if stored.summary_result and hasattr(stored.summary_result, 'metadata'):
+                metadata = stored.summary_result.metadata or {}
+                channel_names = metadata.get('channel_names')
+
+            # Publish using same method as manual/bulk publish
+            result = await confluence_service.publish_summary(
+                summary=stored.summary_result,
+                title=stored.title or f"Summary {summary_id[:8]}",
+                summary_id=summary_id,
+                guild_id=guild_id,
+                channel_names=channel_names,
+                scope_type=stored.scope_type,
+                category_name=stored.category_name,
+            )
+
+            if result.success:
+                # Save publication record (same as manual publish)
+                confluence_repo = await get_confluence_repository()
+                if confluence_repo:
+                    publication = ConfluencePublication(
+                        id=f"cfp_{secrets.token_urlsafe(16)}",
+                        summary_id=summary_id,
+                        guild_id=guild_id,
+                        page_id=result.page_id or "",
+                        page_url=result.page_url or "",
+                        page_version=result.page_version or 1,
+                        published_by="auto_retrospective",
+                    )
+                    await confluence_repo.save(publication)
+
+                job.confluence_published += 1
+                logger.info(f"[{job.job_id}] Auto-published {summary_id} to Confluence: {result.page_url}")
+                return True
+            else:
+                job.confluence_errors[summary_id] = result.error or "Unknown error"
+                logger.warning(f"[{job.job_id}] Failed to auto-publish {summary_id}: {result.error}")
+                return False
+
+        except Exception as e:
+            job.confluence_errors[summary_id] = str(e)
+            logger.exception(f"[{job.job_id}] Error auto-publishing {summary_id} to Confluence: {e}")
+            return False
 
     def _generate_periods(
         self,

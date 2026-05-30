@@ -355,10 +355,11 @@ function ImportCard({
   onView: () => void;
   onDelete: () => void;
 }) {
-  const dateRange = `${format(new Date(importData.date_range.start), "MMM d")} - ${format(
-    new Date(importData.date_range.end),
-    "MMM d, yyyy"
-  )}`;
+  // Show year on start date if it differs from end date
+  const startDate = new Date(importData.date_range.start);
+  const endDate = new Date(importData.date_range.end);
+  const startFormat = startDate.getFullYear() !== endDate.getFullYear() ? "MMM d, yyyy" : "MMM d";
+  const dateRange = `${format(startDate, startFormat)} - ${format(endDate, "MMM d, yyyy")}`;
 
   return (
     <motion.div

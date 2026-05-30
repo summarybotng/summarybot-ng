@@ -424,10 +424,13 @@ def create_whatsapp_message_fetcher(archive_root: Path, group_id: str, chat_ids:
 
         # ADR-081: If no messages from file archive, try database imports
         if not messages:
+            logger.info(f"WhatsApp: No file archive messages, trying database for guild={group_id}")
             try:
                 from ...data.repositories import get_repository_factory
                 factory = get_repository_factory()
+                logger.info(f"WhatsApp: Got factory={factory}")
                 conn = await factory.get_connection()
+                logger.info(f"WhatsApp: Got conn={conn}")
                 if conn:
                     # Query ingest_messages via whatsapp_imports
                     start_iso = start_time.isoformat() if hasattr(start_time, 'isoformat') else str(start_time)
@@ -479,7 +482,7 @@ def create_whatsapp_message_fetcher(archive_root: Path, group_id: str, chat_ids:
                             """,
                             (group_id, start_iso, end_iso)
                         )
-                        logger.debug(f"WhatsApp query without chat_ids filter, got {len(rows)} rows")
+                        logger.info(f"WhatsApp query without chat_ids filter, got {len(rows)} rows")
 
                     # Convert to archive message format
                     for row in rows:
@@ -492,7 +495,8 @@ def create_whatsapp_message_fetcher(archive_root: Path, group_id: str, chat_ids:
                             "timestamp": row["timestamp"],
                         })
             except Exception as e:
-                logger.warning(f"Failed to fetch WhatsApp messages from database: {e}")
+                import traceback
+                logger.error(f"Failed to fetch WhatsApp messages from database: {e}\n{traceback.format_exc()}")
 
         logger.info(
             f"Fetched {len(messages)} WhatsApp messages for {group_id} "

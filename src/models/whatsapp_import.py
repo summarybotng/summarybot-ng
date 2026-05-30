@@ -1,14 +1,14 @@
 """
-WhatsApp Import models (ADR-081).
+WhatsApp Import models (ADR-081, ADR-112).
 
 Provides data classes for import tracking, identity resolution,
-and participant management.
+participant management, and coverage gap awareness.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, date
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 
 class ImportStatus(str, Enum):
@@ -58,6 +58,10 @@ class WhatsAppImport:
     # Anonymization
     anonymization_version: int = 1
     participants_json: Optional[str] = None
+
+    # ADR-112: Detected events from system messages
+    detected_join_date: Optional[date] = None
+    detected_events_json: Optional[str] = None
 
     # Soft delete
     deleted_at: Optional[datetime] = None
@@ -162,16 +166,89 @@ class WhatsAppMessageFingerprint:
     created_at: Optional[datetime] = None
 
 
+class GapType(str, Enum):
+    """Type of coverage gap (ADR-112)."""
+    BEFORE_JOIN = "before_join"  # Gap before user joined the chat
+    BETWEEN_IMPORTS = "between_imports"  # Gap between two imports
+    AFTER_LAST = "after_last"  # Gap after last import to present
+
+
+class DetectedEventType(str, Enum):
+    """Type of detected event from system messages (ADR-112)."""
+    GROUP_CREATED = "group_created"
+    USER_JOINED = "user_joined"
+    USER_ADDED = "user_added"
+    USER_LEFT = "user_left"
+
+
+@dataclass
+class DetectedEvent:
+    """An event detected from system messages (ADR-112)."""
+    event_type: DetectedEventType
+    timestamp: datetime
+    details: Optional[str] = None  # e.g., "joined using invite link"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "event_type": self.event_type.value,
+            "timestamp": self.timestamp.isoformat(),
+            "details": self.details,
+        }
+
+
+@dataclass
+class CoverageGap:
+    """A gap in coverage for a WhatsApp chat (ADR-112)."""
+    start: date
+    end: date
+    gap_type: GapType
+    days: int
+    can_fill: bool = True  # True if another user might have this data
+
+    def to_dict(self) -> Dict[str, Any]:
+        fill_hints = {
+            GapType.BEFORE_JOIN: "Ask group members who joined earlier to export",
+            GapType.BETWEEN_IMPORTS: "Import another export covering this period",
+            GapType.AFTER_LAST: "Export recent messages from WhatsApp",
+        }
+        return {
+            "start": self.start.isoformat(),
+            "end": self.end.isoformat(),
+            "type": self.gap_type.value,
+            "days": self.days,
+            "can_fill": self.can_fill,
+            "fill_hint": fill_hints.get(self.gap_type, ""),
+        }
+
+
 @dataclass
 class ChatCoverage:
-    """Coverage information for a WhatsApp chat."""
+    """Coverage information for a WhatsApp chat (ADR-081, ADR-112)."""
     chat_id: str
     chat_name: str
     earliest: Optional[datetime]
     latest: Optional[datetime]
     total_messages: int
     import_count: int
-    gaps: List[Dict[str, Any]] = field(default_factory=list)
+    gaps: List[CoverageGap] = field(default_factory=list)
+    # ADR-112: Additional coverage metadata
+    detected_join_date: Optional[date] = None
+    detected_events: List[DetectedEvent] = field(default_factory=list)
+    coverage_percent: Optional[float] = None  # Estimated coverage if join date known
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "chat_id": self.chat_id,
+            "chat_name": self.chat_name,
+            "earliest": self.earliest.isoformat() if self.earliest else None,
+            "latest": self.latest.isoformat() if self.latest else None,
+            "total_messages": self.total_messages,
+            "import_count": self.import_count,
+            "gaps": [g.to_dict() for g in self.gaps],
+            "detected_join_date": self.detected_join_date.isoformat() if self.detected_join_date else None,
+            "detected_events": [e.to_dict() for e in self.detected_events],
+            "coverage_percent": round(self.coverage_percent, 1) if self.coverage_percent else None,
+        }
 
 
 @dataclass

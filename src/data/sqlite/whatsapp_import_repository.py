@@ -1,15 +1,15 @@
 """
-SQLite implementation of WhatsApp import repository (ADR-081).
+SQLite implementation of WhatsApp import repository (ADR-081, ADR-112).
 
 Provides import tracking, participant identity management,
-and message fingerprinting for deduplication.
+message fingerprinting for deduplication, and coverage gap awareness.
 """
 
 import json
 import logging
 import hashlib
 import uuid
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from .connection import SQLiteConnection
@@ -19,6 +19,10 @@ from ...models.whatsapp_import import (
     WhatsAppIdentityMerge,
     WhatsAppMessageFingerprint,
     ChatCoverage,
+    CoverageGap,
+    GapType,
+    DetectedEvent,
+    DetectedEventType,
     ImportStatus,
 )
 from ...services.anonymization.phone_anonymizer import (
@@ -87,9 +91,14 @@ class SQLiteWhatsAppImportRepository:
             original_filename, file_hash, file_size_bytes, format,
             date_range_start, date_range_end,
             message_count, participant_count,
-            status, anonymization_version, participants_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            status, anonymization_version, participants_json,
+            detected_join_date, detected_events_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
+        # ADR-112: Serialize detected_join_date and detected_events_json
+        detected_join_date_str = import_record.detected_join_date.isoformat() if import_record.detected_join_date else None
+        detected_events_json_str = import_record.detected_events_json
+
         params = (
             import_record.id,
             import_record.guild_id,
@@ -108,6 +117,8 @@ class SQLiteWhatsAppImportRepository:
             import_record.status.value if isinstance(import_record.status, ImportStatus) else import_record.status,
             import_record.anonymization_version,
             import_record.participants_json,
+            detected_join_date_str,
+            detected_events_json_str,
         )
         await self.connection.execute(query, params)
         return import_record.id
@@ -662,8 +673,94 @@ class SQLiteWhatsAppImportRepository:
 
     # ==================== Coverage ====================
 
+    def _calculate_gaps(
+        self,
+        imports: List[WhatsAppImport],
+        detected_join_date: Optional[date] = None,
+    ) -> List[CoverageGap]:
+        """
+        Calculate coverage gaps from imports (ADR-112).
+
+        Args:
+            imports: List of completed imports sorted by date_range_start
+            detected_join_date: Earliest known join date (from system messages)
+
+        Returns:
+            List of CoverageGap objects
+        """
+        if not imports:
+            return []
+
+        gaps: List[CoverageGap] = []
+
+        # Sort imports by date range start
+        sorted_imports = sorted(imports, key=lambda i: i.date_range_start)
+
+        # Get the earliest message date
+        first_msg_date = sorted_imports[0].date_range_start.date()
+
+        # Gap before first import (if join date is known and earlier)
+        if detected_join_date and detected_join_date < first_msg_date:
+            gap_days = (first_msg_date - detected_join_date).days
+            if gap_days > 0:
+                gaps.append(CoverageGap(
+                    start=detected_join_date,
+                    end=first_msg_date - timedelta(days=1),
+                    gap_type=GapType.BEFORE_JOIN,
+                    days=gap_days,
+                    can_fill=True,  # Another user might have this data
+                ))
+
+        # Gaps between imports
+        for i in range(len(sorted_imports) - 1):
+            current_end = sorted_imports[i].date_range_end.date()
+            next_start = sorted_imports[i + 1].date_range_start.date()
+
+            # Check if there's a gap (more than 1 day between imports)
+            gap_days = (next_start - current_end).days - 1
+            if gap_days > 0:
+                gaps.append(CoverageGap(
+                    start=current_end + timedelta(days=1),
+                    end=next_start - timedelta(days=1),
+                    gap_type=GapType.BETWEEN_IMPORTS,
+                    days=gap_days,
+                    can_fill=True,
+                ))
+
+        return gaps
+
+    def _calculate_coverage_percent(
+        self,
+        earliest: Optional[datetime],
+        latest: Optional[datetime],
+        detected_join_date: Optional[date],
+        gaps: List[CoverageGap],
+    ) -> Optional[float]:
+        """
+        Calculate coverage percentage (ADR-112).
+
+        If we know the join date, we can estimate what percentage of
+        possible messages are covered.
+        """
+        if not detected_join_date or not earliest or not latest:
+            return None
+
+        # Total possible days (from join to latest import)
+        total_days = (latest.date() - detected_join_date).days + 1
+        if total_days <= 0:
+            return 100.0
+
+        # Gap days
+        gap_days = sum(g.days for g in gaps)
+
+        # Covered days
+        covered_days = total_days - gap_days
+
+        return (covered_days / total_days) * 100
+
     async def get_chat_coverage(self, guild_id: str, chat_id: str) -> ChatCoverage:
-        """Calculate coverage for a chat."""
+        """Calculate coverage for a chat (ADR-081, ADR-112)."""
+        # Get aggregate stats
         query = """
         SELECT
             chat_name,
@@ -688,18 +785,69 @@ class SQLiteWhatsAppImportRepository:
                 import_count=0,
             )
 
-        # TODO: Calculate gaps between imports
+        # ADR-112: Get individual imports to calculate gaps
+        imports_query = """
+        SELECT * FROM whatsapp_imports
+        WHERE guild_id = ? AND chat_id = ?
+        AND deleted_at IS NULL AND status = 'completed'
+        ORDER BY date_range_start
+        """
+        import_rows = await self.connection.fetch_all(imports_query, (guild_id, chat_id))
+        imports = [self._row_to_import(r) for r in import_rows]
+
+        # Find earliest detected join date across all imports
+        detected_join_date = None
+        detected_events: List[DetectedEvent] = []
+        for imp in imports:
+            if imp.detected_join_date:
+                if detected_join_date is None or imp.detected_join_date < detected_join_date:
+                    detected_join_date = imp.detected_join_date
+
+            # Parse detected events from JSON
+            if imp.detected_events_json:
+                try:
+                    events_data = json.loads(imp.detected_events_json)
+                    for e in events_data:
+                        detected_events.append(DetectedEvent(
+                            event_type=DetectedEventType(e["event_type"]),
+                            timestamp=datetime.fromisoformat(e["timestamp"]),
+                            details=e.get("details"),
+                        ))
+                except (json.JSONDecodeError, KeyError, ValueError):
+                    pass
+
+        # Calculate gaps
+        gaps = self._calculate_gaps(imports, detected_join_date)
+
+        earliest = datetime.fromisoformat(row["earliest"]) if row["earliest"] else None
+        latest = datetime.fromisoformat(row["latest"]) if row["latest"] else None
+
+        # Calculate coverage percentage
+        coverage_percent = self._calculate_coverage_percent(
+            earliest, latest, detected_join_date, gaps
+        )
+
         return ChatCoverage(
             chat_id=chat_id,
             chat_name=row["chat_name"] or "",
-            earliest=datetime.fromisoformat(row["earliest"]) if row["earliest"] else None,
-            latest=datetime.fromisoformat(row["latest"]) if row["latest"] else None,
+            earliest=earliest,
+            latest=latest,
             total_messages=row["total_messages"] or 0,
             import_count=row["import_count"] or 0,
+            gaps=gaps,
+            detected_join_date=detected_join_date,
+            detected_events=detected_events,
+            coverage_percent=coverage_percent,
         )
 
-    async def get_chats_for_guild(self, guild_id: str) -> List[ChatCoverage]:
-        """Get all chats with coverage info for a guild."""
+    async def get_chats_for_guild(self, guild_id: str, include_gaps: bool = False) -> List[ChatCoverage]:
+        """
+        Get all chats with coverage info for a guild (ADR-081, ADR-112).
+
+        Args:
+            guild_id: Guild identifier
+            include_gaps: If True, calculate gaps for each chat (slower)
+        """
         query = """
         SELECT
             chat_id,
@@ -707,7 +855,8 @@ class SQLiteWhatsAppImportRepository:
             MIN(date_range_start) as earliest,
             MAX(date_range_end) as latest,
             SUM(message_count) as total_messages,
-            COUNT(*) as import_count
+            COUNT(*) as import_count,
+            MIN(detected_join_date) as detected_join_date
         FROM whatsapp_imports
         WHERE guild_id = ?
         AND deleted_at IS NULL AND status = 'completed'
@@ -716,17 +865,57 @@ class SQLiteWhatsAppImportRepository:
         """
         rows = await self.connection.fetch_all(query, (guild_id,))
 
-        return [
-            ChatCoverage(
+        results = []
+        for row in rows:
+            earliest = datetime.fromisoformat(row["earliest"]) if row["earliest"] else None
+            latest = datetime.fromisoformat(row["latest"]) if row["latest"] else None
+
+            # Parse detected_join_date
+            detected_join_date = None
+            if row.get("detected_join_date"):
+                try:
+                    detected_join_date = date.fromisoformat(row["detected_join_date"])
+                except ValueError:
+                    try:
+                        detected_join_date = datetime.fromisoformat(row["detected_join_date"]).date()
+                    except ValueError:
+                        pass
+
+            gaps: List[CoverageGap] = []
+            coverage_percent = None
+
+            if include_gaps:
+                # Full gap calculation requires fetching individual imports
+                coverage = await self.get_chat_coverage(guild_id, row["chat_id"])
+                gaps = coverage.gaps
+                coverage_percent = coverage.coverage_percent
+            elif detected_join_date and earliest:
+                # Quick estimate: just check if there's a gap before first message
+                first_msg_date = earliest.date()
+                if detected_join_date < first_msg_date:
+                    gap_days = (first_msg_date - detected_join_date).days
+                    if gap_days > 0:
+                        gaps.append(CoverageGap(
+                            start=detected_join_date,
+                            end=first_msg_date - timedelta(days=1),
+                            gap_type=GapType.BEFORE_JOIN,
+                            days=gap_days,
+                            can_fill=True,
+                        ))
+
+            results.append(ChatCoverage(
                 chat_id=row["chat_id"],
                 chat_name=row["chat_name"] or "",
-                earliest=datetime.fromisoformat(row["earliest"]) if row["earliest"] else None,
-                latest=datetime.fromisoformat(row["latest"]) if row["latest"] else None,
+                earliest=earliest,
+                latest=latest,
                 total_messages=row["total_messages"] or 0,
                 import_count=row["import_count"] or 0,
-            )
-            for row in rows
-        ]
+                gaps=gaps,
+                detected_join_date=detected_join_date,
+                coverage_percent=coverage_percent,
+            ))
+
+        return results
 
     # ==================== Message Storage ====================
 
@@ -976,6 +1165,15 @@ class SQLiteWhatsAppImportRepository:
 
     def _row_to_import(self, row: Dict[str, Any]) -> WhatsAppImport:
         """Convert a database row to WhatsAppImport."""
+        # ADR-112: Parse detected_join_date
+        detected_join_date = None
+        if row.get("detected_join_date"):
+            try:
+                detected_join_date = date.fromisoformat(row["detected_join_date"])
+            except ValueError:
+                # Try datetime format and extract date
+                detected_join_date = datetime.fromisoformat(row["detected_join_date"]).date()
+
         return WhatsAppImport(
             id=row["id"],
             guild_id=row["guild_id"],
@@ -996,6 +1194,8 @@ class SQLiteWhatsAppImportRepository:
             processed_at=datetime.fromisoformat(row["processed_at"]) if row.get("processed_at") else None,
             anonymization_version=row.get("anonymization_version", 1),
             participants_json=row.get("participants_json"),
+            detected_join_date=detected_join_date,
+            detected_events_json=row.get("detected_events_json"),
             deleted_at=datetime.fromisoformat(row["deleted_at"]) if row.get("deleted_at") else None,
             deleted_by=row.get("deleted_by"),
             created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else None,

@@ -49,6 +49,14 @@ class WhatsAppMessage:
 
 
 @dataclass
+class DetectedEvent:
+    """An event detected from system messages (ADR-112)."""
+    event_type: str  # group_created, user_joined, user_added
+    timestamp: datetime
+    details: Optional[str] = None
+
+
+@dataclass
 class WhatsAppImportResult:
     """Result of a WhatsApp import."""
     import_id: str
@@ -62,6 +70,9 @@ class WhatsAppImportResult:
     errors: List[str] = field(default_factory=list)
     gaps: List[Dict] = field(default_factory=list)
     anonymization: Optional[Dict[str, Any]] = None  # ADR-028: Anonymization metadata
+    # ADR-112: Detected events from system messages
+    detected_events: List[DetectedEvent] = field(default_factory=list)
+    detected_join_date: Optional[date] = None
 
     def to_dict(self) -> Dict[str, Any]:
         result = {
@@ -121,6 +132,19 @@ class WhatsAppImporter:
         r"Tap to learn more",
     ]
 
+    # ADR-112: Patterns to detect join events (for coverage gap awareness)
+    JOIN_EVENT_PATTERNS = [
+        # Group creation - contains timestamp when group was created
+        (r"created group", "group_created"),
+        # User was added by someone
+        (r"added you", "user_added"),
+        (r"You were added", "user_added"),
+        # User joined via invite link
+        (r"joined using this group's invite link", "user_joined"),
+        # User joined via QR code or other method
+        (r"joined$", "user_joined"),
+    ]
+
     def __init__(
         self,
         archive_root: Path,
@@ -151,6 +175,51 @@ class WhatsAppImporter:
             return self._anonymizer
         # Create anonymizer using group_id as fallback salt
         return create_guild_anonymizer(self.guild_id or group_id)
+
+    def _detect_join_events(self, messages: List[WhatsAppMessage]) -> Tuple[List[DetectedEvent], Optional[date]]:
+        """
+        Detect join events from system messages (ADR-112).
+
+        Looks for patterns like:
+        - "created group" - indicates group creation date
+        - "added you" / "You were added" - indicates when user was added
+        - "joined using this group's invite link" - indicates when user joined
+
+        Returns:
+            Tuple of (detected_events, earliest_join_date)
+        """
+        events: List[DetectedEvent] = []
+        join_dates: List[date] = []
+
+        for msg in messages:
+            if not msg.is_system:
+                continue
+
+            content = msg.content
+            for pattern, event_type in self.JOIN_EVENT_PATTERNS:
+                if re.search(pattern, content, re.IGNORECASE):
+                    event = DetectedEvent(
+                        event_type=event_type,
+                        timestamp=msg.timestamp,
+                        details=content[:100] if len(content) > 100 else content,
+                    )
+                    events.append(event)
+
+                    # Track join dates for "added" and "joined" events
+                    if event_type in ("user_added", "user_joined"):
+                        join_dates.append(msg.timestamp.date())
+
+                    # Only match first pattern per message
+                    break
+
+        # The earliest join date is when the exporting user joined
+        # This is key for understanding coverage gaps
+        detected_join_date = min(join_dates) if join_dates else None
+
+        if events:
+            logger.info(f"ADR-112: Detected {len(events)} join events, join_date={detected_join_date}")
+
+        return events, detected_join_date
 
     def parse_txt_file(self, file_path: Path) -> Tuple[List[WhatsAppMessage], List[str]]:
         """
@@ -306,6 +375,9 @@ class WhatsAppImporter:
         else:
             date_range = (date.today(), date.today())
 
+        # ADR-112: Detect join events for coverage gap awareness
+        detected_events, detected_join_date = self._detect_join_events(messages)
+
         # Save to archive
         await self._save_import(
             group_id=group_id,
@@ -327,6 +399,8 @@ class WhatsAppImporter:
             messages=messages,
             errors=errors,
             anonymization=anonymization_metadata,
+            detected_events=detected_events,
+            detected_join_date=detected_join_date,
         )
 
         logger.info(f"Imported {len(messages)} messages from {file_path.name}")
@@ -387,6 +461,9 @@ class WhatsAppImporter:
         else:
             date_range = (date.today(), date.today())
 
+        # ADR-112: Detect join events for coverage gap awareness
+        detected_events, detected_join_date = self._detect_join_events(messages)
+
         # Save to archive
         await self._save_import(
             group_id=group_id,
@@ -408,6 +485,8 @@ class WhatsAppImporter:
             messages=messages,
             errors=[],
             anonymization=anonymization_metadata,
+            detected_events=detected_events,
+            detected_join_date=detected_join_date,
         )
 
         logger.info(f"Imported {len(messages)} messages from reader bot export")

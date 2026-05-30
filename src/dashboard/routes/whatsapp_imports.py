@@ -30,6 +30,8 @@ from ...models.whatsapp_import import (
     ImportStatus,
     WhatsAppImport,
     ImportUploadResult,
+    CoverageGap,
+    GapType,
 )
 from ...logging.audit_service import audit_log
 from ...utils.time import utc_now_naive
@@ -100,13 +102,27 @@ class ImportDetailResponse(BaseModel):
     participants: List[Dict[str, Any]] = []
 
 
+class CoverageGapResponse(BaseModel):
+    """A coverage gap in WhatsApp chat history (ADR-112)."""
+    start: str
+    end: str
+    type: str  # before_join, between_imports, after_last
+    days: int
+    can_fill: bool
+    fill_hint: str
+
+
 class ChatSummaryResponse(BaseModel):
-    """Summary of a WhatsApp chat."""
+    """Summary of a WhatsApp chat (ADR-081, ADR-112)."""
     chat_id: str
     chat_name: str
     import_count: int
     total_messages: int
     coverage: Dict[str, Optional[str]]
+    # ADR-112: Coverage gap awareness
+    gaps: List[CoverageGapResponse] = []
+    detected_join_date: Optional[str] = None
+    coverage_percent: Optional[float] = None
 
 
 class ListImportsResponse(BaseModel):
@@ -290,6 +306,16 @@ async def upload_import(
         date_range_start = min(timestamps)
         date_range_end = max(timestamps)
 
+        # ADR-112: Detect join events for coverage gap awareness
+        detected_events, detected_join_date = importer._detect_join_events(messages)
+        detected_events_json = None
+        if detected_events:
+            import json as json_module
+            detected_events_json = json_module.dumps([
+                {"event_type": e.event_type, "timestamp": e.timestamp.isoformat(), "details": e.details}
+                for e in detected_events
+            ])
+
         # Extract unique senders
         senders = set(m.sender for m in messages if not m.is_system)
 
@@ -330,6 +356,9 @@ async def upload_import(
             message_count=len(messages),
             participant_count=len(senders),
             status=ImportStatus.PROCESSING,
+            # ADR-112: Coverage gap awareness
+            detected_join_date=detected_join_date,
+            detected_events_json=detected_events_json,
         )
 
         await repo.create_import(import_record)
@@ -498,6 +527,20 @@ async def list_imports(
                     "earliest": chat.earliest.isoformat() if chat.earliest else None,
                     "latest": chat.latest.isoformat() if chat.latest else None,
                 },
+                # ADR-112: Coverage gap awareness
+                gaps=[
+                    CoverageGapResponse(
+                        start=gap.start.isoformat(),
+                        end=gap.end.isoformat(),
+                        type=gap.gap_type.value,
+                        days=gap.days,
+                        can_fill=gap.can_fill,
+                        fill_hint=gap.to_dict().get("fill_hint", ""),
+                    )
+                    for gap in chat.gaps
+                ],
+                detected_join_date=chat.detected_join_date.isoformat() if chat.detected_join_date else None,
+                coverage_percent=chat.coverage_percent,
             )
             for chat in chats
         ],
@@ -1078,6 +1121,15 @@ async def trigger_drive_scan(
                     timestamps = [m.timestamp for m in import_result.messages]
                     senders = set(m.sender for m in import_result.messages if not m.is_system)
 
+                    # ADR-112: Serialize detected events for coverage gap awareness
+                    detected_events_json = None
+                    if import_result.detected_events:
+                        import json as json_module
+                        detected_events_json = json_module.dumps([
+                            {"event_type": e.event_type, "timestamp": e.timestamp.isoformat(), "details": e.details}
+                            for e in import_result.detected_events
+                        ])
+
                     import_record = WhatsAppImport(
                         id=import_id,
                         guild_id=guild_id,
@@ -1094,6 +1146,9 @@ async def trigger_drive_scan(
                         message_count=len(import_result.messages),
                         participant_count=len(senders),
                         status=ImportStatus.PROCESSING,  # Set to PROCESSING until messages stored
+                        # ADR-112: Coverage gap awareness
+                        detected_join_date=import_result.detected_join_date,
+                        detected_events_json=detected_events_json,
                     )
                     await repo.create_import(import_record)
 

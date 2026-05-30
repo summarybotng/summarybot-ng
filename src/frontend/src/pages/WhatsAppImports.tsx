@@ -103,6 +103,15 @@ interface ImportDetail extends WhatsAppImport {
   }>;
 }
 
+interface CoverageGap {
+  start: string;
+  end: string;
+  type: "before_join" | "between_imports" | "after_last";
+  days: number;
+  can_fill: boolean;
+  fill_hint: string;
+}
+
 interface ChatSummary {
   chat_id: string;
   chat_name: string;
@@ -112,6 +121,10 @@ interface ChatSummary {
     earliest: string | null;
     latest: string | null;
   };
+  // ADR-112: Coverage gap awareness
+  gaps?: CoverageGap[];
+  detected_join_date?: string | null;
+  coverage_percent?: number | null;
 }
 
 interface ListImportsResponse {
@@ -392,6 +405,9 @@ function ImportCard({
 }
 
 function ChatCard({ chat, onClick }: { chat: ChatSummary; onClick: () => void }) {
+  const hasGaps = chat.gaps && chat.gaps.length > 0;
+  const totalGapDays = chat.gaps?.reduce((sum, g) => sum + g.days, 0) || 0;
+
   return (
     <Card
       className="cursor-pointer hover:border-primary/50 transition-colors"
@@ -399,8 +415,15 @@ function ChatCard({ chat, onClick }: { chat: ChatSummary; onClick: () => void })
     >
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-medium">{chat.chat_name}</h3>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="font-medium truncate">{chat.chat_name}</h3>
+              {chat.coverage_percent != null && (
+                <Badge variant={chat.coverage_percent >= 80 ? "default" : "secondary"} className="text-xs">
+                  {chat.coverage_percent.toFixed(0)}% coverage
+                </Badge>
+              )}
+            </div>
             <div className="text-sm text-muted-foreground flex items-center gap-3 mt-1">
               <span>{chat.import_count} imports</span>
               <span>{chat.total_messages.toLocaleString()} messages</span>
@@ -411,8 +434,26 @@ function ChatCard({ chat, onClick }: { chat: ChatSummary; onClick: () => void })
                 {format(new Date(chat.coverage.latest), "MMM d, yyyy")}
               </div>
             )}
+            {/* ADR-112: Show coverage gaps */}
+            {hasGaps && (
+              <div className="mt-2 space-y-1">
+                {chat.gaps!.slice(0, 2).map((gap, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <AlertCircle className="h-3 w-3 text-amber-500 flex-shrink-0" />
+                    <span className="text-amber-600 dark:text-amber-400">
+                      Gap: {format(new Date(gap.start), "MMM d")} - {format(new Date(gap.end), "MMM d, yyyy")} ({gap.days} days)
+                    </span>
+                  </div>
+                ))}
+                {chat.gaps!.length > 2 && (
+                  <div className="text-xs text-muted-foreground">
+                    +{chat.gaps!.length - 2} more gaps ({totalGapDays} total days missing)
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          <ChevronRight className="h-5 w-5 text-muted-foreground" />
+          <ChevronRight className="h-5 w-5 text-muted-foreground flex-shrink-0" />
         </div>
       </CardContent>
     </Card>

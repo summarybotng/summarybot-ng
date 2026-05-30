@@ -65,6 +65,11 @@ class GenerationProgress:
     skipped: int = 0
     current_period: Optional[str] = None
     estimated_remaining_seconds: Optional[int] = None
+    # ADR-112: Track skip reasons for debugging
+    skipped_exists: int = 0  # Database check found existing summary
+    skipped_locked: int = 0  # Lock acquisition failed (disk meta says complete)
+    skipped_no_messages: int = 0  # Per-channel with too few messages
+    skipped_budget: int = 0  # Budget exceeded
 
     @property
     def percent_complete(self) -> float:
@@ -333,12 +338,26 @@ class RetrospectiveGenerator:
             # Convert internal job to database model
             start_date, end_date = job.date_range
 
-            # Build progress message with breakdown
+            # Build progress message with breakdown (ADR-112: show skip reasons)
             parts = []
             if job.progress.completed > 0:
                 parts.append(f"{job.progress.completed} generated")
             if job.progress.skipped > 0:
-                parts.append(f"{job.progress.skipped} skipped (already exist)")
+                # Show breakdown of skip reasons
+                skip_parts = []
+                if job.progress.skipped_exists > 0:
+                    skip_parts.append(f"{job.progress.skipped_exists} exist")
+                if job.progress.skipped_locked > 0:
+                    skip_parts.append(f"{job.progress.skipped_locked} locked")
+                if job.progress.skipped_no_messages > 0:
+                    skip_parts.append(f"{job.progress.skipped_no_messages} no msgs")
+                if job.progress.skipped_budget > 0:
+                    skip_parts.append(f"{job.progress.skipped_budget} budget")
+                # If we have specific reasons, show them; otherwise fall back to total
+                if skip_parts:
+                    parts.append(f"{job.progress.skipped} skipped ({', '.join(skip_parts)})")
+                else:
+                    parts.append(f"{job.progress.skipped} skipped")
             if job.progress.failed > 0:
                 parts.append(f"{job.progress.failed} failed")
             progress_message = ", ".join(parts) if parts else "Starting..."
@@ -474,8 +493,17 @@ class RetrospectiveGenerator:
 
                         if result == "completed":
                             job.progress.completed += 1
-                        elif result == "skipped":
+                        elif result.startswith("skipped"):
                             job.progress.skipped += 1
+                            # ADR-112: Track skip reason
+                            if result == "skipped_exists":
+                                job.progress.skipped_exists += 1
+                            elif result == "skipped_locked":
+                                job.progress.skipped_locked += 1
+                            elif result == "skipped_no_messages":
+                                job.progress.skipped_no_messages += 1
+                            elif result == "skipped_budget":
+                                job.progress.skipped_budget += 1
                         elif result == "failed":
                             job.progress.failed += 1
 
@@ -667,7 +695,7 @@ class RetrospectiveGenerator:
             exists = await summary_exists_in_db(source, period_start)
             if exists:
                 logger.info(f"Period {period_start}: SKIPPING - summary already exists for {source.source_key}")
-                return "skipped"
+                return "skipped_exists"
             else:
                 # Database says it doesn't exist, so any disk files are stale
                 # Force lock acquisition to override "complete" status on disk
@@ -710,8 +738,8 @@ class RetrospectiveGenerator:
         logger.info(f"Period {period_start}: attempting lock at {meta_path} (force={force_lock_acquire})")
         lock_job_id = await self.lock_manager.acquire_lock(meta_path, job.job_id, force_acquire=force_lock_acquire)
         if not lock_job_id:
-            logger.info(f"Period {period_start}: FAILED to acquire lock - skipping")
-            return "skipped"
+            logger.info(f"Period {period_start}: FAILED to acquire lock (meta file shows complete) - skipping")
+            return "skipped_locked"
         logger.info(f"Period {period_start}: lock acquired, proceeding")
 
         try:
@@ -734,7 +762,7 @@ class RetrospectiveGenerator:
             if not messages or (source_override and len(messages) < job.min_channel_messages):
                 if source_override:
                     logger.info(f"Period {period_start}: skipping {source.channel_name} ({len(messages) if messages else 0} messages < {job.min_channel_messages})")
-                    return "skipped"
+                    return "skipped_no_messages"
                 # No messages - write incomplete marker
                 self.writer.write_incomplete_marker(
                     source=source,
@@ -772,7 +800,7 @@ class RetrospectiveGenerator:
                     job.status = JobStatus.PAUSED
                     job.pause_reason = "budget_exceeded"
                     await self.lock_manager.release_lock(meta_path, SummaryStatus.INCOMPLETE)
-                    return "skipped"
+                    return "skipped_budget"
 
             # Generate summary
             # ADR-014: Pass guild_id for jump link generation in references

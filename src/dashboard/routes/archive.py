@@ -964,19 +964,23 @@ async def generate_retrospective(request: GenerateRequest):
 
     if is_whatsapp:
         # For WhatsApp, get chat names from database imports
+        logger.info(f"WhatsApp job: resolved_channel_ids={resolved_channel_ids}, scope={request.scope}")
         try:
             from ...data.repositories import get_whatsapp_import_repository
             whatsapp_repo = await get_whatsapp_import_repository()
             imports, _total = await whatsapp_repo.get_imports_for_guild(guild_id=request.server_id, limit=100)
+            logger.info(f"WhatsApp imports found: {len(imports) if imports else 0}")
             if imports:
                 # Build a map of chat_id -> chat_name for lookups
                 chat_id_to_name = {imp.chat_id: imp.chat_name for imp in imports if imp.chat_id and imp.chat_name}
+                logger.debug(f"WhatsApp chat_id_to_name map: {list(chat_id_to_name.keys())}")
 
                 # If specific channel_ids are requested, resolve their names
                 if resolved_channel_ids:
                     # Get name for single channel (for channel_name field)
                     if len(resolved_channel_ids) == 1:
                         channel_name = chat_id_to_name.get(resolved_channel_ids[0], resolved_channel_ids[0])
+                        logger.info(f"WhatsApp single channel: id={resolved_channel_ids[0]}, name={channel_name}")
 
                     # Get names for server_name display
                     resolved_names = [chat_id_to_name.get(cid, cid) for cid in resolved_channel_ids]
@@ -996,7 +1000,7 @@ async def generate_retrospective(request: GenerateRequest):
                     else:
                         server_name = f"{chat_names[0]} + {len(chat_names) - 1} more"
         except Exception as e:
-            logger.warning(f"Failed to get WhatsApp chat names: {e}")
+            logger.warning(f"Failed to get WhatsApp chat names: {e}", exc_info=True)
 
     elif is_slack:
         # For Slack, get workspace info from database

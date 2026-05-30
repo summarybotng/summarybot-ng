@@ -99,17 +99,22 @@ class ArchiveSource:
     @property
     def channel_folder_name(self) -> Optional[str]:
         """Generate safe folder name for channel (if applicable)."""
-        if not self.channel_id or not self.channel_name:
+        if not self.channel_id:
             return None
-        safe_name = re.sub(r'[^\w\-]', '-', self.channel_name.lower())
+        # ADR-112: Fallback to channel_id if channel_name is missing
+        # This can happen for WhatsApp when the lookup fails
+        name = self.channel_name or self.channel_id
+        safe_name = re.sub(r'[^\w\-]', '-', name.lower())
         return f"{safe_name}_{self.channel_id}"
 
     @property
     def category_folder_name(self) -> Optional[str]:
         """Generate safe folder name for category (ADR-011)."""
-        if not self.category_id or not self.category_name:
+        if not self.category_id:
             return None
-        safe_name = re.sub(r'[^\w\-]', '-', self.category_name.lower())
+        # ADR-112: Fallback to category_id if category_name is missing
+        name = self.category_name or self.category_id
+        safe_name = re.sub(r'[^\w\-]', '-', name.lower())
         return f"{safe_name}_{self.category_id}"
 
     def get_archive_path(self, archive_root: Path) -> Path:

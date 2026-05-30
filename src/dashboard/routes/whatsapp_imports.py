@@ -490,8 +490,8 @@ async def list_imports(
         offset=offset,
     )
 
-    # Get chat summaries
-    chats = await repo.get_chats_for_guild(guild_id)
+    # Get chat summaries with full gap calculation (ADR-112)
+    chats = await repo.get_chats_for_guild(guild_id, include_gaps=True)
 
     return ListImportsResponse(
         imports=[

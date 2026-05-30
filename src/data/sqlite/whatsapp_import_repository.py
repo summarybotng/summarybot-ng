@@ -904,9 +904,10 @@ class SQLiteWhatsAppImportRepository:
                 gaps = coverage.gaps
                 coverage_percent = coverage.coverage_percent
             elif detected_join_date and earliest:
-                # Quick estimate: just check if there's a gap before first message
+                # Quick estimate: check for gap or pre-join context
                 first_msg_date = earliest.date()
                 if detected_join_date < first_msg_date:
+                    # Gap before first import - missing messages
                     gap_days = (first_msg_date - detected_join_date).days
                     if gap_days > 0:
                         gaps.append(CoverageGap(
@@ -915,6 +916,17 @@ class SQLiteWhatsAppImportRepository:
                             gap_type=GapType.BEFORE_JOIN,
                             days=gap_days,
                             can_fill=True,
+                        ))
+                elif detected_join_date > first_msg_date:
+                    # Pre-join context - user has messages from before they joined (ADR-112)
+                    context_days = (detected_join_date - first_msg_date).days
+                    if context_days > 0:
+                        gaps.append(CoverageGap(
+                            start=first_msg_date,
+                            end=detected_join_date - timedelta(days=1),
+                            gap_type=GapType.PRE_JOIN_CONTEXT,
+                            days=context_days,
+                            can_fill=False,  # Not a gap - user already has context
                         ))
 
             results.append(ChatCoverage(

@@ -106,7 +106,7 @@ interface ImportDetail extends WhatsAppImport {
 interface CoverageGap {
   start: string;
   end: string;
-  type: "before_join" | "between_imports" | "after_last";
+  type: "before_join" | "between_imports" | "after_last" | "pre_join_context";
   days: number;
   can_fill: boolean;
   fill_hint: string;
@@ -259,6 +259,18 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
+/**
+ * Parse a UTC timestamp from the API.
+ * Timestamps from the backend are UTC but may not have 'Z' suffix.
+ */
+function parseUTCTimestamp(timestamp: string): Date {
+  // If timestamp doesn't end with Z or timezone offset, treat as UTC
+  if (!timestamp.endsWith('Z') && !timestamp.match(/[+-]\d{2}:\d{2}$/)) {
+    return new Date(timestamp + 'Z');
+  }
+  return new Date(timestamp);
+}
+
 function StatusBadge({ status }: { status: WhatsAppImport["status"] }) {
   const variants: Record<typeof status, { variant: "default" | "secondary" | "destructive" | "outline"; icon: React.ReactNode }> = {
     pending: { variant: "outline", icon: <Clock className="h-3 w-3" /> },
@@ -379,7 +391,7 @@ function ImportCard({
               </span>
               <span>
                 Imported by {importData.imported_by.name}{" "}
-                {formatDistanceToNow(new Date(importData.imported_at), { addSuffix: true })}
+                {formatDistanceToNow(parseUTCTimestamp(importData.imported_at), { addSuffix: true })}
               </span>
             </div>
           </div>
@@ -434,20 +446,31 @@ function ChatCard({ chat, onClick }: { chat: ChatSummary; onClick: () => void })
                 {format(new Date(chat.coverage.latest), "MMM d, yyyy")}
               </div>
             )}
-            {/* ADR-112: Show coverage gaps */}
+            {/* ADR-112: Show coverage gaps and context periods */}
             {hasGaps && (
               <div className="mt-2 space-y-1">
                 {chat.gaps!.slice(0, 2).map((gap, i) => (
                   <div key={i} className="flex items-center gap-2 text-xs">
-                    <AlertCircle className="h-3 w-3 text-amber-500 flex-shrink-0" />
-                    <span className="text-amber-600 dark:text-amber-400">
-                      Gap: {format(new Date(gap.start), "MMM d")} - {format(new Date(gap.end), "MMM d, yyyy")} ({gap.days} days)
-                    </span>
+                    {gap.type === "pre_join_context" ? (
+                      <>
+                        <Clock className="h-3 w-3 text-blue-500 flex-shrink-0" />
+                        <span className="text-blue-600 dark:text-blue-400">
+                          Pre-join context: {format(new Date(gap.start), "MMM d, yyyy")} - {format(new Date(gap.end), "MMM d, yyyy")} ({gap.days} days)
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="h-3 w-3 text-amber-500 flex-shrink-0" />
+                        <span className="text-amber-600 dark:text-amber-400">
+                          Gap: {format(new Date(gap.start), "MMM d")} - {format(new Date(gap.end), "MMM d, yyyy")} ({gap.days} days)
+                        </span>
+                      </>
+                    )}
                   </div>
                 ))}
                 {chat.gaps!.length > 2 && (
                   <div className="text-xs text-muted-foreground">
-                    +{chat.gaps!.length - 2} more gaps ({totalGapDays} total days missing)
+                    +{chat.gaps!.length - 2} more gaps ({totalGapDays} total days)
                   </div>
                 )}
               </div>
@@ -927,7 +950,7 @@ export function WhatsAppImports() {
             <DialogDescription>
               Imported by {importDetail?.imported_by.name}{" "}
               {importDetail?.imported_at &&
-                formatDistanceToNow(new Date(importDetail.imported_at), { addSuffix: true })}
+                formatDistanceToNow(parseUTCTimestamp(importDetail.imported_at), { addSuffix: true })}
             </DialogDescription>
           </DialogHeader>
 

@@ -699,17 +699,31 @@ class SQLiteWhatsAppImportRepository:
         # Get the earliest message date
         first_msg_date = sorted_imports[0].date_range_start.date()
 
-        # Gap before first import (if join date is known and earlier)
-        if detected_join_date and detected_join_date < first_msg_date:
-            gap_days = (first_msg_date - detected_join_date).days
-            if gap_days > 0:
-                gaps.append(CoverageGap(
-                    start=detected_join_date,
-                    end=first_msg_date - timedelta(days=1),
-                    gap_type=GapType.BEFORE_JOIN,
-                    days=gap_days,
-                    can_fill=True,  # Another user might have this data
-                ))
+        # Check for pre-join context or gap
+        if detected_join_date:
+            if detected_join_date < first_msg_date:
+                # Gap before first import - missing messages
+                gap_days = (first_msg_date - detected_join_date).days
+                if gap_days > 0:
+                    gaps.append(CoverageGap(
+                        start=detected_join_date,
+                        end=first_msg_date - timedelta(days=1),
+                        gap_type=GapType.BEFORE_JOIN,
+                        days=gap_days,
+                        can_fill=True,  # Another user might have this data
+                    ))
+            elif detected_join_date > first_msg_date:
+                # Pre-join context - user has messages from before they joined
+                # This is informational, not a gap to fill
+                context_days = (detected_join_date - first_msg_date).days
+                if context_days > 0:
+                    gaps.append(CoverageGap(
+                        start=first_msg_date,
+                        end=detected_join_date - timedelta(days=1),
+                        gap_type=GapType.PRE_JOIN_CONTEXT,
+                        days=context_days,
+                        can_fill=False,  # Not a gap - user already has these messages
+                    ))
 
         # Gaps between imports
         for i in range(len(sorted_imports) - 1):

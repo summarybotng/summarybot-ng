@@ -168,9 +168,10 @@ class WhatsAppMessageFingerprint:
 
 class GapType(str, Enum):
     """Type of coverage gap (ADR-112)."""
-    BEFORE_JOIN = "before_join"  # Gap before user joined the chat
+    BEFORE_JOIN = "before_join"  # Gap before user joined the chat (missing messages)
     BETWEEN_IMPORTS = "between_imports"  # Gap between two imports
     AFTER_LAST = "after_last"  # Gap after last import to present
+    PRE_JOIN_CONTEXT = "pre_join_context"  # Period before join with context messages (not a gap)
 
 
 class DetectedEventType(str, Enum):
@@ -210,6 +211,7 @@ class CoverageGap:
             GapType.BEFORE_JOIN: "Ask group members who joined earlier to export",
             GapType.BETWEEN_IMPORTS: "Import another export covering this period",
             GapType.AFTER_LAST: "Export recent messages from WhatsApp",
+            GapType.PRE_JOIN_CONTEXT: "Context period before you joined (read-only history)",
         }
         return {
             "start": self.start.isoformat(),

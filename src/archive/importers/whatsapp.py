@@ -205,8 +205,10 @@ class WhatsAppImporter:
                     )
                     events.append(event)
 
-                    # Track join dates for "added" and "joined" events
-                    if event_type in ("user_added", "user_joined"):
+                    # Track join dates for join-related events
+                    # group_created means user was present from start
+                    # user_added/user_joined means user joined later
+                    if event_type in ("group_created", "user_added", "user_joined"):
                         join_dates.append(msg.timestamp.date())
 
                     # Only match first pattern per message

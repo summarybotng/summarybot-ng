@@ -278,7 +278,7 @@ export function Landing() {
       {/* Footer */}
       <footer className="border-t border-border/40 py-8">
         <div className="container text-center text-sm text-muted-foreground">
-          <p>© 2024 SummaryBot. Made with ❤️ for teams everywhere.</p>
+          <p>© {new Date().getFullYear()} SummaryBot. Made with ❤️ for teams everywhere.</p>
         </div>
       </footer>
     </div>

@@ -38,6 +38,12 @@ class ConfluenceConfig:
     api_token: str = ""  # API token from id.atlassian.com
     page_title_template: str = "{title}"  # Template for page titles
     guild_id: Optional[str] = None  # Guild ID if per-guild config
+    # ADR-113: Section toggles
+    include_summary: bool = True
+    include_key_points: bool = True
+    include_action_items: bool = True
+    include_participants: bool = False
+    include_labels: bool = True
 
     def is_configured(self) -> bool:
         """Check if Confluence is properly configured."""
@@ -78,6 +84,12 @@ class ConfluenceConfig:
             api_token=settings.api_token,
             page_title_template=settings.page_title_template,
             guild_id=settings.guild_id,
+            # ADR-113: Section toggles
+            include_summary=settings.include_summary,
+            include_key_points=settings.include_key_points,
+            include_action_items=settings.include_action_items,
+            include_participants=settings.include_participants,
+            include_labels=settings.include_labels,
         )
 
 
@@ -214,12 +226,14 @@ class ConfluencePublisher:
                 dashboard_base_url=dashboard_base_url,
             )
 
-            # ADR-100: Generate labels for the page
-            labels = self._generate_labels(
-                channel_names=channel_names,
-                scope_type=scope_type,
-                category_name=category_name,
-            )
+            # ADR-100/ADR-113: Generate labels for the page (if enabled)
+            labels: List[str] = []
+            if self.config.include_labels:
+                labels = self._generate_labels(
+                    channel_names=channel_names,
+                    scope_type=scope_type,
+                    category_name=category_name,
+                )
 
             if existing_page_id:
                 # Update existing page
@@ -231,7 +245,7 @@ class ConfluencePublisher:
                     expected_version=existing_version,
                     force=force,
                 )
-                # Add labels after successful update
+                # Add labels after successful update (if enabled)
                 if result.success and result.page_id and labels:
                     await self._set_page_labels(client, result.page_id, labels)
                 return result
@@ -242,7 +256,7 @@ class ConfluencePublisher:
                     title=title,
                     adf_content=adf_content,
                 )
-                # Add labels after successful creation
+                # Add labels after successful creation (if enabled)
                 if result.success and result.page_id and labels:
                     await self._set_page_labels(client, result.page_id, labels)
                 return result
@@ -473,7 +487,8 @@ class ConfluencePublisher:
         })
 
         # Summary text with LLM-based date extraction (ADR-100)
-        if summary.summary_text:
+        # ADR-113: Respect include_summary toggle
+        if summary.summary_text and self.config.include_summary:
             content.append({
                 "type": "heading",
                 "attrs": {"level": 2},
@@ -514,7 +529,8 @@ class ConfluencePublisher:
                         })
 
         # Key points
-        if summary.key_points:
+        # ADR-113: Respect include_key_points toggle
+        if summary.key_points and self.config.include_key_points:
             content.append({
                 "type": "heading",
                 "attrs": {"level": 2},
@@ -537,7 +553,8 @@ class ConfluencePublisher:
             })
 
         # Action items as task list
-        if summary.action_items:
+        # ADR-113: Respect include_action_items toggle
+        if summary.action_items and self.config.include_action_items:
             content.append({
                 "type": "heading",
                 "attrs": {"level": 2},
@@ -565,7 +582,8 @@ class ConfluencePublisher:
             })
 
         # Participants in expand section
-        if summary.participants:
+        # ADR-113: Respect include_participants toggle (off by default)
+        if summary.participants and self.config.include_participants:
             content.append({
                 "type": "expand",
                 "attrs": {"title": f"Participants ({len(summary.participants)})"},

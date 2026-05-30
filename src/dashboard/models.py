@@ -1281,6 +1281,27 @@ class ConfluenceSettingsRequest(BaseModel):
         default="{title}",
         description="Template for page titles"
     )
+    # ADR-113: Section toggles
+    include_summary: bool = Field(
+        default=True,
+        description="Include Summary section in published pages"
+    )
+    include_key_points: bool = Field(
+        default=True,
+        description="Include Key Points section in published pages"
+    )
+    include_action_items: bool = Field(
+        default=True,
+        description="Include Action Items section in published pages"
+    )
+    include_participants: bool = Field(
+        default=False,
+        description="Include Participants section in published pages (off by default)"
+    )
+    include_labels: bool = Field(
+        default=True,
+        description="Add labels to published Confluence pages"
+    )
 
 
 class ConfluenceSettingsResponse(BaseModel):
@@ -1303,6 +1324,12 @@ class ConfluenceSettingsResponse(BaseModel):
         default=False,
         description="Whether an API token is configured (token itself not returned)"
     )
+    # ADR-113: Section toggles
+    include_summary: bool = True
+    include_key_points: bool = True
+    include_action_items: bool = True
+    include_participants: bool = False
+    include_labels: bool = True
 
 
 # ============================================================================

@@ -67,6 +67,12 @@ export interface ConfluenceSettingsRequest {
   email: string;
   api_token?: string | null;  // Only include when updating
   page_title_template?: string;
+  // ADR-113: Section toggles
+  include_summary?: boolean;
+  include_key_points?: boolean;
+  include_action_items?: boolean;
+  include_participants?: boolean;
+  include_labels?: boolean;
 }
 
 export interface ConfluenceSettingsResponse {
@@ -82,6 +88,12 @@ export interface ConfluenceSettingsResponse {
   updated_at?: string | null;
   is_configured: boolean;
   has_api_token: boolean;
+  // ADR-113: Section toggles
+  include_summary?: boolean;
+  include_key_points?: boolean;
+  include_action_items?: boolean;
+  include_participants?: boolean;
+  include_labels?: boolean;
 }
 
 export interface ConfluenceTestResponse {

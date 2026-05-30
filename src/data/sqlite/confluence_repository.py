@@ -28,6 +28,13 @@ class ConfluenceSettings:
     configured_by: Optional[str] = None
     configured_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    # ADR-113: Section toggles (defaults: summary, key_points, action_items ON; participants OFF)
+    include_summary: bool = True
+    include_key_points: bool = True
+    include_action_items: bool = True
+    include_participants: bool = False
+    # ADR-113: Label configuration
+    include_labels: bool = True
 
     def is_configured(self) -> bool:
         """Check if Confluence is properly configured for this guild."""
@@ -57,6 +64,12 @@ class ConfluenceSettings:
             "configured_at": self.configured_at.isoformat() if self.configured_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "is_configured": self.is_configured(),
+            # ADR-113: Section toggles
+            "include_summary": self.include_summary,
+            "include_key_points": self.include_key_points,
+            "include_action_items": self.include_action_items,
+            "include_participants": self.include_participants,
+            "include_labels": self.include_labels,
         }
         if include_token:
             result["api_token"] = self.api_token
@@ -303,8 +316,10 @@ class SQLiteConfluenceRepository:
         INSERT INTO confluence_settings (
             guild_id, enabled, base_url, space_key, parent_page_id,
             email, api_token_encrypted, page_title_template,
-            configured_by, configured_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            configured_by, configured_at, updated_at,
+            include_summary, include_key_points, include_action_items,
+            include_participants, include_labels
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(guild_id) DO UPDATE SET
             enabled = excluded.enabled,
             base_url = excluded.base_url,
@@ -313,7 +328,12 @@ class SQLiteConfluenceRepository:
             email = excluded.email,
             api_token_encrypted = COALESCE(excluded.api_token_encrypted, api_token_encrypted),
             page_title_template = excluded.page_title_template,
-            updated_at = excluded.updated_at
+            updated_at = excluded.updated_at,
+            include_summary = excluded.include_summary,
+            include_key_points = excluded.include_key_points,
+            include_action_items = excluded.include_action_items,
+            include_participants = excluded.include_participants,
+            include_labels = excluded.include_labels
         """
         params = (
             settings.guild_id,
@@ -327,6 +347,11 @@ class SQLiteConfluenceRepository:
             settings.configured_by,
             settings.configured_at.isoformat() if settings.configured_at else now,
             now,
+            1 if settings.include_summary else 0,
+            1 if settings.include_key_points else 0,
+            1 if settings.include_action_items else 0,
+            1 if settings.include_participants else 0,
+            1 if settings.include_labels else 0,
         )
 
         try:
@@ -360,6 +385,12 @@ class SQLiteConfluenceRepository:
         email: Optional[str] = None,
         api_token: Optional[str] = None,
         page_title_template: Optional[str] = None,
+        # ADR-113: Section toggles
+        include_summary: Optional[bool] = None,
+        include_key_points: Optional[bool] = None,
+        include_action_items: Optional[bool] = None,
+        include_participants: Optional[bool] = None,
+        include_labels: Optional[bool] = None,
     ) -> bool:
         """Partially update Confluence settings.
 
@@ -396,6 +427,22 @@ class SQLiteConfluenceRepository:
         if page_title_template is not None:
             updates.append("page_title_template = ?")
             params.append(page_title_template)
+        # ADR-113: Section toggles
+        if include_summary is not None:
+            updates.append("include_summary = ?")
+            params.append(1 if include_summary else 0)
+        if include_key_points is not None:
+            updates.append("include_key_points = ?")
+            params.append(1 if include_key_points else 0)
+        if include_action_items is not None:
+            updates.append("include_action_items = ?")
+            params.append(1 if include_action_items else 0)
+        if include_participants is not None:
+            updates.append("include_participants = ?")
+            params.append(1 if include_participants else 0)
+        if include_labels is not None:
+            updates.append("include_labels = ?")
+            params.append(1 if include_labels else 0)
 
         if not updates:
             return True  # Nothing to update
@@ -425,6 +472,12 @@ class SQLiteConfluenceRepository:
             configured_by=row.get("configured_by"),
             configured_at=datetime.fromisoformat(row["configured_at"]) if row.get("configured_at") else None,
             updated_at=datetime.fromisoformat(row["updated_at"]) if row.get("updated_at") else None,
+            # ADR-113: Section toggles (with defaults for existing rows)
+            include_summary=bool(row.get("include_summary", 1)),
+            include_key_points=bool(row.get("include_key_points", 1)),
+            include_action_items=bool(row.get("include_action_items", 1)),
+            include_participants=bool(row.get("include_participants", 0)),
+            include_labels=bool(row.get("include_labels", 1)),
         )
 
 

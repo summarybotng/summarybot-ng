@@ -74,6 +74,12 @@ export function ConfluenceSettings({
     email: "",
     api_token: null,
     page_title_template: "{title}",
+    // ADR-113: Section toggles
+    include_summary: true,
+    include_key_points: true,
+    include_action_items: true,
+    include_participants: false,
+    include_labels: true,
   });
 
   // Queries & Mutations
@@ -93,6 +99,12 @@ export function ConfluenceSettings({
         email: settings.email || "",
         api_token: null, // Don't pre-fill token
         page_title_template: settings.page_title_template || "{title}",
+        // ADR-113: Section toggles (with defaults for existing data)
+        include_summary: settings.include_summary ?? true,
+        include_key_points: settings.include_key_points ?? true,
+        include_action_items: settings.include_action_items ?? true,
+        include_participants: settings.include_participants ?? false,
+        include_labels: settings.include_labels ?? true,
       });
     }
   }, [settings]);
@@ -460,6 +472,88 @@ export function ConfluenceSettings({
               <p className="text-xs text-muted-foreground">
                 Use {"{title}"} for summary title
               </p>
+            </div>
+
+            {/* ADR-113: Section Toggles */}
+            <div className="grid gap-3 pt-4 border-t">
+              <Label className="text-sm font-medium">Page Sections</Label>
+              <p className="text-xs text-muted-foreground -mt-1">
+                Choose which sections to include when publishing to Confluence
+              </p>
+
+              <div className="flex items-center justify-between">
+                <Label htmlFor="include_summary" className="text-sm font-normal cursor-pointer">
+                  Summary
+                </Label>
+                <Switch
+                  id="include_summary"
+                  checked={formData.include_summary ?? true}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({ ...prev, include_summary: checked }))
+                  }
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label htmlFor="include_key_points" className="text-sm font-normal cursor-pointer">
+                  Key Points
+                </Label>
+                <Switch
+                  id="include_key_points"
+                  checked={formData.include_key_points ?? true}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({ ...prev, include_key_points: checked }))
+                  }
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label htmlFor="include_action_items" className="text-sm font-normal cursor-pointer">
+                  Action Items
+                </Label>
+                <Switch
+                  id="include_action_items"
+                  checked={formData.include_action_items ?? true}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({ ...prev, include_action_items: checked }))
+                  }
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label htmlFor="include_participants" className="text-sm font-normal cursor-pointer">
+                  Participants
+                </Label>
+                <Switch
+                  id="include_participants"
+                  checked={formData.include_participants ?? false}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({ ...prev, include_participants: checked }))
+                  }
+                />
+              </div>
+            </div>
+
+            {/* ADR-113: Labels Toggle */}
+            <div className="grid gap-3 pt-4 border-t">
+              <Label className="text-sm font-medium">Page Labels</Label>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="include_labels" className="text-sm font-normal cursor-pointer">
+                    Add labels to pages
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Adds channel, scope, and category labels
+                  </p>
+                </div>
+                <Switch
+                  id="include_labels"
+                  checked={formData.include_labels ?? true}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({ ...prev, include_labels: checked }))
+                  }
+                />
+              </div>
             </div>
           </div>
 

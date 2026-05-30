@@ -4534,6 +4534,12 @@ async def get_confluence_settings(
             updated_at=settings.updated_at.isoformat() if settings.updated_at else None,
             is_configured=settings.is_configured(),
             has_api_token=bool(settings.api_token),
+            # ADR-113: Section toggles
+            include_summary=settings.include_summary,
+            include_key_points=settings.include_key_points,
+            include_action_items=settings.include_action_items,
+            include_participants=settings.include_participants,
+            include_labels=settings.include_labels,
         )
 
     except HTTPException:
@@ -4618,6 +4624,12 @@ async def update_confluence_settings(
             configured_by=user.get("sub", "unknown"),
             configured_at=existing.configured_at if existing else utc_now_naive(),
             updated_at=utc_now_naive(),
+            # ADR-113: Section toggles
+            include_summary=body.include_summary,
+            include_key_points=body.include_key_points,
+            include_action_items=body.include_action_items,
+            include_participants=body.include_participants,
+            include_labels=body.include_labels,
         )
 
         success = await repo.save_settings(settings)
@@ -4643,6 +4655,12 @@ async def update_confluence_settings(
             updated_at=settings.updated_at.isoformat() if settings.updated_at else None,
             is_configured=settings.is_configured(),
             has_api_token=bool(settings.api_token),
+            # ADR-113: Section toggles
+            include_summary=settings.include_summary,
+            include_key_points=settings.include_key_points,
+            include_action_items=settings.include_action_items,
+            include_participants=settings.include_participants,
+            include_labels=settings.include_labels,
         )
 
     except HTTPException:

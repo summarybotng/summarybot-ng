@@ -133,15 +133,20 @@ class WhatsAppImporter:
     ]
 
     # ADR-112: Patterns to detect join events (for coverage gap awareness)
+    # Note: "created group" is NOT a join event for the exporting user
+    # unless THEY created it. We detect it for context but don't use for join_date.
     JOIN_EVENT_PATTERNS = [
-        # Group creation - contains timestamp when group was created
+        # Group creation - context only, not a join event
         (r"created group", "group_created"),
         # User was added by someone
         (r"added you", "user_added"),
         (r"You were added", "user_added"),
         # User joined via invite link
         (r"joined using this group's invite link", "user_joined"),
-        # User joined via QR code or other method
+        # User joined from community
+        (r"You joined from the community", "user_joined"),
+        (r"You joined", "user_joined"),
+        # User joined via QR code or other method (generic, must come last)
         (r"joined$", "user_joined"),
     ]
 
@@ -205,10 +210,11 @@ class WhatsAppImporter:
                     )
                     events.append(event)
 
-                    # Track join dates for join-related events
-                    # group_created means user was present from start
-                    # user_added/user_joined means user joined later
-                    if event_type in ("group_created", "user_added", "user_joined"):
+                    # Track join dates for actual join events
+                    # Note: group_created is NOT a join event - it just shows when
+                    # the group was created, but the exporter may have joined later.
+                    # Only user_added/user_joined indicate when THIS user joined.
+                    if event_type in ("user_added", "user_joined"):
                         join_dates.append(msg.timestamp.date())
 
                     # Only match first pattern per message

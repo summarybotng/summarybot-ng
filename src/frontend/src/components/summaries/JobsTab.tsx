@@ -78,6 +78,14 @@ interface Job {
   pause_reason: string | null;
   created_at: string;
   started_at: string | null;
+  // ADR-112: Job parameters for debugging
+  force_regenerate?: boolean;
+  skip_existing?: boolean;
+  per_channel?: boolean;
+  min_channel_messages?: number;
+  lookback_hours?: number | null;
+  timezone?: string;
+  auto_publish_confluence?: boolean;
   completed_at: string | null;
   // Job parameters (ADR-013)
   date_range?: JobDateRange | null;
@@ -352,6 +360,32 @@ function JobCard({ job, onCancel, onRetry, onPause, onResume, isCancelling, isRe
                     <DollarSign className="h-3 w-3" />
                     <span>${job.cost.cost_usd.toFixed(4)}</span>
                   </div>
+                )}
+                {/* ADR-112: Job options */}
+                {job.force_regenerate && (
+                  <Badge variant="outline" className="text-xs bg-orange-500/10 text-orange-600 border-orange-500/30">
+                    Force Regen
+                  </Badge>
+                )}
+                {job.skip_existing === false && (
+                  <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-600 border-purple-500/30">
+                    No Skip
+                  </Badge>
+                )}
+                {job.per_channel && (
+                  <Badge variant="outline" className="text-xs bg-cyan-500/10 text-cyan-600 border-cyan-500/30">
+                    Per-Channel
+                  </Badge>
+                )}
+                {job.lookback_hours && (
+                  <span className="text-xs" title="Lookback Hours">
+                    {job.lookback_hours}h lookback
+                  </span>
+                )}
+                {job.timezone && job.timezone !== "UTC" && (
+                  <span className="text-xs" title="Timezone">
+                    {job.timezone}
+                  </span>
                 )}
               </div>
             </div>

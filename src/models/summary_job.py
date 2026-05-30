@@ -84,6 +84,13 @@ class SummaryJob:
     summary_type: str = "detailed"
     perspective: str = "general"
     force_regenerate: bool = False
+    # ADR-112: Additional job parameters for debugging
+    skip_existing: bool = True
+    per_channel: bool = False
+    min_channel_messages: int = 5
+    lookback_hours: Optional[int] = None
+    timezone: str = "UTC"
+    auto_publish_confluence: bool = False
 
     # Progress tracking
     progress_current: int = 0
@@ -242,6 +249,14 @@ class SummaryJob:
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "created_by": self.created_by,
+            # ADR-112: Job parameters for debugging
+            "force_regenerate": self.force_regenerate,
+            "skip_existing": self.skip_existing,
+            "per_channel": self.per_channel,
+            "min_channel_messages": self.min_channel_messages,
+            "lookback_hours": self.lookback_hours,
+            "timezone": self.timezone,
+            "auto_publish_confluence": self.auto_publish_confluence,
         }
 
     @classmethod
@@ -314,4 +329,11 @@ class SummaryJob:
             source_key=data.get("source_key"),
             server_name=data.get("server_name"),
             metadata=metadata or {},
+            # ADR-112: Job parameters for debugging
+            skip_existing=bool(data.get("skip_existing", True)),
+            per_channel=bool(data.get("per_channel", False)),
+            min_channel_messages=data.get("min_channel_messages", 5),
+            lookback_hours=data.get("lookback_hours"),
+            timezone=data.get("timezone", "UTC"),
+            auto_publish_confluence=bool(data.get("auto_publish_confluence", False)),
         )

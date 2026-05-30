@@ -305,7 +305,17 @@ class RetrospectiveGenerator:
             job.cost.max_cost_usd = max_cost_usd
 
         self._jobs[job_id] = job
-        logger.info(f"Created job {job_id} for {source.source_key}: {len(periods)} periods, auto_publish_confluence={job.auto_publish_confluence}")
+        # ADR-112: Log full job spec for debugging
+        logger.info(
+            f"Created job {job_id} for {source.source_key}: "
+            f"periods={len(periods)}, granularity={granularity}, "
+            f"date_range={start_date} to {end_date}, "
+            f"skip_existing={skip_existing}, force_regenerate={force_regenerate}, "
+            f"per_channel={per_channel}, min_channel_messages={min_channel_messages}, "
+            f"summary_type={summary_type}, perspective={perspective}, "
+            f"lookback_hours={lookback_hours}, timezone={timezone}, "
+            f"auto_publish_confluence={auto_publish_confluence}"
+        )
 
         # ADR-013: Persist job to database
         await self._persist_job(job)
@@ -360,6 +370,13 @@ class RetrospectiveGenerator:
                 completed_at=job.completed_at,
                 source_key=job.source.source_key,
                 server_name=job.source.server_name,
+                # ADR-112: Job parameters for debugging
+                skip_existing=job.skip_existing,
+                per_channel=job.per_channel,
+                min_channel_messages=job.min_channel_messages,
+                lookback_hours=job.lookback_hours,
+                timezone=job.timezone,
+                auto_publish_confluence=job.auto_publish_confluence,
             )
 
             # Check if job exists
@@ -478,6 +495,14 @@ class RetrospectiveGenerator:
             if job.status == JobStatus.RUNNING:
                 job.status = JobStatus.COMPLETED
                 job.completed_at = utc_now_naive()
+
+                # ADR-112: Log completion with full details
+                logger.info(
+                    f"Job {job_id} completed for {job.source.source_key}: "
+                    f"completed={job.progress.completed}, skipped={job.progress.skipped}, "
+                    f"failed={job.progress.failed}, total={job.progress.total_periods}, "
+                    f"cost=${job.cost.cost_usd:.4f}"
+                )
 
                 # Trigger sync if configured
                 await self._trigger_sync(job)
@@ -640,12 +665,13 @@ class RetrospectiveGenerator:
         # ADR-019: Check database for existing summary (not disk)
         elif job.skip_existing:
             exists = await summary_exists_in_db(source, period_start)
-            logger.info(f"Period {period_start}: summary_exists_in_db returned {exists}")
             if exists:
+                logger.info(f"Period {period_start}: SKIPPING - summary already exists for {source.source_key}")
                 return "skipped"
             else:
                 # Database says it doesn't exist, so any disk files are stale
                 # Force lock acquisition to override "complete" status on disk
+                logger.debug(f"Period {period_start}: no existing summary for {source.source_key}, will generate")
                 force_lock_acquire = True
 
         # Create period info with UTC timezone-aware datetimes

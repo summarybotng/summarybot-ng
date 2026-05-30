@@ -959,21 +959,42 @@ async def generate_retrospective(request: GenerateRequest):
     category_name = None
     server_name = request.server_id
 
+    # ADR-112: Track channel_name for path construction
+    channel_name = None
+
     if is_whatsapp:
         # For WhatsApp, get chat names from database imports
         try:
             from ...data.repositories import get_whatsapp_import_repository
             whatsapp_repo = await get_whatsapp_import_repository()
-            imports, _total = await whatsapp_repo.get_imports_for_guild(guild_id=request.server_id, limit=10)
+            imports, _total = await whatsapp_repo.get_imports_for_guild(guild_id=request.server_id, limit=100)
             if imports:
-                # Use first chat name, or combine multiple if there are few
-                chat_names = [imp.chat_name for imp in imports if imp.chat_name]
-                if len(chat_names) == 1:
-                    server_name = chat_names[0]
-                elif len(chat_names) <= 3:
-                    server_name = ", ".join(chat_names)
+                # Build a map of chat_id -> chat_name for lookups
+                chat_id_to_name = {imp.chat_id: imp.chat_name for imp in imports if imp.chat_id and imp.chat_name}
+
+                # If specific channel_ids are requested, resolve their names
+                if resolved_channel_ids:
+                    # Get name for single channel (for channel_name field)
+                    if len(resolved_channel_ids) == 1:
+                        channel_name = chat_id_to_name.get(resolved_channel_ids[0], resolved_channel_ids[0])
+
+                    # Get names for server_name display
+                    resolved_names = [chat_id_to_name.get(cid, cid) for cid in resolved_channel_ids]
+                    if len(resolved_names) == 1:
+                        server_name = resolved_names[0]
+                    elif len(resolved_names) <= 3:
+                        server_name = ", ".join(resolved_names)
+                    else:
+                        server_name = f"{resolved_names[0]} + {len(resolved_names) - 1} more"
                 else:
-                    server_name = f"{chat_names[0]} + {len(chat_names) - 1} more"
+                    # All chats - use combined names
+                    chat_names = [imp.chat_name for imp in imports if imp.chat_name]
+                    if len(chat_names) == 1:
+                        server_name = chat_names[0]
+                    elif len(chat_names) <= 3:
+                        server_name = ", ".join(chat_names)
+                    else:
+                        server_name = f"{chat_names[0]} + {len(chat_names) - 1} more"
         except Exception as e:
             logger.warning(f"Failed to get WhatsApp chat names: {e}")
 
@@ -1048,6 +1069,7 @@ async def generate_retrospective(request: GenerateRequest):
         server_name=server_name,
         scope=archive_scope,
         channel_id=resolved_channel_ids[0] if len(resolved_channel_ids) == 1 else None,
+        channel_name=channel_name,  # ADR-112: Required for path construction
         channel_ids=resolved_channel_ids if len(resolved_channel_ids) > 1 else None,
         category_id=category_id,
         category_name=category_name,

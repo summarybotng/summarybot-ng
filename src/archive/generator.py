@@ -1114,10 +1114,10 @@ class RetrospectiveGenerator:
                 scope_type=stored.scope_type,
                 category_name=stored.category_name,
                 # ADR-114: Additional metadata for Page Properties
-                summary_type=stored.summary_length,
-                perspective=stored.perspective,
+                summary_type=getattr(stored, 'summary_length', None),
+                perspective=getattr(stored, 'perspective', None),
                 granularity=stored.archive_granularity or job.granularity,
-                source=stored.source or "archive",
+                source=stored.source.value if hasattr(stored.source, 'value') else "archive",
             )
 
             if result.success:

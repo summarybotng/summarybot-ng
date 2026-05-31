@@ -51,11 +51,11 @@ class ConfluenceConfig:
     prop_show_period_start: bool = True
     prop_show_period_end: bool = True
     prop_show_message_count: bool = True
-    prop_show_participant_count: bool = True
+    prop_show_participant_count: bool = False  # Off by default
     prop_show_summary_type: bool = True
-    prop_show_perspective: bool = False
+    prop_show_perspective: bool = True  # On by default
     prop_show_granularity: bool = True
-    prop_show_source: bool = False
+    prop_show_source: bool = True  # On by default
 
     def is_configured(self) -> bool:
         """Check if Confluence is properly configured."""

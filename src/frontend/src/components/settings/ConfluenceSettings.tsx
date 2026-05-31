@@ -87,11 +87,11 @@ export function ConfluenceSettings({
     prop_show_period_start: true,
     prop_show_period_end: true,
     prop_show_message_count: true,
-    prop_show_participant_count: true,
+    prop_show_participant_count: false,  // Off by default
     prop_show_summary_type: true,
-    prop_show_perspective: false,
+    prop_show_perspective: true,  // On by default
     prop_show_granularity: true,
-    prop_show_source: false,
+    prop_show_source: true,  // On by default
   });
 
   // Queries & Mutations
@@ -124,11 +124,11 @@ export function ConfluenceSettings({
         prop_show_period_start: settings.prop_show_period_start ?? true,
         prop_show_period_end: settings.prop_show_period_end ?? true,
         prop_show_message_count: settings.prop_show_message_count ?? true,
-        prop_show_participant_count: settings.prop_show_participant_count ?? true,
+        prop_show_participant_count: settings.prop_show_participant_count ?? false,  // Off by default
         prop_show_summary_type: settings.prop_show_summary_type ?? true,
-        prop_show_perspective: settings.prop_show_perspective ?? false,
+        prop_show_perspective: settings.prop_show_perspective ?? true,  // On by default
         prop_show_granularity: settings.prop_show_granularity ?? true,
-        prop_show_source: settings.prop_show_source ?? false,
+        prop_show_source: settings.prop_show_source ?? true,  // On by default
       });
     }
   }, [settings]);
@@ -664,12 +664,12 @@ export function ConfluenceSettings({
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <Label htmlFor="prop_show_participant_count" className="text-xs font-normal cursor-pointer">
+                        <Label htmlFor="prop_show_participant_count" className="text-xs font-normal cursor-pointer text-muted-foreground">
                           Participants
                         </Label>
                         <Switch
                           id="prop_show_participant_count"
-                          checked={formData.prop_show_participant_count ?? true}
+                          checked={formData.prop_show_participant_count ?? false}
                           onCheckedChange={(checked) =>
                             setFormData((prev) => ({ ...prev, prop_show_participant_count: checked }))
                           }
@@ -716,12 +716,12 @@ export function ConfluenceSettings({
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <Label htmlFor="prop_show_perspective" className="text-xs font-normal cursor-pointer text-muted-foreground">
+                        <Label htmlFor="prop_show_perspective" className="text-xs font-normal cursor-pointer">
                           Perspective
                         </Label>
                         <Switch
                           id="prop_show_perspective"
-                          checked={formData.prop_show_perspective ?? false}
+                          checked={formData.prop_show_perspective ?? true}
                           onCheckedChange={(checked) =>
                             setFormData((prev) => ({ ...prev, prop_show_perspective: checked }))
                           }
@@ -729,12 +729,12 @@ export function ConfluenceSettings({
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <Label htmlFor="prop_show_source" className="text-xs font-normal cursor-pointer text-muted-foreground">
+                        <Label htmlFor="prop_show_source" className="text-xs font-normal cursor-pointer">
                           Source
                         </Label>
                         <Switch
                           id="prop_show_source"
-                          checked={formData.prop_show_source ?? false}
+                          checked={formData.prop_show_source ?? true}
                           onCheckedChange={(checked) =>
                             setFormData((prev) => ({ ...prev, prop_show_source: checked }))
                           }

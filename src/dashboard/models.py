@@ -1302,6 +1302,24 @@ class ConfluenceSettingsRequest(BaseModel):
         default=True,
         description="Add labels to published Confluence pages"
     )
+    # ADR-114: Page Properties options
+    include_page_properties: bool = Field(
+        default=True,
+        description="Include Page Properties macro for queryable metadata"
+    )
+    page_properties_in_expander: bool = Field(
+        default=True,
+        description="Wrap Page Properties in an expander with metadata title"
+    )
+    prop_show_channel: bool = Field(default=True, description="Show channel in properties")
+    prop_show_period_start: bool = Field(default=True, description="Show period start date")
+    prop_show_period_end: bool = Field(default=True, description="Show period end date")
+    prop_show_message_count: bool = Field(default=True, description="Show message count")
+    prop_show_participant_count: bool = Field(default=False, description="Show participant count")
+    prop_show_summary_type: bool = Field(default=True, description="Show summary type")
+    prop_show_perspective: bool = Field(default=True, description="Show perspective")
+    prop_show_granularity: bool = Field(default=True, description="Show granularity")
+    prop_show_source: bool = Field(default=True, description="Show source")
 
 
 class ConfluenceSettingsResponse(BaseModel):
@@ -1330,6 +1348,18 @@ class ConfluenceSettingsResponse(BaseModel):
     include_action_items: bool = True
     include_participants: bool = False
     include_labels: bool = True
+    # ADR-114: Page Properties options
+    include_page_properties: bool = True
+    page_properties_in_expander: bool = True
+    prop_show_channel: bool = True
+    prop_show_period_start: bool = True
+    prop_show_period_end: bool = True
+    prop_show_message_count: bool = True
+    prop_show_participant_count: bool = False
+    prop_show_summary_type: bool = True
+    prop_show_perspective: bool = True
+    prop_show_granularity: bool = True
+    prop_show_source: bool = True
 
 
 # ============================================================================

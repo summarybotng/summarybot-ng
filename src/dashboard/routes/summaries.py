@@ -4550,6 +4550,18 @@ async def get_confluence_settings(
             include_action_items=settings.include_action_items,
             include_participants=settings.include_participants,
             include_labels=settings.include_labels,
+            # ADR-114: Page Properties options
+            include_page_properties=settings.include_page_properties,
+            page_properties_in_expander=settings.page_properties_in_expander,
+            prop_show_channel=settings.prop_show_channel,
+            prop_show_period_start=settings.prop_show_period_start,
+            prop_show_period_end=settings.prop_show_period_end,
+            prop_show_message_count=settings.prop_show_message_count,
+            prop_show_participant_count=settings.prop_show_participant_count,
+            prop_show_summary_type=settings.prop_show_summary_type,
+            prop_show_perspective=settings.prop_show_perspective,
+            prop_show_granularity=settings.prop_show_granularity,
+            prop_show_source=settings.prop_show_source,
         )
 
     except HTTPException:
@@ -4640,6 +4652,18 @@ async def update_confluence_settings(
             include_action_items=body.include_action_items,
             include_participants=body.include_participants,
             include_labels=body.include_labels,
+            # ADR-114: Page Properties options
+            include_page_properties=body.include_page_properties,
+            page_properties_in_expander=body.page_properties_in_expander,
+            prop_show_channel=body.prop_show_channel,
+            prop_show_period_start=body.prop_show_period_start,
+            prop_show_period_end=body.prop_show_period_end,
+            prop_show_message_count=body.prop_show_message_count,
+            prop_show_participant_count=body.prop_show_participant_count,
+            prop_show_summary_type=body.prop_show_summary_type,
+            prop_show_perspective=body.prop_show_perspective,
+            prop_show_granularity=body.prop_show_granularity,
+            prop_show_source=body.prop_show_source,
         )
 
         success = await repo.save_settings(settings)
@@ -4671,6 +4695,18 @@ async def update_confluence_settings(
             include_action_items=settings.include_action_items,
             include_participants=settings.include_participants,
             include_labels=settings.include_labels,
+            # ADR-114: Page Properties options
+            include_page_properties=settings.include_page_properties,
+            page_properties_in_expander=settings.page_properties_in_expander,
+            prop_show_channel=settings.prop_show_channel,
+            prop_show_period_start=settings.prop_show_period_start,
+            prop_show_period_end=settings.prop_show_period_end,
+            prop_show_message_count=settings.prop_show_message_count,
+            prop_show_participant_count=settings.prop_show_participant_count,
+            prop_show_summary_type=settings.prop_show_summary_type,
+            prop_show_perspective=settings.prop_show_perspective,
+            prop_show_granularity=settings.prop_show_granularity,
+            prop_show_source=settings.prop_show_source,
         )
 
     except HTTPException:

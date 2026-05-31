@@ -73,18 +73,18 @@ export interface ConfluenceSettingsRequest {
   include_action_items?: boolean;
   include_participants?: boolean;
   include_labels?: boolean;
-  // ADR-114: Page Properties toggles
+  // ADR-114: Page Properties toggles (defaults: participant=off, perspective=on, source=on)
   include_page_properties?: boolean;
   page_properties_in_expander?: boolean;
   prop_show_channel?: boolean;
   prop_show_period_start?: boolean;
   prop_show_period_end?: boolean;
   prop_show_message_count?: boolean;
-  prop_show_participant_count?: boolean;
+  prop_show_participant_count?: boolean;  // Default: false
   prop_show_summary_type?: boolean;
-  prop_show_perspective?: boolean;
+  prop_show_perspective?: boolean;  // Default: true
   prop_show_granularity?: boolean;
-  prop_show_source?: boolean;
+  prop_show_source?: boolean;  // Default: true
 }
 
 export interface ConfluenceSettingsResponse {

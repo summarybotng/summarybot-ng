@@ -5049,6 +5049,9 @@ def _job_to_list_item(job: SummaryJob) -> JobListItem:
         source_key=source_key,
         server_name=server_name,
         cost=cost,
+        # ADR-112: Summary options for retrospective jobs
+        summary_type=job.summary_type,
+        perspective=job.perspective,
     )
 
 

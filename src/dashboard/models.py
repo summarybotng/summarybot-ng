@@ -1551,6 +1551,9 @@ class JobListItem(BaseModel):
     source_key: Optional[str] = None
     server_name: Optional[str] = None
     cost: Optional[JobCostResponse] = None
+    # ADR-112: Summary options for retrospective jobs
+    summary_type: Optional[str] = None
+    perspective: Optional[str] = None
 
 
 class JobDetailResponse(BaseModel):

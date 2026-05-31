@@ -1291,7 +1291,7 @@ function JobsView({ guildId }: { guildId: string }) {
                           {job.summary_type}
                         </Badge>
                       )}
-                      {job.perspective && job.perspective !== "general" && (
+                      {job.perspective && (
                         <Badge variant="secondary" className="text-xs">
                           {job.perspective}
                         </Badge>

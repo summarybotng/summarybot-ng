@@ -177,6 +177,7 @@ class ConfluencePublisher:
         summary_id: Optional[str] = None,
         guild_id: Optional[str] = None,
         channel_names: Optional[List[str]] = None,
+        channel_id: Optional[str] = None,  # ADR-114: For content properties
         scope_type: Optional[str] = None,
         category_name: Optional[str] = None,
         user_timezone: Optional[str] = None,
@@ -190,6 +191,7 @@ class ConfluencePublisher:
 
         ADR-100: Includes channel names as labels and in content,
         parses dates for Confluence date chips.
+        ADR-114: Sets content properties for CQL queries.
 
         Args:
             summary: SummaryResult to publish
@@ -200,6 +202,7 @@ class ConfluencePublisher:
             summary_id: Optional summary ID for link back to SummaryBot
             guild_id: Optional guild ID for link back to SummaryBot
             channel_names: ADR-100: List of channel names for labels and content
+            channel_id: ADR-114: Channel ID for content properties
             scope_type: ADR-100: Summary scope (guild/category/channel)
             category_name: ADR-100: Category name if category-scoped
             user_timezone: User's timezone for footer timestamp (e.g., "America/New_York")
@@ -226,14 +229,19 @@ class ConfluencePublisher:
                 dashboard_base_url=dashboard_base_url,
             )
 
-            # ADR-100/ADR-113: Generate labels for the page (if enabled)
+            # ADR-100/ADR-113/ADR-114: Generate labels for the page (if enabled)
             labels: List[str] = []
             if self.config.include_labels:
                 labels = self._generate_labels(
                     channel_names=channel_names,
                     scope_type=scope_type,
                     category_name=category_name,
+                    period_start=summary.start_time,
+                    period_end=summary.end_time,
                 )
+
+            # Get primary channel name for properties
+            primary_channel = channel_names[0] if channel_names else None
 
             if existing_page_id:
                 # Update existing page
@@ -248,6 +256,11 @@ class ConfluencePublisher:
                 # Add labels after successful update (if enabled)
                 if result.success and result.page_id and labels:
                     await self._set_page_labels(client, result.page_id, labels)
+                # ADR-114: Set content properties for CQL queries
+                if result.success and result.page_id:
+                    await self._set_content_properties(
+                        client, result.page_id, summary, primary_channel, channel_id
+                    )
                 return result
             else:
                 # Create new page
@@ -259,6 +272,11 @@ class ConfluencePublisher:
                 # Add labels after successful creation (if enabled)
                 if result.success and result.page_id and labels:
                     await self._set_page_labels(client, result.page_id, labels)
+                # ADR-114: Set content properties for CQL queries
+                if result.success and result.page_id:
+                    await self._set_content_properties(
+                        client, result.page_id, summary, primary_channel, channel_id
+                    )
                 return result
 
         except httpx.HTTPStatusError as e:
@@ -461,7 +479,8 @@ class ConfluencePublisher:
     ) -> Dict[str, Any]:
         """Format summary as Atlassian Document Format (ADF) JSON.
 
-        ADR-099/ADR-100: Creates a rich document with:
+        ADR-099/ADR-100/ADR-114: Creates a rich document with:
+        - Page Properties macro with queryable metadata (ADR-114)
         - Info panel with metadata and channel list
         - Summary text with date chips (LLM-extracted)
         - Key points as bullet list
@@ -472,6 +491,11 @@ class ConfluencePublisher:
         NOTE: References are intentionally omitted per ADR-100 (may contain sensitive info).
         """
         content: List[Dict[str, Any]] = []
+
+        # ADR-114: Page Properties macro for queryable metadata
+        # Get primary channel name from list for display
+        primary_channel = channel_names[0] if channel_names else None
+        content.append(self._build_page_properties_macro(summary, primary_channel))
 
         # Info panel with metadata (channels now in separate expand section)
         metadata_text = self._build_metadata_text(summary)
@@ -732,13 +756,17 @@ class ConfluencePublisher:
         channel_names: Optional[List[str]] = None,
         scope_type: Optional[str] = None,
         category_name: Optional[str] = None,
+        period_start: Optional[datetime] = None,
+        period_end: Optional[datetime] = None,
     ) -> List[str]:
-        """Generate Confluence labels for the page (ADR-100).
+        """Generate Confluence labels for the page (ADR-100, ADR-114).
 
         Args:
             channel_names: List of Discord channel names
             scope_type: Summary scope (guild/category/channel)
             category_name: Category name if category-scoped
+            period_start: Summary period start for date labels
+            period_end: Summary period end for date labels
 
         Returns:
             List of labels (max 10 per Confluence best practice)
@@ -758,6 +786,14 @@ class ConfluencePublisher:
             sanitized = self._sanitize_label(category_name)
             if sanitized:
                 labels.append(f"category-{sanitized}")
+
+        # ADR-114: Add period labels for filtering
+        if period_end:
+            # Month label: period-2026-04
+            labels.append(f"period-{period_end.year}-{period_end.month:02d}")
+            # ISO week label: period-2026-w17
+            iso_week = period_end.isocalendar()[1]
+            labels.append(f"period-{period_end.year}-w{iso_week:02d}")
 
         return labels[:10]  # Confluence best practice: limit labels
 
@@ -818,6 +854,173 @@ class ConfluencePublisher:
         except Exception as e:
             logger.warning(f"Error adding labels to page {page_id}: {e}")
             return False
+
+    async def _set_content_properties(
+        self,
+        client: httpx.AsyncClient,
+        page_id: str,
+        summary: SummaryResult,
+        channel_name: Optional[str] = None,
+        channel_id: Optional[str] = None,
+    ) -> bool:
+        """Set content properties for CQL queries (ADR-114).
+
+        Sets structured metadata that can be queried via CQL:
+        - summarybot.period: {start, end}
+        - summarybot.channel: {name, id}
+        - summarybot.stats: {messages, participants}
+
+        Args:
+            client: HTTP client (unused - we need v1 API)
+            page_id: Confluence page ID
+            summary: SummaryResult with stats
+            channel_name: Channel name
+            channel_id: Channel ID
+
+        Returns:
+            True if all properties set successfully
+        """
+        properties = {
+            "summarybot.period": {
+                "start": summary.start_time.isoformat() if summary.start_time else None,
+                "end": summary.end_time.isoformat() if summary.end_time else None,
+            },
+            "summarybot.channel": {
+                "name": channel_name or "Unknown",
+                "id": channel_id or "",
+            },
+            "summarybot.stats": {
+                "messages": summary.message_count or 0,
+                "participants": len(summary.participants) if summary.participants else 0,
+            },
+        }
+
+        success = True
+        try:
+            # Must use v1 API for content properties
+            async with httpx.AsyncClient(
+                auth=(self.config.email, self.config.api_token),
+                headers={"Content-Type": "application/json"},
+                timeout=30.0,
+            ) as v1_client:
+                for key, value in properties.items():
+                    url = f"{self.config.base_url}/wiki/rest/api/content/{page_id}/property/{key}"
+                    payload = {"key": key, "value": value}
+
+                    # Try PUT first (update), then POST (create) if 404
+                    response = await v1_client.put(url, json=payload)
+                    if response.status_code == 404:
+                        # Property doesn't exist, create it
+                        create_url = f"{self.config.base_url}/wiki/rest/api/content/{page_id}/property"
+                        response = await v1_client.post(create_url, json=payload)
+
+                    if response.status_code not in (200, 201):
+                        logger.warning(
+                            f"Failed to set property {key} on page {page_id}: "
+                            f"{response.status_code}"
+                        )
+                        success = False
+                    else:
+                        logger.debug(f"Set property {key} on page {page_id}")
+
+        except Exception as e:
+            logger.warning(f"Error setting content properties on page {page_id}: {e}")
+            return False
+
+        if success:
+            logger.info(f"Set content properties on page {page_id}")
+        return success
+
+    def _build_page_properties_macro(
+        self,
+        summary: SummaryResult,
+        channel_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Build ADF for Page Properties macro (ADR-114).
+
+        Creates a structured table inside the Page Properties macro
+        that can be queried via Page Properties Report.
+
+        Args:
+            summary: SummaryResult with stats
+            channel_name: Channel name for display
+
+        Returns:
+            ADF node for the Page Properties macro
+        """
+        # Build table rows
+        rows = []
+
+        # Channel row
+        if channel_name:
+            rows.append(self._build_table_row("Channel", channel_name))
+
+        # Period rows
+        if summary.start_time:
+            rows.append(self._build_table_row(
+                "Period Start",
+                summary.start_time.strftime("%Y-%m-%d")
+            ))
+        if summary.end_time:
+            rows.append(self._build_table_row(
+                "Period End",
+                summary.end_time.strftime("%Y-%m-%d")
+            ))
+
+        # Stats rows
+        rows.append(self._build_table_row(
+            "Messages",
+            str(summary.message_count or 0)
+        ))
+        rows.append(self._build_table_row(
+            "Participants",
+            str(len(summary.participants) if summary.participants else 0)
+        ))
+
+        # Page Properties macro wrapping a table
+        return {
+            "type": "extension",
+            "attrs": {
+                "extensionType": "com.atlassian.confluence.macro.core",
+                "extensionKey": "details",
+                "parameters": {
+                    "macroParams": {}
+                }
+            },
+            "content": [
+                {
+                    "type": "table",
+                    "attrs": {"isNumberColumnEnabled": False, "layout": "default"},
+                    "content": rows
+                }
+            ]
+        }
+
+    def _build_table_row(self, key: str, value: str) -> Dict[str, Any]:
+        """Build a table row for Page Properties macro."""
+        return {
+            "type": "tableRow",
+            "content": [
+                {
+                    "type": "tableHeader",
+                    "content": [
+                        {
+                            "type": "paragraph",
+                            "content": [{"type": "text", "text": key}]
+                        }
+                    ]
+                },
+                {
+                    "type": "tableCell",
+                    "content": [
+                        {
+                            "type": "paragraph",
+                            "content": [{"type": "text", "text": value}]
+                        }
+                    ]
+                }
+            ]
+        }
 
 
 # Module-level cache for per-guild publishers

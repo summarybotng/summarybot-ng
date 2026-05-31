@@ -608,8 +608,10 @@ function GenerateDialog({
 
   const handleEstimate = async () => {
     setEstimating(true);
+    const request = buildRequest(true);
+    console.log("[Archive] Estimate request:", { summary_type: request.summary_type, perspective: request.perspective });
     try {
-      const result = await onEstimate(buildRequest(true));
+      const result = await onEstimate(request);
       setEstimate(result);
     } catch {
       setEstimate(null);
@@ -739,7 +741,10 @@ function GenerateDialog({
           </div>
           <div className="space-y-2">
             <Label>Perspective</Label>
-            <Select value={perspective} onValueChange={(v) => setPerspective(v as typeof perspective)}>
+            <Select value={perspective} onValueChange={(v) => {
+              console.log("[Archive] Perspective changed:", { from: perspective, to: v });
+              setPerspective(v as typeof perspective);
+            }}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>

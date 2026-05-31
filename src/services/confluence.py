@@ -1077,13 +1077,60 @@ class ConfluencePublisher:
 
         # Wrap in expander if configured (default true)
         if self.config.page_properties_in_expander:
+            # Build expander title from summary metadata
+            expander_title = self._build_expander_title(summary)
             return {
                 "type": "expand",
-                "attrs": {"title": "Page Properties"},
+                "attrs": {"title": expander_title},
                 "content": [page_properties]
             }
 
         return page_properties
+
+    def _build_expander_title(self, summary: SummaryResult) -> str:
+        """Build expander title from summary metadata.
+
+        Format: "1506 messages | 44 participants | Apr 05, 2026 - Apr 12, 2026 UTC"
+        Omits time if at day boundary (00:00 or 23:59).
+        """
+        parts = []
+
+        # Message count
+        msg_count = summary.message_count or 0
+        parts.append(f"{msg_count} message{'s' if msg_count != 1 else ''}")
+
+        # Participant count
+        participant_count = len(summary.participants) if summary.participants else 0
+        parts.append(f"{participant_count} participant{'s' if participant_count != 1 else ''}")
+
+        # Date range
+        if summary.start_time or summary.end_time:
+            date_parts = []
+            if summary.start_time:
+                date_parts.append(self._format_date_for_title(summary.start_time))
+            if summary.end_time:
+                date_parts.append(self._format_date_for_title(summary.end_time))
+            if date_parts:
+                parts.append(" - ".join(date_parts) + " UTC")
+
+        return " | ".join(parts)
+
+    def _format_date_for_title(self, dt: datetime) -> str:
+        """Format a datetime for the expander title.
+
+        Omits time if at day boundary (00:00 or 23:59).
+        Returns format like "Apr 05, 2026" or "Apr 05, 2026 14:30".
+        """
+        # Check if time is at a day boundary (00:00 or 23:59)
+        is_day_boundary = (
+            (dt.hour == 0 and dt.minute == 0) or
+            (dt.hour == 23 and dt.minute == 59)
+        )
+
+        if is_day_boundary:
+            return dt.strftime("%b %d, %Y")
+        else:
+            return dt.strftime("%b %d, %Y %H:%M")
 
     def _build_table_row(self, key: str, value: str) -> Dict[str, Any]:
         """Build a table row for Page Properties macro with text value."""

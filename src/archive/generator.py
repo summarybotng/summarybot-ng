@@ -149,6 +149,11 @@ class GenerationJob:
                 "skipped": self.progress.skipped,
                 "current_period": self.progress.current_period,
                 "percent_complete": self.progress.percent_complete,
+                # ADR-112: Skip reason breakdown
+                "skipped_exists": self.progress.skipped_exists,
+                "skipped_locked": self.progress.skipped_locked,
+                "skipped_no_messages": self.progress.skipped_no_messages,
+                "skipped_budget": self.progress.skipped_budget,
             },
             "cost": {
                 "cost_usd": self.cost.cost_usd,

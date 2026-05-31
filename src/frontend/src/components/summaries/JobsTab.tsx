@@ -42,6 +42,8 @@ import {
   Hash,
   DollarSign,
   BookOpen,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 interface JobProgress {
@@ -50,6 +52,11 @@ interface JobProgress {
   percent: number;
   message: string | null;
   current_period?: string | null;
+  // ADR-112: Skip reason breakdown
+  skipped_exists?: number;
+  skipped_locked?: number;
+  skipped_no_messages?: number;
+  skipped_budget?: number;
 }
 
 interface JobDateRange {
@@ -223,6 +230,7 @@ interface JobCardProps {
 }
 
 function JobCard({ job, onCancel, onRetry, onPause, onResume, isCancelling, isRetrying, isPausing, isResuming }: JobCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const typeBadge = getJobTypeBadge(job.job_type);
   const statusBadge = getStatusBadge(job.status);
   const TypeIcon = typeBadge.icon;
@@ -504,7 +512,272 @@ function JobCard({ job, onCancel, onRetry, onPause, onResume, isCancelling, isRe
                 Retry
               </Button>
             )}
+            {/* Expand/collapse details button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="ml-auto text-muted-foreground hover:text-foreground"
+            >
+              {isExpanded ? (
+                <>
+                  <ChevronUp className="mr-1 h-3 w-3" />
+                  Less
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="mr-1 h-3 w-3" />
+                  Details
+                </>
+              )}
+            </Button>
           </div>
+
+          {/* Expanded details panel */}
+          {isExpanded && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-3 rounded-md bg-muted/30 border border-border/50 p-3 overflow-x-auto"
+            >
+              <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+                Full Job Metadata
+              </h4>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <dt className="text-muted-foreground">Job ID</dt>
+                <dd className="font-mono">{job.job_id}</dd>
+
+                <dt className="text-muted-foreground">Guild ID</dt>
+                <dd className="font-mono">{job.guild_id}</dd>
+
+                <dt className="text-muted-foreground">Job Type</dt>
+                <dd>{job.job_type}</dd>
+
+                <dt className="text-muted-foreground">Status</dt>
+                <dd>{job.status}</dd>
+
+                <dt className="text-muted-foreground">Scope</dt>
+                <dd>{job.scope || "—"}</dd>
+
+                {job.schedule_id && (
+                  <>
+                    <dt className="text-muted-foreground">Schedule ID</dt>
+                    <dd className="font-mono">{job.schedule_id}</dd>
+                  </>
+                )}
+
+                {job.schedule_name && (
+                  <>
+                    <dt className="text-muted-foreground">Schedule Name</dt>
+                    <dd>{job.schedule_name}</dd>
+                  </>
+                )}
+
+                <dt className="text-muted-foreground">Created At</dt>
+                <dd>{new Date(job.created_at).toLocaleString()}</dd>
+
+                {job.started_at && (
+                  <>
+                    <dt className="text-muted-foreground">Started At</dt>
+                    <dd>{new Date(job.started_at).toLocaleString()}</dd>
+                  </>
+                )}
+
+                {job.completed_at && (
+                  <>
+                    <dt className="text-muted-foreground">Completed At</dt>
+                    <dd>{new Date(job.completed_at).toLocaleString()}</dd>
+                  </>
+                )}
+
+                {job.date_range?.start && (
+                  <>
+                    <dt className="text-muted-foreground">Date Range Start</dt>
+                    <dd>{job.date_range.start}</dd>
+                  </>
+                )}
+
+                {job.date_range?.end && (
+                  <>
+                    <dt className="text-muted-foreground">Date Range End</dt>
+                    <dd>{job.date_range.end}</dd>
+                  </>
+                )}
+
+                {job.granularity && (
+                  <>
+                    <dt className="text-muted-foreground">Granularity</dt>
+                    <dd>{job.granularity}</dd>
+                  </>
+                )}
+
+                {job.summary_type && (
+                  <>
+                    <dt className="text-muted-foreground">Summary Type</dt>
+                    <dd>{job.summary_type}</dd>
+                  </>
+                )}
+
+                {job.perspective && (
+                  <>
+                    <dt className="text-muted-foreground">Perspective</dt>
+                    <dd>{job.perspective}</dd>
+                  </>
+                )}
+
+                {job.source_key && (
+                  <>
+                    <dt className="text-muted-foreground">Source Key</dt>
+                    <dd className="font-mono">{job.source_key}</dd>
+                  </>
+                )}
+
+                {job.server_name && (
+                  <>
+                    <dt className="text-muted-foreground">Server Name</dt>
+                    <dd>{job.server_name}</dd>
+                  </>
+                )}
+
+                {job.category_id && (
+                  <>
+                    <dt className="text-muted-foreground">Category ID</dt>
+                    <dd className="font-mono">{job.category_id}</dd>
+                  </>
+                )}
+
+                {job.channel_ids && job.channel_ids.length > 0 && (
+                  <>
+                    <dt className="text-muted-foreground">Channel IDs</dt>
+                    <dd className="font-mono break-all">{job.channel_ids.join(", ")}</dd>
+                  </>
+                )}
+
+                <dt className="text-muted-foreground">Force Regenerate</dt>
+                <dd>{job.force_regenerate ? "Yes" : "No"}</dd>
+
+                <dt className="text-muted-foreground">Skip Existing</dt>
+                <dd>{job.skip_existing === false ? "No" : "Yes"}</dd>
+
+                <dt className="text-muted-foreground">Per Channel</dt>
+                <dd>{job.per_channel ? "Yes" : "No"}</dd>
+
+                {job.min_channel_messages !== undefined && (
+                  <>
+                    <dt className="text-muted-foreground">Min Channel Messages</dt>
+                    <dd>{job.min_channel_messages}</dd>
+                  </>
+                )}
+
+                {job.lookback_hours && (
+                  <>
+                    <dt className="text-muted-foreground">Lookback Hours</dt>
+                    <dd>{job.lookback_hours}</dd>
+                  </>
+                )}
+
+                {job.timezone && (
+                  <>
+                    <dt className="text-muted-foreground">Timezone</dt>
+                    <dd>{job.timezone}</dd>
+                  </>
+                )}
+
+                <dt className="text-muted-foreground">Auto-Publish Confluence</dt>
+                <dd>{job.auto_publish_confluence ? "Yes" : "No"}</dd>
+
+                {job.summary_id && (
+                  <>
+                    <dt className="text-muted-foreground">Summary ID</dt>
+                    <dd className="font-mono">{job.summary_id}</dd>
+                  </>
+                )}
+
+                {job.summary_ids && job.summary_ids.length > 0 && (
+                  <>
+                    <dt className="text-muted-foreground">Summary IDs ({job.summary_ids.length})</dt>
+                    <dd className="font-mono break-all">{job.summary_ids.join(", ")}</dd>
+                  </>
+                )}
+
+                {job.error && (
+                  <>
+                    <dt className="text-muted-foreground text-red-500">Error</dt>
+                    <dd className="text-red-600 break-all">{job.error}</dd>
+                  </>
+                )}
+
+                {job.pause_reason && (
+                  <>
+                    <dt className="text-muted-foreground">Pause Reason</dt>
+                    <dd>{job.pause_reason}</dd>
+                  </>
+                )}
+
+                {job.cost && (
+                  <>
+                    <dt className="text-muted-foreground">Cost</dt>
+                    <dd>${job.cost.cost_usd.toFixed(4)}</dd>
+
+                    <dt className="text-muted-foreground">Tokens In</dt>
+                    <dd>{job.cost.tokens_input.toLocaleString()}</dd>
+
+                    <dt className="text-muted-foreground">Tokens Out</dt>
+                    <dd>{job.cost.tokens_output.toLocaleString()}</dd>
+                  </>
+                )}
+
+                <dt className="text-muted-foreground">Progress</dt>
+                <dd>
+                  {job.progress.current}/{job.progress.total} ({Math.round(job.progress.percent)}%)
+                </dd>
+
+                {job.progress.message && (
+                  <>
+                    <dt className="text-muted-foreground">Progress Message</dt>
+                    <dd className="break-all">{job.progress.message}</dd>
+                  </>
+                )}
+
+                {job.progress.current_period && (
+                  <>
+                    <dt className="text-muted-foreground">Current Period</dt>
+                    <dd>{job.progress.current_period}</dd>
+                  </>
+                )}
+
+                {/* ADR-112: Skip reason breakdown */}
+                {(job.progress.skipped_exists !== undefined && job.progress.skipped_exists > 0) && (
+                  <>
+                    <dt className="text-muted-foreground">Skipped (Exists)</dt>
+                    <dd>{job.progress.skipped_exists}</dd>
+                  </>
+                )}
+
+                {(job.progress.skipped_locked !== undefined && job.progress.skipped_locked > 0) && (
+                  <>
+                    <dt className="text-muted-foreground">Skipped (Locked)</dt>
+                    <dd>{job.progress.skipped_locked}</dd>
+                  </>
+                )}
+
+                {(job.progress.skipped_no_messages !== undefined && job.progress.skipped_no_messages > 0) && (
+                  <>
+                    <dt className="text-muted-foreground">Skipped (No Messages)</dt>
+                    <dd>{job.progress.skipped_no_messages}</dd>
+                  </>
+                )}
+
+                {(job.progress.skipped_budget !== undefined && job.progress.skipped_budget > 0) && (
+                  <>
+                    <dt className="text-muted-foreground">Skipped (Budget)</dt>
+                    <dd>{job.progress.skipped_budget}</dd>
+                  </>
+                )}
+              </dl>
+            </motion.div>
+          )}
         </CardContent>
       </Card>
     </motion.div>

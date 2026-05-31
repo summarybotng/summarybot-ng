@@ -91,6 +91,7 @@ class SummaryJob:
     lookback_hours: Optional[int] = None
     timezone: str = "UTC"
     auto_publish_confluence: bool = False
+    creation_source: str = "unknown"  # wizard, archive_dialog, api, scheduled
 
     # Progress tracking
     progress_current: int = 0
@@ -336,4 +337,5 @@ class SummaryJob:
             lookback_hours=data.get("lookback_hours"),
             timezone=data.get("timezone", "UTC"),
             auto_publish_confluence=bool(data.get("auto_publish_confluence", False)),
+            creation_source=data.get("creation_source", "unknown"),
         )

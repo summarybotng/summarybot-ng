@@ -5084,6 +5084,9 @@ def _job_to_list_item(job: SummaryJob) -> JobListItem:
         # ADR-112: Summary options for retrospective jobs
         summary_type=job.summary_type,
         perspective=job.perspective,
+        skip_existing=job.skip_existing,
+        force_regenerate=job.force_regenerate,
+        creation_source=job.creation_source,
     )
 
 

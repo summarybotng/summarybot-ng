@@ -30,8 +30,9 @@ class SQLiteSummaryJobRepository(SummaryJobRepository):
             progress_current, progress_total, progress_message, current_period,
             cost_usd, tokens_input, tokens_output, summary_id, summary_ids,
             error, pause_reason, created_at, started_at, completed_at,
-            created_by, source_key, server_name, metadata
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            created_by, source_key, server_name, metadata,
+            skip_existing, creation_source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -69,6 +70,8 @@ class SQLiteSummaryJobRepository(SummaryJobRepository):
             job.source_key,
             job.server_name,
             json.dumps(job.metadata) if job.metadata else None,
+            1 if job.skip_existing else 0,
+            job.creation_source,
         )
 
         await self.connection.execute(query, params)

@@ -1559,6 +1559,9 @@ class JobListItem(BaseModel):
     # ADR-112: Summary options for retrospective jobs
     summary_type: Optional[str] = None
     perspective: Optional[str] = None
+    skip_existing: Optional[bool] = None
+    force_regenerate: Optional[bool] = None
+    creation_source: Optional[str] = None
 
 
 class JobDetailResponse(BaseModel):

@@ -81,6 +81,8 @@ class GenerateRequest(BaseModel):
     min_channel_messages: int = 5  # Skip channels with fewer messages
     # ADR-111: Auto-publish to Confluence
     auto_publish_confluence: bool = False
+    # ADR-116: Track job creation source
+    creation_source: str = "unknown"  # wizard, archive_dialog, api
 
 
 class BackfillReportRequest(BaseModel):
@@ -1149,6 +1151,8 @@ async def generate_retrospective(request: GenerateRequest):
         min_channel_messages=request.min_channel_messages or 5,
         # ADR-111: Auto-publish to Confluence
         auto_publish_confluence=request.auto_publish_confluence or False,
+        # ADR-116: Track creation source
+        creation_source=request.creation_source or "unknown",
     )
 
     # Start job in background if not dry run

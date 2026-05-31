@@ -758,6 +758,8 @@ function GenerateDialog({
       force_regenerate: forceRegenerate,
       dry_run: dryRun,
       auto_publish_confluence: autoPublishConfluence,
+      // ADR-116: Track creation source
+      creation_source: "archive_dialog",
     };
 
     // Add scope-specific fields (only for Discord)

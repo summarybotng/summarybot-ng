@@ -425,6 +425,8 @@ export function Summaries() {
         force_regenerate: state.forceRegenerate,
         // ADR-096: Per-channel mode for weekly summaries
         per_channel: state.perChannel,
+        // ADR-116: Track creation source
+        creation_source: "wizard",
       };
 
       const result = await generateArchive.mutateAsync(archiveRequest);

@@ -121,6 +121,8 @@ class GenerationJob:
     # Summary options
     summary_type: str = "detailed"  # brief, detailed, comprehensive
     perspective: str = "general"  # general, developer, marketing, product, etc.
+    # Tracking
+    creation_source: str = "unknown"  # wizard, archive_dialog, api, scheduled
     # Weekly options
     schedule_days: Optional[List[int]] = None  # For weekly: which days to generate (0=Sun, 6=Sat)
     lookback_hours: Optional[int] = None  # How many hours to look back for each summary
@@ -171,6 +173,10 @@ class GenerationJob:
             "summary_type": self.summary_type,
             "perspective": self.perspective,
             "server_name": self.source.server_name,
+            # Job options
+            "skip_existing": self.skip_existing,
+            "force_regenerate": self.force_regenerate,
+            "creation_source": self.creation_source,
             # Timestamps
             "created_at": self.created_at.isoformat(),
             "started_at": self.started_at.isoformat() if self.started_at else None,
@@ -253,6 +259,7 @@ class RetrospectiveGenerator:
         per_channel: bool = False,
         min_channel_messages: int = 5,
         auto_publish_confluence: bool = False,
+        creation_source: str = "unknown",
     ) -> GenerationJob:
         """
         Create a new generation job.
@@ -309,6 +316,7 @@ class RetrospectiveGenerator:
             per_channel=per_channel,
             min_channel_messages=min_channel_messages,
             auto_publish_confluence=auto_publish_confluence,
+            creation_source=creation_source,
         )
 
         if max_cost_usd:
@@ -401,6 +409,7 @@ class RetrospectiveGenerator:
                 lookback_hours=job.lookback_hours,
                 timezone=job.timezone,
                 auto_publish_confluence=job.auto_publish_confluence,
+                creation_source=job.creation_source,
             )
 
             # Check if job exists

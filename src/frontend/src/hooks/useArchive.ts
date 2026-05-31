@@ -83,6 +83,8 @@ export interface GenerateRequest {
   perspective?: "general" | "developer" | "marketing" | "product" | "finance" | "executive" | "support";
   // ADR-111: Auto-publish to Confluence
   auto_publish_confluence?: boolean;
+  // ADR-116: Track job creation source
+  creation_source?: "wizard" | "archive_dialog" | "api";
 }
 
 export interface GenerationJob {
@@ -104,6 +106,10 @@ export interface GenerationJob {
   summary_type?: string;
   perspective?: string;
   server_name?: string;
+  // Job options (ADR-116)
+  skip_existing?: boolean;
+  force_regenerate?: boolean;
+  creation_source?: string;
   // Timestamps
   created_at: string;
   started_at?: string;

@@ -934,7 +934,8 @@ async def generate_retrospective(request: GenerateRequest):
         f"(type={type(request.date_range.start).__name__}), "
         f"date_range.end={request.date_range.end} "
         f"(type={type(request.date_range.end).__name__}), "
-        f"scope={request.scope}"
+        f"scope={request.scope}, "
+        f"summary_type={request.summary_type}, perspective={request.perspective}"
     )
 
     # Check source types

@@ -2,8 +2,8 @@
 // Handles share target functionality
 // Version: 2 - Fixed IndexedDB handling
 
-const CACHE_NAME = 'summarybot-v2';
-const SW_VERSION = '4.0.0';
+const CACHE_NAME = 'summarybot-v3';
+const SW_VERSION = '4.1.0';
 
 // Install event - cache essential assets
 self.addEventListener('install', (event) => {

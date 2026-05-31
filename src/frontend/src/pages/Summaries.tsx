@@ -215,6 +215,7 @@ export function Summaries() {
       time_range: { type: "hours", value: hours },
       options: {
         summary_length: state.summaryLength,
+        perspective: state.perspective,  // ADR-112: Include perspective
         include_action_items: true,
         include_technical_terms: true,
         min_messages: state.minMessages,
@@ -418,6 +419,7 @@ export function Summaries() {
         // Lookback hours determines how many hours each summary covers
         lookback_hours: state.pastLookbackHours,
         summary_type: state.summaryLength,
+        perspective: state.perspective,  // ADR-112: Include perspective
         // When forceRegenerate is true, don't skip and delete existing
         skip_existing: !state.forceRegenerate,
         force_regenerate: state.forceRegenerate,

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { format, subDays, addDays } from "date-fns";
@@ -566,13 +566,9 @@ function GenerateDialog({
   // Filter WhatsApp sources from all sources
   const whatsappSources = sources.filter(s => s.source_type === "whatsapp");
 
-  // Build request with scope
+  // Build request for generation or estimation
   const buildRequest = (dryRun: boolean): GenerateRequest => {
-    // For WhatsApp, use the selected WhatsApp source ID; for Discord, use guildId
     const serverId = sourceType === "whatsapp" ? whatsappSourceId : guildId;
-
-    // Debug: Log the values being sent
-    console.log("[Archive] Building request with:", { summaryType, perspective, dryRun });
 
     const request: GenerateRequest = {
       source_type: sourceType,
@@ -581,12 +577,10 @@ function GenerateDialog({
       date_range: { start: startDate, end: endDate },
       summary_type: summaryType,
       perspective,
-      skip_existing: forceRegenerate ? false : skipExisting,  // Force overrides skip
+      skip_existing: forceRegenerate ? false : skipExisting,
       regenerate_failed: regenerateFailed,
       force_regenerate: forceRegenerate,
       dry_run: dryRun,
-      // ADR-111: Auto-publish to Confluence
-      // Send checkbox value directly - backend handles unconfigured case gracefully
       auto_publish_confluence: autoPublishConfluence,
     };
 
@@ -608,10 +602,8 @@ function GenerateDialog({
 
   const handleEstimate = async () => {
     setEstimating(true);
-    const request = buildRequest(true);
-    console.log("[Archive] Estimate request:", { summary_type: request.summary_type, perspective: request.perspective });
     try {
-      const result = await onEstimate(request);
+      const result = await onEstimate(buildRequest(true));
       setEstimate(result);
     } catch {
       setEstimate(null);
@@ -741,10 +733,7 @@ function GenerateDialog({
           </div>
           <div className="space-y-2">
             <Label>Perspective</Label>
-            <Select value={perspective} onValueChange={(v) => {
-              console.log("[Archive] Perspective changed:", { from: perspective, to: v });
-              setPerspective(v as typeof perspective);
-            }}>
+            <Select value={perspective} onValueChange={(v) => setPerspective(v as typeof perspective)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -1367,7 +1356,7 @@ function JobsView({ guildId }: { guildId: string }) {
 
                     {/* Final results for completed jobs */}
                     {job.status === "completed" && job.progress.total > 0 && (
-                      <div className="mt-2 flex items-center gap-3 text-xs">
+                      <div className="mt-2 flex items-center gap-3 text-xs flex-wrap">
                         <span className="flex items-center gap-1 text-green-600">
                           <CheckCircle2 className="h-3 w-3" />
                           {job.progress.completed} generated
@@ -1387,6 +1376,32 @@ function JobsView({ guildId }: { guildId: string }) {
                         <span className="text-muted-foreground">
                           ({job.progress.total} total)
                         </span>
+                        {job.progress.completed > 0 && (
+                          <Link
+                            to={`/guilds/${guildId}/summaries?source=archive`}
+                            className="flex items-center gap-1 text-primary hover:underline"
+                          >
+                            <FileText className="h-3 w-3" />
+                            View summaries
+                          </Link>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Results for cancelled jobs - show link if any summaries were generated */}
+                    {job.status === "cancelled" && job.progress.completed > 0 && (
+                      <div className="mt-2 flex items-center gap-3 text-xs">
+                        <span className="flex items-center gap-1 text-orange-500">
+                          <Square className="h-3 w-3" />
+                          {job.progress.completed} generated before cancellation
+                        </span>
+                        <Link
+                          to={`/guilds/${guildId}/summaries?source=archive`}
+                          className="flex items-center gap-1 text-primary hover:underline"
+                        >
+                          <FileText className="h-3 w-3" />
+                          View summaries
+                        </Link>
                       </div>
                     )}
 

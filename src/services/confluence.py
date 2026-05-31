@@ -274,6 +274,7 @@ class ConfluencePublisher:
                     category_name=category_name,
                     period_start=summary.start_time,
                     period_end=summary.end_time,
+                    perspective=perspective,
                 )
 
             # Get primary channel name for properties
@@ -817,6 +818,7 @@ class ConfluencePublisher:
         category_name: Optional[str] = None,
         period_start: Optional[datetime] = None,
         period_end: Optional[datetime] = None,
+        perspective: Optional[str] = None,
     ) -> List[str]:
         """Generate Confluence labels for the page (ADR-100, ADR-114).
 
@@ -826,11 +828,18 @@ class ConfluencePublisher:
             category_name: Category name if category-scoped
             period_start: Summary period start for date labels
             period_end: Summary period end for date labels
+            perspective: Summary perspective (general, developer, executive, etc.)
 
         Returns:
             List of labels (max 10 per Confluence best practice)
         """
         labels = ["summarybot"]  # Always include for filtering
+
+        # Add perspective label (e.g., perspective-developer)
+        if perspective:
+            sanitized = self._sanitize_label(perspective)
+            if sanitized:
+                labels.append(f"perspective-{sanitized}")
 
         if channel_names:
             for name in channel_names[:5]:  # Limit to avoid too many labels

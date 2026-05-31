@@ -868,6 +868,52 @@ async def list_sources(
     return results
 
 
+@router.delete("/sources/{source_key}")
+async def delete_source(source_key: str):
+    """Delete an archive source and its directory.
+
+    Only deletes if the source has 0 summaries to prevent data loss.
+    """
+    import shutil
+
+    registry = get_source_registry()
+    registry.discover_sources()
+
+    source = registry.get_source(source_key)
+    if not source:
+        raise HTTPException(404, f"Source not found: {source_key}")
+
+    archive_root = get_archive_root()
+    archive_path = source.get_archive_path(archive_root)
+
+    # Count existing summaries
+    summary_count = 0
+    if archive_path.exists():
+        md_files = list(archive_path.glob("**/*.md"))
+        summary_count = len(md_files)
+
+    if summary_count > 0:
+        raise HTTPException(
+            400,
+            f"Cannot delete source with {summary_count} summaries. "
+            "Delete the summaries first or use force=true."
+        )
+
+    # Delete the directory if it exists
+    if archive_path.exists():
+        try:
+            shutil.rmtree(archive_path)
+            logger.info(f"Deleted archive source directory: {archive_path}")
+        except Exception as e:
+            logger.exception(f"Failed to delete {archive_path}: {e}")
+            raise HTTPException(500, f"Failed to delete source: {e}")
+
+    # Remove from registry
+    registry.unregister_source(source_key)
+
+    return {"success": True, "message": f"Deleted source: {source_key}"}
+
+
 @router.get("/sources/{source_key}/scan", response_model=ScanResultResponse)
 async def scan_source(
     source_key: str,

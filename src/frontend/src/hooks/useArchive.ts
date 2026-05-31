@@ -26,10 +26,11 @@ export interface ArchiveSource {
 }
 
 export interface GapInfo {
-  start_date: string;
-  end_date: string;
+  start: string;  // ISO date string
+  end: string;    // ISO date string
   days: number;
-  type: "missing" | "failed" | "outdated";
+  reason: "missing" | "failed" | "outdated";
+  backfill_eligible?: boolean;
 }
 
 export interface ScanResult {
@@ -151,6 +152,20 @@ export function useScanSource(sourceKey: string) {
     queryFn: () => api.get<ScanResult>(`/archive/sources/${encodeURIComponent(sourceKey)}/scan`),
     enabled: !!sourceKey,
     staleTime: 60 * 1000, // 1 minute
+  });
+}
+
+export function useDeleteSource() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (sourceKey: string) =>
+      api.delete<{ success: boolean; message: string }>(
+        `/archive/sources/${encodeURIComponent(sourceKey)}`
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["archive", "sources"] });
+    },
   });
 }
 

@@ -14,6 +14,7 @@ import {
   useAllJobs,
   usePauseJob,
   useResumeJob,
+  useDeleteSource,
   type ArchiveSource,
   type GenerateRequest,
   type GenerationJob,
@@ -78,6 +79,9 @@ import {
   MessageSquare,
   Pause,
   RotateCcw,
+  Search,
+  Filter,
+  Trash2,
 } from "lucide-react";
 
 export function Archive() {
@@ -91,6 +95,11 @@ export function Archive() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   // ADR-009: Track last completed job for navigation
   const [lastCompletedJob, setLastCompletedJob] = useState<{ count: number } | null>(null);
+  // Filter state
+  const [sourceTypeFilter, setSourceTypeFilter] = useState<string>("all");
+  const [searchFilter, setSearchFilter] = useState<string>("");
+  const [hideEmpty, setHideEmpty] = useState<boolean>(true); // Default: hide 0-summary sources
+  const [bulkDeleting, setBulkDeleting] = useState<boolean>(false);
 
   // Queries
   const { data: sources, isLoading: sourcesLoading, refetch: refetchSources } = useArchiveSources();
@@ -108,9 +117,67 @@ export function Archive() {
   const generateArchive = useGenerateArchive();
   const cancelJob = useCancelJob();
   const importWhatsApp = useImportWhatsApp();
+  const deleteSource = useDeleteSource();
 
-  // Filter sources for this guild
-  const guildSources = sources?.filter(s => s.server_id === guildId) || [];
+  // Filter sources for this guild with additional filters
+  const guildSources = sources?.filter(s => {
+    // Must belong to this guild
+    if (s.server_id !== guildId) return false;
+    // Source type filter
+    if (sourceTypeFilter !== "all" && s.source_type !== sourceTypeFilter) return false;
+    // Hide empty sources
+    if (hideEmpty && s.summary_count === 0) return false;
+    // Search filter (name)
+    if (searchFilter) {
+      const search = searchFilter.toLowerCase();
+      const nameMatch = s.server_name?.toLowerCase().includes(search);
+      const channelMatch = s.channel_name?.toLowerCase().includes(search);
+      if (!nameMatch && !channelMatch) return false;
+    }
+    return true;
+  }) || [];
+
+  // Count of hidden empty sources (for showing toggle info)
+  const emptySources = sources?.filter(s =>
+    s.server_id === guildId && s.summary_count === 0
+  ) || [];
+  const emptySourceCount = emptySources.length;
+
+  // Bulk delete all empty sources
+  const handleBulkDeleteEmpty = async () => {
+    if (emptySourceCount === 0) return;
+
+    const confirmed = window.confirm(
+      `Delete ${emptySourceCount} empty sources? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setBulkDeleting(true);
+    let deleted = 0;
+    let failed = 0;
+
+    for (const source of emptySources) {
+      try {
+        await deleteSource.mutateAsync(source.source_key);
+        deleted++;
+      } catch {
+        failed++;
+      }
+    }
+
+    setBulkDeleting(false);
+    toast({
+      title: "Bulk delete complete",
+      description: `Deleted ${deleted} sources${failed > 0 ? `, ${failed} failed` : ""}`,
+      variant: failed > 0 ? "destructive" : "default",
+    });
+    refetchSources();
+  };
+
+  // Get unique source types for filter options
+  const availableSourceTypes = [...new Set(
+    sources?.filter(s => s.server_id === guildId).map(s => s.source_type) || []
+  )];
 
   // Handle job completion
   if (activeJob?.status === "completed" || activeJob?.status === "failed") {
@@ -310,10 +377,79 @@ export function Archive() {
 
         {/* Sources Tab */}
         <TabsContent value="sources" className="space-y-4">
+          {/* Filters */}
+          {!sourcesLoading && availableSourceTypes.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search sources..."
+                    value={searchFilter}
+                    onChange={(e) => setSearchFilter(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <Select value={sourceTypeFilter} onValueChange={setSourceTypeFilter}>
+                  <SelectTrigger className="w-full sm:w-40">
+                    <Filter className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All types</SelectItem>
+                    {availableSourceTypes.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type === "discord" ? "Discord" : type === "whatsapp" ? "WhatsApp" : type === "slack" ? "Slack" : type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* Hide empty toggle and bulk delete */}
+              {emptySourceCount > 0 && (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="hide-empty"
+                      checked={hideEmpty}
+                      onCheckedChange={setHideEmpty}
+                    />
+                    <Label htmlFor="hide-empty" className="text-sm text-muted-foreground cursor-pointer">
+                      Hide empty sources ({emptySourceCount} hidden)
+                    </Label>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBulkDeleteEmpty}
+                    disabled={bulkDeleting}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    {bulkDeleting ? (
+                      <>
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                        Deleting...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="mr-2 h-3 w-3" />
+                        Delete all empty ({emptySourceCount})
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           {sourcesLoading ? (
             <SourcesSkeleton />
-          ) : guildSources.length === 0 ? (
+          ) : guildSources.length === 0 && !searchFilter && sourceTypeFilter === "all" ? (
             <EmptyState onImport={() => setImportOpen(true)} />
+          ) : guildSources.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No sources match your filters
+            </div>
           ) : (
             <div className="grid gap-4">
               {guildSources.map((source, index) => (
@@ -327,6 +463,22 @@ export function Archive() {
                   )}
                   scanResult={selectedSource === source.source_key ? scanResult : undefined}
                   scanLoading={selectedSource === source.source_key && scanLoading}
+                  onDelete={source.summary_count === 0 ? async () => {
+                    try {
+                      await deleteSource.mutateAsync(source.source_key);
+                      toast({
+                        title: "Source deleted",
+                        description: `Removed "${source.server_name}"`,
+                      });
+                    } catch (error) {
+                      toast({
+                        title: "Delete failed",
+                        description: error instanceof Error ? error.message : "Unknown error",
+                        variant: "destructive",
+                      });
+                    }
+                  } : undefined}
+                  isDeleting={deleteSource.isPending}
                 />
               ))}
             </div>
@@ -356,6 +508,8 @@ function SourceCard({
   onSelect,
   scanResult,
   scanLoading,
+  onDelete,
+  isDeleting,
 }: {
   source: ArchiveSource;
   index: number;
@@ -363,6 +517,8 @@ function SourceCard({
   onSelect: () => void;
   scanResult?: ReturnType<typeof useScanSource>["data"];
   scanLoading: boolean;
+  onDelete?: () => void;
+  isDeleting?: boolean;
 }) {
   const sourceTypeIcons: Record<string, string> = {
     discord: "Discord",
@@ -409,6 +565,26 @@ function SourceCard({
                     </CardDescription>
                   </div>
                 </div>
+                {/* Delete button for empty sources */}
+                {onDelete && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete();
+                    }}
+                    disabled={isDeleting}
+                    title="Delete empty source"
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </Button>
+                )}
               </div>
             </CardHeader>
           </CollapsibleTrigger>
@@ -461,16 +637,16 @@ function SourceCard({
                             className="flex items-center justify-between text-sm bg-muted/30 rounded px-3 py-2"
                           >
                             <span>
-                              {gap.start_date} - {gap.end_date}
+                              {gap.start} → {gap.end}
                             </span>
                             <div className="flex items-center gap-2">
                               <Badge
                                 variant={
-                                  gap.type === "missing" ? "secondary" :
-                                  gap.type === "failed" ? "destructive" : "outline"
+                                  gap.reason === "missing" ? "secondary" :
+                                  gap.reason === "failed" ? "destructive" : "outline"
                                 }
                               >
-                                {gap.type}
+                                {gap.reason}
                               </Badge>
                               <span className="text-muted-foreground">{gap.days} days</span>
                             </div>
@@ -666,12 +842,14 @@ function GenerateDialog({
                 ) : (
                   whatsappSources.map((source) => (
                     <SelectItem key={source.source_key} value={source.server_id}>
-                      {source.server_name}
-                      {source.date_range && (
-                        <span className="text-muted-foreground ml-2">
-                          ({source.date_range.start} - {source.date_range.end})
+                      <span className="flex items-center gap-2">
+                        {source.server_name}
+                        <span className="text-muted-foreground text-xs">
+                          ({source.summary_count} summaries
+                          {source.date_range && `, ${source.date_range.start}`}
+                          )
                         </span>
-                      )}
+                      </span>
                     </SelectItem>
                   ))
                 )}

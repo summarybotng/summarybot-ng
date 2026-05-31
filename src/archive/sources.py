@@ -51,6 +51,22 @@ class SourceRegistry:
         self._sources[key] = source
         logger.info(f"Registered source: {key}")
 
+    def unregister_source(self, source_key: str) -> bool:
+        """
+        Unregister a source by key.
+
+        Args:
+            source_key: Key of source to remove
+
+        Returns:
+            True if source was removed, False if not found
+        """
+        if source_key in self._sources:
+            del self._sources[source_key]
+            logger.info(f"Unregistered source: {source_key}")
+            return True
+        return False
+
     def get_source(self, source_key: str) -> Optional[ArchiveSource]:
         """
         Get a source by its key.

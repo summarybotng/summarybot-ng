@@ -3873,8 +3873,16 @@ async def publish_summary_to_confluence(
             user_timezone=body.timezone,
             dashboard_base_url=dashboard_base_url,  # ADR-079: tenant-aware URL
             # ADR-114: Additional metadata for Page Properties
-            summary_type=getattr(summary, 'summary_length', None),
-            perspective=getattr(summary, 'perspective', None),
+            # Extract from summary_result.metadata where engine stores them
+            summary_type=(
+                summary.summary_result.metadata.get('summary_type')
+                or summary.summary_result.metadata.get('summary_length')
+                if summary.summary_result and summary.summary_result.metadata else None
+            ),
+            perspective=(
+                summary.summary_result.metadata.get('perspective')
+                if summary.summary_result and summary.summary_result.metadata else None
+            ),
             granularity=summary.archive_granularity,
             source=summary.source.value if hasattr(summary.source, 'value') else str(summary.source),
         )
@@ -4162,8 +4170,16 @@ async def bulk_confluence_publish(
                     user_timezone=body.timezone,
                     dashboard_base_url=dashboard_base_url,
                     # ADR-114: Additional metadata for Page Properties
-                    summary_type=getattr(stored, 'summary_length', None),
-                    perspective=getattr(stored, 'perspective', None),
+                    # Extract from summary_result.metadata where engine stores them
+                    summary_type=(
+                        stored.summary_result.metadata.get('summary_type')
+                        or stored.summary_result.metadata.get('summary_length')
+                        if stored.summary_result and stored.summary_result.metadata else None
+                    ),
+                    perspective=(
+                        stored.summary_result.metadata.get('perspective')
+                        if stored.summary_result and stored.summary_result.metadata else None
+                    ),
                     granularity=stored.archive_granularity,
                     source=stored.source.value if hasattr(stored.source, 'value') else str(stored.source),
                 )

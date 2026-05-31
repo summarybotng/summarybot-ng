@@ -494,6 +494,210 @@ async def list_units(
 
 
 # -------------------------------------------------------------------------
+# Export Endpoints (ADR-117)
+# -------------------------------------------------------------------------
+
+from fastapi.responses import StreamingResponse
+import json as json_lib
+
+
+class ExportStatsResponse(BaseModel):
+    """Statistics for export preview."""
+    total_units: int
+    estimated_size_bytes: int
+    estimated_size_with_embeddings_bytes: int
+    has_embeddings: bool
+
+
+@router.get(
+    "/guilds/{guild_id}/export/stats",
+    response_model=ExportStatsResponse,
+    summary="Export preview stats",
+    description="ADR-117: Get statistics for export preview",
+)
+async def export_stats(
+    guild_id: str = Path(..., description="Guild ID"),
+    unit_types: Optional[str] = Query(None, description="Comma-separated unit types filter"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    user: dict = Depends(get_current_user),
+):
+    """Get export preview statistics."""
+    try:
+        connection = await get_database_connection()
+
+        # Build query
+        conditions = ["guild_id = ?"]
+        params: list = [guild_id]
+
+        if unit_types:
+            type_list = [t.strip() for t in unit_types.split(",")]
+            placeholders = ",".join("?" * len(type_list))
+            conditions.append(f"unit_type IN ({placeholders})")
+            params.extend(type_list)
+
+        if start_date:
+            conditions.append("source_date >= ?")
+            params.append(start_date)
+
+        if end_date:
+            conditions.append("source_date <= ?")
+            params.append(end_date)
+
+        # Count units
+        count_query = f"""
+        SELECT COUNT(*) as count,
+               SUM(CASE WHEN embedding IS NOT NULL THEN 1 ELSE 0 END) as with_embeddings
+        FROM wiki_knowledge_units
+        WHERE {' AND '.join(conditions)}
+        """
+        row = await connection.fetch_one(count_query, tuple(params))
+        total_units = row["count"] if row else 0
+        has_embeddings = (row["with_embeddings"] or 0) > 0 if row else False
+
+        # Estimate sizes (approx 200 bytes/unit without embeddings, 6200 with)
+        estimated_size = total_units * 200 + 64  # Header
+        estimated_size_with_embeddings = total_units * 6200 + 64
+
+        return ExportStatsResponse(
+            total_units=total_units,
+            estimated_size_bytes=estimated_size,
+            estimated_size_with_embeddings_bytes=estimated_size_with_embeddings,
+            has_embeddings=has_embeddings,
+        )
+
+    except Exception as e:
+        logger.exception(f"Export stats failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/guilds/{guild_id}/export",
+    summary="Export knowledge units",
+    description="ADR-117: Export knowledge units as RVF or JSON file",
+)
+async def export_units(
+    guild_id: str = Path(..., description="Guild ID"),
+    format: str = Query("rvf", description="Export format: rvf or json"),
+    include_embeddings: bool = Query(False, description="Include embedding vectors"),
+    unit_types: Optional[str] = Query(None, description="Comma-separated unit types filter"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    limit: int = Query(100000, ge=1, le=100000, description="Maximum units to export"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Export knowledge units as RVF binary or JSON file.
+
+    ADR-117: RVF format is optimized for vector data with metadata.
+    """
+    try:
+        connection = await get_database_connection()
+
+        # Build query
+        conditions = ["guild_id = ?"]
+        params: list = [guild_id]
+
+        if unit_types:
+            type_list = [t.strip() for t in unit_types.split(",")]
+            placeholders = ",".join("?" * len(type_list))
+            conditions.append(f"unit_type IN ({placeholders})")
+            params.extend(type_list)
+
+        if start_date:
+            conditions.append("source_date >= ?")
+            params.append(start_date)
+
+        if end_date:
+            conditions.append("source_date <= ?")
+            params.append(end_date)
+
+        params.append(limit)
+
+        # Select columns based on embedding inclusion
+        columns = "id, guild_id, content, unit_type, source_id, source_channel, source_date, confidence"
+        if include_embeddings:
+            columns += ", embedding"
+
+        query = f"""
+        SELECT {columns}
+        FROM wiki_knowledge_units
+        WHERE {' AND '.join(conditions)}
+        ORDER BY created_at DESC
+        LIMIT ?
+        """
+
+        rows = await connection.fetch_all(query, tuple(params))
+
+        # Convert to list of dicts
+        units = []
+        for row in rows:
+            unit = {
+                "id": row["id"],
+                "content": row["content"],
+                "unit_type": row["unit_type"],
+                "source_id": row["source_id"] or "",
+                "source_channel": row.get("source_channel"),
+                "source_date": row.get("source_date"),
+                "score": float(row.get("confidence", 0.0)),
+            }
+            if include_embeddings and row.get("embedding"):
+                # Parse embedding from blob or JSON
+                emb = row["embedding"]
+                if isinstance(emb, bytes):
+                    import struct
+                    unit["embedding"] = list(struct.unpack(f'<{len(emb)//4}f', emb))
+                elif isinstance(emb, str):
+                    unit["embedding"] = json_lib.loads(emb)
+                else:
+                    unit["embedding"] = emb
+            units.append(unit)
+
+        # Generate filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        if format.lower() == "json":
+            # JSON export
+            filename = f"knowledge_{guild_id}_{timestamp}.json"
+            content = json_lib.dumps({
+                "guild_id": guild_id,
+                "exported_at": datetime.utcnow().isoformat(),
+                "total_units": len(units),
+                "include_embeddings": include_embeddings,
+                "units": units,
+            }, indent=2)
+
+            return StreamingResponse(
+                iter([content.encode('utf-8')]),
+                media_type="application/json",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "X-Unit-Count": str(len(units)),
+                }
+            )
+        else:
+            # RVF export
+            from src.wiki.ruvector.rvf_format import encode_units_to_rvf
+
+            filename = f"knowledge_{guild_id}_{timestamp}.rvf"
+            rvf_data = encode_units_to_rvf(units, guild_id, include_embeddings)
+
+            return StreamingResponse(
+                iter([rvf_data]),
+                media_type="application/octet-stream",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "X-Unit-Count": str(len(units)),
+                    "X-RVF-Version": "1",
+                }
+            )
+
+    except Exception as e:
+        logger.exception(f"Export failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# -------------------------------------------------------------------------
 # Helper Functions
 # -------------------------------------------------------------------------
 

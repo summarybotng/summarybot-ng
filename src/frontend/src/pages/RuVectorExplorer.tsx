@@ -21,6 +21,7 @@ import {
   Clock,
   Zap,
   Network,
+  Download,
 } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -41,6 +42,9 @@ import { api } from "@/api/client";
 
 // Lazy load heavy graph component
 const KnowledgeGraph = lazy(() => import("@/components/ruvector/KnowledgeGraph"));
+
+// Import ExportDialog
+import { ExportDialog } from "@/components/ruvector/ExportDialog";
 
 // Types
 interface KnowledgeUnit {
@@ -405,6 +409,7 @@ function SearchTab({ guildId }: { guildId: string }) {
 function BrowseTab({ guildId }: { guildId: string }) {
   const [unitTypeFilter, setUnitTypeFilter] = useState<string>("all");
   const [limit, setLimit] = useState(50);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["ruvector-browse", guildId, unitTypeFilter, limit],
@@ -440,7 +445,22 @@ function BrowseTab({ guildId }: { guildId: string }) {
             <SelectItem value="200">200 units</SelectItem>
           </SelectContent>
         </Select>
+        <div className="flex-1" />
+        <Button
+          variant="outline"
+          onClick={() => setExportDialogOpen(true)}
+          className="gap-2"
+        >
+          <Download className="h-4 w-4" />
+          Export RVF
+        </Button>
       </div>
+
+      <ExportDialog
+        guildId={guildId}
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+      />
 
       {isLoading ? (
         <div className="space-y-2">

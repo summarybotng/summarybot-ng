@@ -1116,17 +1116,29 @@ async def generate_retrospective(request: GenerateRequest):
         archive_scope = ArchiveScopeType.GUILD
 
     # Create source with scope info (ADR-011)
-    source = ArchiveSource(
-        source_type=SourceType(request.source_type),
-        server_id=request.server_id,
-        server_name=server_name,
-        scope=archive_scope,
-        channel_id=resolved_channel_ids[0] if len(resolved_channel_ids) == 1 else None,
-        channel_name=channel_name,  # ADR-112: Required for path construction
-        channel_ids=resolved_channel_ids if len(resolved_channel_ids) > 1 else None,
-        category_id=category_id,
-        category_name=category_name,
-    )
+    # ADR-116: WhatsApp uses chat_id as server_id (no separate channel concept)
+    is_whatsapp = request.source_type == "whatsapp"
+    if is_whatsapp and resolved_channel_ids:
+        # For WhatsApp, chat_id IS the server_id (not a channel within a server)
+        source = ArchiveSource(
+            source_type=SourceType.WHATSAPP,
+            server_id=resolved_channel_ids[0],  # chat_id
+            server_name=channel_name or resolved_channel_ids[0],  # chat_name
+            scope=archive_scope,
+            # No channel_id for WhatsApp - the chat IS the "server"
+        )
+    else:
+        source = ArchiveSource(
+            source_type=SourceType(request.source_type),
+            server_id=request.server_id,
+            server_name=server_name,
+            scope=archive_scope,
+            channel_id=resolved_channel_ids[0] if len(resolved_channel_ids) == 1 else None,
+            channel_name=channel_name,  # ADR-112: Required for path construction
+            channel_ids=resolved_channel_ids if len(resolved_channel_ids) > 1 else None,
+            category_id=category_id,
+            category_name=category_name,
+        )
 
     generator = await get_generator()
     logger.info(f"Creating job with per_channel={request.per_channel}, granularity={request.granularity}, auto_publish_confluence={request.auto_publish_confluence}")

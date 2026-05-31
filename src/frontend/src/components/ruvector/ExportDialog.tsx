@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Download, FileJson, Binary, Loader2, AlertCircle } from "lucide-react";
+import { useAuthStore } from "@/stores/authStore";
 import {
   Dialog,
   DialogContent,
@@ -83,12 +84,13 @@ export function ExportDialog({ guildId, open, onOpenChange }: ExportDialogProps)
         params.set("unit_types", unitType);
       }
 
-      // Fetch as blob
+      // Fetch as blob - use token from auth store
+      const token = useAuthStore.getState().token;
       const response = await fetch(
         `/api/v1/ruvector/guilds/${guildId}/export?${params.toString()}`,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
+            ...(token && { Authorization: `Bearer ${token}` }),
           },
         }
       );

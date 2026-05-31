@@ -542,21 +542,30 @@ class ConfluencePublisher:
             granularity=granularity,
             source=source,
         )
+
+        # Track if we're using expander (metadata shown in title)
+        using_expander = (
+            page_props is not None and
+            self.config.include_page_properties and
+            self.config.page_properties_in_expander
+        )
+
         if page_props:
             content.append(page_props)
 
-        # Info panel with metadata (channels now in separate expand section)
-        metadata_text = self._build_metadata_text(summary)
-        content.append({
-            "type": "panel",
-            "attrs": {"panelType": "info"},
-            "content": [
-                {
-                    "type": "paragraph",
-                    "content": [{"type": "text", "text": metadata_text}],
-                }
-            ],
-        })
+        # Info panel with metadata - skip if expander title already shows this info
+        if not using_expander:
+            metadata_text = self._build_metadata_text(summary)
+            content.append({
+                "type": "panel",
+                "attrs": {"panelType": "info"},
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": metadata_text}],
+                    }
+                ],
+            })
 
         # Summary text with LLM-based date extraction (ADR-100)
         # ADR-113: Respect include_summary toggle

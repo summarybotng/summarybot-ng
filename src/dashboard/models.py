@@ -1298,6 +1298,10 @@ class ConfluenceSettingsRequest(BaseModel):
         default=False,
         description="Include Participants section in published pages (off by default)"
     )
+    include_channels: bool = Field(
+        default=True,
+        description="Include Channels expand section in published pages"
+    )
     include_labels: bool = Field(
         default=True,
         description="Add labels to published Confluence pages"
@@ -1347,6 +1351,7 @@ class ConfluenceSettingsResponse(BaseModel):
     include_key_points: bool = True
     include_action_items: bool = True
     include_participants: bool = False
+    include_channels: bool = True  # ADR-115
     include_labels: bool = True
     # ADR-114: Page Properties options
     include_page_properties: bool = True

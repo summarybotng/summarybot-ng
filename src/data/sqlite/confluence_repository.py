@@ -33,6 +33,7 @@ class ConfluenceSettings:
     include_key_points: bool = True
     include_action_items: bool = True
     include_participants: bool = False
+    include_channels: bool = True  # ADR-115: Channels expand section
     # ADR-113: Label configuration
     include_labels: bool = True
     # ADR-114: Page Properties macro options

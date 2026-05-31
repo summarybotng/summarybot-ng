@@ -79,6 +79,7 @@ export function ConfluenceSettings({
     include_key_points: true,
     include_action_items: true,
     include_participants: false,
+    include_channels: true,  // ADR-115
     include_labels: true,
     // ADR-114: Page Properties toggles
     include_page_properties: true,
@@ -116,6 +117,7 @@ export function ConfluenceSettings({
         include_key_points: settings.include_key_points ?? true,
         include_action_items: settings.include_action_items ?? true,
         include_participants: settings.include_participants ?? false,
+        include_channels: settings.include_channels ?? true,  // ADR-115
         include_labels: settings.include_labels ?? true,
         // ADR-114: Page Properties toggles (with defaults for existing data)
         include_page_properties: settings.include_page_properties ?? true,
@@ -553,6 +555,19 @@ export function ConfluenceSettings({
                   checked={formData.include_participants ?? false}
                   onCheckedChange={(checked) =>
                     setFormData((prev) => ({ ...prev, include_participants: checked }))
+                  }
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label htmlFor="include_channels" className="text-sm font-normal cursor-pointer">
+                  Channels
+                </Label>
+                <Switch
+                  id="include_channels"
+                  checked={formData.include_channels ?? true}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({ ...prev, include_channels: checked }))
                   }
                 />
               </div>

@@ -43,6 +43,7 @@ class ConfluenceConfig:
     include_key_points: bool = True
     include_action_items: bool = True
     include_participants: bool = False
+    include_channels: bool = True  # ADR-115: Channels expand section
     include_labels: bool = True
     # ADR-114: Page Properties options
     include_page_properties: bool = True
@@ -101,6 +102,7 @@ class ConfluenceConfig:
             include_key_points=settings.include_key_points,
             include_action_items=settings.include_action_items,
             include_participants=settings.include_participants,
+            include_channels=settings.include_channels,  # ADR-115
             include_labels=settings.include_labels,
             # ADR-114: Page Properties options
             include_page_properties=settings.include_page_properties,
@@ -692,8 +694,8 @@ class ConfluencePublisher:
                 ],
             })
 
-        # ADR-100: Channels in expand section
-        if channel_names:
+        # ADR-100/ADR-115: Channels in expand section (if enabled)
+        if channel_names and self.config.include_channels:
             content.append({
                 "type": "expand",
                 "attrs": {"title": f"Channels ({len(channel_names)})"},

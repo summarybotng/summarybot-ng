@@ -3834,11 +3834,20 @@ async def publish_summary_to_confluence(
         # Build page title
         page_title = summary.title or f"Summary {summary_id[:8]}"
 
-        # ADR-100: Get channel names for labels and content
+        # ADR-100/ADR-115: Get channel names from reference_index (only channels with actual content)
         channel_names: List[str] = []
+        referenced_channel_ids: set = set()
         try:
+            # Extract unique channel IDs from reference_index
+            if summary.summary_result and hasattr(summary.summary_result, 'reference_index'):
+                for ref in summary.summary_result.reference_index or []:
+                    ch_id = getattr(ref, 'channel_id', None) or (ref.get('channel_id') if isinstance(ref, dict) else None)
+                    if ch_id:
+                        referenced_channel_ids.add(ch_id)
+
+            # Get channel names for referenced channels
             guild = _get_guild_or_404(guild_id)
-            for ch_id in summary.source_channel_ids or []:
+            for ch_id in referenced_channel_ids:
                 try:
                     channel = guild.get_channel(int(ch_id))
                     if channel and hasattr(channel, 'name'):
@@ -4119,10 +4128,17 @@ async def bulk_confluence_publish(
                 # Check for existing publication
                 existing_pub = await confluence_repo.get_by_summary(summary_id) if confluence_repo else None
 
-                # Get channel names
+                # ADR-115: Get channel names from reference_index (only channels with actual content)
                 channel_names: List[str] = []
+                referenced_channel_ids: set = set()
+                if stored.summary_result and hasattr(stored.summary_result, 'reference_index'):
+                    for ref in stored.summary_result.reference_index or []:
+                        ch_id = getattr(ref, 'channel_id', None) or (ref.get('channel_id') if isinstance(ref, dict) else None)
+                        if ch_id:
+                            referenced_channel_ids.add(ch_id)
+
                 if guild:
-                    for ch_id in stored.source_channel_ids or []:
+                    for ch_id in referenced_channel_ids:
                         try:
                             channel = guild.get_channel(int(ch_id))
                             if channel and hasattr(channel, 'name'):

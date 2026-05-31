@@ -72,6 +72,7 @@ export interface ConfluenceSettingsRequest {
   include_key_points?: boolean;
   include_action_items?: boolean;
   include_participants?: boolean;
+  include_channels?: boolean;  // ADR-115
   include_labels?: boolean;
   // ADR-114: Page Properties toggles (defaults: participant=off, perspective=on, source=on)
   include_page_properties?: boolean;
@@ -105,6 +106,7 @@ export interface ConfluenceSettingsResponse {
   include_key_points?: boolean;
   include_action_items?: boolean;
   include_participants?: boolean;
+  include_channels?: boolean;  // ADR-115
   include_labels?: boolean;
   // ADR-114: Page Properties toggles
   include_page_properties?: boolean;

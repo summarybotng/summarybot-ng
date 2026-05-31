@@ -9,6 +9,7 @@ import { useGuild } from "@/hooks/useGuilds";
 import { useWhatsAppChats } from "@/hooks/useWhatsApp";
 import { useSlackGuildLinks, useSlackChannels } from "@/hooks/useSlack";
 import { useCheckChannelPrivacy, type PrivacyWarning } from "@/hooks/useChannelPrivacy";
+import { usePromptTemplates } from "@/hooks/usePromptTemplates";
 import { PlatformCard } from "../shared/PlatformCard";
 import { ScopeSelector, type ScopeSelectorValue } from "@/components/ScopeSelector";
 import { WhatsAppChatSelector } from "@/components/schedules/WhatsAppChatSelector";
@@ -27,6 +28,7 @@ export function WhatStep({ state, onChange, guildId }: StepProps) {
   const { data: slackChannels } = useSlackChannels(selectedSlackWorkspace);
   const checkPrivacy = useCheckChannelPrivacy(guildId);
   const [privacyWarnings, setPrivacyWarnings] = useState<PrivacyWarning[]>([]);
+  const { data: promptTemplates } = usePromptTemplates(guildId);
 
   const hasWhatsApp = whatsappChats && whatsappChats.length > 0;
   const linkedSlackWorkspaces = slackLinksData?.workspaces || [];
@@ -236,6 +238,74 @@ export function WhatStep({ state, onChange, guildId }: StepProps) {
           </Select>
         </div>
       )}
+
+      {/* Summary Options - Length and Perspective */}
+      <div className="space-y-4 p-4 rounded-lg border bg-muted/30">
+        <h4 className="text-sm font-medium">Summary style</h4>
+
+        <div className="grid grid-cols-2 gap-4">
+          {/* Summary Length */}
+          <div>
+            <Label className="text-sm">Length</Label>
+            <Select
+              value={state.summaryLength}
+              onValueChange={(v) =>
+                onChange({ summaryLength: v as "brief" | "detailed" | "comprehensive" })
+              }
+            >
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="brief">Brief</SelectItem>
+                <SelectItem value="detailed">Detailed</SelectItem>
+                <SelectItem value="comprehensive">Comprehensive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Perspective / Template */}
+          <div>
+            <Label className="text-sm">Perspective</Label>
+            <Select
+              value={state.promptTemplateId || state.perspective}
+              onValueChange={(v) => {
+                if (v.startsWith("template:")) {
+                  onChange({
+                    promptTemplateId: v.replace("template:", ""),
+                    perspective: "general",
+                  });
+                } else {
+                  onChange({ perspective: v, promptTemplateId: null });
+                }
+              }}
+            >
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="general">General</SelectItem>
+                <SelectItem value="developer">Developer</SelectItem>
+                <SelectItem value="marketing">Marketing</SelectItem>
+                <SelectItem value="executive">Executive</SelectItem>
+                <SelectItem value="support">Support</SelectItem>
+                {promptTemplates && promptTemplates.length > 0 && (
+                  <>
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-2">
+                      Custom Perspectives
+                    </div>
+                    {promptTemplates.map((t) => (
+                      <SelectItem key={t.id} value={`template:${t.id}`}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                  </>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
 
       {/* ADR-046: Privacy Warning for Private Channels */}
       {state.platform === "discord" && privacyWarnings.length > 0 && (

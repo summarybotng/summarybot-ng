@@ -7,7 +7,6 @@
 
 import { useState } from "react";
 import { useGuild } from "@/hooks/useGuilds";
-import { usePromptTemplates } from "@/hooks/usePromptTemplates";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,7 +34,6 @@ import type { StepProps } from "../types";
 
 export function WhereStep({ state, onChange, guildId }: StepProps) {
   const { data: guild } = useGuild(guildId);
-  const { data: promptTemplates } = usePromptTemplates(guildId);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const textChannels = guild?.channels.filter((c) => c.type === "text") || [];
@@ -430,67 +428,6 @@ export function WhereStep({ state, onChange, guildId }: StepProps) {
           Advanced options
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-4 space-y-4">
-          {/* Summary Length */}
-          <div>
-            <Label>Summary length</Label>
-            <Select
-              value={state.summaryLength}
-              onValueChange={(v) =>
-                onChange({ summaryLength: v as "brief" | "detailed" | "comprehensive" })
-              }
-            >
-              <SelectTrigger className="mt-2">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="brief">Brief</SelectItem>
-                <SelectItem value="detailed">Detailed</SelectItem>
-                <SelectItem value="comprehensive">Comprehensive</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Perspective / Template */}
-          <div>
-            <Label>Perspective</Label>
-            <Select
-              value={state.promptTemplateId || state.perspective}
-              onValueChange={(v) => {
-                if (v.startsWith("template:")) {
-                  onChange({
-                    promptTemplateId: v.replace("template:", ""),
-                    perspective: "general",
-                  });
-                } else {
-                  onChange({ perspective: v, promptTemplateId: null });
-                }
-              }}
-            >
-              <SelectTrigger className="mt-2">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="general">General</SelectItem>
-                <SelectItem value="developer">Developer</SelectItem>
-                <SelectItem value="marketing">Marketing</SelectItem>
-                <SelectItem value="executive">Executive</SelectItem>
-                <SelectItem value="support">Support</SelectItem>
-                {promptTemplates && promptTemplates.length > 0 && (
-                  <>
-                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-2">
-                      Custom Perspectives
-                    </div>
-                    {promptTemplates.map((t) => (
-                      <SelectItem key={t.id} value={`template:${t.id}`}>
-                        {t.name}
-                      </SelectItem>
-                    ))}
-                  </>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-
           {/* Min Messages */}
           <div>
             <Label>Minimum messages</Label>

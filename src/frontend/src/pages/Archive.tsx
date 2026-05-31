@@ -571,6 +571,9 @@ function GenerateDialog({
     // For WhatsApp, use the selected WhatsApp source ID; for Discord, use guildId
     const serverId = sourceType === "whatsapp" ? whatsappSourceId : guildId;
 
+    // Debug: Log the values being sent
+    console.log("[Archive] Building request with:", { summaryType, perspective, dryRun });
+
     const request: GenerateRequest = {
       source_type: sourceType,
       server_id: serverId,

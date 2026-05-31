@@ -73,6 +73,13 @@ class ConfluenceDeliveryStrategy(DeliveryStrategy):
                     scope_type = scope.value if hasattr(scope, 'value') else str(scope)
                 category_name = getattr(context.scheduled_task, 'category_name', None)
 
+            # Get summary metadata from scheduled task
+            summary_type = None
+            perspective = None
+            if context.scheduled_task:
+                summary_type = getattr(context.scheduled_task, 'summary_type', None)
+                perspective = getattr(context.scheduled_task, 'perspective', None)
+
             # ADR-102: Publish to Confluence using correct API
             # The publish_summary method takes the full SummaryResult, not formatted content
             result = await confluence_service.publish_summary(
@@ -83,6 +90,10 @@ class ConfluenceDeliveryStrategy(DeliveryStrategy):
                 channel_names=channel_names,
                 scope_type=scope_type,
                 category_name=category_name,
+                # ADR-114: Additional metadata for Page Properties
+                summary_type=summary_type,
+                perspective=perspective,
+                source="scheduled",
             )
 
             # ADR-102: Handle result as ConfluencePublishResult dataclass, not dict

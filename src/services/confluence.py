@@ -44,6 +44,18 @@ class ConfluenceConfig:
     include_action_items: bool = True
     include_participants: bool = False
     include_labels: bool = True
+    # ADR-114: Page Properties options
+    include_page_properties: bool = True
+    page_properties_in_expander: bool = True
+    prop_show_channel: bool = True
+    prop_show_period_start: bool = True
+    prop_show_period_end: bool = True
+    prop_show_message_count: bool = True
+    prop_show_participant_count: bool = True
+    prop_show_summary_type: bool = True
+    prop_show_perspective: bool = False
+    prop_show_granularity: bool = True
+    prop_show_source: bool = False
 
     def is_configured(self) -> bool:
         """Check if Confluence is properly configured."""
@@ -90,6 +102,18 @@ class ConfluenceConfig:
             include_action_items=settings.include_action_items,
             include_participants=settings.include_participants,
             include_labels=settings.include_labels,
+            # ADR-114: Page Properties options
+            include_page_properties=settings.include_page_properties,
+            page_properties_in_expander=settings.page_properties_in_expander,
+            prop_show_channel=settings.prop_show_channel,
+            prop_show_period_start=settings.prop_show_period_start,
+            prop_show_period_end=settings.prop_show_period_end,
+            prop_show_message_count=settings.prop_show_message_count,
+            prop_show_participant_count=settings.prop_show_participant_count,
+            prop_show_summary_type=settings.prop_show_summary_type,
+            prop_show_perspective=settings.prop_show_perspective,
+            prop_show_granularity=settings.prop_show_granularity,
+            prop_show_source=settings.prop_show_source,
         )
 
 
@@ -182,6 +206,11 @@ class ConfluencePublisher:
         category_name: Optional[str] = None,
         user_timezone: Optional[str] = None,
         dashboard_base_url: Optional[str] = None,  # ADR-079: tenant-aware URL
+        # ADR-114: Additional metadata for Page Properties
+        summary_type: Optional[str] = None,  # brief, detailed, comprehensive
+        perspective: Optional[str] = None,  # general, developer, etc.
+        granularity: Optional[str] = None,  # daily, weekly, monthly
+        source: Optional[str] = None,  # realtime, archive, scheduled
     ) -> ConfluencePublishResult:
         """Publish a summary to Confluence.
 
@@ -227,6 +256,11 @@ class ConfluencePublisher:
                 channel_names=channel_names,
                 user_timezone=user_timezone,
                 dashboard_base_url=dashboard_base_url,
+                # ADR-114: Additional metadata for Page Properties
+                summary_type=summary_type,
+                perspective=perspective,
+                granularity=granularity,
+                source=source,
             )
 
             # ADR-100/ADR-113/ADR-114: Generate labels for the page (if enabled)
@@ -476,6 +510,11 @@ class ConfluencePublisher:
         channel_names: Optional[List[str]] = None,
         user_timezone: Optional[str] = None,
         dashboard_base_url: Optional[str] = None,  # ADR-079: tenant-aware URL
+        # ADR-114: Additional metadata for Page Properties
+        summary_type: Optional[str] = None,
+        perspective: Optional[str] = None,
+        granularity: Optional[str] = None,
+        source: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Format summary as Atlassian Document Format (ADF) JSON.
 
@@ -492,10 +531,19 @@ class ConfluencePublisher:
         """
         content: List[Dict[str, Any]] = []
 
-        # ADR-114: Page Properties macro for queryable metadata
+        # ADR-114: Page Properties macro for queryable metadata (if enabled)
         # Get primary channel name from list for display
         primary_channel = channel_names[0] if channel_names else None
-        content.append(self._build_page_properties_macro(summary, primary_channel))
+        page_props = self._build_page_properties_macro(
+            summary=summary,
+            channel_name=primary_channel,
+            summary_type=summary_type,
+            perspective=perspective,
+            granularity=granularity,
+            source=source,
+        )
+        if page_props:
+            content.append(page_props)
 
         # Info panel with metadata (channels now in separate expand section)
         metadata_text = self._build_metadata_text(summary)
@@ -935,51 +983,80 @@ class ConfluencePublisher:
         self,
         summary: SummaryResult,
         channel_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        summary_type: Optional[str] = None,
+        perspective: Optional[str] = None,
+        granularity: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Build ADF for Page Properties macro (ADR-114).
 
         Creates a structured table inside the Page Properties macro
         that can be queried via Page Properties Report.
+        Respects guild settings for which properties to include.
 
         Args:
             summary: SummaryResult with stats
             channel_name: Channel name for display
+            summary_type: Summary type (brief, detailed, comprehensive)
+            perspective: Summary perspective (general, developer, etc.)
+            granularity: Summary granularity (daily, weekly, monthly)
+            source: Summary source (realtime, archive, scheduled)
 
         Returns:
-            ADF node for the Page Properties macro
+            ADF node for the Page Properties macro, or None if disabled
         """
-        # Build table rows
+        # Check if page properties are enabled
+        if not self.config.include_page_properties:
+            return None
+
+        # Build table rows based on settings
         rows = []
 
         # Channel row
-        if channel_name:
+        if channel_name and self.config.prop_show_channel:
             rows.append(self._build_table_row("Channel", channel_name))
 
-        # Period rows
-        if summary.start_time:
-            rows.append(self._build_table_row(
+        # Period rows with date macros
+        if summary.start_time and self.config.prop_show_period_start:
+            rows.append(self._build_table_row_with_date(
                 "Period Start",
-                summary.start_time.strftime("%Y-%m-%d")
+                summary.start_time
             ))
-        if summary.end_time:
-            rows.append(self._build_table_row(
+        if summary.end_time and self.config.prop_show_period_end:
+            rows.append(self._build_table_row_with_date(
                 "Period End",
-                summary.end_time.strftime("%Y-%m-%d")
+                summary.end_time
             ))
 
         # Stats rows
-        rows.append(self._build_table_row(
-            "Messages",
-            str(summary.message_count or 0)
-        ))
-        rows.append(self._build_table_row(
-            "Participants",
-            str(len(summary.participants) if summary.participants else 0)
-        ))
+        if self.config.prop_show_message_count:
+            rows.append(self._build_table_row(
+                "Messages",
+                str(summary.message_count or 0)
+            ))
+        if self.config.prop_show_participant_count:
+            rows.append(self._build_table_row(
+                "Participants",
+                str(len(summary.participants) if summary.participants else 0)
+            ))
+
+        # Metadata rows
+        if summary_type and self.config.prop_show_summary_type:
+            rows.append(self._build_table_row("Summary Type", summary_type.title()))
+        if perspective and self.config.prop_show_perspective:
+            rows.append(self._build_table_row("Perspective", perspective.title()))
+        if granularity and self.config.prop_show_granularity:
+            rows.append(self._build_table_row("Granularity", granularity.title()))
+        if source and self.config.prop_show_source:
+            rows.append(self._build_table_row("Source", source.title()))
+
+        # If no rows, don't create the macro
+        if not rows:
+            return None
 
         # Page Properties macro wrapping a table
         # Note: Page Properties macro requires bodiedExtension type for content
-        return {
+        page_properties = {
             "type": "bodiedExtension",
             "attrs": {
                 "extensionType": "com.atlassian.confluence.macro.core",
@@ -998,8 +1075,18 @@ class ConfluencePublisher:
             ]
         }
 
+        # Wrap in expander if configured (default true)
+        if self.config.page_properties_in_expander:
+            return {
+                "type": "expand",
+                "attrs": {"title": "Page Properties"},
+                "content": [page_properties]
+            }
+
+        return page_properties
+
     def _build_table_row(self, key: str, value: str) -> Dict[str, Any]:
-        """Build a table row for Page Properties macro."""
+        """Build a table row for Page Properties macro with text value."""
         return {
             "type": "tableRow",
             "content": [
@@ -1018,6 +1105,52 @@ class ConfluencePublisher:
                         {
                             "type": "paragraph",
                             "content": [{"type": "text", "text": value}]
+                        }
+                    ]
+                }
+            ]
+        }
+
+    def _build_table_row_with_date(self, key: str, dt: datetime) -> Dict[str, Any]:
+        """Build a table row for Page Properties macro with date chip/macro.
+
+        Uses Confluence's date inline node for proper date rendering.
+
+        Args:
+            key: Row header text
+            dt: Datetime value to render as date chip
+
+        Returns:
+            ADF tableRow node with date macro in the value cell
+        """
+        # Confluence date format: epoch milliseconds as string
+        timestamp_ms = str(int(dt.timestamp() * 1000))
+
+        return {
+            "type": "tableRow",
+            "content": [
+                {
+                    "type": "tableHeader",
+                    "content": [
+                        {
+                            "type": "paragraph",
+                            "content": [{"type": "text", "text": key}]
+                        }
+                    ]
+                },
+                {
+                    "type": "tableCell",
+                    "content": [
+                        {
+                            "type": "paragraph",
+                            "content": [
+                                {
+                                    "type": "date",
+                                    "attrs": {
+                                        "timestamp": timestamp_ms
+                                    }
+                                }
+                            ]
                         }
                     ]
                 }

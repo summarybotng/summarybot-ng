@@ -35,6 +35,18 @@ class ConfluenceSettings:
     include_participants: bool = False
     # ADR-113: Label configuration
     include_labels: bool = True
+    # ADR-114: Page Properties macro options
+    include_page_properties: bool = True
+    page_properties_in_expander: bool = True
+    prop_show_channel: bool = True
+    prop_show_period_start: bool = True
+    prop_show_period_end: bool = True
+    prop_show_message_count: bool = True
+    prop_show_participant_count: bool = True
+    prop_show_summary_type: bool = True
+    prop_show_perspective: bool = False
+    prop_show_granularity: bool = True
+    prop_show_source: bool = False
 
     def is_configured(self) -> bool:
         """Check if Confluence is properly configured for this guild."""
@@ -70,6 +82,18 @@ class ConfluenceSettings:
             "include_action_items": self.include_action_items,
             "include_participants": self.include_participants,
             "include_labels": self.include_labels,
+            # ADR-114: Page Properties options
+            "include_page_properties": self.include_page_properties,
+            "page_properties_in_expander": self.page_properties_in_expander,
+            "prop_show_channel": self.prop_show_channel,
+            "prop_show_period_start": self.prop_show_period_start,
+            "prop_show_period_end": self.prop_show_period_end,
+            "prop_show_message_count": self.prop_show_message_count,
+            "prop_show_participant_count": self.prop_show_participant_count,
+            "prop_show_summary_type": self.prop_show_summary_type,
+            "prop_show_perspective": self.prop_show_perspective,
+            "prop_show_granularity": self.prop_show_granularity,
+            "prop_show_source": self.prop_show_source,
         }
         if include_token:
             result["api_token"] = self.api_token
@@ -318,8 +342,12 @@ class SQLiteConfluenceRepository:
             email, api_token_encrypted, page_title_template,
             configured_by, configured_at, updated_at,
             include_summary, include_key_points, include_action_items,
-            include_participants, include_labels
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            include_participants, include_labels,
+            include_page_properties, page_properties_in_expander,
+            prop_show_channel, prop_show_period_start, prop_show_period_end,
+            prop_show_message_count, prop_show_participant_count,
+            prop_show_summary_type, prop_show_perspective, prop_show_granularity, prop_show_source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(guild_id) DO UPDATE SET
             enabled = excluded.enabled,
             base_url = excluded.base_url,
@@ -333,7 +361,18 @@ class SQLiteConfluenceRepository:
             include_key_points = excluded.include_key_points,
             include_action_items = excluded.include_action_items,
             include_participants = excluded.include_participants,
-            include_labels = excluded.include_labels
+            include_labels = excluded.include_labels,
+            include_page_properties = excluded.include_page_properties,
+            page_properties_in_expander = excluded.page_properties_in_expander,
+            prop_show_channel = excluded.prop_show_channel,
+            prop_show_period_start = excluded.prop_show_period_start,
+            prop_show_period_end = excluded.prop_show_period_end,
+            prop_show_message_count = excluded.prop_show_message_count,
+            prop_show_participant_count = excluded.prop_show_participant_count,
+            prop_show_summary_type = excluded.prop_show_summary_type,
+            prop_show_perspective = excluded.prop_show_perspective,
+            prop_show_granularity = excluded.prop_show_granularity,
+            prop_show_source = excluded.prop_show_source
         """
         params = (
             settings.guild_id,
@@ -352,6 +391,17 @@ class SQLiteConfluenceRepository:
             1 if settings.include_action_items else 0,
             1 if settings.include_participants else 0,
             1 if settings.include_labels else 0,
+            1 if settings.include_page_properties else 0,
+            1 if settings.page_properties_in_expander else 0,
+            1 if settings.prop_show_channel else 0,
+            1 if settings.prop_show_period_start else 0,
+            1 if settings.prop_show_period_end else 0,
+            1 if settings.prop_show_message_count else 0,
+            1 if settings.prop_show_participant_count else 0,
+            1 if settings.prop_show_summary_type else 0,
+            1 if settings.prop_show_perspective else 0,
+            1 if settings.prop_show_granularity else 0,
+            1 if settings.prop_show_source else 0,
         )
 
         try:
@@ -478,6 +528,18 @@ class SQLiteConfluenceRepository:
             include_action_items=bool(row.get("include_action_items", 1)),
             include_participants=bool(row.get("include_participants", 0)),
             include_labels=bool(row.get("include_labels", 1)),
+            # ADR-114: Page Properties options (with defaults for existing rows)
+            include_page_properties=bool(row.get("include_page_properties", 1)),
+            page_properties_in_expander=bool(row.get("page_properties_in_expander", 1)),
+            prop_show_channel=bool(row.get("prop_show_channel", 1)),
+            prop_show_period_start=bool(row.get("prop_show_period_start", 1)),
+            prop_show_period_end=bool(row.get("prop_show_period_end", 1)),
+            prop_show_message_count=bool(row.get("prop_show_message_count", 1)),
+            prop_show_participant_count=bool(row.get("prop_show_participant_count", 1)),
+            prop_show_summary_type=bool(row.get("prop_show_summary_type", 1)),
+            prop_show_perspective=bool(row.get("prop_show_perspective", 0)),
+            prop_show_granularity=bool(row.get("prop_show_granularity", 1)),
+            prop_show_source=bool(row.get("prop_show_source", 0)),
         )
 
 

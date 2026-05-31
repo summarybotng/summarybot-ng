@@ -1113,6 +1113,11 @@ class RetrospectiveGenerator:
                 channel_names=channel_names,
                 scope_type=stored.scope_type,
                 category_name=stored.category_name,
+                # ADR-114: Additional metadata for Page Properties
+                summary_type=stored.summary_length,
+                perspective=stored.perspective,
+                granularity=stored.archive_granularity or job.granularity,
+                source=stored.source or "archive",
             )
 
             if result.success:

@@ -80,6 +80,18 @@ export function ConfluenceSettings({
     include_action_items: true,
     include_participants: false,
     include_labels: true,
+    // ADR-114: Page Properties toggles
+    include_page_properties: true,
+    page_properties_in_expander: true,
+    prop_show_channel: true,
+    prop_show_period_start: true,
+    prop_show_period_end: true,
+    prop_show_message_count: true,
+    prop_show_participant_count: true,
+    prop_show_summary_type: true,
+    prop_show_perspective: false,
+    prop_show_granularity: true,
+    prop_show_source: false,
   });
 
   // Queries & Mutations
@@ -105,6 +117,18 @@ export function ConfluenceSettings({
         include_action_items: settings.include_action_items ?? true,
         include_participants: settings.include_participants ?? false,
         include_labels: settings.include_labels ?? true,
+        // ADR-114: Page Properties toggles (with defaults for existing data)
+        include_page_properties: settings.include_page_properties ?? true,
+        page_properties_in_expander: settings.page_properties_in_expander ?? true,
+        prop_show_channel: settings.prop_show_channel ?? true,
+        prop_show_period_start: settings.prop_show_period_start ?? true,
+        prop_show_period_end: settings.prop_show_period_end ?? true,
+        prop_show_message_count: settings.prop_show_message_count ?? true,
+        prop_show_participant_count: settings.prop_show_participant_count ?? true,
+        prop_show_summary_type: settings.prop_show_summary_type ?? true,
+        prop_show_perspective: settings.prop_show_perspective ?? false,
+        prop_show_granularity: settings.prop_show_granularity ?? true,
+        prop_show_source: settings.prop_show_source ?? false,
       });
     }
   }, [settings]);
@@ -554,6 +578,170 @@ export function ConfluenceSettings({
                   }
                 />
               </div>
+            </div>
+
+            {/* ADR-114: Page Properties Toggle */}
+            <div className="grid gap-3 pt-4 border-t">
+              <Label className="text-sm font-medium">Page Properties</Label>
+              <p className="text-xs text-muted-foreground -mt-1">
+                Queryable metadata table for Page Properties Reports
+              </p>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="include_page_properties" className="text-sm font-normal cursor-pointer">
+                    Include Page Properties
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Adds a queryable properties table
+                  </p>
+                </div>
+                <Switch
+                  id="include_page_properties"
+                  checked={formData.include_page_properties ?? true}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({ ...prev, include_page_properties: checked }))
+                  }
+                />
+              </div>
+
+              {formData.include_page_properties && (
+                <>
+                  <div className="flex items-center justify-between pl-4">
+                    <Label htmlFor="page_properties_in_expander" className="text-sm font-normal cursor-pointer">
+                      Wrap in expander
+                    </Label>
+                    <Switch
+                      id="page_properties_in_expander"
+                      checked={formData.page_properties_in_expander ?? true}
+                      onCheckedChange={(checked) =>
+                        setFormData((prev) => ({ ...prev, page_properties_in_expander: checked }))
+                      }
+                    />
+                  </div>
+
+                  <div className="pl-4 space-y-2">
+                    <p className="text-xs text-muted-foreground">Properties to include:</p>
+
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="prop_show_channel" className="text-xs font-normal cursor-pointer">
+                        Channel
+                      </Label>
+                      <Switch
+                        id="prop_show_channel"
+                        checked={formData.prop_show_channel ?? true}
+                        onCheckedChange={(checked) =>
+                          setFormData((prev) => ({ ...prev, prop_show_channel: checked }))
+                        }
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="prop_show_period_start" className="text-xs font-normal cursor-pointer">
+                        Period Start
+                      </Label>
+                      <Switch
+                        id="prop_show_period_start"
+                        checked={formData.prop_show_period_start ?? true}
+                        onCheckedChange={(checked) =>
+                          setFormData((prev) => ({ ...prev, prop_show_period_start: checked }))
+                        }
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="prop_show_period_end" className="text-xs font-normal cursor-pointer">
+                        Period End
+                      </Label>
+                      <Switch
+                        id="prop_show_period_end"
+                        checked={formData.prop_show_period_end ?? true}
+                        onCheckedChange={(checked) =>
+                          setFormData((prev) => ({ ...prev, prop_show_period_end: checked }))
+                        }
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="prop_show_message_count" className="text-xs font-normal cursor-pointer">
+                        Message Count
+                      </Label>
+                      <Switch
+                        id="prop_show_message_count"
+                        checked={formData.prop_show_message_count ?? true}
+                        onCheckedChange={(checked) =>
+                          setFormData((prev) => ({ ...prev, prop_show_message_count: checked }))
+                        }
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="prop_show_participant_count" className="text-xs font-normal cursor-pointer">
+                        Participant Count
+                      </Label>
+                      <Switch
+                        id="prop_show_participant_count"
+                        checked={formData.prop_show_participant_count ?? true}
+                        onCheckedChange={(checked) =>
+                          setFormData((prev) => ({ ...prev, prop_show_participant_count: checked }))
+                        }
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="prop_show_summary_type" className="text-xs font-normal cursor-pointer">
+                        Summary Type
+                      </Label>
+                      <Switch
+                        id="prop_show_summary_type"
+                        checked={formData.prop_show_summary_type ?? true}
+                        onCheckedChange={(checked) =>
+                          setFormData((prev) => ({ ...prev, prop_show_summary_type: checked }))
+                        }
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="prop_show_perspective" className="text-xs font-normal cursor-pointer">
+                        Perspective
+                      </Label>
+                      <Switch
+                        id="prop_show_perspective"
+                        checked={formData.prop_show_perspective ?? false}
+                        onCheckedChange={(checked) =>
+                          setFormData((prev) => ({ ...prev, prop_show_perspective: checked }))
+                        }
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="prop_show_granularity" className="text-xs font-normal cursor-pointer">
+                        Granularity
+                      </Label>
+                      <Switch
+                        id="prop_show_granularity"
+                        checked={formData.prop_show_granularity ?? true}
+                        onCheckedChange={(checked) =>
+                          setFormData((prev) => ({ ...prev, prop_show_granularity: checked }))
+                        }
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="prop_show_source" className="text-xs font-normal cursor-pointer">
+                        Source
+                      </Label>
+                      <Switch
+                        id="prop_show_source"
+                        checked={formData.prop_show_source ?? false}
+                        onCheckedChange={(checked) =>
+                          setFormData((prev) => ({ ...prev, prop_show_source: checked }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

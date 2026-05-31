@@ -3863,6 +3863,11 @@ async def publish_summary_to_confluence(
             category_name=summary.category_name,
             user_timezone=body.timezone,
             dashboard_base_url=dashboard_base_url,  # ADR-079: tenant-aware URL
+            # ADR-114: Additional metadata for Page Properties
+            summary_type=summary.summary_length,
+            perspective=summary.perspective,
+            granularity=summary.archive_granularity,
+            source=summary.source,
         )
 
         # Handle conflict
@@ -4140,6 +4145,11 @@ async def bulk_confluence_publish(
                     category_name=stored.category_name,
                     user_timezone=body.timezone,
                     dashboard_base_url=dashboard_base_url,
+                    # ADR-114: Additional metadata for Page Properties
+                    summary_type=stored.summary_length,
+                    perspective=stored.perspective,
+                    granularity=stored.archive_granularity,
+                    source=stored.source,
                 )
 
                 if result.success:

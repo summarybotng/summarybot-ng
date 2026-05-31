@@ -360,7 +360,7 @@ export function ConfluenceSettings({
 
       {/* Configuration Dialog */}
       <Dialog open={showConfigDialog} onOpenChange={setShowConfigDialog}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Confluence Settings</DialogTitle>
             <DialogDescription>
@@ -620,124 +620,126 @@ export function ConfluenceSettings({
                     />
                   </div>
 
-                  <div className="pl-4 space-y-2">
-                    <p className="text-xs text-muted-foreground">Properties to include:</p>
+                  <div className="pl-4">
+                    <p className="text-xs text-muted-foreground mb-2">Properties to include:</p>
 
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="prop_show_channel" className="text-xs font-normal cursor-pointer">
-                        Channel
-                      </Label>
-                      <Switch
-                        id="prop_show_channel"
-                        checked={formData.prop_show_channel ?? true}
-                        onCheckedChange={(checked) =>
-                          setFormData((prev) => ({ ...prev, prop_show_channel: checked }))
-                        }
-                      />
-                    </div>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="prop_show_channel" className="text-xs font-normal cursor-pointer">
+                          Channel
+                        </Label>
+                        <Switch
+                          id="prop_show_channel"
+                          checked={formData.prop_show_channel ?? true}
+                          onCheckedChange={(checked) =>
+                            setFormData((prev) => ({ ...prev, prop_show_channel: checked }))
+                          }
+                        />
+                      </div>
 
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="prop_show_period_start" className="text-xs font-normal cursor-pointer">
-                        Period Start
-                      </Label>
-                      <Switch
-                        id="prop_show_period_start"
-                        checked={formData.prop_show_period_start ?? true}
-                        onCheckedChange={(checked) =>
-                          setFormData((prev) => ({ ...prev, prop_show_period_start: checked }))
-                        }
-                      />
-                    </div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="prop_show_message_count" className="text-xs font-normal cursor-pointer">
+                          Messages
+                        </Label>
+                        <Switch
+                          id="prop_show_message_count"
+                          checked={formData.prop_show_message_count ?? true}
+                          onCheckedChange={(checked) =>
+                            setFormData((prev) => ({ ...prev, prop_show_message_count: checked }))
+                          }
+                        />
+                      </div>
 
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="prop_show_period_end" className="text-xs font-normal cursor-pointer">
-                        Period End
-                      </Label>
-                      <Switch
-                        id="prop_show_period_end"
-                        checked={formData.prop_show_period_end ?? true}
-                        onCheckedChange={(checked) =>
-                          setFormData((prev) => ({ ...prev, prop_show_period_end: checked }))
-                        }
-                      />
-                    </div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="prop_show_period_start" className="text-xs font-normal cursor-pointer">
+                          Period Start
+                        </Label>
+                        <Switch
+                          id="prop_show_period_start"
+                          checked={formData.prop_show_period_start ?? true}
+                          onCheckedChange={(checked) =>
+                            setFormData((prev) => ({ ...prev, prop_show_period_start: checked }))
+                          }
+                        />
+                      </div>
 
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="prop_show_message_count" className="text-xs font-normal cursor-pointer">
-                        Message Count
-                      </Label>
-                      <Switch
-                        id="prop_show_message_count"
-                        checked={formData.prop_show_message_count ?? true}
-                        onCheckedChange={(checked) =>
-                          setFormData((prev) => ({ ...prev, prop_show_message_count: checked }))
-                        }
-                      />
-                    </div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="prop_show_participant_count" className="text-xs font-normal cursor-pointer">
+                          Participants
+                        </Label>
+                        <Switch
+                          id="prop_show_participant_count"
+                          checked={formData.prop_show_participant_count ?? true}
+                          onCheckedChange={(checked) =>
+                            setFormData((prev) => ({ ...prev, prop_show_participant_count: checked }))
+                          }
+                        />
+                      </div>
 
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="prop_show_participant_count" className="text-xs font-normal cursor-pointer">
-                        Participant Count
-                      </Label>
-                      <Switch
-                        id="prop_show_participant_count"
-                        checked={formData.prop_show_participant_count ?? true}
-                        onCheckedChange={(checked) =>
-                          setFormData((prev) => ({ ...prev, prop_show_participant_count: checked }))
-                        }
-                      />
-                    </div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="prop_show_period_end" className="text-xs font-normal cursor-pointer">
+                          Period End
+                        </Label>
+                        <Switch
+                          id="prop_show_period_end"
+                          checked={formData.prop_show_period_end ?? true}
+                          onCheckedChange={(checked) =>
+                            setFormData((prev) => ({ ...prev, prop_show_period_end: checked }))
+                          }
+                        />
+                      </div>
 
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="prop_show_summary_type" className="text-xs font-normal cursor-pointer">
-                        Summary Type
-                      </Label>
-                      <Switch
-                        id="prop_show_summary_type"
-                        checked={formData.prop_show_summary_type ?? true}
-                        onCheckedChange={(checked) =>
-                          setFormData((prev) => ({ ...prev, prop_show_summary_type: checked }))
-                        }
-                      />
-                    </div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="prop_show_summary_type" className="text-xs font-normal cursor-pointer">
+                          Summary Type
+                        </Label>
+                        <Switch
+                          id="prop_show_summary_type"
+                          checked={formData.prop_show_summary_type ?? true}
+                          onCheckedChange={(checked) =>
+                            setFormData((prev) => ({ ...prev, prop_show_summary_type: checked }))
+                          }
+                        />
+                      </div>
 
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="prop_show_perspective" className="text-xs font-normal cursor-pointer">
-                        Perspective
-                      </Label>
-                      <Switch
-                        id="prop_show_perspective"
-                        checked={formData.prop_show_perspective ?? false}
-                        onCheckedChange={(checked) =>
-                          setFormData((prev) => ({ ...prev, prop_show_perspective: checked }))
-                        }
-                      />
-                    </div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="prop_show_granularity" className="text-xs font-normal cursor-pointer">
+                          Granularity
+                        </Label>
+                        <Switch
+                          id="prop_show_granularity"
+                          checked={formData.prop_show_granularity ?? true}
+                          onCheckedChange={(checked) =>
+                            setFormData((prev) => ({ ...prev, prop_show_granularity: checked }))
+                          }
+                        />
+                      </div>
 
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="prop_show_granularity" className="text-xs font-normal cursor-pointer">
-                        Granularity
-                      </Label>
-                      <Switch
-                        id="prop_show_granularity"
-                        checked={formData.prop_show_granularity ?? true}
-                        onCheckedChange={(checked) =>
-                          setFormData((prev) => ({ ...prev, prop_show_granularity: checked }))
-                        }
-                      />
-                    </div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="prop_show_perspective" className="text-xs font-normal cursor-pointer text-muted-foreground">
+                          Perspective
+                        </Label>
+                        <Switch
+                          id="prop_show_perspective"
+                          checked={formData.prop_show_perspective ?? false}
+                          onCheckedChange={(checked) =>
+                            setFormData((prev) => ({ ...prev, prop_show_perspective: checked }))
+                          }
+                        />
+                      </div>
 
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="prop_show_source" className="text-xs font-normal cursor-pointer">
-                        Source
-                      </Label>
-                      <Switch
-                        id="prop_show_source"
-                        checked={formData.prop_show_source ?? false}
-                        onCheckedChange={(checked) =>
-                          setFormData((prev) => ({ ...prev, prop_show_source: checked }))
-                        }
-                      />
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="prop_show_source" className="text-xs font-normal cursor-pointer text-muted-foreground">
+                          Source
+                        </Label>
+                        <Switch
+                          id="prop_show_source"
+                          checked={formData.prop_show_source ?? false}
+                          onCheckedChange={(checked) =>
+                            setFormData((prev) => ({ ...prev, prop_show_source: checked }))
+                          }
+                        />
+                      </div>
                     </div>
                   </div>
                 </>

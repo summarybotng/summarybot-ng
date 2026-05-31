@@ -978,14 +978,16 @@ class ConfluencePublisher:
         ))
 
         # Page Properties macro wrapping a table
+        # Note: Page Properties macro requires bodiedExtension type for content
         return {
-            "type": "extension",
+            "type": "bodiedExtension",
             "attrs": {
                 "extensionType": "com.atlassian.confluence.macro.core",
                 "extensionKey": "details",
                 "parameters": {
                     "macroParams": {}
-                }
+                },
+                "layout": "default"
             },
             "content": [
                 {

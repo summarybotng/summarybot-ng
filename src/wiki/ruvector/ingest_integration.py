@@ -88,6 +88,28 @@ class RuVectorIngestIntegration:
         """
         logger.info(f"RuVector ingesting summary {summary_id} for guild {guild_id}")
 
+        # ADR-118: Check if knowledge units already exist for this summary
+        # This prevents duplicates during rolling schedule re-runs
+        existing_count = await self.vector_store.count_units_by_summary_id(
+            guild_id, summary_id
+        )
+        if existing_count > 0:
+            logger.info(
+                f"Skipping RuVector extraction for {summary_id}: "
+                f"{existing_count} units already exist"
+            )
+            # Return existing units instead of re-extracting
+            existing_units = await self.vector_store.get_units_by_summary_id(
+                guild_id, summary_id
+            )
+            return ExtractionResult(
+                units=existing_units,
+                source_id=summary_id,
+                extraction_model="cached",
+                token_count=0,
+                processing_time_ms=0,
+            )
+
         # 1. Extract knowledge units
         extraction = await self.extractor.extract_from_summary(
             guild_id=guild_id,

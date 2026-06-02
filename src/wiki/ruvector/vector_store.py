@@ -178,6 +178,50 @@ class VectorStore:
         rows = await self.connection.fetch_all(query, (guild_id, source_id))
         return [self._row_to_unit(row) for row in rows]
 
+    async def get_units_by_summary_id(
+        self,
+        guild_id: str,
+        summary_id: str,
+    ) -> List[KnowledgeUnit]:
+        """
+        Get all units extracted from a specific summary.
+
+        ADR-118: Used to check if knowledge units already exist for a summary
+        before triggering extraction, preventing duplicates during rolling
+        schedule updates.
+
+        Args:
+            guild_id: Guild ID
+            summary_id: Source summary ID
+
+        Returns:
+            List of existing knowledge units for this summary
+        """
+        query = """
+        SELECT * FROM wiki_knowledge_units
+        WHERE guild_id = ? AND summary_id = ?
+        ORDER BY created_at
+        """
+        rows = await self.connection.fetch_all(query, (guild_id, summary_id))
+        return [self._row_to_unit(row) for row in rows]
+
+    async def count_units_by_summary_id(
+        self,
+        guild_id: str,
+        summary_id: str,
+    ) -> int:
+        """
+        Count units for a summary without loading full objects.
+
+        ADR-118: Lightweight check for deduplication guard clause.
+        """
+        query = """
+        SELECT COUNT(*) as count FROM wiki_knowledge_units
+        WHERE guild_id = ? AND summary_id = ?
+        """
+        row = await self.connection.fetch_one(query, (guild_id, summary_id))
+        return row["count"] if row else 0
+
     async def delete_unit(self, unit_id: str) -> bool:
         """Delete a knowledge unit and its edges."""
         # Delete edges first

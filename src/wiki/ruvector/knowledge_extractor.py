@@ -9,6 +9,7 @@ import logging
 import json
 import uuid
 import time
+import hashlib
 from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime
 
@@ -17,6 +18,33 @@ from .models import (
     KnowledgeUnitType,
     ExtractionResult,
 )
+
+
+def generate_deterministic_unit_id(
+    guild_id: str,
+    source_id: str,
+    content: str,
+    unit_type: str,
+) -> str:
+    """
+    Generate a deterministic ID for a knowledge unit based on content.
+
+    ADR-118: This enables proper upsert behavior when the same content
+    is extracted multiple times (e.g., during rolling schedule re-runs).
+
+    Args:
+        guild_id: Guild ID
+        source_id: Source summary/message ID
+        content: The unit content text
+        unit_type: The unit type (claim, decision, etc.)
+
+    Returns:
+        32-character hex ID derived from content hash
+    """
+    # Normalize content for consistent hashing
+    normalized_content = content.strip().lower()
+    key = f"{guild_id}:{source_id}:{unit_type}:{normalized_content}"
+    return hashlib.sha256(key.encode()).hexdigest()[:32]
 
 if TYPE_CHECKING:
     from ...summarization.claude_client import ClaudeClient
@@ -287,10 +315,19 @@ class KnowledgeExtractor:
                 except ValueError:
                     unit_type = KnowledgeUnitType.CLAIM
 
-                unit = KnowledgeUnit(
-                    id=str(uuid.uuid4()),
+                content_text = item.get("content", "")
+                # ADR-118: Use deterministic ID for deduplication
+                unit_id = generate_deterministic_unit_id(
                     guild_id=guild_id,
-                    content=item.get("content", ""),
+                    source_id=source_id,
+                    content=content_text,
+                    unit_type=unit_type.value,
+                )
+
+                unit = KnowledgeUnit(
+                    id=unit_id,
+                    guild_id=guild_id,
+                    content=content_text,
                     unit_type=unit_type,
                     source_id=source_id,
                     source_type=source_type,
@@ -358,8 +395,16 @@ class KnowledgeExtractor:
                 confidence = 0.7
 
             if confidence >= self.min_confidence:
+                # ADR-118: Use deterministic ID for deduplication
+                unit_id = generate_deterministic_unit_id(
+                    guild_id=guild_id,
+                    source_id=source_id,
+                    content=sentence,
+                    unit_type=unit_type.value,
+                )
+
                 unit = KnowledgeUnit(
-                    id=str(uuid.uuid4()),
+                    id=unit_id,
                     guild_id=guild_id,
                     content=sentence,
                     unit_type=unit_type,

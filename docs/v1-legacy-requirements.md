@@ -274,6 +274,145 @@ async def generate(self, request: GenerateRequest) -> Result[Summary, Generation
 
 ---
 
+## LEG-006: Failed Summary Retry
+
+**Status**: Required
+**Discovered**: 2026-06-09
+**Context**: When archive jobs partially fail, there's no way to retry only the failed periods
+
+### Problem
+
+When a retrospective job runs and some periods fail (rate limit, model error, etc.):
+1. Job completes with `X completed, Y failed`
+2. User must manually identify which periods failed
+3. User must create a new job for the exact date range
+4. No automatic retry mechanism exists
+
+### Current V1 Behavior
+
+```python
+# Job completes with mixed results
+{
+    "progress": {
+        "completed": 25,
+        "failed": 5,
+        "skipped": 2
+    }
+}
+# No retry action available
+```
+
+### V3 Requirements
+
+1. **Retry job action**: API endpoint to create retry job from failed job
+   - `POST /workspaces/{workspace_id}/jobs/{job_id}/retry`
+   - Creates new job targeting only failed periods
+   - Copies original job settings (model, perspective, etc.)
+
+2. **Failed period tracking**: Store failed periods with error reasons
+   ```python
+   class JobFailure:
+       period_start: datetime
+       period_end: datetime
+       error_code: str
+       error_message: str
+       attempt_count: int
+       retryable: bool
+   ```
+
+3. **Dashboard UI**: "Retry Failed" button on completed jobs with failures
+
+4. **Automatic retry option**: Job setting to auto-retry failures
+   - `auto_retry: bool = False`
+   - `max_auto_retries: int = 2`
+   - Exponential backoff between retries
+
+5. **Retry genealogy**: Link retry jobs to parent job
+   - `parent_job_id: Optional[UUID]`
+   - Dashboard shows job lineage
+
+### Suggested V3 Implementation
+
+```python
+# v3/src/api/routes/jobs.py
+@router.post("/workspaces/{workspace_id}/jobs/{job_id}/retry")
+async def retry_failed_job(
+    workspace_id: UUID,
+    job_id: UUID,
+    service: JobService = Depends(get_job_service),
+) -> JobResponse:
+    """Create a new job targeting only failed periods from original job."""
+
+    original_job = await service.get_job(job_id)
+    if not original_job:
+        raise HTTPException(404, "Job not found")
+
+    if not original_job.has_failures:
+        raise HTTPException(400, "Job has no failures to retry")
+
+    # Create retry job
+    retry_job = await service.create_retry_job(
+        original_job=original_job,
+        retry_only_failed=True,
+    )
+
+    return JobResponse.from_job(retry_job)
+
+
+# v3/src/services/job_service.py
+async def create_retry_job(
+    self,
+    original_job: Job,
+    retry_only_failed: bool = True,
+) -> Job:
+    """Create a retry job from a completed job."""
+
+    # Get failed periods
+    failed_periods = [
+        f for f in original_job.failures
+        if f.retryable
+    ]
+
+    if not failed_periods:
+        raise NoRetryableFailuresError()
+
+    # Create new job targeting failed periods
+    retry_job = Job(
+        id=generate_uuid(),
+        workspace_id=original_job.workspace_id,
+        parent_job_id=original_job.id,  # Link to parent
+        type=JobType.RETRY,
+
+        # Copy settings from original
+        channel_ids=original_job.channel_ids,
+        summary_options=original_job.summary_options,
+
+        # Target only failed periods
+        periods=[
+            Period(start=f.period_start, end=f.period_end)
+            for f in failed_periods
+        ],
+
+        status=JobStatus.PENDING,
+    )
+
+    await self._job_repo.save(retry_job)
+    await self._queue.enqueue(retry_job)
+
+    return retry_job
+```
+
+### Acceptance Criteria
+
+- [ ] Failed periods stored with error details
+- [ ] `POST /jobs/{id}/retry` creates job for failed periods only
+- [ ] Retry job linked to parent via `parent_job_id`
+- [ ] Dashboard shows "Retry Failed" button
+- [ ] Auto-retry option with configurable max attempts
+- [ ] Retry respects rate limits (not immediate flood)
+
+---
+
 ## How V3 Should Use This Document
 
 1. **During planning**: Reference `LEG-XXX` requirements when designing the `adapters/llm/` module

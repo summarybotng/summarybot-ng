@@ -515,10 +515,6 @@ class ClaudeClient:
         if not self.api_key:
             return False
 
-        # Check if we have a valid primary model
-        if not self.primary_model:
-            return False
-
         # Check if HTTP client is available
         if self._client is None:
             return False

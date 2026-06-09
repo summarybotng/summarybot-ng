@@ -11,19 +11,18 @@ DEFAULT_SUMMARIZATION_MODEL = "anthropic/claude-3-haiku"
 DEFAULT_BRIEF_MODEL = "anthropic/claude-3-haiku"
 DEFAULT_COMPREHENSIVE_MODEL = "anthropic/claude-sonnet-4.5"  # Best model for comprehensive summaries
 
-# Valid model choices (current OpenRouter model IDs as of 2026-01)
+# Valid model choices (current OpenRouter model IDs as of 2026-06)
 # Also includes legacy names for backward compatibility
 VALID_MODELS = [
-    # Current OpenRouter format
+    # Current OpenRouter format (verified 2026-06)
     "anthropic/claude-sonnet-4.5",
     "anthropic/claude-sonnet-4",
-    "anthropic/claude-3.7-sonnet",
-    "anthropic/claude-3.5-sonnet",
     "anthropic/claude-3.5-haiku",
     "anthropic/claude-3-haiku",
     "anthropic/claude-opus-4.5",
     "anthropic/claude-opus-4",
-    # Legacy format (for backward compatibility)
+    "anthropic/claude-haiku-4.5",
+    # Legacy format (for backward compatibility - mapped to current models)
     "claude-3-haiku-20240307",
     "claude-3-5-sonnet-20240620",
     "claude-3-5-sonnet-20241022",
@@ -32,12 +31,13 @@ VALID_MODELS = [
 ]
 
 # Model aliases for backward compatibility (old format -> new format)
+# Updated 2026-06: claude-3.5-sonnet removed from OpenRouter, mapped to claude-sonnet-4
 MODEL_ALIASES = {
     "claude-3-haiku-20240307": "anthropic/claude-3-haiku",
-    "claude-3-5-sonnet-20240620": "anthropic/claude-3.5-sonnet",
-    "claude-3-5-sonnet-20241022": "anthropic/claude-3.5-sonnet",
+    "claude-3-5-sonnet-20240620": "anthropic/claude-sonnet-4",
+    "claude-3-5-sonnet-20241022": "anthropic/claude-sonnet-4",
     "claude-3-opus-20240229": "anthropic/claude-opus-4",
-    "claude-3-sonnet-20240229": "anthropic/claude-3.5-sonnet",
+    "claude-3-sonnet-20240229": "anthropic/claude-sonnet-4",
 }
 
 # ADR-024: Model escalation chain for resilient summary generation

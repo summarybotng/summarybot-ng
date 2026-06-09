@@ -233,13 +233,13 @@ class ClaudeClient:
             Normalized model name for the current provider
         """
         # Mapping from old Claude Direct model names to current OpenRouter model IDs
-        # Updated 2026-01 to use current OpenRouter model IDs
+        # Updated 2026-06 to use current OpenRouter model IDs (claude-3.5-sonnet removed)
         openrouter_model_map = {
-            'claude-3-sonnet-20240229': 'anthropic/claude-3.5-sonnet',
+            'claude-3-sonnet-20240229': 'anthropic/claude-sonnet-4',
             'claude-3-opus-20240229': 'anthropic/claude-opus-4',
             'claude-3-haiku-20240307': 'anthropic/claude-3-haiku',
-            'claude-3-5-sonnet-20240620': 'anthropic/claude-3.5-sonnet',
-            'claude-3-5-sonnet-20241022': 'anthropic/claude-3.5-sonnet',
+            'claude-3-5-sonnet-20240620': 'anthropic/claude-sonnet-4',
+            'claude-3-5-sonnet-20241022': 'anthropic/claude-sonnet-4',
         }
 
         if self.is_openrouter:
